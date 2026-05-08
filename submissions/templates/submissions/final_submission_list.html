@@ -1,0 +1,98 @@
+{% extends "submissions/base.html" %}
+{% block title %}Final Submissions{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Final Submissions</h1>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
+        <a class="btn btn-primary" href="{% url 'submissions:final_submission_add' %}">Add Final Submission</a>
+    </div>
+</div>
+<div class="row g-3 mb-3">
+    <div class="col-lg-5">
+        <form method="get" class="d-flex gap-2">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final submissions">
+            <button class="btn btn-outline-secondary">Search</button>
+        </form>
+    </div>
+    <div class="col-lg-7">
+        <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_final_submissions' %}" class="card">
+            {% csrf_token %}
+            <div class="card-body">
+                <h2 class="h6">Batch Upload</h2>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label" for="{{ import_form.file.id_for_label }}">Metadata CSV/XLSX</label>
+                        {{ import_form.file }}
+                        <div class="form-text">Use the template. It contains Final ID, Author-entered ID, title, authors, optional upload date, and uploaded field names. Import first previews differences; nothing is applied until you confirm.</div>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label" for="{{ import_form.submission_files.id_for_label }}">PDF and Source files</label>
+                        {{ import_form.submission_files }}
+                        <div class="form-text">Select all files named like 34_file_Submit_PDF.pdf and 34_file_Submit_Source.docx/zip/tex. File extension decides the real type if authors uploaded to the wrong slot.</div>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-outline-primary w-100">Preview</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="small text-muted border rounded px-2 py-1 mb-3">
+    <strong>Status guide:</strong>
+    <span class="badge text-bg-success">Current final version</span> newest corrected Paper ID version;
+    <span class="badge text-bg-secondary">Replaced by newer upload</span> older version;
+    <span class="badge text-bg-danger">Paper ID needs review</span> needs manual review;
+    <span class="badge text-bg-warning">Paper ID verified, title differs</span> manually verified but title differs;
+    <span class="badge text-bg-warning">Paper ID title mismatch</span> likely wrong Paper ID;
+    <span class="badge text-bg-success">Paper ID verified</span> checked or identical.
+</div>
+<div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+        <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Verify</th><th>Version</th><th>Final Title</th><th>PDF</th><th>Source</th><th>Plagiarism</th><th>Processing</th><th></th></tr></thead>
+        <tbody>
+        {% for item in submissions %}
+            <tr>
+                <td>{{ item.final_submission_id }}</td>
+                <td>{{ item.start2_paper_id_raw }}</td>
+                <td>{{ item.paper_id_filled }}</td>
+                <td>
+                    {% if item.paper_id_verified and item.verification_status == "title_mismatch" %}
+                        <span class="badge text-bg-warning">Paper ID verified, title differs</span>
+                    {% elif item.paper_id_verified %}
+                        <span class="badge text-bg-success">Paper ID verified</span>
+                    {% elif item.verification_status == "title_mismatch" %}
+                        <span class="badge text-bg-warning">Paper ID title mismatch</span>
+                    {% elif item.verification_status == "invalid_paper_id" %}
+                        <span class="badge text-bg-warning">Paper ID not in master list</span>
+                    {% else %}
+                        <span class="badge text-bg-danger">Paper ID needs review</span>
+                    {% endif %}
+                    {% if item.duplicate_submission %}<span class="badge text-bg-light text-dark">Replaced by newer upload</span>{% endif %}
+                </td>
+                <td>{% if item.active_version %}<span class="badge text-bg-success">Current final version</span>{% else %}<span class="badge text-bg-secondary">Replaced by newer upload</span>{% endif %}</td>
+                <td>{{ item.final_submission_title|truncatechars:45 }}</td>
+                <td>{{ item.original_file_name|default:item.current_file_path|truncatechars:30 }}</td>
+                <td>{{ item.source_original_file_name|default:item.source_current_file_path|truncatechars:30 }}</td>
+                <td>
+                    {% if item.similarity_score != None and item.single_similarity_score != None %}
+                        P {{ item.similarity_score }}% / S {{ item.single_similarity_score }}%
+                    {% else %}
+                        <span class="text-muted">Missing</span>
+                    {% endif %}
+                </td>
+                <td>{{ item.processing_status }}</td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+                    <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="11" class="text-muted">No final submissions found.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

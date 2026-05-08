@@ -1,0 +1,144 @@
+{% extends "submissions/base.html" %}
+{% block title %}Formatting Review{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-0">Formatting Review</h1>
+        <div class="text-muted small">Review the first-page title/author area, open the publication PDF when needed, then mark the formatting workflow status.</div>
+    </div>
+    <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
+</div>
+
+<style>
+    .format-preview {
+        background: #fff;
+        border: 1px solid var(--cfm-border-strong);
+        border-radius: 0.375rem;
+        overflow: hidden;
+    }
+    .format-preview img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    .format-status-group .btn {
+        min-width: 10.5rem;
+    }
+</style>
+
+<form method="get" class="d-flex gap-2 mb-3" style="max-width: 680px;">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
+    <button class="btn btn-outline-secondary">Search</button>
+    {% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}">Clear</a>{% endif %}
+</form>
+
+{% for row in rows %}
+    {% with item=row.submission form=row.form %}
+    <div class="card mb-3">
+        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <div>
+                <strong>{{ item.paper_id_filled }}</strong>
+                <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
+                <span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}warning{% else %}secondary{% endif %}">
+                    {% if item.format_status == "review_ok" %}Review OK{% elif item.format_status == "needs_edit" %}Needs edit{% else %}Pending{% endif %}
+                </span>
+                {% if item.has_corrected_files %}<span class="badge text-bg-primary">Edited</span>{% endif %}
+                {% if row.publication_pdf.exists %}
+                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                {% else %}
+                    <span class="badge text-bg-danger">No PDF</span>
+                {% endif %}
+            </div>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit Metadata</a>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-xl-4">
+                    <div class="small fw-semibold mb-1">First page title/author preview</div>
+                    {% if row.preview.exists %}
+                        <div class="format-preview">
+                            <img src="{{ row.preview.url }}" alt="First page title and author preview for {{ item.final_submission_id }}">
+                        </div>
+                    {% else %}
+                        <div class="border rounded p-3 text-{% if row.preview.status == 'error' %}danger{% else %}muted{% endif %}">
+                            {{ row.preview.message }}
+                        </div>
+                    {% endif %}
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        {% if row.publication_pdf.exists %}
+                            <a class="btn btn-sm btn-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open Publication PDF</a>
+                        {% endif %}
+                        {% if item.pdf_file %}
+                            <a class="btn btn-sm btn-outline-dark" href="{{ item.pdf_file.url }}" target="_blank" rel="noopener">Original PDF</a>
+                        {% endif %}
+                        {% if item.formatted_pdf_file %}
+                            <a class="btn btn-sm btn-outline-success" href="{{ item.formatted_pdf_file.url }}" target="_blank" rel="noopener">Corrected PDF</a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-xl-3">
+                    <div class="mb-2">
+                        <div class="small text-muted">Title</div>
+                        <div>{{ item.final_submission_title|default:item.extracted_title|default:"Missing" }}</div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="small text-muted">Authors</div>
+                        <div>{{ item.extracted_authors|default:item.final_submission_authors|default:"Missing" }}</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        {% if item.source_file %}
+                            <a class="btn btn-sm btn-outline-dark" href="{{ item.source_file.url }}" target="_blank" rel="noopener">Original Source</a>
+                        {% endif %}
+                        {% if item.formatted_source_file %}
+                            <a class="btn btn-sm btn-outline-success" href="{{ item.formatted_source_file.url }}" target="_blank" rel="noopener">Corrected Source</a>
+                        {% endif %}
+                    </div>
+                    {% if item.processing_message %}
+                        <div class="small text-muted">{{ item.processing_message }}</div>
+                    {% endif %}
+                    {% if row.needs_processing_after_formatting %}
+                        <div class="mt-2"><span class="badge text-bg-warning">Needs Process PDFs</span></div>
+                    {% endif %}
+                </div>
+                <div class="col-xl-5">
+                    <form method="post" enctype="multipart/form-data" class="row g-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <div class="col-md-6">
+                            <label class="form-label" for="{{ form.corrected_pdf.id_for_label }}_{{ item.pk }}">Corrected PDF</label>
+                            {{ form.corrected_pdf }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="{{ form.corrected_source.id_for_label }}_{{ item.pk }}">Corrected Source</label>
+                            {{ form.corrected_source }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label d-block">Formatting Workflow</label>
+                            {% with current_status=form.format_status.value %}
+                            <div class="btn-group format-status-group" role="group" aria-label="Formatting status for {{ item.final_submission_id }}">
+                                <input type="radio" class="btn-check" name="format_status" id="format_status_pending_{{ item.pk }}" value="pending" autocomplete="off" {% if current_status == "pending" %}checked{% endif %}>
+                                <label class="btn btn-outline-secondary" for="format_status_pending_{{ item.pk }}">Format review pending</label>
+                                <input type="radio" class="btn-check" name="format_status" id="format_status_needs_edit_{{ item.pk }}" value="needs_edit" autocomplete="off" {% if current_status == "needs_edit" %}checked{% endif %}>
+                                <label class="btn btn-outline-warning" for="format_status_needs_edit_{{ item.pk }}">Format needs edit</label>
+                                <input type="radio" class="btn-check" name="format_status" id="format_status_review_ok_{{ item.pk }}" value="review_ok" autocomplete="off" {% if current_status == "review_ok" %}checked{% endif %}>
+                                <label class="btn btn-outline-success" for="format_status_review_ok_{{ item.pk }}">Format review OK</label>
+                            </div>
+                            {% endwith %}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="{{ form.format_notes.id_for_label }}_{{ item.pk }}">Notes</label>
+                            {{ form.format_notes }}
+                        </div>
+                        <div class="col-12 text-end">
+                            <button class="btn btn-primary">Save Formatting Update</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endwith %}
+{% empty %}
+    <div class="text-muted border rounded p-4">No active submissions found.</div>
+{% endfor %}
+{% endblock %}

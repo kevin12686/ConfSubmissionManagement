@@ -1,0 +1,122 @@
+{% extends "submissions/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+    <div>
+        <h1 class="h3 mb-0">{{ title }}</h1>
+        <div class="text-muted small">No database or file changes have been applied yet. Review the differences, then confirm if this is correct.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
+</div>
+
+<div class="alert alert-warning border">
+    <strong>Confirm before apply.</strong>
+    Only apply if this preview matches your intended import. If the database changes before you confirm, apply will be blocked and you must preview again.
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">New</div><div class="fs-5">{{ preview.stats.new }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Unchanged</div><div class="fs-5">{{ preview.stats.unchanged }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Changed</div><div class="fs-5">{{ preview.stats.metadata_updated }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Paper ID Reset</div><div class="fs-5">{{ preview.stats.paper_id_review_reset }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">PDF Reset</div><div class="fs-5">{{ preview.stats.pdf_reset }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Source Reset</div><div class="fs-5">{{ preview.stats.source_reset }}</div></div></div>
+</div>
+
+{% if preview.invalid_files %}
+    <div class="alert alert-danger border">
+        <div class="fw-semibold">Files ignored because filenames did not match FinalID_file_Submit_PDF.ext or FinalID_file_Submit_Source.ext:</div>
+        <ul class="mb-0">
+            {% for name in preview.invalid_files %}
+                <li>{{ name }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
+<div class="table-responsive mb-3">
+    <table class="table table-striped table-hover align-middle table-sm">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Data Differences</th>
+                <th>File Differences</th>
+                <th>Reset Impact</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in preview.rows %}
+            <tr class="{% if row.status == 'changed' %}table-warning{% elif row.status == 'new' %}table-info{% endif %}">
+                <td>{{ row.identifier }}</td>
+                <td>
+                    {% if row.status == "new" %}
+                        <span class="badge text-bg-info">New</span>
+                    {% elif row.status == "changed" %}
+                        <span class="badge text-bg-warning">Changed</span>
+                    {% else %}
+                        <span class="badge text-bg-success">Unchanged</span>
+                    {% endif %}
+                </td>
+                <td style="min-width: 320px;">
+                    {% if row.changes %}
+                        {% for change in row.changes %}
+                            <div class="border rounded p-2 mb-1">
+                                <div class="fw-semibold">{{ change.label }}</div>
+                                <div class="small"><span class="text-muted">Old:</span> {{ change.old|default:"--" }}</div>
+                                <div class="small"><span class="text-muted">New:</span> {{ change.new|default:"--" }}</div>
+                                {% if change.reset %}<div class="small text-danger">{{ change.reset }}</div>{% endif %}
+                            </div>
+                        {% endfor %}
+                    {% elif row.status == "new" %}
+                        <div class="small text-muted">New record will be created.</div>
+                    {% else %}
+                        <span class="text-muted">No metadata differences.</span>
+                    {% endif %}
+                    {% if row.affected_final_count %}
+                        <div class="small text-danger">{{ row.affected_final_count }} Final Submission{{ row.affected_final_count|pluralize }} affected.</div>
+                    {% endif %}
+                    {% if row.type == "final" %}
+                        <div class="small text-muted">Uploaded ID is treated as Author-entered ID. Resolved Paper ID after apply: {{ row.new.paper_id_filled|default:"--" }}</div>
+                    {% endif %}
+                    {% if row.active_version_impact %}
+                        <div class="small text-muted">{{ row.active_version_impact }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.file_changes %}
+                        <div>PDF: <span class="badge text-bg-{% if row.file_changes.pdf.status == 'different' or row.file_changes.pdf.status == 'new' %}warning{% elif row.file_changes.pdf.status == 'same' %}success{% else %}secondary{% endif %}">{{ row.file_changes.pdf.status }}</span></div>
+                        {% if row.file_changes.pdf.original_name %}<div class="small text-muted text-break">{{ row.file_changes.pdf.original_name }}</div>{% endif %}
+                        <div class="mt-1">Source: <span class="badge text-bg-{% if row.file_changes.source.status == 'different' or row.file_changes.source.status == 'new' %}warning{% elif row.file_changes.source.status == 'same' %}success{% else %}secondary{% endif %}">{{ row.file_changes.source.status }}</span></div>
+                        {% if row.file_changes.source.original_name %}<div class="small text-muted text-break">{{ row.file_changes.source.original_name }}</div>{% endif %}
+                    {% else %}
+                        <span class="text-muted">No file upload in this import.</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.paper_id_review_reset %}<div><span class="badge text-bg-danger">Paper ID review reset</span></div>{% endif %}
+                    {% if row.title_author_review_reset %}<div><span class="badge text-bg-danger">Title/author review reset</span></div>{% endif %}
+                    {% if row.title_match_reset %}<div><span class="badge text-bg-danger">Title match reset</span></div>{% endif %}
+                    {% if row.pdf_reset %}<div><span class="badge text-bg-danger">PDF checks reset</span></div>{% endif %}
+                    {% if row.source_reset %}<div><span class="badge text-bg-warning">Format reset</span></div>{% endif %}
+                    {% if row.corrected_files_archived %}<div><span class="badge text-bg-warning">Edited files archived</span></div>{% endif %}
+                    {% if not row.paper_id_review_reset and not row.title_match_reset and not row.pdf_reset and not row.source_reset and not row.corrected_files_archived %}
+                        <span class="text-muted">No review reset.</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-muted">No valid rows found in the uploaded file.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<form method="post" action="{{ apply_url }}" class="d-flex flex-wrap gap-2 justify-content-end">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="apply_preview">
+    <input type="hidden" name="preview_token" value="{{ preview.token }}">
+    <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
+    <button class="btn btn-danger">Apply Confirmed Changes</button>
+</form>
+{% endblock %}

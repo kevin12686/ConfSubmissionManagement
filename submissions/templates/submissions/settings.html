@@ -1,0 +1,36 @@
+{% extends "submissions/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Settings</h1>
+<form method="post" class="card">
+    <div class="card-body">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_settings">
+        {{ form.as_p }}
+    </div>
+    <div class="card-footer">
+        <button class="btn btn-primary">Save Settings</button>
+    </div>
+</form>
+
+<div class="card border-danger mt-4">
+    <div class="card-header text-bg-danger">Maintenance</div>
+    <div class="card-body">
+        <h2 class="h5">Clear Database</h2>
+        <p class="text-muted">
+            Removes all Paper Master records, Final Submissions, verification states, and author count rows.
+            Settings are kept. Uploaded files, generated previews, reports, CrossCheck exports, and processing outputs under data folders are deleted.
+        </p>
+        <form method="post" action="{% url 'submissions:clear_database' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-8">
+                <label class="form-label" for="clear-confirmation">Type CLEAR DATABASE to confirm</label>
+                <input id="clear-confirmation" class="form-control" name="confirmation" autocomplete="off">
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-danger w-100">Clear Database</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

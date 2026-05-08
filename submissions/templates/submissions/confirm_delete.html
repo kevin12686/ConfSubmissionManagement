@@ -1,0 +1,11 @@
+{% extends "submissions/base.html" %}
+{% block title %}Delete{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Delete {{ type }}</h1>
+<div class="alert alert-warning">This removes the database record. Files already copied to report or storage folders are not deleted.</div>
+<form method="post" class="d-flex gap-2">
+    {% csrf_token %}
+    <button class="btn btn-danger">Delete</button>
+    <a class="btn btn-outline-secondary" href="javascript:history.back()">Cancel</a>
+</form>
+{% endblock %}

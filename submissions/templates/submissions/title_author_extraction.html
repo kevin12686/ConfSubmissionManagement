@@ -1,0 +1,175 @@
+{% extends "submissions/base.html" %}
+{% block title %}Title/Author Extraction{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-0">Title/Author Extraction</h1>
+        <div class="text-muted small">Uses your existing ExportTitleAuthor.py script. Verify both the marked extraction image and extracted title match.</div>
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-primary" name="action" value="extract_all">Extract All Active PDFs</button>
+    </form>
+</div>
+
+<div class="alert alert-light border small">
+    <div><strong>Script:</strong> {{ settings_obj.title_author_script_path }}</div>
+    <div><strong>Verification images:</strong> data/media/title_author_verification/</div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if current_filter == 'needs_verification' %}active{% endif %}" href="?filter=needs_verification{% if q %}&q={{ q|urlencode }}{% endif %}">
+            Needs review
+            <span class="badge text-bg-warning">{{ tab_counts.needs_verification }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if current_filter == 'verified' %}active{% endif %}" href="?filter=verified{% if q %}&q={{ q|urlencode }}{% endif %}">
+            Reviewed
+            <span class="badge text-bg-success">{{ tab_counts.verified }}</span>
+        </a>
+    </li>
+</ul>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-md-5">
+        <label class="form-label" for="extract-search">Search</label>
+        <input id="extract-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, title, or authors">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="extract-filter">Filter</label>
+        <select id="extract-filter" class="form-select" name="filter">
+            {% for option in filter_options %}
+                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4 d-flex gap-2">
+        <button class="btn btn-outline-secondary">Apply</button>
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:title_author_extraction' %}">Reset</a>
+    </div>
+</form>
+
+{% for row in rows %}
+    {% with item=row.submission %}
+    <div class="card mb-3 {% if item.title_author_extraction_status == 'error' %}border-danger{% elif row.needs_verification %}border-warning{% endif %}">
+        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <div>
+                <strong>{{ item.paper_id_filled }}</strong>
+                <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
+                {% if item.title_author_verified %}
+                    <span class="badge text-bg-success">Reviewed</span>
+                {% elif row.has_extraction %}
+                    <span class="badge text-bg-warning">Needs review</span>
+                {% else %}
+                    <span class="badge text-bg-secondary">No title/authors</span>
+                {% endif %}
+                {% if item.extracted_title_verified %}
+                    <span class="badge text-bg-success">Title matched</span>
+                {% elif row.title_match.status == "title_mismatch" %}
+                    <span class="badge text-bg-danger">Title mismatch</span>
+                {% elif item.extracted_title %}
+                    <span class="badge text-bg-warning">Check title</span>
+                {% endif %}
+                <span class="badge text-bg-light text-dark">Extraction script: {{ item.get_title_author_extraction_status_display }}</span>
+            </div>
+            <div class="d-flex gap-2">
+                {% if row.publication_pdf.exists %}
+                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                {% endif %}
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-lg-5">
+                    <div class="mb-2">
+                        <div class="small text-muted">Final Title</div>
+                        <div>{{ item.final_submission_title|default:"Missing" }}</div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="small text-muted">Extracted Title</div>
+                        <div class="border rounded p-2 bg-light">{{ item.extracted_title|default:"Missing" }}</div>
+                    </div>
+                    {% if item.extracted_title %}
+                        <div class="mb-2">
+                            <div class="small text-muted">Extracted Title Diff Against Final Title</div>
+                            <div class="border rounded p-2 bg-light diff-box">{{ row.title_match.diff_html }}</div>
+                            <div class="small text-muted">
+                                {{ row.title_match.message }}
+                                {% if row.title_match.score != None %} Score: {{ row.title_match.score }}%{% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                    <div class="mb-2">
+                        <div class="small text-muted">Final Authors</div>
+                        <div>{{ item.final_submission_authors|default:"Missing" }}</div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="small text-muted">Extracted Authors</div>
+                        <div class="border rounded p-2 bg-light">{{ item.extracted_authors|default:"Missing" }}</div>
+                    </div>
+                    {% if item.title_author_extraction_message %}
+                        <div class="small text-muted">{{ item.title_author_extraction_message }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-lg-7">
+                    {% if row.image_url %}
+                        <a href="{{ row.image_url }}" target="_blank" rel="noopener">
+                            <img src="{{ row.image_url }}" class="img-fluid border rounded bg-light" alt="Title and author verification image">
+                        </a>
+                    {% else %}
+                        <div class="border rounded p-4 text-muted bg-light">No verification image yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="card-footer d-flex flex-wrap gap-2 justify-content-end">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                <button class="btn btn-outline-primary" name="action" value="extract_one">Extract / Re-extract</button>
+            </form>
+            {% if row.has_extraction %}
+                {% if item.extracted_title_verified %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <button class="btn btn-outline-danger" name="action" value="unverify_extracted_title">Move Title Match Back to Review</button>
+                    </form>
+                {% else %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <button class="btn btn-outline-success" name="action" value="verify_extracted_title">Mark Title Matched</button>
+                    </form>
+                {% endif %}
+                {% if item.title_author_verified %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <button class="btn btn-outline-danger" name="action" value="unverify">Move Title/Author Back to Review</button>
+                    </form>
+                {% else %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <button class="btn btn-success" name="action" value="verify">Mark Title/Author Reviewed</button>
+                    </form>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    {% endwith %}
+{% empty %}
+    <div class="text-muted border rounded p-4">No records match this filter.</div>
+{% endfor %}
+<style>
+    .diff-box { font-size: 0.95rem; line-height: 1.6; }
+    .diff-insert { background: #d1e7dd; padding: 0 2px; }
+    .diff-replace { background: #fff3cd; padding: 0 2px; }
+    .diff-delete { background: #f8d7da; color: #842029; padding: 0 2px; }
+</style>
+{% endblock %}

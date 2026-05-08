@@ -1,0 +1,25 @@
+{% extends "submissions/base.html" %}
+{% block title %}Old Versions{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Old Versions</h1>
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Author-entered ID</th><th>Verify</th><th>Pages</th><th>Current File</th><th>Processing</th></tr></thead>
+        <tbody>
+        {% for item in submissions %}
+            <tr>
+                <td>{{ item.paper_id_filled }}</td>
+                <td>{{ item.final_submission_id }}</td>
+                <td>{{ item.start2_paper_id_raw }}</td>
+                <td>{{ item.get_verification_status_display }}</td>
+                <td>{{ item.page_count|default:"" }}</td>
+                <td>{{ item.current_file_path|truncatechars:80 }}</td>
+                <td>{{ item.processing_status }} {{ item.processing_message|truncatechars:60 }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="7" class="text-muted">No old versions found.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

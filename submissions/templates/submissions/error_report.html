@@ -1,0 +1,50 @@
+{% extends "submissions/base.html" %}
+{% block title %}Error Report{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Error Report</h1>
+    <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+</div>
+{% if sections %}
+    <div class="row g-2 mb-3">
+        {% for section in sections %}
+            <div class="col-sm-6 col-lg-3">
+                <div class="border rounded p-2">
+                    <div class="small text-muted">{{ section.group }}</div>
+                    <div class="fs-5">{{ section.count }}</div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="vstack gap-3">
+        {% for section in sections %}
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge text-bg-{{ section.level }}">{{ section.group }}</span>
+                        <span class="text-muted small ms-2">{{ section.count }} issue{{ section.count|pluralize }}</span>
+                    </div>
+                </div>
+                <div class="table-responsive border-0 rounded-0">
+                    <table class="table table-striped align-middle mb-0">
+                        <thead><tr><th>Category</th><th>Paper ID</th><th>Final ID</th><th>Message</th></tr></thead>
+                        <tbody>
+                        {% for row in section.rows %}
+                            <tr>
+                                <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
+                                <td>{{ row.paper_id }}</td>
+                                <td>{{ row.final_submission_id }}</td>
+                                <td>{{ row.message }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="alert alert-success border">No errors found.</div>
+{% endif %}
+{% endblock %}

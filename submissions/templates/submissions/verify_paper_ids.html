@@ -1,0 +1,172 @@
+{% extends "submissions/base.html" %}
+{% block title %}Verify Paper IDs{% endblock %}
+{% block content %}
+<style>
+    .compare-text {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        line-height: 1.6;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .diff-insert {
+        background: #d1e7dd;
+        color: #0f5132;
+        padding: 0 0.1rem;
+    }
+    .diff-replace {
+        background: #fff3cd;
+        color: #664d03;
+        padding: 0 0.1rem;
+    }
+    .diff-delete {
+        background: #f8d7da;
+        color: #842029;
+        padding: 0 0.1rem;
+        text-decoration: line-through;
+    }
+</style>
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Verify Paper IDs</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-lg-6">
+        <label class="form-label" for="verify-search">Search</label>
+        <input id="verify-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, or title">
+    </div>
+    <div class="col-lg-4">
+        <label class="form-label" for="verify-filter">Filter</label>
+        <select id="verify-filter" class="form-select" name="filter">
+            {% for option in filter_options %}
+                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>
+                    {{ option.label }} ({{ option.count }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-lg-2">
+        <button class="btn btn-outline-secondary w-100">Apply</button>
+    </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    {% for option in filter_options %}
+        <a class="btn btn-sm {% if option.value == current_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+            {{ option.label }} <span class="badge text-bg-light text-dark">{{ option.count }}</span>
+        </a>
+    {% endfor %}
+</div>
+
+<div class="alert alert-light border">
+    <strong>Diff guide:</strong>
+    <mark class="diff-replace">yellow</mark> changed characters in Final text,
+    <mark class="diff-insert">green</mark> extra characters in Final text,
+    <mark class="diff-delete">red</mark> characters present in Initial text but missing from Final text.
+</div>
+
+<div class="vstack gap-3">
+    {% for row in rows %}
+        <div class="card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">
+            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <div>
+                    <strong>Final ID {{ row.submission.final_submission_id }}</strong>
+                    <span class="text-muted ms-2">Author-entered ID: {{ row.submission.start2_paper_id_raw|default:"None" }}</span>
+                    <span class="text-muted ms-2">Paper ID: {{ row.submission.paper_id_filled|default:"None" }}</span>
+                </div>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    {% if row.publication_pdf.exists %}
+                        <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                        <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                    {% else %}
+                        <span class="badge text-bg-danger">No PDF</span>
+                    {% endif %}
+                    {% if row.verified_with_diff %}
+                        <span class="badge text-bg-warning">Paper ID verified, title differs</span>
+                    {% elif row.is_identical %}
+                        <span class="badge text-bg-success">Paper ID auto-verified by title</span>
+                    {% elif row.is_verified %}
+                        <span class="badge text-bg-success">Paper ID verified</span>
+                    {% elif row.status == "title_mismatch" %}
+                        <span class="badge text-bg-warning">Paper ID title mismatch</span>
+                    {% elif row.status == "invalid_paper_id" %}
+                        <span class="badge text-bg-warning">Paper ID not in master list</span>
+                    {% else %}
+                        <span class="badge text-bg-danger">Paper ID needs review</span>
+                    {% endif %}
+                    {% if row.score %}<span class="badge text-bg-light text-dark">Score {{ row.score }}%</span>{% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <div class="small text-muted mb-1">Master Title from Paper Master List</div>
+                        <div class="compare-text border rounded p-2 bg-light">
+                            {% if row.initial_paper %}{{ row.initial_paper.title }}{% else %}<span class="text-muted">No matching Paper ID</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="small text-muted mb-1">Final Title with character-level differences marked</div>
+                        <div class="compare-text border rounded p-2">
+                            {{ row.final_title_diff_html }}
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-lg-6">
+                        <div class="small text-muted mb-1">Master Authors from Paper Master List</div>
+                        <div class="compare-text border rounded p-2 bg-light">
+                            {% if row.initial_paper and row.initial_paper.authors %}{{ row.initial_paper.authors }}{% else %}<span class="text-muted">No initial authors</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="small text-muted mb-1">Final Authors with character-level differences marked</div>
+                        <div class="compare-text border rounded p-2">
+                            {% if row.submission.final_submission_authors %}{{ row.final_authors_diff_html }}{% else %}<span class="text-muted">No final authors</span>{% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 align-items-end mt-2">
+                    <div class="col-lg-5">
+                        <div class="small text-muted">Suggested Paper ID</div>
+                        {% if row.suggested_paper %}
+                            <strong>{{ row.suggested_paper.paper_id }}</strong>
+                            <span class="text-muted">{{ row.suggested_paper.title }}</span>
+                            {% if row.suggested_score %}<span class="badge text-bg-light text-dark">Suggested title match {{ row.suggested_score }}%</span>{% endif %}
+                        {% else %}
+                            <span class="text-muted">No suggestion available</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-lg-7">
+                        <form method="post" class="d-flex gap-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                            <select class="form-select" name="corrected_paper_id">
+                                <option value="{{ row.submission.paper_id_filled }}">{{ row.submission.paper_id_filled|default:"Choose Paper ID" }}</option>
+                                {% for paper in papers %}
+                                    <option value="{{ paper.paper_id }}">{{ paper.paper_id }} - {{ paper.title|truncatechars:70 }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-primary" name="action" value="verify">Verify</button>
+                            {% if row.suggested_paper %}
+                                <button class="btn btn-outline-primary" name="action" value="use_suggestion">Use Suggestion</button>
+                            {% endif %}
+                        </form>
+                        {% if row.is_verified %}
+                            <form method="post" class="mt-2 text-end">
+                                {% csrf_token %}
+                                <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                <button class="btn btn-sm btn-outline-danger" name="action" value="unverify">Move Back to Unverified</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="small text-muted mt-2">{{ row.message }}</div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="alert alert-secondary">No final submissions found.</div>
+    {% endfor %}
+</div>
+{% endblock %}

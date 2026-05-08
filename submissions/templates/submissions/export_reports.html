@@ -1,0 +1,22 @@
+{% extends "submissions/base.html" %}
+{% block title %}Export Reports{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Export Reports</h1>
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted">Each button creates the Excel file and downloads it immediately. A copy is also saved in the reports folder for traceability.</p>
+        <form method="post" class="d-flex flex-wrap gap-2">
+            {% csrf_token %}
+            <button class="btn btn-success" name="action" value="publication_package">Download Publication Package ZIP</button>
+            <button class="btn btn-outline-primary" name="action" value="active">Download Active Final Versions</button>
+            <button class="btn btn-outline-primary" name="action" value="old">Download Old Versions</button>
+            <button class="btn btn-outline-primary" name="action" value="errors">Download Error Report</button>
+            <button class="btn btn-outline-primary" name="action" value="authors">Download Author Count</button>
+            <button class="btn btn-primary" name="action" value="all">Download All Reports Excel</button>
+        </form>
+        <div class="small text-muted mt-3">
+            Publication Package ZIP contains renamed active publication PDFs, renamed source files, and a manifest CSV with ID, Extracted Title, Extracted Author, Author Number, Page Number, Similarity (P), and Similarity (S). The package is blocked if any active paper is missing a PDF or source file.
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,2 @@
+final_submission_id,paper_id,extracted_title,extracted_authors,plagiarism_status,similarity_score,plagiarism_report_path
+9001,AI-101,Example Final Paper,"Ada Lovelace; Alan Turing",clear,4.25,data/plagiarism_reports/AI-101-report.pdf

@@ -1,0 +1,21 @@
+{% extends "submissions/base.html" %}
+{% block title %}Final Submission{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">{% if submission %}Edit{% else %}Add{% endif %} Final Submission</h1>
+{% if submission %}
+    <div class="alert alert-light border">
+        <div><strong>PDF:</strong> {{ submission.original_file_name|default:"No PDF uploaded" }}</div>
+        <div><strong>Source:</strong> {{ submission.source_original_file_name|default:"No source file uploaded" }}</div>
+    </div>
+{% endif %}
+<form method="post" enctype="multipart/form-data" class="card">
+    <div class="card-body">
+        {% csrf_token %}
+        {{ form.as_p }}
+    </div>
+    <div class="card-footer d-flex gap-2">
+        <button class="btn btn-primary">Save</button>
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

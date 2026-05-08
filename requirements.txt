@@ -1,0 +1,6 @@
+Django>=5.2,<7.0
+pandas>=2.2
+openpyxl>=3.1
+pypdf>=5.0
+PyMuPDF>=1.27
+tqdm>=4.66

@@ -1,0 +1,23 @@
+{% extends "submissions/base.html" %}
+{% block title %}Author Count{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Author Count</h1>
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead><tr><th>Normalized Name</th><th>Display Name</th><th>Paper Count</th><th>Paper IDs</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for row in rows %}
+            <tr class="{% if row.over_limit %}table-warning{% endif %}">
+                <td>{{ row.normalized_author_name }}</td>
+                <td>{{ row.display_author_name }}</td>
+                <td>{{ row.paper_count }}</td>
+                <td>{{ row.paper_ids }}</td>
+                <td>{{ row.status }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-muted">No author counts available.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

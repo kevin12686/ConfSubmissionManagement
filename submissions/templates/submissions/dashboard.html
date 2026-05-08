@@ -1,0 +1,106 @@
+{% extends "submissions/base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-0">Dashboard</h1>
+        <div class="text-muted small">Start from the workflow below, then use Organized List as the main publication-prep checklist.</div>
+    </div>
+    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 1</div>
+                <h2 class="h5">Data setup/import</h2>
+                <p class="text-muted flex-grow-1">Load the paper master list and final submission metadata/files before review work begins.</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-outline-primary" href="{% url 'submissions:initial_paper_list' %}">Paper Master List</a>
+                    <a class="btn btn-outline-primary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 2</div>
+                <h2 class="h5">Verify paper IDs</h2>
+                <p class="text-muted flex-grow-1">Match final submissions back to the paper master list and resolve author-entered Paper ID issues.</p>
+                <div>
+                    <span class="badge text-bg-{% if counts.unverified_paper_ids %}warning{% else %}success{% endif %}">{{ counts.unverified_paper_ids }} unverified</span>
+                    <a class="btn btn-primary ms-2" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 3</div>
+                <h2 class="h5">Process PDFs</h2>
+                <p class="text-muted flex-grow-1">Scan incoming PDFs, calculate page counts and hashes, generate previews, and place active/old versions.</p>
+                <div>
+                    <span class="badge text-bg-{% if counts.page_limit_errors or counts.page_minimum_errors or counts.missing_pdfs %}warning{% else %}success{% endif %}">{{ counts.missing_pdfs }} missing PDFs</span>
+                    <a class="btn btn-primary ms-2" href="{% url 'submissions:process' %}">Process PDFs</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 4</div>
+                <h2 class="h5">Title/Author Extraction</h2>
+                <p class="text-muted flex-grow-1">Run extraction on active PDFs, then verify extracted title/authors and title matches.</p>
+                <div>
+                    <span class="badge text-bg-{% if counts.missing_title_author_extraction or counts.unverified_title_author_extraction %}warning{% else %}success{% endif %}">{{ counts.unverified_title_author_extraction }} unverified</span>
+                    <a class="btn btn-primary ms-2" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 5</div>
+                <h2 class="h5">Formatting Review</h2>
+                <p class="text-muted flex-grow-1">Review publication PDFs and corrected files, then mark formatting status for each active paper.</p>
+                <div>
+                    <span class="badge text-bg-light text-dark">{{ counts.active_final_versions }} active versions</span>
+                    <a class="btn btn-primary ms-2" href="{% url 'submissions:formatting' %}">Formatting Review</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Final</div>
+                <h2 class="h5">Organized list/reports</h2>
+                <p class="text-muted flex-grow-1">Use the organized checklist to find remaining issues, then export active, old-version, error, and author-count reports.</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
+                    <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2 class="h5 mb-3">System Overview</h2>
+<div class="row g-3">
+    {% for label, value in counts.items %}
+        <div class="col-sm-6 col-lg-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase">{{ label|cut:"_" }}</div>
+                    <div class="display-6">{{ value }}</div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

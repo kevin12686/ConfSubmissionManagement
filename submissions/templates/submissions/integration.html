@@ -1,0 +1,117 @@
+{% extends "submissions/base.html" %}
+{% block title %}CrossCheck / External Results{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">CrossCheck / External Results</h1>
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h5">Paper Export for CrossCheck</h2>
+                <p class="text-muted">Creates a downloadable ZIP with active publication PDFs named PaperID_token.pdf.</p>
+                <form method="post" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="prepare_crosscheck">
+                    <div class="col-md-8">
+                        {{ crosscheck_export_form.token.label_tag }}
+                        {{ crosscheck_export_form.token }}
+                        <div class="form-text">{{ crosscheck_export_form.token.help_text }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-primary w-100">Prepare ZIP</button>
+                    </div>
+                </form>
+                {% if crosscheck_export_result %}
+                    <hr>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-success" href="{{ crosscheck_export_result.download_url }}">Download CrossCheck ZIP</a>
+                        <span class="badge text-bg-success">{{ crosscheck_export_result.exported_count }} exported</span>
+                        <span class="badge text-bg-warning">{{ crosscheck_export_result.skipped_count }} skipped</span>
+                    </div>
+                    <div class="small text-muted mt-2">Manifest: {{ crosscheck_export_result.manifest_path }}</div>
+                    {% if crosscheck_export_result.skipped %}
+                        <div class="mt-2">
+                            <div class="small fw-semibold">Skipped papers</div>
+                            <ul class="small mb-0">
+                                {% for row in crosscheck_export_result.skipped %}
+                                    <li>{{ row.paper_id|default:"No Paper ID" }} / Final {{ row.final_submission_id }}: {{ row.reason }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h5">Import CrossCheck Result CSV</h2>
+                <p class="text-muted">Import filename, plagiarism_percent, single_percent, downloaded, and optional report_file_name.</p>
+                <p><a href="{% url 'submissions:download_template' 'crosscheck' %}">Download CrossCheck result template</a></p>
+                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="import_crosscheck">
+                    {{ crosscheck_result_form.file }}
+                    <button class="btn btn-primary">Import CrossCheck CSV</button>
+                </form>
+                {% if crosscheck_result %}
+                    <hr>
+                    <ul class="mb-0">
+                        <li>Rows updated: {{ crosscheck_result.updated }}</li>
+                        <li>Invalid filenames: {{ crosscheck_result.invalid|length }}</li>
+                        <li>Unmatched rows: {{ crosscheck_result.unmatched|length }}</li>
+                    </ul>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h5">Upload CrossCheck Reports</h2>
+                <p class="text-muted">Reports are optional. Upload only the report PDFs that CrossCheck generated, named PaperID_token.pdf.</p>
+                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="upload_crosscheck_reports">
+                    {{ report_upload_form.report_files }}
+                    <button class="btn btn-primary">Upload Reports</button>
+                </form>
+                {% if report_upload_result %}
+                    <hr>
+                    <ul class="mb-0">
+                        <li>Reports matched: {{ report_upload_result.updated }}</li>
+                        <li>Invalid files: {{ report_upload_result.invalid|length }}</li>
+                        <li>Unmatched files: {{ report_upload_result.unmatched|length }}</li>
+                    </ul>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h5">Import External Results</h2>
+                <p class="text-muted">Import CSV/XLSX rows with final_submission_id, paper_id, extracted_title, extracted_authors, plagiarism_status, similarity_score, and plagiarism_report_path.</p>
+                <p><a href="{% url 'submissions:download_template' 'external' %}">Download external results template</a></p>
+                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="import_external">
+                    {{ form.file }}
+                    <button class="btn btn-primary">Import External Results</button>
+                </form>
+                {% if result %}
+                    <hr>
+                    <ul class="mb-0">
+                        <li>Title/author rows updated: {{ result.updated_title_author }}</li>
+                        <li>Plagiarism rows updated: {{ result.updated_plagiarism }}</li>
+                        <li>Unmatched rows: {{ result.unmatched }}</li>
+                    </ul>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-body">
+                <h2 class="h5">External Tool Notes</h2>
+                <p class="text-muted mb-2">This page only imports or exports files for external tools. Run title/author extraction from the dedicated Title/Author Extraction page.</p>
+                <button class="btn btn-outline-secondary" disabled>CrossCheck Selenium bot runs outside Django</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
