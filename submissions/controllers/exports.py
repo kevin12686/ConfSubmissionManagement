@@ -180,6 +180,7 @@ def export_reports(request):
             "errors": reports.export_error_report,
             "authors": reports.export_author_count,
             "publication_package": reports.export_publication_package,
+            "publication_package_force": lambda: reports.export_publication_package(force=True),
             "all": reports.export_all_reports,
         }
         if action in exporters:
@@ -187,6 +188,9 @@ def export_reports(request):
                 exported_path = Path(exporters[action]())
             except reports.PublicationPackageBlocked as exc:
                 logger.warning("Publication package blocked: %s", exc)
+                if action == "publication_package_force":
+                    messages.error(request, f"Draft package could not be created: {exc}")
+                    return redirect("submissions:export_reports")
                 blockers = exc.blockers
                 return render(
                     request,
@@ -196,12 +200,14 @@ def export_reports(request):
                             "title": "Publication package is not ready",
                             "message": (
                                 "Fix these blockers before downloading the final ZIP. "
-                                "Use the Readiness Issues page for the full list."
+                                "If you need an intermediate copy, download a draft package; "
+                                "it may skip missing files and is not final-ready."
                             ),
                             "detail": str(exc),
                             "blockers": blockers[:20],
                             "total_blockers": len(blockers),
                             "remaining_blockers": max(len(blockers) - 20, 0),
+                            "allow_force_download": True,
                         }
                     },
                     status=200,

@@ -1080,6 +1080,76 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.make_master_paper("P001")
         self.assert_publication_blocked("Missing Final Submission")
 
+    def test_force_publication_package_creates_draft_with_warning_csv(self):
+        self.make_master_paper("P001", "Needs Review Paper", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Needs Review Paper",
+            extracted_title="Needs Review Paper",
+            title_author_verified=False,
+        )
+
+        self.assert_publication_blocked("Unverified Title/Author Extraction")
+        zip_path = export_publication_package(force=True)
+
+        self.assertIn("publication_package_draft_", Path(zip_path).name)
+        with zipfile.ZipFile(zip_path) as archive:
+            names = archive.namelist()
+            manifest_name = next(name for name in names if name.startswith("publication_manifest_"))
+            warnings_name = next(
+                name for name in names if name.startswith("publication_package_warnings_")
+            )
+            manifest_text = archive.read(manifest_name).decode("utf-8-sig")
+            warning_text = archive.read(warnings_name).decode("utf-8-sig")
+            self.assertIn("P001", manifest_text)
+            self.assertIn("Unverified Title/Author Extraction", warning_text)
+            self.assertIn("PDF/P001-Needs Review Paper.pdf", names)
+            self.assertIn("Source/P001-Needs Review Paper.docx", names)
+
+    def test_force_publication_package_skips_missing_final_and_missing_files(self):
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        self.make_master_paper("P002", "No Final Paper", "Grace")
+        self.make_master_paper("P003", "Missing Source Paper", "Katherine")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+        )
+        missing_source = self.make_final_submission(
+            final_submission_id="30",
+            paper_id_filled="P003",
+            final_submission_title="Missing Source Paper",
+            extracted_title="Missing Source Paper",
+        )
+        Path(missing_source.source_current_file_path).unlink()
+
+        zip_path = export_publication_package(force=True)
+
+        with zipfile.ZipFile(zip_path) as archive:
+            names = archive.namelist()
+            manifest_name = next(name for name in names if name.startswith("publication_manifest_"))
+            warnings_name = next(
+                name for name in names if name.startswith("publication_package_warnings_")
+            )
+            manifest_rows = list(
+                csv.DictReader(io.StringIO(archive.read(manifest_name).decode("utf-8-sig")))
+            )
+            warning_text = archive.read(warnings_name).decode("utf-8-sig")
+            self.assertEqual([row["ID"] for row in manifest_rows], ["P001"])
+            self.assertIn("Skipped from draft package", warning_text)
+            self.assertIn("Missing Final Submission", warning_text)
+            self.assertIn("Missing Source File", warning_text)
+            self.assertIn("PDF/P001-Ready Paper.pdf", names)
+            self.assertNotIn("PDF/P003-Missing Source Paper.pdf", names)
+
+    def test_force_publication_package_still_blocks_when_nothing_can_be_packaged(self):
+        self.make_master_paper("P001")
+
+        with self.assertRaisesMessage(ValueError, "no papers have both publication PDF and source files"):
+            export_publication_package(force=True)
+
     def test_manually_verified_title_mismatch_warns_ui_but_allows_publication(self):
         self.make_master_paper("P001", "Paper Master Title", "Ada")
         self.make_final_submission(
@@ -2407,6 +2477,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(blocked, "Publication package is not ready")
         self.assertContains(blocked, "Missing Final Submission")
         self.assertContains(blocked, "Unclassified Final Not In Master")
+        self.assertContains(blocked, "Download Draft Package Anyway")
+
+        draft = self.client.post(
+            reverse("submissions:export_reports"),
+            {"action": "publication_package_force"},
+        )
+        self.assertEqual(draft.status_code, 200)
+        self.assertIn("publication_package_draft_", draft["Content-Disposition"])
 
         response = self.client.post(
             reverse("submissions:not_publishing_list"),

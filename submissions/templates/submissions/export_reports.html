@@ -24,8 +24,19 @@
                 {% csrf_token %}
                 <button class="btn btn-sm btn-outline-danger" name="action" value="errors">Download Issues Excel</button>
             </form>
+            {% if export_error.allow_force_download %}
+            <form method="post" class="d-inline">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-warning" name="action" value="publication_package_force">Download Draft Package Anyway</button>
+            </form>
+            {% endif %}
         </div>
     </div>
+    {% if export_error.allow_force_download %}
+        <div class="mt-2 small">
+            Draft packages are for intermediate editorial work only. They include a warnings CSV and may skip papers with missing final submissions, PDFs, or source files.
+        </div>
+    {% endif %}
     {% if export_error.blockers %}
         <div class="table-responsive mt-3">
             <table class="table table-sm align-middle cfm-table mb-2">
@@ -63,7 +74,7 @@
     <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
         <div>
             <h2 class="h5 mb-1">Final Deliverable</h2>
-            <div class="text-muted small">Use this when the publication package is ready to send or archive.</div>
+            <div class="text-muted small">Use this for the final publication package after readiness issues are clean.</div>
         </div>
         <span class="badge text-bg-success">Recommended final output</span>
     </div>
@@ -72,17 +83,18 @@
             <div class="card h-100 border-success">
                 <div class="card-body d-flex flex-column">
                     <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h5 mb-0">Publication Package ZIP</h3>
+                        <h3 class="h5 mb-0">Final Publication Package ZIP</h3>
                         <span class="badge text-bg-success">ZIP</span>
                     </div>
                     <p class="text-muted mb-2">Contains renamed publication PDFs, renamed source files, and a manifest CSV.</p>
                     <div class="small mb-3">
                         <div><strong>Use this when:</strong> readiness checks are clean and you need the final package.</div>
-                        <div><strong>Blocked if:</strong> Paper IDs, PDFs, source files, title/authors, formatting, plagiarism, or author limits still need review.</div>
+                        <div><strong>Blocked if:</strong> Paper IDs, PDFs, source files, title/authors, formatting, plagiarism, author limits, duplicates, or exception reviews still need work.</div>
+                        <div><strong>Need an intermediate copy?</strong> Try this button first. If it is blocked, the warning will offer a draft package download.</div>
                     </div>
                     <form method="post" class="mt-auto">
                         {% csrf_token %}
-                        <button class="btn btn-success" name="action" value="publication_package">Download Publication Package ZIP</button>
+                        <button class="btn btn-success" name="action" value="publication_package">Download Final Publication Package ZIP</button>
                     </form>
                 </div>
             </div>

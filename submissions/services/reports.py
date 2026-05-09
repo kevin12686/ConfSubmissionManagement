@@ -150,7 +150,44 @@ def _publication_title_filename(title, word_limit):
     return cleaned or "UNTITLED"
 
 
-def export_publication_package():
+def _readiness_blocker_preview(readiness_blockers):
+    preview = "; ".join(
+        f"{row['paper_id'] or 'No Paper ID'}"
+        f"{' / Final ' + str(row['final_submission_id']) if row.get('final_submission_id') else ''}: "
+        f"{row['category']}"
+        for row in readiness_blockers[:10]
+    )
+    if len(readiness_blockers) > 10:
+        preview += f"; +{len(readiness_blockers) - 10} more"
+    return preview
+
+
+def _publication_warning_rows(readiness_blockers, skipped_rows):
+    rows = []
+    for blocker in readiness_blockers:
+        rows.append(
+            {
+                "Type": "Readiness blocker",
+                "Paper ID": blocker.get("paper_id") or "",
+                "Final ID": blocker.get("final_submission_id") or "",
+                "Category": blocker.get("category") or "",
+                "Message": blocker.get("message") or "",
+            }
+        )
+    for skipped in skipped_rows:
+        rows.append(
+            {
+                "Type": "Skipped from draft package",
+                "Paper ID": skipped.get("paper_id") or "",
+                "Final ID": skipped.get("final_submission_id") or "",
+                "Category": skipped.get("category") or "",
+                "Message": skipped.get("message") or "",
+            }
+        )
+    return rows
+
+
+def export_publication_package(force=False):
     rebuild_paper_authors()
     settings_obj = AppSetting.load()
     papers = list(InitialPaper.objects.all().order_by("paper_id"))
@@ -160,15 +197,8 @@ def export_publication_package():
         )
 
     readiness_blockers = publication_readiness_rows()
-    if readiness_blockers:
-        preview = "; ".join(
-            f"{row['paper_id'] or 'No Paper ID'}"
-            f"{' / Final ' + str(row['final_submission_id']) if row.get('final_submission_id') else ''}: "
-            f"{row['category']}"
-            for row in readiness_blockers[:10]
-        )
-        if len(readiness_blockers) > 10:
-            preview += f"; +{len(readiness_blockers) - 10} more"
+    if readiness_blockers and not force:
+        preview = _readiness_blocker_preview(readiness_blockers)
         raise PublicationPackageBlocked(
             "Publication package blocked because publication readiness checks failed: "
             f"{preview}",
@@ -177,24 +207,63 @@ def export_publication_package():
 
     active_by_paper = active_master_submission_map()
     package_items = []
+    skipped_rows = []
     for paper in papers:
         submission = active_by_paper.get(paper.paper_id)
         if not submission:
+            if force:
+                skipped_rows.append(
+                    {
+                        "paper_id": paper.paper_id,
+                        "final_submission_id": "",
+                        "category": "Missing Final Submission",
+                        "message": "Skipped because this Paper Master record has no active final submission.",
+                    }
+                )
             continue
         pdf_info = publication_pdf_info(submission)
         source_info = publication_source_info(submission)
+        if force and not pdf_info["exists"]:
+            skipped_rows.append(
+                {
+                    "paper_id": paper.paper_id,
+                    "final_submission_id": submission.final_submission_id,
+                    "category": "Missing PDF",
+                    "message": "Skipped because no publication PDF file is available.",
+                }
+            )
+            continue
+        if force and not source_info["exists"]:
+            skipped_rows.append(
+                {
+                    "paper_id": paper.paper_id,
+                    "final_submission_id": submission.final_submission_id,
+                    "category": "Missing Source File",
+                    "message": "Skipped because no publication source file is available.",
+                }
+            )
+            continue
         package_items.append((submission, pdf_info, source_info))
 
     if not package_items:
+        blockers = readiness_blockers + skipped_rows
+        if force:
+            raise PublicationPackageBlocked(
+                "Draft publication package could not be created because no papers have both publication PDF and source files.",
+                blockers=blockers,
+            )
         raise PublicationPackageBlocked(
             "Publication package blocked because there are no publishable active final submissions."
         )
 
     timestamp = _timestamp()
     reports_folder = _reports_folder()
-    zip_path = reports_folder / f"publication_package_{timestamp}.zip"
+    zip_prefix = "publication_package_draft" if force else "publication_package"
+    zip_path = reports_folder / f"{zip_prefix}_{timestamp}.zip"
     manifest_name = f"publication_manifest_{timestamp}.csv"
     manifest_path = reports_folder / manifest_name
+    warnings_name = f"publication_package_warnings_{timestamp}.csv"
+    warnings_path = reports_folder / warnings_name
 
     manifest_rows = []
     for submission, _pdf_info, _source_info in package_items:
@@ -227,8 +296,20 @@ def export_publication_package():
         writer.writeheader()
         writer.writerows(manifest_rows)
 
+    if force:
+        warning_rows = _publication_warning_rows(readiness_blockers, skipped_rows)
+        with warnings_path.open("w", newline="", encoding="utf-8-sig") as warnings_file:
+            writer = csv.DictWriter(
+                warnings_file,
+                fieldnames=["Type", "Paper ID", "Final ID", "Category", "Message"],
+            )
+            writer.writeheader()
+            writer.writerows(warning_rows)
+
     with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as package:
         package.write(manifest_path, arcname=manifest_name)
+        if force:
+            package.write(warnings_path, arcname=warnings_name)
         for submission, pdf_info, source_info in package_items:
             short_title = _publication_title_filename(
                 submission.extracted_title,
