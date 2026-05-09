@@ -30,6 +30,7 @@ ERROR_GROUPS = {
             "Final Title / Paper Master Title Mismatch",
             "Missing Final Submission",
             "Replaced Final Submission",
+            "Multiple Active Final Submissions",
         },
     },
     "Files / PDF Processing": {
@@ -103,6 +104,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Unclassified Final Not In Master": "critical",
     "Unverified Paper ID": "critical",
     "Missing Final Submission": "critical",
+    "Multiple Active Final Submissions": "critical",
     "Missing PDF": "critical",
     "Corrected PDF Not Processed": "critical",
     "Missing Source File": "critical",
@@ -143,6 +145,48 @@ def _whole_percent_label(value):
     if value is None:
         return ""
     return str(int(round(float(value))))
+
+
+def _normalize_title_for_verification(value):
+    text = (value or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _titles_match_for_mapping(left, right):
+    left_normalized = _normalize_title_for_verification(left)
+    right_normalized = _normalize_title_for_verification(right)
+    return bool(left_normalized and right_normalized and left_normalized == right_normalized)
+
+
+def paper_id_effectively_verified(submission, master_paper=None):
+    if not submission or submission.excluded_from_publication:
+        return False
+    if submission.paper_id_verified:
+        return True
+    if submission.auto_verify_blocked:
+        return False
+    master_paper = master_paper or InitialPaper.objects.filter(
+        paper_id=submission.paper_id_filled
+    ).first()
+    if not master_paper:
+        return False
+    final_title = _normalize_title_for_verification(submission.final_submission_title)
+    master_title = _normalize_title_for_verification(master_paper.title)
+    return bool(final_title and master_title and final_title == master_title)
+
+
+def paper_title_matches_master(submission, master_paper=None):
+    if not submission:
+        return False
+    master_paper = master_paper or InitialPaper.objects.filter(
+        paper_id=submission.paper_id_filled
+    ).first()
+    if not master_paper:
+        return False
+    final_title = _normalize_title_for_verification(submission.final_submission_title)
+    master_title = _normalize_title_for_verification(master_paper.title)
+    return bool(final_title and master_title and final_title == master_title)
 
 
 def page_count_out_of_range(submission, setting=None):
@@ -393,6 +437,33 @@ def publication_readiness_rows(include_allowed=False):
     setting = AppSetting.load()
     rows = []
     valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
+    active_valid_submissions = FinalSubmission.objects.filter(
+        active_version=True,
+        excluded_from_publication=False,
+        paper_id_filled__in=valid_ids,
+    )
+    duplicate_active_groups = (
+        active_valid_submissions.values("paper_id_filled")
+        .annotate(active_count=Count("id"))
+        .filter(active_count__gt=1)
+    )
+    for group in duplicate_active_groups:
+        finals = ", ".join(
+            active_valid_submissions.filter(paper_id_filled=group["paper_id_filled"])
+            .order_by("final_submission_id")
+            .values_list("final_submission_id", flat=True)
+        )
+        rows.append(
+            {
+                "category": "Multiple Active Final Submissions",
+                "paper_id": group["paper_id_filled"],
+                "final_submission_id": finals,
+                "message": (
+                    "More than one active final submission exists for this Paper ID. "
+                    "Recalculate active versions before publication."
+                ),
+            }
+        )
     active_by_paper = active_master_submission_map()
     excluded_paper_ids = set(
         FinalSubmission.objects.filter(
@@ -437,7 +508,8 @@ def publication_readiness_rows(include_allowed=False):
         publication_pdf = publication_pdf_info(submission)
         publication_source = publication_source_info(submission)
 
-        if not submission.paper_id_verified:
+        paper_id_verified = paper_id_effectively_verified(submission, paper)
+        if not paper_id_verified:
             rows.append(
                 {
                     "category": "Unverified Paper ID",
@@ -447,13 +519,16 @@ def publication_readiness_rows(include_allowed=False):
                     or "Paper ID has not been manually verified.",
                 }
             )
-        if submission.verification_status == "title_mismatch":
+        if not paper_title_matches_master(submission, paper) and not submission.paper_id_verified:
             rows.append(
                 {
                     "category": "Final Title / Paper Master Title Mismatch",
                     "paper_id": submission.paper_id_filled,
                     "final_submission_id": submission.final_submission_id,
-                    "message": submission.verification_message,
+                    "message": (
+                        submission.verification_message
+                        or "Final Submission title does not match the Paper Master title."
+                    ),
                 }
             )
         if not _has_any_pdf_file(submission):
@@ -747,7 +822,7 @@ def canonical_paper_id_key(value):
     return raw
 
 
-def resolve_official_paper_id(raw_paper_id):
+def resolve_official_paper_id(raw_paper_id, final_title=""):
     raw = clean_identifier(raw_paper_id)
     if not raw:
         return ""
@@ -764,6 +839,21 @@ def resolve_official_paper_id(raw_paper_id):
     ]
     if len(matches) == 1:
         return matches[0]
+    if raw.isdigit():
+        numeric_matches = []
+        raw_number = int(raw)
+        for paper in InitialPaper.objects.all():
+            match = re.match(r"^[A-Za-z]+0*(\d+)$", clean_identifier(paper.paper_id))
+            if match and int(match.group(1)) == raw_number:
+                numeric_matches.append(paper)
+        if numeric_matches:
+            title_matches = [
+                paper.paper_id
+                for paper in numeric_matches
+                if _titles_match_for_mapping(final_title, paper.title)
+            ]
+            if len(title_matches) == 1:
+                return title_matches[0]
     return raw
 
 
@@ -941,12 +1031,34 @@ def dashboard_counts():
     corrected_pdf_processing_needed = sum(
         1 for submission in active if corrected_pdf_needs_processing(submission)
     )
+    master_by_id = {paper.paper_id: paper for paper in InitialPaper.objects.all()}
+    unverified_paper_ids = sum(
+        1
+        for submission in active
+        if not paper_id_effectively_verified(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+    )
+    title_mismatches = sum(
+        1
+        for submission in active
+        if submission.paper_id_filled in valid_ids
+        and not paper_title_matches_master(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+        and not paper_id_effectively_verified(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+    )
     return {
         "total_papers": InitialPaper.objects.count(),
         "total_final_submissions": FinalSubmission.objects.count(),
         "active_final_versions": active.count(),
-        "unverified_paper_ids": active.filter(paper_id_verified=False).count(),
-        "title_mismatches": active.filter(verification_status="title_mismatch").count(),
+        "unverified_paper_ids": unverified_paper_ids,
+        "title_mismatches": title_mismatches,
         "duplicate_final_submissions": FinalSubmission.objects.filter(
             duplicate_submission=True
         ).count(),

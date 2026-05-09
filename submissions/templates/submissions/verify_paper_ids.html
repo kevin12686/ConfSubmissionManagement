@@ -93,7 +93,7 @@
                         <span class="badge text-bg-secondary">Excluded from publication</span>
                     {% elif row.verified_with_diff %}
                         <span class="badge text-bg-warning">ID verified, title differs</span>
-                    {% elif row.is_identical %}
+                    {% elif row.is_identical and row.is_verified %}
                         <span class="badge text-bg-success">Paper ID auto-verified by title</span>
                     {% elif row.is_verified %}
                         <span class="badge text-bg-success">ID verified</span>
@@ -149,20 +149,26 @@
                         {% endif %}
                     </div>
                     <div class="col-lg-7">
-                        <form method="post" class="d-flex gap-2">
-                            {% csrf_token %}
-                            <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
-                            <select class="form-select" name="corrected_paper_id">
-                                <option value="{{ row.submission.paper_id_filled }}">{{ row.submission.paper_id_filled|default:"Choose Paper ID" }}</option>
-                                {% for paper in papers %}
-                                    <option value="{{ paper.paper_id }}">{{ paper.paper_id }} - {{ paper.title|truncatechars:70 }}</option>
-                                {% endfor %}
-                            </select>
-                            <button class="btn btn-primary" name="action" value="verify" {% if row.submission.excluded_from_publication %}disabled{% endif %}>Verify</button>
-                            {% if row.suggested_paper and not row.submission.excluded_from_publication %}
-                                <button class="btn btn-outline-primary" name="action" value="use_suggestion">Use Suggestion</button>
-                            {% endif %}
-                        </form>
+                        {% if row.is_verified %}
+                            <div class="alert alert-success py-2 mb-2">
+                                Paper ID is verified. No manual Verify click is needed.
+                            </div>
+                        {% else %}
+                            <form method="post" class="d-flex gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                <select class="form-select" name="corrected_paper_id">
+                                    <option value="{{ row.submission.paper_id_filled }}">{{ row.submission.paper_id_filled|default:"Choose Paper ID" }}</option>
+                                    {% for paper in papers %}
+                                        <option value="{{ paper.paper_id }}">{{ paper.paper_id }} - {{ paper.title|truncatechars:70 }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-primary" name="action" value="verify" {% if row.submission.excluded_from_publication %}disabled{% endif %}>Verify</button>
+                                {% if row.suggested_paper and not row.submission.excluded_from_publication %}
+                                    <button class="btn btn-outline-primary" name="action" value="use_suggestion">Use Suggestion</button>
+                                {% endif %}
+                            </form>
+                        {% endif %}
                         {% if row.status == "invalid_paper_id" or row.submission.excluded_from_publication %}
                             {% if row.submission.excluded_from_publication %}
                                 <form method="post" class="mt-2 text-end">

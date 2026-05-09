@@ -185,6 +185,27 @@ def export_reports(request):
         if action in exporters:
             try:
                 exported_path = Path(exporters[action]())
+            except reports.PublicationPackageBlocked as exc:
+                logger.warning("Publication package blocked: %s", exc)
+                blockers = exc.blockers
+                return render(
+                    request,
+                    "submissions/export_reports.html",
+                    {
+                        "export_error": {
+                            "title": "Publication package is not ready",
+                            "message": (
+                                "Fix these blockers before downloading the final ZIP. "
+                                "Use the Readiness Issues page for the full list."
+                            ),
+                            "detail": str(exc),
+                            "blockers": blockers[:20],
+                            "total_blockers": len(blockers),
+                            "remaining_blockers": max(len(blockers) - 20, 0),
+                        }
+                    },
+                    status=200,
+                )
             except Exception as exc:
                 logger.exception("Export failed")
                 messages.error(request, f"Export failed: {exc}")

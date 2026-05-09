@@ -251,12 +251,13 @@ def preview_final_import(uploaded_file, submission_files=None):
             or row.get("paper_id_filled")
             or row.get("paper_id")
         )
+        final_submission_title = clean_value(row.get("final_submission_title") or row.get("title"))
         upload_date_raw = clean_value(row.get("upload_date"))
         new_values = {
             "final_submission_id": final_id,
             "start2_paper_id_raw": raw_paper_id,
-            "paper_id_filled": resolve_official_paper_id(raw_paper_id),
-            "final_submission_title": clean_value(row.get("final_submission_title") or row.get("title")),
+            "paper_id_filled": resolve_official_paper_id(raw_paper_id, final_submission_title),
+            "final_submission_title": final_submission_title,
             "final_submission_authors": clean_value(row.get("final_submission_authors") or row.get("authors")),
             "upload_date": parse_upload_date(upload_date_raw).isoformat() if upload_date_raw else "",
         }
@@ -533,7 +534,7 @@ def _reset_paper_id_review_for_paper(paper_id, message):
 
 def _reset_paper_id_review(submission, message):
     submission.paper_id_verified = False
-    submission.auto_verify_blocked = True
+    submission.auto_verify_blocked = False
     submission.verified_at = None
     submission.verification_status = "pending"
     submission.title_match_score = None

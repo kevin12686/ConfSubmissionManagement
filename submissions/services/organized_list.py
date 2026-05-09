@@ -3,6 +3,8 @@ from submissions.services.checks import (
     author_number_count,
     duplicate_authors_in_paper,
     has_unresolved_duplicate_authors,
+    paper_id_effectively_verified,
+    paper_title_matches_master,
     publication_duplicate_map,
 )
 from submissions.services.exceptions import (
@@ -73,15 +75,17 @@ def _page_status(submission, settings_obj):
     return "Page OK", "success"
 
 
-def _verification_status(submission):
+def _verification_status(submission, paper=None):
     if not submission:
         return "No final", "secondary"
     if submission.excluded_from_publication:
         return "Excluded from publication", "secondary"
-    if submission.paper_id_verified and submission.verification_status == "title_mismatch":
+    if submission.paper_id_verified and not paper_title_matches_master(submission, paper):
         return "ID verified, title differs", "warning"
-    if submission.paper_id_verified:
-        return "ID verified", "success"
+    if paper_id_effectively_verified(submission, paper):
+        if submission.paper_id_verified:
+            return "ID verified", "success"
+        return "Auto-verified by title", "success"
     if submission.verification_status == "title_mismatch":
         return "Paper ID title mismatch", "warning"
     if submission.verification_status == "invalid_paper_id":
@@ -295,6 +299,8 @@ def _row_paper_id(row):
 
 
 def _has_page_issue(row):
+    if not row["submission"]:
+        return False
     return row["page_level"] in {"danger", "warning"} or row["page_label"] == "Not processed"
 
 
@@ -305,6 +311,7 @@ def _has_pdf_issue(row):
             not row["publication_pdf"]["exists"]
             or row["needs_processing_after_formatting"]
             or row["page_label"] == "PDF error"
+            or row["page_label"] == "Not processed"
         )
     )
 
@@ -334,6 +341,7 @@ def _has_plagiarism_issue(row):
             submission.similarity_score is None
             or submission.single_similarity_score is None
             or row.get("plagiarism_over_threshold")
+            or submission.plagiarism_report_stale
         )
     )
 
@@ -351,6 +359,17 @@ def _has_missing_plagiarism(row):
 
 def _has_format_issue(row):
     return bool(row["submission"] and row["submission"].format_status != "review_ok")
+
+
+def _has_author_issue(row):
+    return bool(
+        row["submission"]
+        and (
+            row["author_count"] is None
+            or (row["over_author_limit"] and not row.get("author_number_exception_valid"))
+            or row.get("unresolved_duplicate_authors")
+        )
+    )
 
 
 def _has_title_issue(row):
@@ -373,8 +392,7 @@ def _needs_attention(row):
             _has_pdf_issue(row),
             _has_page_issue(row),
             _has_title_issue(row),
-            row["author_count_level"] == "danger",
-            row.get("unresolved_duplicate_authors"),
+            _has_author_issue(row),
             _has_source_issue(row),
             _has_extraction_issue(row),
             _has_plagiarism_issue(row),
@@ -384,19 +402,33 @@ def _needs_attention(row):
 
 
 def _attention_priority(row):
-    if not row["submission"] or row["row_type"] == "unmatched" or not row["publication_pdf"]["exists"]:
+    if not row["submission"]:
         return 0
-    if row.get("duplicate_badges"):
+    if row["row_type"] == "unmatched" or row["verify_level"] == "danger":
         return 1
-    if _has_page_issue(row):
+    if not row["publication_pdf"]["exists"]:
         return 2
-    if _has_extraction_issue(row) or _has_title_issue(row):
+    if row.get("duplicate_badges"):
         return 3
-    if _has_plagiarism_issue(row):
+    if row["verify_level"] == "warning":
         return 4
-    if _has_format_issue(row):
+    if _has_pdf_issue(row):
         return 5
-    return 6
+    if _has_page_issue(row):
+        return 6
+    if _has_source_issue(row):
+        return 7
+    if _has_title_issue(row):
+        return 8
+    if _has_extraction_issue(row):
+        return 9
+    if _has_author_issue(row):
+        return 10
+    if _has_plagiarism_issue(row):
+        return 11
+    if _has_format_issue(row):
+        return 12
+    return 99
 
 
 def _format_status_rank(row):
@@ -412,7 +444,7 @@ def _filter_rows(rows, current_filter):
         "needs_attention": _needs_attention,
         "missing_final": lambda row: not row["submission"],
         "paper_id_review": lambda row: bool(
-            row["submission"] and not row["submission"].paper_id_verified
+            row["submission"] and row["verify_level"] in {"danger", "warning"}
         ),
         "title_issues": _has_title_issue,
         "no_authors": lambda row: row["author_count"] is None,
@@ -489,7 +521,7 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
     for paper in papers:
         submission = active_by_paper_id.get(paper.paper_id)
         page_label, page_level = _page_status(submission, settings_obj)
-        verify_label, verify_level = _verification_status(submission)
+        verify_label, verify_level = _verification_status(submission, paper)
         plagiarism_label, plagiarism_level = _plagiarism_status(submission, settings_obj)
         source_label, source_level = _source_status(submission)
         extraction_label, extraction_level = _extraction_status(submission)
@@ -601,14 +633,12 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
         "unverified": sum(
             1
             for row in filtered_rows
-            if row["submission"] and not row["submission"].paper_id_verified
+            if row["submission"] and row["verify_level"] in {"danger", "warning"}
         ),
         "page_errors": sum(
             1
             for row in filtered_rows
-            if row["page_label"].startswith(
-                ("Below min", "Over limit", "PDF", "No PDF", "Not processed")
-            )
+            if _has_page_issue(row)
         ),
         "missing_plagiarism": sum(
             1

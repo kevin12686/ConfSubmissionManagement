@@ -21,8 +21,15 @@ from submissions.services.file_manager import (
     publication_pdf_info,
     publication_source_info,
     resolve_folder,
+    sanitize_filename_part,
 )
 from submissions.services.import_export import submissions_to_frame
+
+
+class PublicationPackageBlocked(ValueError):
+    def __init__(self, message, blockers=None):
+        super().__init__(message)
+        self.blockers = blockers or []
 
 
 def _timestamp():
@@ -146,7 +153,9 @@ def export_publication_package():
     settings_obj = AppSetting.load()
     papers = list(InitialPaper.objects.all().order_by("paper_id"))
     if not papers:
-        raise ValueError("Publication package blocked because the Paper Master List is empty.")
+        raise PublicationPackageBlocked(
+            "Publication package blocked because the Paper Master List is empty."
+        )
 
     readiness_blockers = publication_readiness_rows()
     if readiness_blockers:
@@ -158,9 +167,10 @@ def export_publication_package():
         )
         if len(readiness_blockers) > 10:
             preview += f"; +{len(readiness_blockers) - 10} more"
-        raise ValueError(
+        raise PublicationPackageBlocked(
             "Publication package blocked because publication readiness checks failed: "
-            f"{preview}"
+            f"{preview}",
+            blockers=readiness_blockers,
         )
 
     active_by_paper = active_master_submission_map()
@@ -174,7 +184,9 @@ def export_publication_package():
         package_items.append((submission, pdf_info, source_info))
 
     if not package_items:
-        raise ValueError("Publication package blocked because there are no publishable active final submissions.")
+        raise PublicationPackageBlocked(
+            "Publication package blocked because there are no publishable active final submissions."
+        )
 
     timestamp = _timestamp()
     reports_folder = _reports_folder()
@@ -220,7 +232,7 @@ def export_publication_package():
                 submission.extracted_title,
                 settings_obj.title_words_for_filename,
             )
-            base_name = f"{submission.paper_id_filled}-{short_title}"
+            base_name = f"{sanitize_filename_part(submission.paper_id_filled)}-{short_title}"
             package.write(pdf_info["path"], arcname=f"PDF/{base_name}.pdf")
             source_path = Path(source_info["path"])
             source_extension = source_path.suffix or ".source"

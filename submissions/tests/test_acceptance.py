@@ -17,6 +17,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from submissions.forms import FinalSubmissionForm
 from submissions.models import (
     AppSetting,
     AuthorLimitWaiver,
@@ -53,6 +54,7 @@ from submissions.services.import_export import (
 )
 from submissions.services.integrations import import_external_results
 from submissions.services.import_preview import apply_import_preview, preview_final_import
+from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.reports import export_publication_package
 from submissions.services.crosscheck import import_crosscheck_results, upload_crosscheck_reports
@@ -79,6 +81,7 @@ from submissions.services.verification import (
     mark_not_publishing,
     undo_not_publishing,
     unverify_submission,
+    verification_rows,
     verify_submission,
 )
 
@@ -208,6 +211,41 @@ class EditorialAcceptanceTestCase(TestCase):
 
     def uploaded_file(self, name, content=b"file-content"):
         return SimpleUploadedFile(name, content)
+
+    def final_submission_form_data(self, submission, **overrides):
+        data = {
+            "final_submission_id": submission.final_submission_id,
+            "start2_paper_id_raw": submission.start2_paper_id_raw,
+            "paper_id_filled": submission.paper_id_filled,
+            "final_submission_title": submission.final_submission_title,
+            "final_submission_authors": submission.final_submission_authors,
+            "upload_date": submission.upload_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "extracted_title": submission.extracted_title,
+            "extracted_authors": submission.extracted_authors,
+            "title_author_source": submission.title_author_source,
+            "title_author_extraction_message": submission.title_author_extraction_message,
+            "title_author_review_status": submission.title_author_review_status,
+            "duplicate_author_review_status": submission.duplicate_author_review_status,
+            "duplicate_author_review_notes": submission.duplicate_author_review_notes,
+            "extracted_title_match_message": submission.extracted_title_match_message,
+            "similarity_score": (
+                "" if submission.similarity_score is None else str(int(submission.similarity_score))
+            ),
+            "single_similarity_score": (
+                ""
+                if submission.single_similarity_score is None
+                else str(int(submission.single_similarity_score))
+            ),
+            "processing_message": submission.processing_message,
+            "publication_exclusion_reason": submission.publication_exclusion_reason,
+            "publication_exclusion_notes": submission.publication_exclusion_notes,
+        }
+        if submission.extracted_title_verified:
+            data["extracted_title_verified"] = "on"
+        if submission.excluded_from_publication:
+            data["excluded_from_publication"] = "on"
+        data.update(overrides)
+        return data
 
     def assert_publication_blocked(self, expected_text):
         with self.assertRaisesMessage(ValueError, expected_text):
@@ -1037,6 +1075,24 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.make_master_paper("P001")
         self.assert_publication_blocked("Missing Final Submission")
 
+    def test_manually_verified_title_mismatch_warns_ui_but_allows_publication(self):
+        self.make_master_paper("P001", "Paper Master Title", "Ada")
+        self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Different Final Title",
+            extracted_title="Different Final Title",
+            paper_id_verified=True,
+            verification_status="verified",
+            verification_message="Paper ID manually verified; title differs.",
+        )
+
+        categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertNotIn("Final Title / Paper Master Title Mismatch", categories)
+        self.assertEqual(dashboard_counts()["title_mismatches"], 0)
+        self.assertTrue(Path(export_publication_package()).exists())
+        response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+        self.assertContains(response, "ID verified, title differs")
+
     def test_not_publishing_excludes_submission_from_readiness_dashboard_and_package(self):
         self.make_master_paper("P001")
         self.make_master_paper("P002", "Publishing Paper", "Grace")
@@ -1064,8 +1120,16 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
 
     def test_every_core_readiness_blocker_blocks_publication(self):
         cases = [
-            ("unverified", {"paper_id_verified": False}, "Unverified Paper ID"),
-            ("title mismatch", {"verification_status": "title_mismatch"}, "Final Title / Paper Master Title Mismatch"),
+            ("unverified", {"paper_id_verified": False, "auto_verify_blocked": True}, "Unverified Paper ID"),
+            (
+                "title mismatch",
+                {
+                    "paper_id_verified": False,
+                    "verification_status": "title_mismatch",
+                    "final_submission_title": "Different Paper",
+                },
+                "Final Title / Paper Master Title Mismatch",
+            ),
             ("missing pdf", {"current_file_path": ""}, "Missing PDF"),
             ("pdf not processed", {"processing_status": "pending", "pdf_hash": "", "page_count": None}, "PDF Not Processed"),
             ("missing source", {"source_current_file_path": ""}, "Missing Source File"),
@@ -1100,6 +1164,70 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         submission.formatted_pdf_file.save("corrected.pdf", ContentFile(b"corrected pdf"), save=True)
 
         self.assert_publication_blocked("Corrected PDF Not Processed")
+
+    def test_multiple_active_finals_for_same_paper_block_publication(self):
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        self.make_final_submission(final_submission_id="10", paper_id_filled="P001")
+        self.make_final_submission(
+            final_submission_id="11",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            current_file_path=str(self.make_pdf_file("second-active.pdf", b"second active pdf")),
+            source_current_file_path=str(self.make_source_file("second-active.docx", b"second active source")),
+        )
+
+        self.assert_publication_blocked("Multiple Active Final Submissions")
+
+    def test_numeric_author_entered_id_resolves_only_when_title_matches(self):
+        self.make_master_paper("R032", "Numeric Match", "Ada")
+        self.make_master_paper("R033", "Other Paper", "Grace")
+
+        result = import_final_submissions(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "32,32,Numeric Match,Ada,2026-05-07 09:00:00\n",
+            )
+        )
+
+        submission = FinalSubmission.objects.get(final_submission_id="32")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(submission.paper_id_filled, "R032")
+        self.assertTrue(submission.paper_id_verified)
+
+        result = import_final_submissions(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "33,33,Wrong Numeric Title,Ada,2026-05-07 09:00:00\n",
+            )
+        )
+
+        submission = FinalSubmission.objects.get(final_submission_id="33")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(submission.paper_id_filled, "33")
+        self.assertFalse(submission.paper_id_verified)
+
+    def test_numeric_author_entered_id_uses_title_to_choose_between_prefixed_candidates(self):
+        self.make_master_paper("R032", "Research Track Paper", "Ada")
+        self.make_master_paper("X032", "Workshop Track Paper", "Grace")
+
+        import_final_submissions(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "32,32,Workshop Track Paper,Grace,2026-05-07 09:00:00\n"
+                "33,32,Unknown Track Paper,Ada,2026-05-07 09:05:00\n",
+            )
+        )
+
+        matched = FinalSubmission.objects.get(final_submission_id="32")
+        unmatched = FinalSubmission.objects.get(final_submission_id="33")
+        self.assertEqual(matched.paper_id_filled, "X032")
+        self.assertTrue(matched.paper_id_verified)
+        self.assertEqual(unmatched.paper_id_filled, "32")
+        self.assertFalse(unmatched.paper_id_verified)
 
     def test_page_limit_exception_allows_publication_until_page_count_changes(self):
         self.make_master_paper("P001")
@@ -1311,6 +1439,25 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
 
 
 class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
+    def test_package_sanitizes_paper_id_in_zip_filenames(self):
+        self.make_master_paper("R/032", "Slash Paper", "Ada")
+        self.make_final_submission(
+            final_submission_id="32",
+            paper_id_filled="R/032",
+            start2_paper_id_raw="R/032",
+            final_submission_title="Slash Paper",
+            extracted_title="Slash Paper",
+            current_file_path=str(self.make_pdf_file("slash.pdf", b"slash pdf")),
+            source_current_file_path=str(self.make_source_file("slash.docx", b"slash source")),
+        )
+
+        zip_path = export_publication_package()
+
+        with zipfile.ZipFile(zip_path) as archive:
+            self.assertIn("PDF/R_032-Slash Paper.pdf", archive.namelist())
+            self.assertIn("Source/R_032-Slash Paper.docx", archive.namelist())
+            self.assertNotIn("PDF/R/032-Slash Paper.pdf", archive.namelist())
+
     def test_successful_package_contains_manifest_and_matching_files(self):
         self.make_master_paper("P001", "First Camera Ready", "Ada; Alan")
         self.make_master_paper("P002", "Second Camera Ready", "Grace")
@@ -1533,6 +1680,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.get(reverse("submissions:final_submission_edit", args=[submission.pk]))
         self.assertEqual(response.status_code, 200)
+
         self.assertNotContains(response, "plagiarism_report_path")
 
         response = self.client.post(
@@ -1615,9 +1763,402 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("application/zip", response["Content-Type"])
 
         unverify_title_author(submission)
-        with self.assertLogs("submissions.views", level="ERROR"):
-            response = self.client.post(reverse("submissions:export_reports"), {"action": "publication_package"})
+        response = self.client.post(reverse("submissions:export_reports"), {"action": "publication_package"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Publication package is not ready")
+        self.assertContains(response, "Unverified Title/Author Extraction")
+        self.assertContains(response, "Open Readiness Issues")
+
+    def test_identical_title_auto_verifies_without_manual_click(self):
+        self.make_master_paper("P001", title="Exactly Matching Title")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Exactly Matching Title",
+            extracted_title="Exactly Matching Title",
+            paper_id_verified=False,
+            verification_status="pending",
+            auto_verify_blocked=False,
+        )
+
+        rows = verification_rows(FinalSubmission.objects.filter(pk=submission.pk))
+
+        submission.refresh_from_db()
+        self.assertFalse(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "pending")
+        self.assertEqual(rows[0]["score"], 100)
+        self.assertTrue(rows[0]["is_verified"])
+        self.assertFalse(rows[0]["needs_verification"])
+        self.assertFalse(
+            any(row["category"] == "Unverified Paper ID" for row in publication_readiness_rows())
+        )
+
+    def test_manual_editing_paper_id_resets_verification_and_recomputes_active_versions(self):
+        self.make_master_paper("P001", title="Original Paper")
+        self.make_master_paper("P002", title="Different Master Paper")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Original Paper",
+            extracted_title="Original Paper",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            {
+                "final_submission_id": submission.final_submission_id,
+                "start2_paper_id_raw": "P002",
+                "paper_id_filled": "P002",
+                "final_submission_title": "Original Paper",
+                "final_submission_authors": submission.final_submission_authors,
+                "upload_date": submission.upload_date.strftime("%Y-%m-%dT%H:%M:%S"),
+                "extracted_title": submission.extracted_title,
+                "extracted_authors": submission.extracted_authors,
+                "title_author_source": submission.title_author_source,
+                "title_author_extraction_message": submission.title_author_extraction_message,
+                "title_author_review_status": submission.title_author_review_status,
+                "duplicate_author_review_status": submission.duplicate_author_review_status,
+                "duplicate_author_review_notes": submission.duplicate_author_review_notes,
+                "extracted_title_match_message": submission.extracted_title_match_message,
+                "extracted_title_verified": "on",
+                "similarity_score": "1",
+                "single_similarity_score": "1",
+                "processing_message": submission.processing_message,
+                "publication_exclusion_reason": submission.publication_exclusion_reason,
+                "publication_exclusion_notes": submission.publication_exclusion_notes,
+            },
+        )
+
         self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertEqual(submission.paper_id_filled, "P002")
+        self.assertFalse(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "title_mismatch")
+        self.assert_publication_blocked("Final Title / Paper Master Title Mismatch")
+
+    def test_manual_edit_title_diff_requires_editor_verification_then_can_publish(self):
+        self.make_master_paper("P001", title="Original Accepted Title")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Original Accepted Title",
+            extracted_title="Original Accepted Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                final_submission_title="Final Revised Title For Publication",
+                extracted_title="Final Revised Title For Publication",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertFalse(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "title_mismatch")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assert_publication_blocked("Unverified Paper ID")
+
+        verify_submission(submission, "P001")
+        verify_title_author(submission)
+        verify_extracted_title(submission)
+
+        submission.refresh_from_db()
+        self.assertTrue(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "verified")
+        self.assertIn("manually verified", submission.verification_message)
+        self.assertEqual(publication_readiness_rows(), [])
+        self.assertTrue(Path(export_publication_package()).exists())
+
+    def test_manual_edit_final_id_recalculates_active_version_and_duplicates(self):
+        self.make_master_paper("P001", title="Ready Paper")
+        older = self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            active_version=False,
+            duplicate_submission=True,
+        )
+        newer = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            active_version=True,
+            duplicate_submission=False,
+        )
+        determine_active_versions()
+        _mark_duplicate_submissions()
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[older.pk]),
+            self.final_submission_form_data(older, final_submission_id="11"),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        older.refresh_from_db()
+        newer.refresh_from_db()
+        self.assertTrue(older.active_version)
+        self.assertFalse(older.duplicate_submission)
+        self.assertFalse(newer.active_version)
+        self.assertTrue(newer.duplicate_submission)
+
+    def test_manual_edit_pdf_change_resets_downstream_state_and_invalidates_corrected_files(self):
+        self.make_master_paper("P001", title="Ready Paper")
+        submission = self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            plagiarism_report_path=str(self.make_pdf_file("20_report.pdf", b"%PDF report")),
+        )
+        submission.pdf_file.save("original.pdf", ContentFile(b"%PDF original"), save=False)
+        submission.formatted_pdf_file.save("corrected.pdf", ContentFile(b"%PDF corrected"), save=False)
+        submission.formatted_source_file.save("corrected.docx", ContentFile(b"corrected source"), save=False)
+        submission.formatted_pdf_uploaded_at = timezone.now()
+        submission.formatted_source_uploaded_at = timezone.now()
+        submission.save()
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                pdf_file=SimpleUploadedFile(
+                    "replacement.pdf", b"%PDF replacement", content_type="application/pdf"
+                ),
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
+        self.assertFalse(submission.formatted_source_file)
+        self.assertEqual(submission.processing_status, "pending")
+        self.assertIsNone(submission.page_count)
+        self.assertEqual(submission.pdf_hash, "")
+        self.assertEqual(submission.extracted_title, "")
+        self.assertEqual(submission.extracted_authors, "")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertEqual(submission.format_status, "pending")
+        self.assertIsNone(submission.similarity_score)
+        self.assertIsNone(submission.single_similarity_score)
+        self.assertEqual(submission.plagiarism_report_path, "")
+        self.assertIn("replacement", submission.current_file_path)
+        self.assert_publication_blocked("PDF Not Processed")
+
+    def test_manual_edit_source_change_keeps_pdf_processing_but_resets_reviews(self):
+        self.make_master_paper("P001", title="Ready Paper")
+        submission = self.make_final_submission(
+            final_submission_id="21",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+        )
+        original_page_count = submission.page_count
+        original_pdf_hash = submission.pdf_hash
+        submission.source_file.save("original.docx", ContentFile(b"source original"), save=False)
+        submission.formatted_source_file.save("corrected.docx", ContentFile(b"corrected source"), save=False)
+        submission.formatted_source_uploaded_at = timezone.now()
+        submission.save()
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                source_file=SimpleUploadedFile(
+                    "replacement.docx", b"source replacement", content_type="application/octet-stream"
+                ),
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertEqual(submission.processing_status, "processed")
+        self.assertEqual(submission.page_count, original_page_count)
+        self.assertEqual(submission.pdf_hash, original_pdf_hash)
+        self.assertFalse(submission.formatted_source_file)
+        self.assertIn("replacement", submission.source_current_file_path)
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.extracted_title_verified)
+        self.assertEqual(submission.format_status, "pending")
+        self.assert_publication_blocked("Unverified Title/Author Extraction")
+
+    def test_manual_edit_guards_review_fields_and_undo_not_publishing(self):
+        self.make_master_paper("P001", title="Ready Paper")
+        submission = self.make_final_submission(
+            final_submission_id="22",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="",
+            extracted_authors="",
+            title_author_review_status="pending",
+            title_author_verified=False,
+            extracted_title_verified=False,
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                title_author_review_status="review_ok",
+                extracted_title_verified="on",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+        self.assertFalse(submission.extracted_title_verified)
+        self.assert_publication_blocked("Missing Extracted Title")
+
+        submission.extracted_title = "Ready Paper"
+        submission.extracted_authors = "Ada Lovelace; Alan Turing"
+        submission.title_author_review_status = "review_ok"
+        submission.extracted_title_verified = True
+        submission.excluded_from_publication = True
+        submission.publication_exclusion_reason = "unpaid"
+        submission.publication_excluded_at = timezone.now()
+        submission.paper_id_verified = False
+        submission.auto_verify_blocked = True
+        submission.save()
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                excluded_from_publication="",
+                publication_exclusion_reason="",
+                publication_exclusion_notes="",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertFalse(submission.excluded_from_publication)
+        self.assertFalse(submission.paper_id_verified)
+        self.assertTrue(submission.auto_verify_blocked)
+        self.assert_publication_blocked("Unverified Paper ID")
+
+    def test_import_reset_allows_identical_title_to_auto_verify_again(self):
+        self.make_master_paper("P001", title="Corrected Exact Title")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Old Title",
+            extracted_title="Corrected Exact Title",
+            paper_id_verified=False,
+            verification_status="pending",
+            auto_verify_blocked=True,
+        )
+
+        token_payload = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "10,P001,Corrected Exact Title,Ada,2026-05-07 09:00:00\n",
+            )
+        )
+        apply_import_preview(token_payload["token"])
+
+        submission.refresh_from_db()
+        rows = verification_rows(FinalSubmission.objects.filter(pk=submission.pk))
+        self.assertFalse(submission.auto_verify_blocked)
+        self.assertTrue(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "verified")
+        self.assertTrue(rows[0]["is_identical"])
+        self.assertFalse(rows[0]["needs_verification"])
+        self.assertFalse(
+            any(row["category"] == "Unverified Paper ID" for row in publication_readiness_rows())
+        )
+
+    def test_manually_unverified_identical_title_stays_blocked(self):
+        self.make_master_paper("P001", title="Exactly Matching Title")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Exactly Matching Title",
+            extracted_title="Exactly Matching Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        unverify_submission(submission)
+
+        rows = verification_rows(FinalSubmission.objects.filter(pk=submission.pk))
+
+        submission.refresh_from_db()
+        self.assertFalse(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "pending")
+        self.assertTrue(rows[0]["needs_verification"])
+        self.assertTrue(
+            any(row["category"] == "Unverified Paper ID" for row in publication_readiness_rows())
+        )
+
+    def test_built_in_title_author_source_is_valid_in_edit_form(self):
+        submission = self.make_final_submission(
+            title_author_source="built_in_extractor",
+            title_author_extraction_status="extracted",
+        )
+
+        form = FinalSubmissionForm(instance=submission)
+        source_choices = dict(form.fields["title_author_source"].choices)
+
+        self.assertEqual(source_choices["built_in_extractor"], "Built-in extractor")
+
+    def test_organized_list_needs_attention_uses_editorial_priority(self):
+        self.make_master_paper("P001", "Missing Final", "Ada")
+        self.make_master_paper("P002", "Needs ID Review", "Ada")
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Needs ID Review",
+            extracted_title="Needs ID Review",
+            paper_id_verified=False,
+            auto_verify_blocked=True,
+        )
+        self.make_master_paper("P003", "No PDF", "Ada")
+        self.make_final_submission(
+            final_submission_id="3",
+            paper_id_filled="P003",
+            final_submission_title="No PDF",
+            extracted_title="No PDF",
+            current_file_path="",
+        )
+        self.make_master_paper("P004", "Old Plagiarism Report", "Ada")
+        self.make_final_submission(
+            final_submission_id="4",
+            paper_id_filled="P004",
+            final_submission_title="Old Plagiarism Report",
+            extracted_title="Old Plagiarism Report",
+            plagiarism_report_path=str(self.make_pdf_file("reports/P004.pdf")),
+            plagiarism_report_stale=True,
+        )
+
+        rows, summary, _settings_obj, current_filter, current_sort = organized_list_rows()
+        ordered_ids = [
+            row["paper"].paper_id if row["paper"] else row["submission"].paper_id_filled
+            for row in rows
+        ]
+
+        self.assertEqual(current_filter, "needs_attention")
+        self.assertEqual(current_sort, "needs_attention")
+        self.assertEqual(ordered_ids, ["P001", "P002", "P003", "P004"])
+        self.assertEqual(summary["missing_final"], 1)
+        self.assertEqual(summary["unverified"], 1)
+        self.assertEqual(summary["page_errors"], 1)
+        self.assertEqual(summary["missing_plagiarism"], 0)
 
     def test_editor_visible_data_matches_publication_package_contents(self):
         self.make_master_paper("P001", "Main Ready Paper", "Ada Lovelace; Alan Turing")
@@ -1706,7 +2247,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             {"action": "publication_package"},
             follow=True,
         )
-        self.assertContains(blocked, "Publication package blocked")
+        self.assertContains(blocked, "Publication package is not ready")
         self.assertContains(blocked, "Missing Final Submission")
         self.assertContains(blocked, "Unclassified Final Not In Master")
 

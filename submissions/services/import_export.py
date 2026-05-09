@@ -173,11 +173,12 @@ def import_final_submissions(uploaded_file, submission_files=None):
             or row.get("paper_id_filled")
             or row.get("paper_id")
         )
+        final_submission_title = clean_value(row.get("final_submission_title") or row.get("title"))
         defaults = {
             "start2_paper_id_raw": raw_paper_id,
-            "paper_id_filled": resolve_official_paper_id(raw_paper_id),
+            "paper_id_filled": resolve_official_paper_id(raw_paper_id, final_submission_title),
             "auto_verify_blocked": False,
-            "final_submission_title": clean_value(row.get("final_submission_title") or row.get("title")),
+            "final_submission_title": final_submission_title,
             "final_submission_authors": clean_value(row.get("final_submission_authors") or row.get("authors")),
             "upload_date": upload_date,
             "original_file_name": clean_value(row.get("pdf_file_name") or row.get("original_file_name")),

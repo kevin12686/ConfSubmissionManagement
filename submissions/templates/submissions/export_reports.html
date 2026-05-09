@@ -11,6 +11,54 @@
     </div>
 </div>
 
+{% if export_error %}
+<div class="alert alert-danger border cfm-attention" role="alert">
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+        <div>
+            <h2 class="h5 mb-1">{{ export_error.title }}</h2>
+            <div>{{ export_error.message }}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-danger" href="{% url 'submissions:error_report' %}">Open Readiness Issues</a>
+            <form method="post" class="d-inline">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger" name="action" value="errors">Download Issues Excel</button>
+            </form>
+        </div>
+    </div>
+    {% if export_error.blockers %}
+        <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle cfm-table mb-2">
+                <thead>
+                    <tr>
+                        <th>Issue</th>
+                        <th>Paper ID</th>
+                        <th>Final ID</th>
+                        <th>What to fix</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in export_error.blockers %}
+                    <tr>
+                        <td><span class="badge text-bg-danger">{{ row.category }}</span></td>
+                        <td>{{ row.paper_id|default:"-" }}</td>
+                        <td>{{ row.final_submission_id|default:"-" }}</td>
+                        <td>{{ row.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small">
+            Showing {{ export_error.blockers|length }} of {{ export_error.total_blockers }} blocker{{ export_error.total_blockers|pluralize }}.
+            {% if export_error.remaining_blockers %}{{ export_error.remaining_blockers }} more are in Readiness Issues.{% endif %}
+        </div>
+    {% else %}
+        <div class="mt-2">{{ export_error.detail }}</div>
+    {% endif %}
+</div>
+{% endif %}
+
 <section class="cfm-section">
     <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
         <div>

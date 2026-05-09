@@ -63,17 +63,7 @@
                 <td>{{ item.start2_paper_id_raw }}</td>
                 <td>{{ item.paper_id_filled }}</td>
                 <td>
-                    {% if item.paper_id_verified and item.verification_status == "title_mismatch" %}
-                        <span class="badge text-bg-warning">ID verified, title differs</span>
-                    {% elif item.paper_id_verified %}
-                        <span class="badge text-bg-success">ID verified</span>
-                    {% elif item.verification_status == "title_mismatch" %}
-                        <span class="badge text-bg-warning">Paper ID title mismatch</span>
-                    {% elif item.verification_status == "invalid_paper_id" %}
-                        <span class="badge text-bg-warning">Paper ID not in master list</span>
-                    {% else %}
-                        <span class="badge text-bg-danger">Paper ID needs review</span>
-                    {% endif %}
+                    <span class="badge text-bg-{{ item.verification_badge_level }}">{{ item.verification_badge_label }}</span>
                     {% if item.duplicate_submission %}<span class="badge text-bg-light text-dark">Replaced by newer upload</span>{% endif %}
                 </td>
                 <td>{% if item.active_version %}<span class="badge text-bg-success">Current final version</span>{% else %}<span class="badge text-bg-secondary">Replaced by newer upload</span>{% endif %}</td>

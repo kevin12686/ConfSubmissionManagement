@@ -236,7 +236,10 @@ def verify_submission(submission, corrected_paper_id=None):
     if corrected_paper_id:
         submission.paper_id_filled = corrected_paper_id
     elif submission.start2_paper_id_raw and not submission.paper_id_filled:
-        submission.paper_id_filled = resolve_official_paper_id(submission.start2_paper_id_raw)
+        submission.paper_id_filled = resolve_official_paper_id(
+            submission.start2_paper_id_raw,
+            submission.final_submission_title,
+        )
 
     if not InitialPaper.objects.filter(paper_id=submission.paper_id_filled).exists():
         raise ValueError("Cannot verify: ID not in Paper Master List.")

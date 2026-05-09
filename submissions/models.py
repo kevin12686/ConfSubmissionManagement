@@ -4,6 +4,7 @@ from django.utils import timezone
 
 TITLE_AUTHOR_SOURCE_CHOICES = [
     ("unknown", "Unknown"),
+    ("built_in_extractor", "Built-in extractor"),
     ("manual", "Manual"),
     ("external_import", "External import"),
     ("external_script", "External script"),

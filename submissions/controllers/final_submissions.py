@@ -59,6 +59,7 @@ from submissions.services.import_preview import (
     preview_final_import,
     preview_initial_import,
 )
+from submissions.services.manual_edit import apply_final_submission_manual_edit
 from submissions.services.system_state import (
     CONFIRMATION_TEXT,
     SystemStateError,
@@ -166,67 +167,27 @@ def final_submission_form(request, pk=None):
         request.POST or None, request.FILES or None, instance=submission
     )
     if request.method == "POST" and form.is_valid():
-        obj = form.save(commit=False)
-        if "extracted_title" in form.changed_data or "extracted_authors" in form.changed_data:
-            obj.title_author_source = "manual"
-            obj.title_author_imported_at = timezone.now()
-            obj.title_author_extraction_status = "extracted"
-            obj.title_author_extraction_message = "Manually edited."
-            obj.title_author_review_status = "pending"
-            obj.title_author_verified = False
-            obj.title_author_verified_at = None
-            obj.duplicate_author_review_status = "pending"
-            obj.duplicate_author_review_notes = ""
-            obj.duplicate_author_reviewed_at = None
-            if "extracted_authors" in form.changed_data:
-                reset_author_number_exception(obj)
-            obj.extracted_title_verified = False
-            obj.extracted_title_verified_at = None
-            obj.extracted_title_auto_verify_blocked = False
-        if "final_submission_title" in form.changed_data:
-            obj.extracted_title_verified = False
-            obj.extracted_title_verified_at = None
-            obj.extracted_title_auto_verify_blocked = False
-        if (
-            "similarity_score" in form.changed_data
-            or "single_similarity_score" in form.changed_data
-        ):
-            obj.plagiarism_imported_at = timezone.now()
-            if obj.plagiarism_report_path:
-                obj.plagiarism_report_stale = True
-        report_file = form.cleaned_data.get("plagiarism_report_file")
-        if report_file:
-            report_dir = resolve_folder(AppSetting.load().plagiarism_reports_folder)
-            paper_part = sanitize_filename_part(obj.paper_id_filled or "NO_PAPER_ID")
-            final_part = sanitize_filename_part(obj.final_submission_id or "NO_FINAL_ID")
-            target = report_dir / f"{paper_part}_{final_part}_report.pdf"
-            with target.open("wb") as output:
-                for chunk in report_file.chunks():
-                    output.write(chunk)
-            obj.plagiarism_report_path = str(target)
-            obj.plagiarism_report_stale = False
-            obj.plagiarism_imported_at = timezone.now()
-        if "excluded_from_publication" in form.changed_data:
-            if obj.excluded_from_publication:
-                obj.publication_excluded_at = timezone.now()
-                obj.publication_exclusion_reason = obj.publication_exclusion_reason or "other"
-                obj.paper_id_verified = False
-                obj.auto_verify_blocked = True
-                obj.verified_at = None
-                obj.verification_message = "Marked Not Publishing; excluded from publication readiness checks."
-            else:
-                obj.publication_exclusion_reason = ""
-                obj.publication_exclusion_notes = ""
-                obj.publication_excluded_at = None
-        obj.save()
-        if (
-            "extracted_title" in form.changed_data
-            or "final_submission_title" in form.changed_data
-        ):
-            evaluate_extracted_title_match(obj, save=True)
-        if "extracted_authors" in form.changed_data:
-            rebuild_paper_authors()
-        messages.success(request, "Final submission saved.")
+        _obj, summary = apply_final_submission_manual_edit(
+            submission,
+            form,
+            form.cleaned_data.get("plagiarism_report_file"),
+        )
+        details = [
+            label
+            for key, label in [
+                ("identity_recalculated", "identity/review recalculated"),
+                ("pdf_reset", "PDF-dependent checks reset"),
+                ("source_reset", "source-dependent checks reset"),
+                ("plagiarism_stale", "plagiarism report marked stale"),
+                ("active_versions_recalculated", "active versions recalculated"),
+                ("corrected_files_archived", "corrected files invalidated"),
+                ("review_status_guarded", "inconsistent review status blocked"),
+                ("not_publishing_changed", "publishing decision updated"),
+            ]
+            if summary.get(key)
+        ]
+        suffix = f" ({'; '.join(details)})." if details else "."
+        messages.success(request, f"Final submission saved{suffix}")
         return redirect("submissions:final_submission_list")
     context = {"form": form, "submission": submission}
     if submission:

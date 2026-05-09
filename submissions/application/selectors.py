@@ -2,9 +2,29 @@ from django.db.models import Q
 
 from submissions.forms import FinalSubmissionImportForm, ImportFileForm
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
-from submissions.services.checks import dashboard_counts
+from submissions.services.checks import (
+    dashboard_counts,
+    paper_id_effectively_verified,
+    paper_title_matches_master,
+)
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.pdf_processor import processed_pdf_rows
+
+
+def verification_badge(submission, master_paper=None):
+    if submission.excluded_from_publication:
+        return "Excluded from publication", "secondary"
+    if submission.paper_id_verified and not paper_title_matches_master(submission, master_paper):
+        return "ID verified, title differs", "warning"
+    if paper_id_effectively_verified(submission, master_paper):
+        if submission.paper_id_verified:
+            return "ID verified", "success"
+        return "Auto-verified by title", "success"
+    if submission.verification_status == "title_mismatch":
+        return "Paper ID title mismatch", "warning"
+    if submission.verification_status == "invalid_paper_id":
+        return "Paper ID not in master list", "warning"
+    return "Paper ID needs review", "danger"
 
 
 def search_query(request):
@@ -46,8 +66,14 @@ def final_submission_list_context(query="", score_level_builder=None):
         )
     settings_obj = AppSetting.load()
     items = list(submissions)
-    if score_level_builder:
-        for submission in items:
+    master_by_id = {
+        paper.paper_id: paper
+        for paper in InitialPaper.objects.filter(
+            paper_id__in={item.paper_id_filled for item in items}
+        )
+    }
+    for submission in items:
+        if score_level_builder:
             submission.plagiarism_percent_level = score_level_builder(
                 submission.similarity_score,
                 settings_obj.plagiarism_percent_threshold,
@@ -56,6 +82,12 @@ def final_submission_list_context(query="", score_level_builder=None):
                 submission.single_similarity_score,
                 settings_obj.single_similarity_threshold,
             )
+        label, level = verification_badge(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+        submission.verification_badge_label = label
+        submission.verification_badge_level = level
     return {"submissions": items, "q": query, "import_form": FinalSubmissionImportForm()}
 
 
@@ -67,14 +99,29 @@ def processed_pdf_context():
 
 
 def active_versions_context():
+    submissions = list(FinalSubmission.objects.filter(active_version=True))
+    master_by_id = {
+        paper.paper_id: paper
+        for paper in InitialPaper.objects.filter(
+            paper_id__in={item.paper_id_filled for item in submissions}
+        )
+    }
     return {
-        "rows": [
-            {"submission": submission, "publication_pdf": publication_pdf_info(submission)}
-            for submission in FinalSubmission.objects.filter(active_version=True)
-        ]
+        "rows": [_active_version_row(submission, master_by_id) for submission in submissions]
+    }
+
+
+def _active_version_row(submission, master_by_id):
+    label, level = verification_badge(
+        submission,
+        master_by_id.get(submission.paper_id_filled),
+    )
+    return {
+        "submission": submission,
+        "publication_pdf": publication_pdf_info(submission),
+        "verification_badge": {"label": label, "level": level},
     }
 
 
 def old_versions_context():
     return {"submissions": FinalSubmission.objects.filter(active_version=False)}
-
