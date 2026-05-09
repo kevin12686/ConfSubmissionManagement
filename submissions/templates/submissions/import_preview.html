@@ -94,6 +94,12 @@
                         {% if row.invalid_master_id %}
                             <div class="small text-danger fw-semibold">Needs decision: correct the Paper ID or mark this final submission as Not Publishing.</div>
                         {% endif %}
+                        {% if row.currently_discarded %}
+                            <div class="small text-warning fw-semibold">Currently discarded. Import will preserve the discard status and note.</div>
+                        {% endif %}
+                        {% if row.skip_apply %}
+                            <div class="small text-warning fw-semibold">Protected Editor Upload. Start2 import will not modify this record.</div>
+                        {% endif %}
                     {% endif %}
                     {% if row.active_version_impact %}
                         <div class="small text-muted">{{ row.active_version_impact }}</div>

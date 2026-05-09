@@ -123,23 +123,36 @@ def determine_active_versions():
     with transaction.atomic():
         FinalSubmission.objects.update(active_version=False)
         paper_ids = (
-            FinalSubmission.objects.exclude(paper_id_filled="")
+            FinalSubmission.objects.filter(discarded=False)
+            .exclude(paper_id_filled="")
             .order_by()
             .values_list("paper_id_filled", flat=True)
             .distinct()
         )
         for paper_id in paper_ids:
-            submissions = list(FinalSubmission.objects.filter(paper_id_filled=paper_id))
+            submissions = list(
+                FinalSubmission.objects.filter(paper_id_filled=paper_id, discarded=False)
+            )
+            editor_submissions = [
+                submission
+                for submission in submissions
+                if submission.submission_origin == "editor_upload"
+            ]
+            candidate_submissions = editor_submissions or submissions
             if setting.active_version_rule == "upload_date":
                 newest = max(
-                    submissions,
+                    candidate_submissions,
                     key=lambda submission: (
                         submission.upload_date,
                         final_submission_sort_key(submission),
                     ),
-                ) if submissions else None
+                ) if candidate_submissions else None
             else:
-                newest = max(submissions, key=final_submission_sort_key) if submissions else None
+                newest = (
+                    max(candidate_submissions, key=final_submission_sort_key)
+                    if candidate_submissions
+                    else None
+                )
             if newest:
                 newest.active_version = True
                 newest.save(update_fields=["active_version", "updated_at"])

@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from submissions.models import AppSetting, FinalSubmission
 from submissions.services.file_manager import corrected_pdf_needs_processing
+from submissions.services.editor_uploads import editor_conflict_count
 
 
 def global_workflow_alerts(request):
@@ -23,6 +24,10 @@ def global_workflow_alerts(request):
         )
     except (OperationalError, ProgrammingError):
         corrected_pdf_count = 0
+    try:
+        start2_editor_conflicts = editor_conflict_count()
+    except (OperationalError, ProgrammingError):
+        start2_editor_conflicts = 0
 
     try:
         conference_name = AppSetting.load().conference_name.strip() or "Local Conference"
@@ -32,6 +37,7 @@ def global_workflow_alerts(request):
     return {
         "global_workflow_alerts": {
             "corrected_pdf_needs_processing": corrected_pdf_count,
+            "start2_editor_conflicts": start2_editor_conflicts,
         },
         "current_conference_name": conference_name,
         "app_name": django_settings.APP_NAME,

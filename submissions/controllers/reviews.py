@@ -109,6 +109,7 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
+from submissions.application.selectors import paper_note_summary
 
 
 logger = logging.getLogger("submissions.views")
@@ -170,6 +171,7 @@ def organized_list(request):
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q, current_filter, current_sort
     )
+    note_summary = paper_note_summary()
     return render(
         request,
         "submissions/organized_list.html",
@@ -182,6 +184,8 @@ def organized_list(request):
             "current_sort": current_sort,
             "filter_options": ORGANIZED_LIST_FILTER_OPTIONS,
             "sort_options": ORGANIZED_LIST_SORT_OPTIONS,
+            "note_summary": note_summary,
+            "note_count": len(note_summary),
         },
     )
 def verify_paper_ids(request):
@@ -428,8 +432,9 @@ def not_publishing_list(request):
     needs_decision = FinalSubmission.objects.filter(
         active_version=True,
         excluded_from_publication=False,
+        discarded=False,
     ).exclude(paper_id_filled__in=valid_ids)
-    excluded = FinalSubmission.objects.filter(excluded_from_publication=True)
+    excluded = FinalSubmission.objects.filter(excluded_from_publication=True, discarded=False)
 
     if q:
         search_filter = (
@@ -444,7 +449,25 @@ def not_publishing_list(request):
         excluded = excluded.filter(search_filter)
 
     needs_decision = needs_decision.order_by("paper_id_filled", "final_submission_id")
-    excluded = excluded.order_by("-publication_excluded_at", "paper_id_filled", "final_submission_id")
+    excluded = list(
+        excluded.order_by("-active_version", "-publication_excluded_at", "paper_id_filled", "final_submission_id")
+    )
+    active_by_paper = {
+        submission.paper_id_filled: submission
+        for submission in FinalSubmission.objects.filter(
+            active_version=True, discarded=False
+        ).exclude(paper_id_filled="")
+    }
+    for submission in excluded:
+        replacement = active_by_paper.get(submission.paper_id_filled)
+        if replacement and replacement.pk == submission.pk:
+            replacement = None
+        submission.version_state_label = (
+            "Current final" if submission.active_version else "Inactive old version"
+        )
+        submission.version_state_level = "secondary" if submission.active_version else "light text-dark"
+        submission.origin_label = submission.get_submission_origin_display()
+        submission.active_replacement = replacement
     return render(
         request,
         "submissions/not_publishing_list.html",
@@ -453,7 +476,8 @@ def not_publishing_list(request):
             "needs_decision": needs_decision,
             "excluded": excluded,
             "needs_decision_count": needs_decision.count(),
-            "excluded_count": excluded.count(),
+            "excluded_count": len(excluded),
+            "active_excluded_count": sum(1 for item in excluded if item.active_version),
         },
     )
 def exceptions_center(request):

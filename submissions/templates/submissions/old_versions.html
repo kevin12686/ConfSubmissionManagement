@@ -4,28 +4,130 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Old Versions</h1>
-        <div class="cfm-page-subtitle">Older or replaced final submissions retained for traceability.</div>
+        <div class="cfm-page-subtitle">Inactive final submissions retained for traceability, including replaced and discarded versions.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:active_versions' %}">Active Versions</a>
     </div>
 </div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">All</div><div class="cfm-metric-value">{{ summary_counts.all }}</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">Replaced</div><div class="cfm-metric-value">{{ summary_counts.replaced }}</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">Discarded</div><div class="cfm-metric-value">{{ summary_counts.discarded }}</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">Editor Uploads</div><div class="cfm-metric-value">{{ summary_counts.editor_uploads }}</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">Start2</div><div class="cfm-metric-value">{{ summary_counts.start2 }}</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="cfm-metric"><div class="cfm-metric-label">Other inactive</div><div class="cfm-metric-value">{{ summary_counts.other }}</div></div>
+    </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+    {% for option in filter_options %}
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}">
+                {{ option.label }} <span class="badge text-bg-light text-dark">{{ option.count }}</span>
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+
 <div class="table-responsive">
     <table class="table table-striped align-middle cfm-table">
-        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Author-entered ID</th><th>Verify</th><th>Pages</th><th>Current File</th><th>Processing</th></tr></thead>
-        <tbody>
-        {% for item in submissions %}
+        <thead>
             <tr>
-                <td>{{ item.paper_id_filled }}</td>
-                <td>{{ item.final_submission_id }}</td>
-                <td>{{ item.start2_paper_id_raw }}</td>
-                <td>{{ item.get_verification_status_display }}</td>
-                <td>{{ item.page_count|default:"" }}</td>
-                <td>{{ item.current_file_path|truncatechars:80 }}</td>
-                <td>{{ item.processing_status }} {{ item.processing_message|truncatechars:60 }}</td>
+                <th>Paper ID</th>
+                <th>Final ID</th>
+                <th>Status</th>
+                <th>Origin</th>
+                <th>Replacement</th>
+                <th>Final Title</th>
+                <th>Pages</th>
+                <th>Files / PDF</th>
+                <th>Notes</th>
             </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+            {% with item=row.submission %}
+            <tr>
+                <td>
+                    <div>{{ item.paper_id_filled|default:"--" }}</div>
+                    {% if item.start2_paper_id_raw and item.start2_paper_id_raw != item.paper_id_filled %}
+                        <div class="small text-muted">Author-entered: {{ item.start2_paper_id_raw }}</div>
+                    {% endif %}
+                </td>
+                <td>{{ item.final_submission_id }}</td>
+                <td>
+                    <span class="badge {{ row.version_status_class }}">{{ row.version_status_label }}</span>
+                    <div class="small text-muted">{{ row.inactive_reason }}</div>
+                    {% if item.duplicate_submission and row.version_status_key != "replaced" %}
+                        <div><span class="badge text-bg-light text-dark">Also replaced</span></div>
+                    {% endif %}
+                    {% if row.not_publishing_flag %}
+                        <div><span class="badge text-bg-secondary">Not publishing flag</span></div>
+                    {% endif %}
+                </td>
+                <td><span class="badge {{ row.origin_class }}">{{ row.origin_label }}</span></td>
+                <td>
+                    {% if row.active_replacement %}
+                        <div>Final {{ row.active_replacement.final_submission_id }}</div>
+                        <div class="small text-muted">{{ row.active_replacement.get_submission_origin_display }}</div>
+                    {% else %}
+                        <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+                <td class="cfm-title-cell">{{ item.final_submission_title|default:"Missing" }}</td>
+                <td>{{ item.page_count|default:"" }}</td>
+                <td class="cfm-file-cell">
+                    {% if row.publication_pdf.exists %}
+                        <div class="cfm-status-line">
+                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                        </div>
+                        <div class="small text-muted text-break">{{ row.publication_pdf.path|truncatechars:80 }}</div>
+                    {% elif item.current_file_path %}
+                        <div class="small text-muted text-break">{{ item.current_file_path|truncatechars:80 }}</div>
+                    {% else %}
+                        <span class="badge text-bg-warning">No PDF</span>
+                    {% endif %}
+                </td>
+                <td class="cfm-note-cell">
+                    {% if row.note_items %}
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#old-notes-{{ item.pk }}" aria-expanded="false" aria-controls="old-notes-{{ item.pk }}">
+                            Notes
+                        </button>
+                        <div class="small text-muted mt-1">{{ row.note_summary|truncatechars:80 }}</div>
+                    {% else %}
+                        <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if row.note_items %}
+                <tr class="collapse" id="old-notes-{{ item.pk }}">
+                    <td colspan="9">
+                        {% for note in row.note_items %}
+                            <div class="mb-2">
+                                <div class="fw-semibold">{{ note.label }}</div>
+                                <div class="text-break">{{ note.text|linebreaksbr }}</div>
+                            </div>
+                        {% endfor %}
+                    </td>
+                </tr>
+            {% endif %}
+            {% endwith %}
         {% empty %}
-            <tr><td colspan="7" class="text-muted">No old versions found.</td></tr>
+            <tr><td colspan="9" class="text-muted">No {{ current_filter_label|lower }} versions found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

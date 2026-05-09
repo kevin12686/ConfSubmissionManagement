@@ -46,8 +46,12 @@ class FinalSubmissionPlagiarismStateInline(admin.StackedInline):
 
 @admin.register(InitialPaper)
 class InitialPaperAdmin(admin.ModelAdmin):
-    list_display = ("paper_id", "acceptance_status", "title")
-    search_fields = ("paper_id", "acceptance_status", "title", "authors")
+    list_display = ("paper_id", "acceptance_status", "title", "has_notes")
+    search_fields = ("paper_id", "acceptance_status", "title", "authors", "notes")
+
+    @admin.display(boolean=True, description="Notes")
+    def has_notes(self, obj):
+        return bool(obj.notes)
 
 
 @admin.register(FinalSubmission)
@@ -63,9 +67,11 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
         "final_submission_id",
         "paper_id_filled",
         "start2_paper_id_raw",
+        "submission_origin",
         "upload_date",
         "active_version",
         "duplicate_submission",
+        "discarded",
         "excluded_from_publication",
         "verification_status",
         "title_author_extraction_status",
@@ -85,7 +91,9 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
     )
     list_filter = (
         "active_version",
+        "submission_origin",
         "duplicate_submission",
+        "discarded",
         "excluded_from_publication",
         "publication_exclusion_reason",
         "paper_id_verified",

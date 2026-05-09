@@ -1,0 +1,25 @@
+{% if note_count %}
+<div class="collapse mb-3" id="paper-note-summary">
+    <div class="card">
+        <div class="card-header fw-semibold">Paper Notes</div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 cfm-table align-middle">
+                <thead>
+                    <tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Notes</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for note in note_summary %}
+                    <tr>
+                        <td>{{ note.paper_id }}</td>
+                        <td>{{ note.acceptance_status|default:"--" }}</td>
+                        <td class="cfm-title-cell">{{ note.title }}</td>
+                        <td class="text-pre-line">{{ note.notes|linebreaksbr }}</td>
+                        <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:initial_paper_edit' note.id %}">Edit</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 
+from submissions.services.text_utils import clean_note_text
+
 
 TITLE_AUTHOR_SOURCE_CHOICES = [
     ("unknown", "Unknown"),
@@ -61,6 +63,11 @@ FORMAT_STATUS_CHOICES = [
     ("review_ok", "Review OK"),
 ]
 
+SUBMISSION_ORIGIN_CHOICES = [
+    ("start2", "Start2"),
+    ("editor_upload", "Editor Upload"),
+]
+
 PUBLICATION_EXCLUSION_REASON_CHOICES = [
     ("", "Not excluded"),
     ("unpaid", "Unpaid"),
@@ -88,6 +95,7 @@ class InitialPaper(models.Model):
     acceptance_status = models.CharField(max_length=100, blank=True)
     title = models.CharField(max_length=500, blank=True)
     authors = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
     corresponding_email = models.EmailField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -97,6 +105,10 @@ class InitialPaper(models.Model):
 
     def __str__(self):
         return self.paper_id
+
+    def save(self, *args, **kwargs):
+        self.notes = clean_note_text(self.notes)
+        super().save(*args, **kwargs)
 
 
 class FinalSubmission(models.Model):
@@ -112,6 +124,14 @@ class FinalSubmission(models.Model):
     source_file = models.FileField(upload_to="source_submissions/", blank=True, null=True)
     source_current_file_path = models.TextField(blank=True)
     current_file_path = models.TextField(blank=True)
+    submission_origin = models.CharField(
+        max_length=30,
+        choices=SUBMISSION_ORIGIN_CHOICES,
+        default="start2",
+        db_index=True,
+    )
+    editor_upload_notes = models.TextField(blank=True)
+    editor_uploaded_at = models.DateTimeField(blank=True, null=True)
     extracted_title = models.CharField(max_length=500, blank=True)
     extracted_authors = models.TextField(blank=True)
     title_author_source = models.CharField(
@@ -188,6 +208,9 @@ class FinalSubmission(models.Model):
     mapping_source = models.CharField(max_length=100, blank=True)
     mapping_order = models.PositiveIntegerField(blank=True, null=True, db_index=True)
     duplicate_submission = models.BooleanField(default=False, db_index=True)
+    discarded = models.BooleanField(default=False, db_index=True)
+    discard_notes = models.TextField(blank=True)
+    discarded_at = models.DateTimeField(blank=True, null=True)
     excluded_from_publication = models.BooleanField(default=False, db_index=True)
     publication_exclusion_reason = models.CharField(
         max_length=30,
@@ -276,6 +299,9 @@ class FinalSubmission(models.Model):
                 "upload_date": self.upload_date,
                 "active_version": self.active_version,
                 "duplicate_submission": self.duplicate_submission,
+                "submission_origin": self.submission_origin,
+                "editor_upload_notes": self.editor_upload_notes,
+                "editor_uploaded_at": self.editor_uploaded_at,
                 "mapping_source": self.mapping_source,
                 "mapping_order": self.mapping_order,
             },
@@ -345,6 +371,9 @@ class FinalSubmission(models.Model):
                 "publication_exclusion_reason": self.publication_exclusion_reason,
                 "publication_exclusion_notes": self.publication_exclusion_notes,
                 "publication_excluded_at": self.publication_excluded_at,
+                "discarded": self.discarded,
+                "discard_notes": self.discard_notes,
+                "discarded_at": self.discarded_at,
                 "page_limit_exception_approved": self.page_limit_exception_approved,
                 "page_limit_exception_reason": self.page_limit_exception_reason,
                 "page_limit_exception_page_count": self.page_limit_exception_page_count,
@@ -384,6 +413,14 @@ class FinalSubmissionIdentityState(models.Model):
     upload_date = models.DateTimeField()
     active_version = models.BooleanField(default=True, db_index=True)
     duplicate_submission = models.BooleanField(default=False, db_index=True)
+    submission_origin = models.CharField(
+        max_length=30,
+        choices=SUBMISSION_ORIGIN_CHOICES,
+        default="start2",
+        db_index=True,
+    )
+    editor_upload_notes = models.TextField(blank=True)
+    editor_uploaded_at = models.DateTimeField(blank=True, null=True)
     mapping_source = models.CharField(max_length=100, blank=True)
     mapping_order = models.PositiveIntegerField(blank=True, null=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -485,6 +522,9 @@ class FinalSubmissionPublicationState(models.Model):
     )
     publication_exclusion_notes = models.TextField(blank=True)
     publication_excluded_at = models.DateTimeField(blank=True, null=True)
+    discarded = models.BooleanField(default=False, db_index=True)
+    discard_notes = models.TextField(blank=True)
+    discarded_at = models.DateTimeField(blank=True, null=True)
     page_limit_exception_approved = models.BooleanField(default=False, db_index=True)
     page_limit_exception_reason = models.TextField(blank=True)
     page_limit_exception_page_count = models.PositiveIntegerField(blank=True, null=True)

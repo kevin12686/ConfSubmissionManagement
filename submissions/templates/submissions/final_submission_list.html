@@ -9,16 +9,24 @@
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
+        <a class="btn btn-outline-primary" href="{% url 'submissions:editor_upload' %}">Upload Editor Version</a>
         <a class="btn btn-primary" href="{% url 'submissions:final_submission_add' %}">Add Final Submission</a>
     </div>
 </div>
-<div class="row g-3 mb-3">
-    <div class="col-lg-5">
-        <form method="get" class="cfm-filter-panel d-flex gap-2">
-            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final submissions">
-            <button class="btn btn-outline-secondary">Search</button>
-        </form>
-    </div>
+{% if current_filter == "version_conflicts" %}
+<div class="alert alert-warning">
+    <strong>Version decision required.</strong>
+    These papers have both Start2 and Editor-uploaded versions. Editor upload is currently prioritized, but final export stays blocked until you discard either the Start2 version or the editor upload with a note.
+</div>
+{% endif %}
+	<div class="row g-3 mb-3">
+	    <div class="col-lg-5">
+	        <form method="get" class="cfm-filter-panel d-flex gap-2">
+	            <input type="hidden" name="filter" value="{{ current_filter }}">
+	            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final submissions">
+	            <button class="btn btn-outline-secondary">Search</button>
+	        </form>
+	    </div>
     <div class="col-lg-7">
         <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_final_submissions' %}" class="card">
             {% csrf_token %}
@@ -40,36 +48,79 @@
                     </div>
                 </div>
             </div>
-        </form>
-    </div>
-</div>
-<details class="small text-muted border rounded px-2 py-1 mb-3">
+	        </form>
+	    </div>
+	</div>
+	<ul class="nav nav-tabs mb-3">
+	    {% for option in filter_options %}
+	        <li class="nav-item">
+	            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+	                {{ option.label }}
+	                <span class="badge text-bg-{% if option.value == current_filter %}primary{% else %}secondary{% endif %}">{{ option.count }}</span>
+	            </a>
+	        </li>
+	    {% endfor %}
+	</ul>
+	<details class="small text-muted border rounded px-2 py-1 mb-3">
     <summary class="fw-semibold">Status guide</summary>
     <div class="d-flex flex-wrap gap-2 mt-2">
         <span><span class="badge text-bg-success">Current</span> newest version</span>
         <span><span class="badge text-bg-secondary">Replaced</span> older version</span>
+        <span><span class="badge text-bg-primary">Editor Upload</span> editor-provided email version</span>
+        <span><span class="badge text-bg-warning">Version conflict</span> Start2 and Editor upload both need a discard decision</span>
+        <span><span class="badge text-bg-dark">Discarded</span> retained but not used for publication</span>
         <span><span class="badge text-bg-danger">Needs review</span> Paper ID unchecked</span>
-        <span><span class="badge text-bg-warning">Title differs</span> verified but title differs</span>
+        <span><span class="badge text-bg-warning">Verified, title differs</span> checked but title differs</span>
         <span><span class="badge text-bg-success">Verified</span> checked or identical</span>
     </div>
 </details>
 <div class="table-responsive">
     <table class="table table-striped table-hover align-middle cfm-table">
-        <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Verify</th><th>Version</th><th>Final Title</th><th>PDF</th><th>Source</th><th>Plagiarism</th><th>Processing</th><th></th></tr></thead>
+        <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Version</th><th>Final Title</th><th>Files</th><th>Plagiarism</th><th>Processing</th><th>Actions</th></tr></thead>
         <tbody>
         {% for item in submissions %}
             <tr>
-                <td>{{ item.final_submission_id }}</td>
-                <td>{{ item.start2_paper_id_raw }}</td>
-                <td>{{ item.paper_id_filled }}</td>
                 <td>
+                    <div>{{ item.final_submission_id }}</div>
+                    {% if item.submission_origin == "editor_upload" %}<span class="badge text-bg-primary">Editor Upload</span>{% else %}<span class="badge text-bg-light text-dark">Start2</span>{% endif %}
+                    {% if item.discarded %}<span class="badge text-bg-dark">Discarded</span>{% endif %}
+                    {% if item.version_conflict %}<span class="badge text-bg-warning">Version conflict</span>{% endif %}
+                </td>
+                <td>{{ item.start2_paper_id_raw }}</td>
+                <td>
+                    <div>{{ item.paper_id_filled }}</div>
                     <span class="badge text-bg-{{ item.verification_badge_level }}">{{ item.verification_badge_label }}</span>
                     {% if item.duplicate_submission %}<span class="badge text-bg-light text-dark">Replaced by newer upload</span>{% endif %}
                 </td>
-                <td>{% if item.active_version %}<span class="badge text-bg-success">Current final version</span>{% else %}<span class="badge text-bg-secondary">Replaced by newer upload</span>{% endif %}</td>
-                <td>{{ item.final_submission_title|truncatechars:45 }}</td>
-                <td>{{ item.original_file_name|default:item.current_file_path|truncatechars:30 }}</td>
-                <td>{{ item.source_original_file_name|default:item.source_current_file_path|truncatechars:30 }}</td>
+	                <td>
+	                    {% if item.discarded %}
+	                        <span class="badge text-bg-dark">Discarded</span>
+	                    {% elif item.active_version %}
+	                        <span class="badge text-bg-success">Current final</span>
+	                    {% else %}
+	                        <span class="badge text-bg-secondary">Replaced</span>
+	                    {% endif %}
+	                    {% if item.discard_notes %}<div class="small text-muted">{{ item.discard_notes }}</div>{% endif %}
+	                </td>
+	                <td class="cfm-title-cell">{{ item.final_submission_title }}</td>
+	                <td class="cfm-file-cell">
+	                    <div class="mb-2">
+	                        <div><span class="badge text-bg-primary">PDF</span></div>
+	                        {% if item.original_file_name or item.current_file_path %}
+	                            <div class="small">{{ item.original_file_name|default:item.current_file_path|truncatechars:42 }}</div>
+	                        {% else %}
+	                            <div class="small text-warning">No PDF</div>
+	                        {% endif %}
+	                    </div>
+	                    <div>
+	                        <div><span class="badge text-bg-secondary">Source</span></div>
+	                        {% if item.source_original_file_name or item.source_current_file_path %}
+	                            <div class="small">{{ item.source_original_file_name|default:item.source_current_file_path|truncatechars:42 }}</div>
+	                        {% else %}
+	                            <div class="small text-muted">No source</div>
+	                        {% endif %}
+	                    </div>
+	                </td>
                 <td>
                     {% if item.similarity_score != None and item.single_similarity_score != None %}
                         <div class="d-flex flex-wrap gap-1">
@@ -87,16 +138,51 @@
                     {% endif %}
                 </td>
                 <td>{{ item.processing_status }}</td>
-                <td>
-                    <div class="cfm-table-actions">
-                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
-                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
-                    </div>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="11" class="text-muted">No final submissions found.</td></tr>
-        {% endfor %}
+	                <td>
+	                    <div class="cfm-table-actions">
+	                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+	                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
+	                        {% if not item.discarded %}
+	                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#discard-row-{{ item.pk }}" aria-expanded="false" aria-controls="discard-row-{{ item.pk }}">Discard</button>
+	                        {% endif %}
+	                    </div>
+	                    {% if item.discarded %}
+	                        <form method="post" class="mt-2">
+	                            {% csrf_token %}
+	                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
+	                            <button class="btn btn-sm btn-outline-success" name="action" value="undo_discard_submission">Undo discard</button>
+	                        </form>
+	                    {% endif %}
+	                </td>
+	            </tr>
+	            {% if not item.discarded %}
+	            <tr class="collapse" id="discard-row-{{ item.pk }}">
+	                <td colspan="9">
+	                    <form method="post" class="border rounded p-3 bg-light">
+	                        {% csrf_token %}
+	                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+	                        <div class="row g-3 align-items-end">
+	                            <div class="col-lg-9">
+	                                <div class="fw-semibold mb-1">Discard Final {{ item.final_submission_id }}</div>
+	                                <div class="small text-muted mb-2">
+	                                    Discard only excludes this version from active version selection, reports, and publication exports. It does not mark the whole paper as Not Publishing.
+	                                    {% if item.version_conflict %}<span class="text-warning fw-semibold">To resolve Start2/Editor conflict, discard either the Start2 version or the Editor Upload.</span>{% endif %}
+	                                </div>
+	                                <label class="form-label" for="discard-notes-{{ item.pk }}">Discard reason required</label>
+	                                <textarea id="discard-notes-{{ item.pk }}" class="form-control" name="discard_notes" rows="3" placeholder="Required reason, e.g. author requested email version instead"></textarea>
+	                            </div>
+	                            <div class="col-lg-3 d-grid gap-2">
+	                                <button class="btn btn-outline-dark" name="action" value="discard_submission">Confirm discard version</button>
+	                                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#discard-row-{{ item.pk }}" aria-expanded="true" aria-controls="discard-row-{{ item.pk }}">Cancel</button>
+	                            </div>
+	                        </div>
+	                    </form>
+	                </td>
+	            </tr>
+	            {% endif %}
+	        {% empty %}
+            <tr><td colspan="9" class="text-muted">No final submissions found.</td></tr>
+	        {% endfor %}
         </tbody>
     </table>
 </div>

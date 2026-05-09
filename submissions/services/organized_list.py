@@ -7,6 +7,7 @@ from submissions.services.checks import (
     paper_title_matches_master,
     publication_duplicate_map,
 )
+from submissions.services.editor_uploads import editor_conflict_paper_ids
 from submissions.services.exceptions import (
     author_number_exception_status,
     exception_status_label,
@@ -25,6 +26,7 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "needs_attention", "label": "Needs attention"},
     {"value": "missing_final", "label": "Missing final"},
     {"value": "paper_id_review", "label": "Paper ID needs review"},
+    {"value": "version_conflicts", "label": "Start2/Editor conflicts"},
     {"value": "title_issues", "label": "Title issues"},
     {"value": "no_authors", "label": "No authors"},
     {"value": "author_over_limit", "label": "Author over limit"},
@@ -81,10 +83,10 @@ def _verification_status(submission, paper=None):
     if submission.excluded_from_publication:
         return "Excluded from publication", "secondary"
     if submission.paper_id_verified and not paper_title_matches_master(submission, paper):
-        return "ID verified, title differs", "warning"
+        return "Verified, title differs", "warning"
     if paper_id_effectively_verified(submission, paper):
         if submission.paper_id_verified:
-            return "ID verified", "success"
+            return "Verified", "success"
         return "Auto-verified by title", "success"
     if submission.verification_status == "title_mismatch":
         return "Paper ID title mismatch", "warning"
@@ -275,6 +277,7 @@ def _row_matches(row, query):
             row["paper"].acceptance_status if row["paper"] else "",
             row["paper"].title if row["paper"] else "",
             row["paper"].authors if row["paper"] else "",
+            row["paper"].notes if row["paper"] else "",
             row["submission"].final_submission_id if row["submission"] else "",
             row["submission"].start2_paper_id_raw if row["submission"] else "",
             row["submission"].paper_id_filled if row["submission"] else "",
@@ -367,7 +370,7 @@ def _is_verified_title_diff(row):
         submission
         and submission.paper_id_verified
         and row["verify_level"] == "warning"
-        and row["verify_label"] == "ID verified, title differs"
+        and row["verify_label"] == "Verified, title differs"
     )
 
 
@@ -450,6 +453,7 @@ def _needs_attention(row):
             not row["submission"],
             row["row_type"] == "unmatched",
             row.get("duplicate_badges"),
+            row.get("version_conflict"),
             row["verify_level"] in {"danger", "warning"},
             _has_pdf_issue(row),
             _has_page_issue(row),
@@ -468,32 +472,34 @@ def _attention_priority(row):
         return 0
     if row["row_type"] == "unmatched" or row["verify_level"] == "danger":
         return 1
-    if not row["publication_pdf"]["exists"]:
+    if row.get("version_conflict"):
         return 2
-    if row.get("duplicate_badges"):
+    if not row["publication_pdf"]["exists"]:
         return 3
-    if _has_pdf_issue(row):
+    if row.get("duplicate_badges"):
         return 4
-    if _has_page_issue(row):
+    if _has_pdf_issue(row):
         return 5
-    if _has_source_issue(row):
+    if _has_page_issue(row):
         return 6
-    if _has_missing_title_issue(row):
+    if _has_source_issue(row):
         return 7
-    if _has_title_match_unverified_issue(row):
+    if _has_missing_title_issue(row):
         return 8
-    if _has_extraction_issue(row):
+    if _has_title_match_unverified_issue(row):
         return 9
-    if _has_author_issue(row):
+    if _has_extraction_issue(row):
         return 10
-    if _has_plagiarism_issue(row):
+    if _has_author_issue(row):
         return 11
-    if _has_format_issue(row):
+    if _has_plagiarism_issue(row):
         return 12
-    if _has_verified_hard_title_diff(row):
+    if _has_format_issue(row):
         return 13
-    if _has_soft_title_issue(row):
+    if _has_verified_hard_title_diff(row):
         return 14
+    if _has_soft_title_issue(row):
+        return 15
     return 99
 
 
@@ -512,6 +518,7 @@ def _filter_rows(rows, current_filter):
         "paper_id_review": lambda row: bool(
             row["submission"] and row["verify_level"] in {"danger", "warning"}
         ),
+        "version_conflicts": lambda row: bool(row.get("version_conflict")),
         "title_issues": _has_title_issue,
         "no_authors": lambda row: row["author_count"] is None,
         "author_over_limit": lambda row: row["over_author_limit"] and not row.get("author_number_exception_valid"),
@@ -575,8 +582,13 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
     papers = list(InitialPaper.objects.all())
     valid_paper_ids = {paper.paper_id for paper in papers}
     duplicate_map = publication_duplicate_map()
+    conflict_paper_ids = set(editor_conflict_paper_ids())
     active_submissions = (
-        FinalSubmission.objects.filter(active_version=True)
+        FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        )
         .order_by("paper_id_filled", "-created_at", "-final_submission_id")
     )
     active_by_paper_id = {}
@@ -602,6 +614,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
                 "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
+                "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
                 "needs_processing_after_formatting": corrected_pdf_needs_processing(submission)
                 if submission
                 else False,
@@ -652,6 +665,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
                 "duplicate_badges": duplicate_map.get(submission.pk, []),
+                "version_conflict": submission.paper_id_filled in conflict_paper_ids,
                 "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
                 "title_check": _title_check(None, submission),
                 "page_label": page_label,
@@ -721,8 +735,9 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
         "duplicate_author_issues": sum(
             1 for row in filtered_rows if row["submission"] and row.get("unresolved_duplicate_authors")
         ),
+        "version_conflicts": sum(1 for row in filtered_rows if row.get("version_conflict")),
         "excluded_from_publication": FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=True
+            active_version=True, excluded_from_publication=True, discarded=False
         ).count(),
         "needs_process_pdfs": len(needs_process_rows),
         "needs_process_pdf_labels": [

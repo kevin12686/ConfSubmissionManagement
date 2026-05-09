@@ -15,7 +15,12 @@ def find_submission(row):
     paper_id = clean_value(row.get("paper_id") or row.get("paper_id_filled"))
     if paper_id:
         return (
-            FinalSubmission.objects.filter(paper_id_filled=paper_id, active_version=True)
+            FinalSubmission.objects.filter(
+                paper_id_filled=paper_id,
+                active_version=True,
+                discarded=False,
+                excluded_from_publication=False,
+            )
             .first()
         )
     return None

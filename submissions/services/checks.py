@@ -32,6 +32,7 @@ ERROR_GROUPS = {
             "Missing Final Submission",
             "Replaced Final Submission",
             "Multiple Active Final Submissions",
+            "Start2/Editor Version Conflict",
         },
     },
     "Files / PDF Processing": {
@@ -106,6 +107,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Unverified Paper ID": "critical",
     "Missing Final Submission": "critical",
     "Multiple Active Final Submissions": "critical",
+    "Start2/Editor Version Conflict": "critical",
     "Missing PDF": "critical",
     "Corrected PDF Not Processed": "critical",
     "Missing Source File": "critical",
@@ -357,6 +359,7 @@ def publication_duplicate_groups():
     for submission in FinalSubmission.objects.filter(
         active_version=True,
         excluded_from_publication=False,
+        discarded=False,
         paper_id_filled__in=valid_ids,
     ):
         title_key = _normalize_publication_title(submission.extracted_title)
@@ -429,6 +432,7 @@ def active_master_submission_map():
     submissions = FinalSubmission.objects.filter(
         active_version=True,
         excluded_from_publication=False,
+        discarded=False,
         paper_id_filled__in=valid_ids,
     )
     return {submission.paper_id_filled: submission for submission in submissions}
@@ -441,6 +445,7 @@ def publication_readiness_rows(include_allowed=False):
     active_valid_submissions = FinalSubmission.objects.filter(
         active_version=True,
         excluded_from_publication=False,
+        discarded=False,
         paper_id_filled__in=valid_ids,
     )
     duplicate_active_groups = (
@@ -470,14 +475,32 @@ def publication_readiness_rows(include_allowed=False):
         FinalSubmission.objects.filter(
             active_version=True,
             excluded_from_publication=True,
+            discarded=False,
             paper_id_filled__in=valid_ids,
         ).values_list("paper_id_filled", flat=True)
     )
+
+    from submissions.services.editor_uploads import editor_conflict_details
+
+    for conflict in editor_conflict_details():
+        rows.append(
+            {
+                "category": "Start2/Editor Version Conflict",
+                "paper_id": conflict["paper_id"],
+                "final_submission_id": conflict["editor_ids"],
+                "message": (
+                    "Both Start2 and Editor-uploaded versions are undiscarded. "
+                    "Editor upload is currently prioritized; discard one side before final export. "
+                    f"Start2: {conflict['start2_ids']}; Editor: {conflict['editor_ids']}."
+                ),
+            }
+        )
 
     for submission in (
         FinalSubmission.objects.filter(
             active_version=True,
             excluded_from_publication=False,
+            discarded=False,
         )
         .exclude(paper_id_filled__in=valid_ids)
     ):
@@ -920,6 +943,7 @@ def rebuild_paper_authors():
         for submission in FinalSubmission.objects.filter(
             active_version=True,
             excluded_from_publication=False,
+            discarded=False,
         ).exclude(
             extracted_authors=""
         ):
@@ -998,7 +1022,10 @@ def invalid_paper_id_submissions():
     valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
     return [
         submission
-        for submission in FinalSubmission.objects.filter(excluded_from_publication=False)
+        for submission in FinalSubmission.objects.filter(
+            excluded_from_publication=False,
+            discarded=False,
+        )
         if not submission.paper_id_filled or submission.paper_id_filled not in valid_ids
     ]
 
@@ -1006,13 +1033,14 @@ def invalid_paper_id_submissions():
 def dashboard_counts():
     setting = AppSetting.load()
     active = FinalSubmission.objects.filter(
-        active_version=True, excluded_from_publication=False
+        active_version=True, excluded_from_publication=False, discarded=False
     )
     author_rows = author_count_rows()
     active_paper_ids = set(
         FinalSubmission.objects.filter(
             active_version=True,
             excluded_from_publication=False,
+            discarded=False,
         )
         .exclude(paper_id_filled="")
         .values_list("paper_id_filled", flat=True)
@@ -1021,6 +1049,7 @@ def dashboard_counts():
         FinalSubmission.objects.filter(
             active_version=True,
             excluded_from_publication=True,
+            discarded=False,
         )
         .exclude(paper_id_filled="")
         .values_list("paper_id_filled", flat=True)
@@ -1060,6 +1089,8 @@ def dashboard_counts():
             master_by_id.get(submission.paper_id_filled),
         )
     )
+    from submissions.services.editor_uploads import editor_conflict_count
+
     return {
         "total_papers": InitialPaper.objects.count(),
         "total_final_submissions": FinalSubmission.objects.count(),
@@ -1067,10 +1098,11 @@ def dashboard_counts():
         "unverified_paper_ids": unverified_paper_ids,
         "title_mismatches": title_mismatches,
         "duplicate_final_submissions": FinalSubmission.objects.filter(
-            duplicate_submission=True
+            duplicate_submission=True,
+            discarded=False,
         ).count(),
         "excluded_from_publication": FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=True
+            active_version=True, excluded_from_publication=True, discarded=False
         ).count(),
         "unclassified_not_in_master": unclassified_not_in_master,
         "invalid_paper_ids": len(invalid_paper_id_submissions()),
@@ -1119,12 +1151,13 @@ def dashboard_counts():
         "format_needs_edit": format_needs_edit,
         "format_not_ok": format_pending + format_needs_edit,
         "corrected_pdf_needs_processing": corrected_pdf_processing_needed,
+        "start2_editor_conflicts": editor_conflict_count(),
     }
 
 
 def error_report_rows():
     rows = publication_readiness_rows(include_allowed=True)
-    for submission in FinalSubmission.objects.filter(duplicate_submission=True):
+    for submission in FinalSubmission.objects.filter(duplicate_submission=True, discarded=False):
         rows.append(
             {
                 "category": "Replaced Final Submission",

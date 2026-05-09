@@ -140,7 +140,7 @@ def download_template(request, template_type):
     writer = csv.writer(response)
     writer.writerow(columns)
     if template_type in {"master", "initial"}:
-        writer.writerow(["R003", "R-to-R", "Example Master Title", "Ada Lovelace; Alan Turing"])
+        writer.writerow(["R003", "R-to-R", "Example Master Title", "Ada Lovelace; Alan Turing", "Optional editorial note"])
     elif template_type == "final":
         writer.writerow(["34", "R3", "Example Final Title", "Ada Lovelace and Alan Turing", "2026-05-07 09:00:00", "Submit_PDF, Submit_Source"])
     elif template_type in {"plagiarism", "crosscheck"}:
@@ -153,7 +153,11 @@ def active_versions(request):
 
 
 def old_versions(request):
-    return render(request, "submissions/old_versions.html", old_versions_context())
+    return render(
+        request,
+        "submissions/old_versions.html",
+        old_versions_context(request.GET.get("filter", "all")),
+    )
 
 
 def error_report(request):

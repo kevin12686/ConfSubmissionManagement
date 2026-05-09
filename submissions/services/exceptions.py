@@ -64,6 +64,7 @@ def exception_rows(status_filter="not_allowed"):
     active = FinalSubmission.objects.filter(
         active_version=True,
         excluded_from_publication=False,
+        discarded=False,
     ).order_by("paper_id_filled", "final_submission_id")
 
     for submission in active:

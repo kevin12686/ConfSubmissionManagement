@@ -17,6 +17,7 @@ from submissions.services.file_manager import (
     publication_source_info,
 )
 from submissions.services.pdf_processor import determine_active_versions, final_submission_sort_key
+from submissions.services.text_utils import clean_note_text
 
 
 MASTER_SHEET_NAME = "我們自己準備的表格"
@@ -119,6 +120,7 @@ INITIAL_PAPER_TEMPLATE_COLUMNS = [
     "acceptance_status",
     "title",
     "authors",
+    "notes",
 ]
 
 FINAL_SUBMISSION_TEMPLATE_COLUMNS = [
@@ -296,6 +298,7 @@ def _import_initial_frame(frame):
             ),
             "title": clean_value(row.get("title")),
             "authors": clean_value(row.get("authors")),
+            "notes": clean_note_text(row.get("notes")),
         }
         _obj, was_created = InitialPaper.objects.update_or_create(
             paper_id=paper_id, defaults=defaults
@@ -310,14 +313,27 @@ def _mark_duplicate_submissions():
     duplicate_count = 0
     FinalSubmission.objects.update(duplicate_submission=False)
     for paper_id in (
-        FinalSubmission.objects.exclude(paper_id_filled="")
+        FinalSubmission.objects.filter(discarded=False)
+        .exclude(paper_id_filled="")
         .order_by()
         .values_list("paper_id_filled", flat=True)
         .distinct()
     ):
         submissions = list(
-            FinalSubmission.objects.filter(paper_id_filled=paper_id)
+            FinalSubmission.objects.filter(paper_id_filled=paper_id, discarded=False)
         )
+        editor_submissions = [
+            submission
+            for submission in submissions
+            if submission.submission_origin == "editor_upload"
+        ]
+        if editor_submissions:
+            for submission in submissions:
+                if submission.submission_origin == "start2":
+                    submission.duplicate_submission = True
+                    submission.save(update_fields=["duplicate_submission", "updated_at"])
+                    duplicate_count += 1
+            submissions = editor_submissions
         if setting.active_version_rule == "upload_date":
             submissions.sort(
                 key=lambda submission: (
@@ -441,7 +457,15 @@ def evaluate_imported_submissions():
 
 def submissions_to_frame(queryset):
     rows = []
-    for item in queryset:
+    items = list(queryset)
+    master_by_id = {
+        paper.paper_id: paper
+        for paper in InitialPaper.objects.filter(
+            paper_id__in={item.paper_id_filled for item in items if item.paper_id_filled}
+        )
+    }
+    for item in items:
+        master = master_by_id.get(item.paper_id_filled)
         publication_pdf = publication_pdf_info(item)
         publication_source = publication_source_info(item)
         rows.append(
@@ -450,6 +474,19 @@ def submissions_to_frame(queryset):
                 "start2_paper_id_raw": item.start2_paper_id_raw,
                 "author_entered_paper_id": item.start2_paper_id_raw,
                 "paper_id_filled": item.paper_id_filled,
+                "paper_master_acceptance_status": master.acceptance_status if master else "",
+                "paper_master_title": master.title if master else "",
+                "paper_master_notes": master.notes if master else "",
+                "submission_origin": item.submission_origin,
+                "editor_upload_notes": item.editor_upload_notes,
+                "editor_uploaded_at": item.editor_uploaded_at,
+                "discarded": item.discarded,
+                "discard_notes": item.discard_notes,
+                "discarded_at": item.discarded_at,
+                "excluded_from_publication": item.excluded_from_publication,
+                "publication_exclusion_reason": item.publication_exclusion_reason,
+                "publication_exclusion_notes": item.publication_exclusion_notes,
+                "publication_excluded_at": item.publication_excluded_at,
                 "final_submission_title": item.final_submission_title,
                 "final_submission_authors": item.final_submission_authors,
                 "upload_date": item.upload_date,

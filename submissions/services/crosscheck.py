@@ -71,7 +71,11 @@ def prepare_crosscheck_upload(token):
             ],
         )
         writer.writeheader()
-        for submission in FinalSubmission.objects.filter(active_version=True).order_by("paper_id_filled"):
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        ).order_by("paper_id_filled"):
             paper_id = clean_value(submission.paper_id_filled)
             if not paper_id:
                 skipped.append(_skip_row(submission, "Missing Paper ID."))
@@ -196,7 +200,12 @@ def upload_crosscheck_reports(files):
 
 def _active_submission_for_paper_id(paper_id):
     return (
-        FinalSubmission.objects.filter(paper_id_filled=paper_id, active_version=True)
+        FinalSubmission.objects.filter(
+            paper_id_filled=paper_id,
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        )
         .first()
     )
 

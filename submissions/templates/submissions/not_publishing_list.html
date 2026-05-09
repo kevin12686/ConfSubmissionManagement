@@ -4,7 +4,7 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Not Publishing List</h1>
-        <div class="cfm-page-subtitle">Final submissions confirmed as not part of the publication package, plus unclassified finals that still need a decision.</div>
+        <div class="cfm-page-subtitle">Publication decisions for finals that should not be published. Old Versions remains the version history page.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
@@ -37,7 +37,8 @@
     <div class="col-sm-6 col-lg-3">
         <div class="cfm-metric">
             <div class="cfm-metric-label">Not Publishing</div>
-            <div class="cfm-metric-value">{{ excluded_count }}</div>
+            <div class="cfm-metric-value">{{ active_excluded_count }}</div>
+            <div class="small text-muted">{{ excluded_count }} total record{{ excluded_count|pluralize }}</div>
         </div>
     </div>
 </div>
@@ -111,6 +112,9 @@
                 <tr>
                     <th>Final ID</th>
                     <th>Paper ID</th>
+                    <th>Version state</th>
+                    <th>Origin</th>
+                    <th>Replacement</th>
                     <th>Final Title</th>
                     <th>Reason</th>
                     <th>Note</th>
@@ -123,6 +127,15 @@
                 <tr>
                     <td>{{ submission.final_submission_id }}</td>
                     <td>{{ submission.paper_id_filled|default:"--" }}</td>
+                    <td><span class="badge text-bg-{{ submission.version_state_level }}">{{ submission.version_state_label }}</span></td>
+                    <td><span class="badge text-bg-{% if submission.submission_origin == 'editor_upload' %}primary{% else %}light text-dark{% endif %}">{{ submission.origin_label }}</span></td>
+                    <td>
+                        {% if submission.active_replacement %}
+                            Final {{ submission.active_replacement.final_submission_id }}
+                        {% else %}
+                            <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
                     <td>{{ submission.final_submission_title|default:"--" }}</td>
                     <td><span class="badge text-bg-secondary">{{ submission.get_publication_exclusion_reason_display }}</span></td>
                     <td>{{ submission.publication_exclusion_notes|default:"--" }}</td>
@@ -139,7 +152,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="7" class="text-muted">No final submissions are marked Not Publishing.</td></tr>
+                <tr><td colspan="10" class="text-muted">No final submissions are marked Not Publishing.</td></tr>
             {% endfor %}
             </tbody>
         </table>

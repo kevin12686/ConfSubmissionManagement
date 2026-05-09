@@ -2,6 +2,7 @@ from django import forms
 
 from .models import AppSetting, FinalSubmission, InitialPaper
 from .services.import_export import round_percent
+from .services.text_utils import clean_note_text
 
 
 class BootstrapMixin:
@@ -21,13 +22,20 @@ class InitialPaperForm(BootstrapMixin, forms.ModelForm):
             "acceptance_status",
             "title",
             "authors",
+            "notes",
         ]
-        widgets = {"authors": forms.Textarea(attrs={"rows": 3})}
+        widgets = {
+            "authors": forms.Textarea(attrs={"rows": 3}),
+            "notes": forms.Textarea(attrs={"rows": 4}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["acceptance_status"].label = "Accept Status"
         self._apply_bootstrap()
+
+    def clean_notes(self):
+        return clean_note_text(self.cleaned_data.get("notes"))
 
 
 class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
@@ -116,6 +124,37 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
 
     def clean_single_similarity_score(self):
         return round_percent(self.cleaned_data.get("single_similarity_score"))
+
+
+class EditorUploadForm(BootstrapMixin, forms.Form):
+    paper = forms.ModelChoiceField(
+        queryset=InitialPaper.objects.all(),
+        label="Paper ID",
+        help_text="Editor upload must be linked to a Paper Master List record.",
+    )
+    pdf_file = forms.FileField(label="Editor PDF")
+    source_file = forms.FileField(required=False, label="Editor source file")
+    final_submission_title = forms.CharField(required=False, label="Final Title")
+    final_submission_authors = forms.CharField(
+        required=False,
+        label="Final Authors",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    notes = forms.CharField(
+        required=True,
+        label="Editor upload note",
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Required. Record why this editor-uploaded version should be used.",
+    )
+
+    def __init__(self, *args, initial_paper_id=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["paper"].queryset = InitialPaper.objects.all().order_by("paper_id")
+        if initial_paper_id:
+            self.fields["paper"].initial = InitialPaper.objects.filter(
+                paper_id=initial_paper_id
+            ).first()
+        self._apply_bootstrap()
 
 
 class ImportFileForm(BootstrapMixin, forms.Form):

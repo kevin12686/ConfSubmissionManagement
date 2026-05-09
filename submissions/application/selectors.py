@@ -9,16 +9,23 @@ from submissions.services.checks import (
 )
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.pdf_processor import processed_pdf_rows
+from submissions.services.editor_uploads import editor_conflict_paper_ids
+from submissions.services.version_history import (
+    OLD_VERSION_FILTER_OPTIONS,
+    filter_old_version_rows,
+    old_version_counts,
+    old_version_rows,
+)
 
 
 def verification_badge(submission, master_paper=None):
     if submission.excluded_from_publication:
         return "Excluded from publication", "secondary"
     if submission.paper_id_verified and not paper_title_matches_master(submission, master_paper):
-        return "ID verified, title differs", "warning"
+        return "Verified, title differs", "warning"
     if paper_id_effectively_verified(submission, master_paper):
         if submission.paper_id_verified:
-            return "ID verified", "success"
+            return "Verified", "success"
         return "Auto-verified by title", "success"
     if submission.verification_status == "title_mismatch":
         return "Paper ID title mismatch", "warning"
@@ -47,12 +54,40 @@ def paper_master_list_context(query=""):
             | Q(acceptance_status__icontains=query)
             | Q(title__icontains=query)
             | Q(authors__icontains=query)
+            | Q(notes__icontains=query)
         )
-    return {"papers": papers, "q": query, "import_form": ImportFileForm()}
+    note_summary = paper_note_summary()
+    return {
+        "papers": papers,
+        "q": query,
+        "import_form": ImportFileForm(),
+        "note_summary": note_summary,
+        "note_count": len(note_summary),
+    }
 
 
-def final_submission_list_context(query="", score_level_builder=None):
+def paper_note_summary():
+    return list(
+        InitialPaper.objects.exclude(notes="")
+        .order_by("paper_id")
+        .values("id", "paper_id", "acceptance_status", "title", "notes")
+    )
+
+
+FINAL_SUBMISSION_FILTER_OPTIONS = [
+    {"value": "all", "label": "All"},
+    {"value": "version_conflicts", "label": "Version conflicts"},
+    {"value": "editor_uploads", "label": "Editor uploads"},
+    {"value": "discarded", "label": "Discarded"},
+    {"value": "start2", "label": "Start2"},
+]
+
+
+def final_submission_list_context(query="", score_level_builder=None, current_filter="all"):
     submissions = FinalSubmission.objects.all()
+    valid_filters = {option["value"] for option in FINAL_SUBMISSION_FILTER_OPTIONS}
+    if current_filter not in valid_filters:
+        current_filter = "all"
     if query:
         submissions = submissions.filter(
             Q(final_submission_id__icontains=query)
@@ -64,6 +99,22 @@ def final_submission_list_context(query="", score_level_builder=None):
             | Q(extracted_authors__icontains=query)
             | Q(processing_status__icontains=query)
         )
+    conflict_ids = set(editor_conflict_paper_ids())
+    tab_counts = {
+        "all": submissions.count(),
+        "version_conflicts": submissions.filter(paper_id_filled__in=conflict_ids).count(),
+        "editor_uploads": submissions.filter(submission_origin="editor_upload").count(),
+        "discarded": submissions.filter(discarded=True).count(),
+        "start2": submissions.filter(submission_origin="start2").count(),
+    }
+    if current_filter == "version_conflicts":
+        submissions = submissions.filter(paper_id_filled__in=conflict_ids)
+    elif current_filter == "editor_uploads":
+        submissions = submissions.filter(submission_origin="editor_upload")
+    elif current_filter == "discarded":
+        submissions = submissions.filter(discarded=True)
+    elif current_filter == "start2":
+        submissions = submissions.filter(submission_origin="start2")
     settings_obj = AppSetting.load()
     items = list(submissions)
     master_by_id = {
@@ -88,7 +139,18 @@ def final_submission_list_context(query="", score_level_builder=None):
         )
         submission.verification_badge_label = label
         submission.verification_badge_level = level
-    return {"submissions": items, "q": query, "import_form": FinalSubmissionImportForm()}
+        submission.version_conflict = submission.paper_id_filled in conflict_ids
+    filter_tabs = [
+        {**option, "count": tab_counts.get(option["value"], 0)}
+        for option in FINAL_SUBMISSION_FILTER_OPTIONS
+    ]
+    return {
+        "submissions": items,
+        "q": query,
+        "current_filter": current_filter,
+        "filter_options": filter_tabs,
+        "import_form": FinalSubmissionImportForm(),
+    }
 
 
 def processed_pdf_context():
@@ -99,7 +161,7 @@ def processed_pdf_context():
 
 
 def active_versions_context():
-    submissions = list(FinalSubmission.objects.filter(active_version=True))
+    submissions = list(FinalSubmission.objects.filter(active_version=True, discarded=False))
     master_by_id = {
         paper.paper_id: paper
         for paper in InitialPaper.objects.filter(
@@ -123,5 +185,21 @@ def _active_version_row(submission, master_by_id):
     }
 
 
-def old_versions_context():
-    return {"submissions": FinalSubmission.objects.filter(active_version=False)}
+def old_versions_context(current_filter="all"):
+    rows = old_version_rows()
+    counts = old_version_counts(rows)
+    filtered_rows, current_filter = filter_old_version_rows(rows, current_filter)
+    filter_tabs = [
+        {**option, "count": counts.get(option["value"], 0)}
+        for option in OLD_VERSION_FILTER_OPTIONS
+    ]
+    current_label = next(
+        option["label"] for option in filter_tabs if option["value"] == current_filter
+    )
+    return {
+        "rows": filtered_rows,
+        "summary_counts": counts,
+        "current_filter": current_filter,
+        "current_filter_label": current_label,
+        "filter_options": filter_tabs,
+    }

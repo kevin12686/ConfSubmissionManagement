@@ -1,0 +1,40 @@
+{% extends "submissions/base.html" %}
+{% block title %}Editor Upload{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Editor Upload</h1>
+        <div class="cfm-page-subtitle">Upload an editor-provided version from email. This creates a traceable final version without deleting Start2 records.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Back to Final Submissions</a>
+    </div>
+</div>
+
+{% if form.non_field_errors %}
+    <div class="alert alert-danger cfm-attention">
+        {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card">
+    {% csrf_token %}
+    <div class="card-body">
+        <div class="alert alert-warning border">
+            Editor uploads are prioritized over Start2 versions until one side is discarded. Add a clear note so the editorial record explains why this version exists.
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.paper %}</div>
+            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.final_submission_title %}</div>
+            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.pdf_file %}</div>
+            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>
+            <div class="col-12">{% include "submissions/includes/form_field.html" with field=form.final_submission_authors %}</div>
+            <div class="col-12">{% include "submissions/includes/form_field.html" with field=form.notes %}</div>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-end gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Cancel</a>
+        <button class="btn btn-primary">Create Editor Upload</button>
+    </div>
+</form>
+{% endblock %}

@@ -53,13 +53,24 @@ from submissions.services.import_export import (
     import_initial_papers,
 )
 from submissions.services.integrations import import_external_results
-from submissions.services.import_preview import apply_import_preview, preview_final_import
+from submissions.services.import_preview import (
+    apply_import_preview,
+    preview_final_import,
+    preview_initial_import,
+)
+from submissions.services.editor_uploads import (
+    create_editor_submission,
+    discard_submission,
+    editor_conflict_count,
+    undo_discard_submission,
+)
 from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.reports import (
     author_count_frame,
     export_active_versions,
     export_all_reports,
+    export_old_versions,
     export_publication_package,
 )
 from submissions.services.crosscheck import import_crosscheck_results, upload_crosscheck_reports
@@ -154,12 +165,13 @@ class EditorialAcceptanceTestCase(TestCase):
         settings_obj.active_version_rule = "final_id"
         settings_obj.save()
 
-    def make_master_paper(self, paper_id="P001", title="Ready Paper", authors="Ada Lovelace; Alan Turing"):
+    def make_master_paper(self, paper_id="P001", title="Ready Paper", authors="Ada Lovelace; Alan Turing", notes=""):
         return InitialPaper.objects.create(
             paper_id=paper_id,
             acceptance_status="accepted",
             title=title,
             authors=authors,
+            notes=notes,
         )
 
     def make_file(self, relative_path, content):
@@ -438,7 +450,11 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         settings_obj.conference_name = "DSA 2026"
         settings_obj.page_limit = 10
         settings_obj.save()
-        self.make_master_paper(paper_id="R001", title="Restored Paper")
+        self.make_master_paper(
+            paper_id="R001",
+            title="Restored Paper",
+            notes="  Restore note  \n\n\n  keep this  ",
+        )
         pdf_path = self.media_root / "active" / "R001.pdf"
         source_path = self.media_root / "source" / "R001.docx"
         report_path = self.media_root / "reports" / "R001_report.pdf"
@@ -491,7 +507,9 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         settings_obj = AppSetting.load()
         self.assertEqual(settings_obj.conference_name, "DSA 2026")
         self.assertEqual(settings_obj.page_limit, 10)
-        self.assertEqual(InitialPaper.objects.get().paper_id, "R001")
+        restored_paper = InitialPaper.objects.get()
+        self.assertEqual(restored_paper.paper_id, "R001")
+        self.assertEqual(restored_paper.notes, "Restore note\n\nkeep this")
         restored = FinalSubmission.objects.get()
         self.assertEqual(restored.final_submission_id, "9001")
         self.assertTrue(Path(restored.current_file_path).exists())
@@ -509,7 +527,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             state = json.loads(archive.read("state.json").decode("utf-8"))
             archive_text = json.dumps({"manifest": manifest, "state": state})
         self.assertEqual(manifest["app_name"], "Conference Final Manager")
-        self.assertEqual(manifest["app_version"], "1.0.2")
+        self.assertEqual(manifest["app_version"], "1.0.3")
         self.assertEqual(manifest["state_archive_version"], 2)
         self.assertNotIn(str(self.root), archive_text)
         self.assertNotIn("/var/", archive_text)
@@ -536,9 +554,9 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
         result = import_initial_papers(
             self.uploaded_csv(
                 "initial.csv",
-                "paper_id,acceptance_status,title,authors\n"
-                "R001,accepted,Original Title,Ada\n"
-                ",accepted,Blank Row,Ignored\n",
+                "paper_id,acceptance_status,title,authors,notes\n"
+                "R001,accepted,Original Title,Ada,Original note\n"
+                ",accepted,Blank Row,Ignored,Ignored note\n",
             )
         )
         self.assertEqual(result, {"created": 1, "updated": 0})
@@ -546,13 +564,43 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
         result = import_initial_papers(
             self.uploaded_csv(
                 "initial.csv",
-                "paper_id,acceptance_status,title,authors\n"
-                "R001,accepted,Updated Title,Ada; Alan\n",
+                "paper_id,acceptance_status,title,authors,notes\n"
+                'R001,accepted,Updated Title,Ada; Alan," Updated note  \n\n\n  second line "\n',
             )
         )
         paper = InitialPaper.objects.get(paper_id="R001")
         self.assertEqual(result, {"created": 0, "updated": 1})
         self.assertEqual(paper.title, "Updated Title")
+        self.assertEqual(paper.notes, "Updated note\n\nsecond line")
+
+    def test_paper_master_notes_preview_apply_does_not_reset_verification(self):
+        self.make_master_paper("P001", "Stable Title", "Ada", notes="Old note")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Stable Title",
+            extracted_title="Stable Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+
+        preview = preview_initial_import(
+            self.uploaded_csv(
+                "master.csv",
+                'paper_id,acceptance_status,title,authors,notes\n'
+                'P001,accepted,Stable Title,Ada,"  New note  \n\n\n  keep this  "\n',
+            )
+        )
+        row = preview["rows"][0]
+        self.assertEqual(row["status"], "changed")
+        self.assertEqual([change["field"] for change in row["changes"]], ["notes"])
+        self.assertFalse(row["paper_id_review_reset"])
+
+        apply_import_preview(preview["token"])
+        paper = InitialPaper.objects.get(paper_id="P001")
+        submission.refresh_from_db()
+        self.assertEqual(paper.notes, "New note\n\nkeep this")
+        self.assertTrue(submission.paper_id_verified)
 
     def test_initial_import_reads_preferred_xlsx_sheet(self):
         buffer = io.BytesIO()
@@ -1150,6 +1198,122 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         with self.assertRaisesMessage(ValueError, "no papers have both publication PDF and source files"):
             export_publication_package(force=True)
 
+    def test_editor_upload_is_prioritized_but_conflict_blocks_final_export_until_discarded(self):
+        paper = self.make_master_paper("P001", "Email Replacement", "Ada")
+        start2 = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Email Replacement",
+            extracted_title="Email Replacement",
+            current_file_path=str(self.make_pdf_file("start2.pdf", b"start2 pdf")),
+            source_current_file_path=str(self.make_source_file("start2.docx", b"start2 source")),
+        )
+
+        editor = create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Use author email version.",
+        )
+        start2.refresh_from_db()
+        editor.refresh_from_db()
+
+        self.assertFalse(start2.active_version)
+        self.assertTrue(editor.active_version)
+        self.assertEqual(editor.submission_origin, "editor_upload")
+        self.assertEqual(editor_conflict_count(), 1)
+        self.assert_publication_blocked("Start2/Editor Version Conflict")
+
+        draft_path = export_publication_package(force=True)
+        with zipfile.ZipFile(draft_path) as archive:
+            warning_name = next(
+                name for name in archive.namelist() if name.startswith("publication_package_warnings_")
+            )
+            self.assertIn(
+                "Start2/Editor Version Conflict",
+                archive.read(warning_name).decode("utf-8-sig"),
+            )
+            self.assertEqual(archive.read("PDF/P001-UNTITLED.pdf"), b"editor pdf")
+            self.assertEqual(archive.read("Source/P001-UNTITLED.docx"), b"editor source")
+
+        discard_submission(start2, "Author asked us to discard the Start2 version.")
+        start2.refresh_from_db()
+        editor.refresh_from_db()
+
+        self.assertTrue(start2.discarded)
+        self.assertTrue(editor.active_version)
+        self.assertEqual(editor_conflict_count(), 0)
+        self.assertNotIn(
+            "Start2/Editor Version Conflict",
+            {row["category"] for row in publication_readiness_rows()},
+        )
+
+    def test_discarding_editor_upload_returns_start2_to_active_version(self):
+        paper = self.make_master_paper("P001", "Back To Start2", "Ada")
+        start2 = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Back To Start2",
+            extracted_title="Back To Start2",
+        )
+        editor = create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Temporary email version.",
+        )
+
+        discard_submission(editor, "Email version was superseded.")
+        start2.refresh_from_db()
+        editor.refresh_from_db()
+
+        self.assertTrue(start2.active_version)
+        self.assertFalse(editor.active_version)
+        self.assertTrue(editor.discarded)
+        self.assertEqual(editor_conflict_count(), 0)
+
+        undo_discard_submission(editor)
+        start2.refresh_from_db()
+        editor.refresh_from_db()
+        self.assertFalse(start2.active_version)
+        self.assertTrue(editor.active_version)
+        self.assertEqual(editor_conflict_count(), 1)
+
+    def test_start2_import_preview_preserves_discard_and_protects_editor_upload(self):
+        paper = self.make_master_paper("P001", "Protected Editor", "Ada")
+        start2 = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Protected Editor",
+            extracted_title="Protected Editor",
+        )
+        discard_submission(start2, "Do not use Start2.")
+        editor = create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Use email version.",
+        )
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "10,P001,Changed Start2,Ada,2026-05-07 09:00:00\n"
+                f"{editor.final_submission_id},P001,Should Not Change,Ada,2026-05-07 09:00:00\n",
+            )
+        )
+        start2_row = next(row for row in preview["rows"] if row["identifier"] == "10")
+        editor_row = next(row for row in preview["rows"] if row["identifier"] == editor.final_submission_id)
+
+        self.assertTrue(start2_row["currently_discarded"])
+        self.assertTrue(editor_row["skip_apply"])
+        apply_import_preview(preview["token"])
+        start2.refresh_from_db()
+        editor.refresh_from_db()
+        self.assertTrue(start2.discarded)
+        self.assertNotEqual(editor.final_submission_title, "Should Not Change")
+
     def test_manually_verified_title_mismatch_warns_ui_but_allows_publication(self):
         self.make_master_paper("P001", "Paper Master Title", "Ada")
         self.make_final_submission(
@@ -1166,7 +1330,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertEqual(dashboard_counts()["title_mismatches"], 0)
         self.assertTrue(Path(export_publication_package()).exists())
         response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
-        self.assertContains(response, "ID verified, title differs")
+        self.assertContains(response, "Verified, title differs")
 
     def test_not_publishing_excludes_submission_from_readiness_dashboard_and_package(self):
         self.make_master_paper("P001")
@@ -1666,6 +1830,103 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
+
+    def test_old_versions_are_classified_and_exported(self):
+        self.make_master_paper("P001", "Versioned Paper", "Ada")
+        replaced = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Old Start2 Version",
+            active_version=False,
+            duplicate_submission=True,
+        )
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P001",
+            final_submission_title="Active Replacement",
+            active_version=True,
+        )
+        discarded = self.make_final_submission(
+            final_submission_id="30",
+            paper_id_filled="P002",
+            final_submission_title="Discarded Version",
+            active_version=False,
+            discarded=True,
+            discard_notes="Author asked us not to use this file.",
+        )
+        editor_old = self.make_final_submission(
+            final_submission_id="EDITOR-P003-001",
+            paper_id_filled="P003",
+            final_submission_title="Old Editor Upload",
+            active_version=False,
+            duplicate_submission=True,
+            submission_origin="editor_upload",
+            editor_upload_notes="Email replacement was superseded.",
+        )
+        not_publishing = self.make_final_submission(
+            final_submission_id="40",
+            paper_id_filled="P004",
+            final_submission_title="Not Publishing Old Version",
+            active_version=False,
+            excluded_from_publication=True,
+            publication_exclusion_notes="Unpaid paper retained for record.",
+        )
+        other = self.make_final_submission(
+            final_submission_id="50",
+            paper_id_filled="P005",
+            final_submission_title="Other Inactive",
+            active_version=False,
+            duplicate_submission=False,
+        )
+
+        page = self.client.get(reverse("submissions:old_versions"))
+        self.assertContains(page, "Inactive final submissions retained for traceability")
+        self.assertContains(page, "Replaced")
+        self.assertContains(page, "Final 20")
+        self.assertContains(page, "Discarded")
+        self.assertContains(page, "Author asked us not to use this file.")
+        self.assertContains(page, "Editor Upload")
+        self.assertContains(page, "Email replacement was superseded.")
+        self.assertContains(page, "Not publishing flag")
+        self.assertContains(page, "Unpaid paper retained for record.")
+        self.assertContains(page, "Other inactive")
+        self.assertNotContains(page, "Not Publishing</div>")
+        self.assertNotContains(page, "filter=not_publishing")
+
+        filter_expectations = {
+            "replaced": replaced.final_submission_id,
+            "discarded": discarded.final_submission_id,
+            "editor_uploads": editor_old.final_submission_id,
+            "start2": replaced.final_submission_id,
+            "other": other.final_submission_id,
+        }
+        for filter_name, final_id in filter_expectations.items():
+            with self.subTest(filter=filter_name):
+                filtered = self.client.get(
+                    reverse("submissions:old_versions"),
+                    {"filter": filter_name},
+                )
+                self.assertContains(filtered, final_id)
+
+        export_path = export_old_versions()
+        frame = pd.read_excel(export_path)
+        self.assertIn("old_version_status", frame.columns)
+        self.assertIn("inactive_reason", frame.columns)
+        self.assertIn("active_replacement_final_id", frame.columns)
+        exported = {
+            str(row["final_submission_id"]): row
+            for row in frame.to_dict("records")
+        }
+        self.assertEqual(exported["10"]["old_version_status"], "Replaced")
+        self.assertEqual(int(exported["10"]["active_replacement_final_id"]), 20)
+        self.assertEqual(exported["30"]["old_version_status"], "Discarded")
+        self.assertEqual(exported["40"]["old_version_status"], "Other inactive")
+        self.assertTrue(exported["40"]["excluded_from_publication"])
+
+        not_publishing_page = self.client.get(reverse("submissions:not_publishing_list"))
+        self.assertContains(not_publishing_page, "Publication decisions")
+        self.assertContains(not_publishing_page, "Inactive old version")
+        self.assertContains(not_publishing_page, not_publishing.final_submission_id)
 
     def test_settings_can_reset_temp_folder_paths(self):
         settings_obj = AppSetting.load()
@@ -2362,7 +2623,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Verified Different Title")
 
     def test_excel_exports_handle_nat_datetime_values(self):
-        self.make_master_paper("P001", "Ready Paper", "Ada")
+        self.make_master_paper("P001", "Ready Paper", "Ada", notes="Internal editorial note")
         self.make_master_paper("P002", "Second Paper", "Grace")
         first = self.make_final_submission(
             final_submission_id="1",
@@ -2386,9 +2647,137 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertTrue(Path(active_path).exists())
         self.assertTrue(Path(workbook_path).exists())
+        active_frame = pd.read_excel(active_path)
+        self.assertIn("paper_master_notes", active_frame.columns)
+        self.assertEqual(active_frame.loc[0, "paper_master_notes"], "Internal editorial note")
+        workbook = pd.ExcelFile(workbook_path)
+        self.assertIn("Paper Master", workbook.sheet_names)
+        master_frame = pd.read_excel(workbook, sheet_name="Paper Master")
+        self.assertIn("notes", master_frame.columns)
+        self.assertIn("Internal editorial note", set(master_frame["notes"].fillna("")))
+        not_publishing_frame = pd.read_excel(workbook, sheet_name="Not Publishing")
+        self.assertIn("active_version", not_publishing_frame.columns)
+        self.assertIn("version_state", not_publishing_frame.columns)
+        self.assertIn("submission_origin", not_publishing_frame.columns)
+        self.assertIn("active_replacement_final_id", not_publishing_frame.columns)
+
+    def test_editor_conflict_alert_and_final_submission_filters(self):
+        paper = self.make_master_paper("P001", "Conflict UI", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Conflict UI",
+            extracted_title="Conflict UI",
+        )
+        create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Use email version.",
+        )
+
+        dashboard = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(dashboard, "Start2/Editor version decision needed")
+        self.assertContains(dashboard, "Start2/Editor Conflicts")
+
+        filtered = self.client.get(
+            reverse("submissions:final_submission_list"),
+            {"filter": "version_conflicts"},
+        )
+        self.assertContains(filtered, "Version conflict")
+        self.assertContains(filtered, "Editor Upload")
+        self.assertContains(filtered, 'data-bs-target="#discard-row-')
+        self.assertContains(filtered, "Discard reason required")
+        self.assertContains(filtered, "Confirm discard version")
+
+    def test_final_submission_discard_requires_note_and_uses_expanded_panel(self):
+        self.make_master_paper("P001", "Discard UI", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Discard UI",
+            extracted_title="Discard UI",
+        )
+
+        page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(page, f'id="discard-row-{submission.pk}"')
+        self.assertContains(page, "Discard reason required")
+        self.assertContains(page, "Confirm discard version")
+        self.assertContains(page, "<th>Files</th>", html=True)
+        self.assertNotContains(page, "<th>PDF</th>", html=True)
+        self.assertNotContains(page, "<th>Source</th>", html=True)
+        self.assertContains(page, 'colspan="9"')
+
+        missing_note = self.client.post(
+            reverse("submissions:final_submission_list"),
+            {"submission_id": submission.pk, "action": "discard_submission", "discard_notes": ""},
+            follow=True,
+        )
+        submission.refresh_from_db()
+        self.assertFalse(submission.discarded)
+        self.assertContains(missing_note, "Discard requires a note.")
+
+        self.client.post(
+            reverse("submissions:final_submission_list"),
+            {
+                "submission_id": submission.pk,
+                "action": "discard_submission",
+                "discard_notes": "Author requested this version be discarded.",
+            },
+        )
+        submission.refresh_from_db()
+        self.assertTrue(submission.discarded)
+        self.assertFalse(submission.active_version)
+
+    def test_paper_note_summary_and_final_submission_tabs_render(self):
+        noted = self.make_master_paper(
+            "P001",
+            "Noted Paper",
+            "Ada",
+            notes="Check special session placement.",
+        )
+        self.make_master_paper("P002", "Plain Paper", "Grace")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Noted Paper",
+            extracted_title="Noted Paper",
+        )
+        create_editor_submission(
+            paper=noted,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Use editor copy.",
+        )
+
+        master_page = self.client.get(reverse("submissions:initial_paper_list"))
+        self.assertContains(master_page, "Note Summary (1)")
+        self.assertContains(master_page, "Check special session placement.")
+        self.assertContains(master_page, "cfm-title-cell")
+
+        organized = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(organized, "Note Summary (1)")
+        self.assertContains(organized, "Note")
+
+        final_page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(final_page, 'class="nav nav-tabs')
+        self.assertContains(final_page, "Editor uploads")
+        self.assertContains(final_page, "Start2")
+
+        editor_tab = self.client.get(
+            reverse("submissions:final_submission_list"),
+            {"filter": "editor_uploads"},
+        )
+        self.assertContains(editor_tab, "Editor Upload")
+        self.assertNotContains(editor_tab, ">10<")
 
     def test_editor_visible_data_matches_publication_package_contents(self):
-        self.make_master_paper("P001", "Main Ready Paper", "Ada Lovelace; Alan Turing")
+        self.make_master_paper(
+            "P001",
+            "Main Ready Paper",
+            "Ada Lovelace; Alan Turing",
+            notes="Do not send this editorial note to publisher.",
+        )
         self.make_master_paper("P002", "Corrected Source Paper", "Grace Hopper")
         self.make_master_paper("P003", "Late Fixed Paper", "Katherine Johnson")
         old = self.make_final_submission(
@@ -2516,7 +2905,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         dashboard = self.client.get(reverse("submissions:dashboard"))
         self.assertContains(dashboard, "3")
-        self.assertContains(dashboard, "1 not publishing")
+        self.assertContains(dashboard, "1 current not publishing")
         self.assertContains(dashboard, "0 missing")
         self.assertContains(dashboard, "0 over threshold")
         clean_organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
@@ -2544,6 +2933,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             self.assertEqual([row["ID"] for row in rows], ["P001", "P002", "P003"])
             manifest_by_id = {row["ID"]: row for row in rows}
             self.assertEqual(manifest_by_id["P001"]["Extracted Title"], "Main Ready Paper")
+            self.assertNotIn("paper_master_notes", manifest_by_id["P001"])
+            self.assertNotIn("Do not send this editorial note", archive.read(manifest_name).decode("utf-8-sig"))
             self.assertEqual(manifest_by_id["P001"]["Page Number"], "8")
             self.assertEqual(manifest_by_id["P001"]["Similarity (P)"], "4")
             self.assertEqual(manifest_by_id["P002"]["Extracted Title"], "Corrected Source Paper")

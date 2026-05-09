@@ -92,11 +92,11 @@
                     {% if row.submission.excluded_from_publication %}
                         <span class="badge text-bg-secondary">Excluded from publication</span>
                     {% elif row.verified_with_diff %}
-                        <span class="badge text-bg-warning">ID verified, title differs</span>
+                        <span class="badge text-bg-warning">Verified, title differs</span>
                     {% elif row.is_identical and row.is_verified %}
-                        <span class="badge text-bg-success">Paper ID auto-verified by title</span>
+                        <span class="badge text-bg-success">Auto-verified by title</span>
                     {% elif row.is_verified %}
-                        <span class="badge text-bg-success">ID verified</span>
+                        <span class="badge text-bg-success">Verified</span>
                     {% elif row.status == "title_mismatch" %}
                         <span class="badge text-bg-warning">Paper ID title mismatch</span>
                     {% elif row.status == "invalid_paper_id" %}

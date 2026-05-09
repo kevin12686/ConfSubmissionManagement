@@ -46,7 +46,7 @@
                 <p class="text-muted flex-grow-1">Classify finals not in the Paper Master List: correct the Paper ID or mark unpaid/withdrawn papers as not publishing.</p>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <span class="badge text-bg-{% if counts.unclassified_not_in_master %}danger{% else %}success{% endif %}">{{ counts.unclassified_not_in_master }} need decision</span>
-                    <span class="badge text-bg-secondary">{{ counts.excluded_from_publication }} not publishing</span>
+                    <span class="badge text-bg-secondary">{{ counts.excluded_from_publication }} current not publishing</span>
                     <a class="btn btn-primary" href="{% url 'submissions:not_publishing_list' %}">Review</a>
                 </div>
             </div>

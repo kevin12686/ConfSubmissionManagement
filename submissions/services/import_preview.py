@@ -25,6 +25,7 @@ from submissions.services.import_export import (
     read_table,
 )
 from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.text_utils import clean_note_text
 
 
 PREVIEW_TTL_HOURS = 2
@@ -172,6 +173,7 @@ def preview_initial_import(uploaded_file):
             ),
             "title": clean_value(row.get("title")),
             "authors": clean_value(row.get("authors")),
+            "notes": clean_note_text(row.get("notes")),
         }
         existing = InitialPaper.objects.filter(paper_id=paper_id).first()
         if not existing:
@@ -203,6 +205,7 @@ def preview_initial_import(uploaded_file):
                     "Paper ID review will reset",
                 ),
                 _changed("authors", "Master Authors", existing.authors, new_values["authors"]),
+                _changed("notes", "Notes", existing.notes, new_values["notes"]),
             ]
             if change
         ]
@@ -266,6 +269,9 @@ def preview_final_import(uploaded_file, submission_files=None):
         if not existing:
             rows.append(_new_final_row(final_id, new_values, files))
             continue
+        if existing.submission_origin == "editor_upload":
+            rows.append(_protected_editor_upload_row(existing, new_values))
+            continue
         rows.append(_changed_final_row(existing, new_values, files))
     payload = _make_payload("final", rows, token=token, blocking_errors=blocking_errors)
     payload["invalid_files"] = invalid_files
@@ -312,6 +318,30 @@ def _new_final_row(final_id, new_values, files):
         "author_entered_id_changed": False,
         "invalid_master_id": invalid_master_id,
         "active_version_impact": "Active versions will be recalculated after apply.",
+        "currently_discarded": False,
+        "skip_apply": False,
+    }
+
+
+def _protected_editor_upload_row(existing, new_values):
+    return {
+        "type": "final",
+        "status": "unchanged",
+        "identifier": existing.final_submission_id,
+        "new": new_values,
+        "changes": [],
+        "file_changes": {},
+        "paper_id_review_reset": False,
+        "title_match_reset": False,
+        "title_author_review_reset": False,
+        "pdf_reset": False,
+        "source_reset": False,
+        "corrected_files_archived": False,
+        "author_entered_id_changed": False,
+        "invalid_master_id": False,
+        "active_version_impact": "Skipped: this is an Editor Upload and Start2 import will not modify it.",
+        "currently_discarded": existing.discarded,
+        "skip_apply": True,
     }
 
 
@@ -371,6 +401,8 @@ def _changed_final_row(existing, new_values, files):
         "corrected_files_archived": corrected_archived,
         "author_entered_id_changed": id_changed,
         "active_version_impact": "Active versions will be recalculated after apply." if id_changed or upload_date_changed else "",
+        "currently_discarded": existing.discarded,
+        "skip_apply": False,
     }
 
 
@@ -462,6 +494,8 @@ def apply_import_preview(token):
 @transaction.atomic
 def _apply_initial(payload):
     for row in payload["rows"]:
+        if row.get("skip_apply"):
+            continue
         values = row["new"]
         paper, _created = InitialPaper.objects.update_or_create(
             paper_id=values["paper_id"],
@@ -469,6 +503,7 @@ def _apply_initial(payload):
                 "acceptance_status": values["acceptance_status"],
                 "title": values["title"],
                 "authors": values["authors"],
+                "notes": values["notes"],
             },
         )
         if row.get("paper_id_review_reset"):
@@ -479,11 +514,17 @@ def _apply_initial(payload):
 @transaction.atomic
 def _apply_final(payload):
     for row in payload["rows"]:
+        if row.get("skip_apply"):
+            continue
         values = row["new"]
         submission, created = FinalSubmission.objects.get_or_create(
             final_submission_id=values["final_submission_id"]
         )
         if created:
+            submission.submission_origin = "start2"
+            submission.discarded = False
+            submission.discard_notes = ""
+            submission.discarded_at = None
             submission.excluded_from_publication = False
             submission.publication_exclusion_reason = ""
             submission.publication_exclusion_notes = ""

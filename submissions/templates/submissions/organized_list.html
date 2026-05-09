@@ -7,12 +7,16 @@
         <div class="cfm-page-subtitle">Current publication-prep checklist. PDF links open the version currently intended for publication.</div>
     </div>
     <div class="cfm-page-actions">
+        {% if note_count %}
+            <button class="btn btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#paper-note-summary" aria-expanded="false" aria-controls="paper-note-summary">Note Summary ({{ note_count }})</button>
+        {% endif %}
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify IDs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
 </div>
+{% include "submissions/includes/note_summary.html" %}
 
 {% if summary.needs_process_pdfs %}
     <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
@@ -38,6 +42,7 @@
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Issues</div><div class="cfm-metric-value {% if summary.page_errors %}text-warning{% endif %}">{{ summary.page_errors }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">No Plagiarism</div><div class="cfm-metric-value {% if summary.missing_plagiarism %}text-warning{% endif %}">{{ summary.missing_plagiarism }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicates</div><div class="cfm-metric-value {% if summary.publication_duplicates %}text-danger{% endif %}">{{ summary.publication_duplicates }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Version Conflicts</div><div class="cfm-metric-value {% if summary.version_conflicts %}text-warning{% endif %}">{{ summary.version_conflicts }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicate Authors</div><div class="cfm-metric-value {% if summary.duplicate_author_issues %}text-danger{% endif %}">{{ summary.duplicate_author_issues }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Not Publishing</div><div class="cfm-metric-value">{{ summary.excluded_from_publication }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Range</div><div class="cfm-metric-value">{{ settings_obj.page_minimum }}-{{ settings_obj.page_limit }}</div></div></div>
@@ -98,7 +103,14 @@
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
                     <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
                     {% if row.row_type == 'unmatched' %}<div class="small text-danger">Not in Paper Master</div>{% endif %}
-                    {% for badge in row.duplicate_badges %}
+	                    {% if row.version_conflict %}
+	                        <div><span class="badge text-bg-warning">Start2/Editor conflict</span></div>
+	                        <div class="small"><a href="{% url 'submissions:final_submission_list' %}?filter=version_conflicts">Resolve versions</a></div>
+	                    {% endif %}
+	                    {% if paper and paper.notes %}
+	                        <div><span class="badge text-bg-warning">Note</span></div>
+	                    {% endif %}
+	                    {% for badge in row.duplicate_badges %}
                         <div><span class="badge text-bg-danger">{{ badge }}</span></div>
                     {% endfor %}
                 </td>

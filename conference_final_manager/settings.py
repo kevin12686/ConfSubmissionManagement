@@ -4,7 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 STATE_ARCHIVE_VERSION = 2
 
 SECRET_KEY = "local-dev-only-change-if-exposed"

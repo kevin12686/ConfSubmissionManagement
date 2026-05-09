@@ -16,6 +16,7 @@ from submissions.forms import (
     AppSettingForm,
     CrossCheckExportForm,
     CrossCheckReportUploadForm,
+    EditorUploadForm,
     FinalSubmissionForm,
     FinalSubmissionImportForm,
     FormattingUploadForm,
@@ -81,6 +82,11 @@ from submissions.services.file_manager import (
     publication_source_info,
     resolve_folder,
     sanitize_filename_part,
+)
+from submissions.services.editor_uploads import (
+    create_editor_submission,
+    discard_submission,
+    undo_discard_submission,
 )
 from submissions.services.organized_list import (
     ORGANIZED_LIST_FILTER_OPTIONS,
@@ -153,16 +159,46 @@ def _score_badge_level(value, threshold):
 
 
 def final_submission_list(request):
+    if request.method == "POST":
+        submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
+        action = request.POST.get("action")
+        try:
+            if action == "discard_submission":
+                discard_submission(submission, request.POST.get("discard_notes", ""))
+                messages.success(request, f"Final submission {submission.final_submission_id} discarded.")
+            elif action == "undo_discard_submission":
+                undo_discard_submission(submission)
+                messages.success(request, f"Final submission {submission.final_submission_id} restored.")
+            else:
+                messages.error(request, "Unknown final submission action.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect("submissions:final_submission_list")
     q = _search_query(request)
+    current_filter = request.GET.get("filter", "all")
     return render(
         request,
         "submissions/final_submission_list.html",
-        final_submission_list_context(q, _score_badge_level),
+        final_submission_list_context(q, _score_badge_level, current_filter),
     )
 
 
 def final_submission_form(request, pk=None):
     submission = get_object_or_404(FinalSubmission, pk=pk) if pk else None
+    if submission and request.method == "POST" and request.POST.get("action") in {
+        "discard_submission",
+        "undo_discard_submission",
+    }:
+        try:
+            if request.POST.get("action") == "discard_submission":
+                discard_submission(submission, request.POST.get("discard_notes", ""))
+                messages.success(request, f"Final submission {submission.final_submission_id} discarded.")
+            else:
+                undo_discard_submission(submission)
+                messages.success(request, f"Final submission {submission.final_submission_id} restored.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect("submissions:final_submission_edit", pk=submission.pk)
     form = FinalSubmissionForm(
         request.POST or None, request.FILES or None, instance=submission
     )
@@ -194,6 +230,32 @@ def final_submission_form(request, pk=None):
         context["publication_pdf"] = publication_pdf_info(submission)
         context["publication_source"] = publication_source_info(submission)
     return render(request, "submissions/final_submission_form.html", context)
+
+
+def editor_upload_form(request):
+    form = EditorUploadForm(
+        request.POST or None,
+        request.FILES or None,
+        initial_paper_id=request.GET.get("paper_id", ""),
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            submission = create_editor_submission(
+                paper=form.cleaned_data["paper"],
+                pdf_file=form.cleaned_data["pdf_file"],
+                source_file=form.cleaned_data.get("source_file"),
+                notes=form.cleaned_data["notes"],
+                final_submission_title=form.cleaned_data.get("final_submission_title", ""),
+                final_submission_authors=form.cleaned_data.get("final_submission_authors", ""),
+            )
+            messages.success(
+                request,
+                f"Editor upload {submission.final_submission_id} created. Run Process PDFs before publication.",
+            )
+            return redirect("submissions:final_submission_list")
+        except Exception as exc:
+            messages.error(request, str(exc))
+    return render(request, "submissions/editor_upload_form.html", {"form": form})
 
 
 def final_submission_delete(request, pk):

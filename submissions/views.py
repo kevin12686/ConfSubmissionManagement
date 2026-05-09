@@ -6,6 +6,7 @@ from .controllers.papers import (
     initial_paper_list,
 )
 from .controllers.final_submissions import (
+    editor_upload_form,
     final_submission_delete,
     final_submission_form,
     final_submission_list,

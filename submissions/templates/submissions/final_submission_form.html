@@ -25,11 +25,14 @@
         <div class="col-md-3">
             <div class="cfm-metric">
                 <div class="cfm-metric-label">Version</div>
-                {% if submission.active_version %}
+                {% if submission.discarded %}
+                    <span class="badge text-bg-dark">Discarded</span>
+                {% elif submission.active_version %}
                     <span class="badge text-bg-success">Current final version</span>
                 {% else %}
                     <span class="badge text-bg-secondary">Replaced by newer upload</span>
                 {% endif %}
+                <span class="badge text-bg-{% if submission.submission_origin == 'editor_upload' %}primary{% else %}light text-dark{% endif %}">{{ submission.get_submission_origin_display }}</span>
             </div>
         </div>
         <div class="col-md-3">
@@ -66,6 +69,34 @@
     {% csrf_token %}
 
     <div class="row g-3">
+        {% if submission %}
+        <div class="col-12">
+            <div class="card border-warning">
+                <div class="card-header fw-semibold">Version Discard</div>
+                <div class="card-body">
+                    {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+                        <div class="mb-2"><strong>Editor upload note:</strong> {{ submission.editor_upload_notes }}</div>
+                    {% endif %}
+                    {% if submission.discarded %}
+                        <p class="mb-2">This version is retained for traceability but excluded from active version selection and publication exports.</p>
+                        {% if submission.discard_notes %}<div class="small text-muted mb-2">{{ submission.discard_notes }}</div>{% endif %}
+                        <button class="btn btn-outline-success" name="action" value="undo_discard_submission">Undo discard</button>
+                    {% else %}
+                        <p class="mb-2">Discard only this version. Use Not Publishing when the entire paper should not be published.</p>
+                        <div class="row g-2">
+                            <div class="col-lg-9">
+                                <label class="form-label" for="discard-notes">Discard note</label>
+                                <textarea id="discard-notes" class="form-control" name="discard_notes" rows="3" placeholder="Required reason, e.g. author requested email version instead"></textarea>
+                            </div>
+                            <div class="col-lg-3 d-flex align-items-end">
+                                <button class="btn btn-outline-dark w-100" name="action" value="discard_submission">Discard version</button>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <div class="col-xl-6">
             <div class="card h-100">
                 <div class="card-header fw-semibold">Mapping</div>

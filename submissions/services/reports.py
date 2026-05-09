@@ -24,6 +24,7 @@ from submissions.services.file_manager import (
     sanitize_filename_part,
 )
 from submissions.services.import_export import submissions_to_frame
+from submissions.services.version_history import old_version_rows
 
 
 class PublicationPackageBlocked(ValueError):
@@ -91,15 +92,44 @@ def author_count_frame():
 
 
 def not_publishing_frame():
+    columns = [
+        "final_submission_id",
+        "author_entered_paper_id",
+        "paper_id_filled",
+        "active_version",
+        "version_state",
+        "submission_origin",
+        "active_replacement_final_id",
+        "final_submission_title",
+        "final_submission_authors",
+        "reason",
+        "notes",
+        "marked_at",
+    ]
     rows = []
     for item in FinalSubmission.objects.filter(
-        active_version=True, excluded_from_publication=True
+        excluded_from_publication=True, discarded=False
     ).order_by("paper_id_filled", "final_submission_id"):
+        active_replacement = (
+            FinalSubmission.objects.filter(
+                active_version=True,
+                discarded=False,
+                paper_id_filled=item.paper_id_filled,
+            )
+            .exclude(pk=item.pk)
+            .first()
+        )
         rows.append(
             {
                 "final_submission_id": item.final_submission_id,
                 "author_entered_paper_id": item.start2_paper_id_raw,
                 "paper_id_filled": item.paper_id_filled,
+                "active_version": item.active_version,
+                "version_state": "Current final" if item.active_version else "Inactive old version",
+                "submission_origin": item.get_submission_origin_display(),
+                "active_replacement_final_id": (
+                    active_replacement.final_submission_id if active_replacement else ""
+                ),
                 "final_submission_title": item.final_submission_title,
                 "final_submission_authors": item.final_submission_authors,
                 "reason": item.get_publication_exclusion_reason_display(),
@@ -107,14 +137,31 @@ def not_publishing_frame():
                 "marked_at": item.publication_excluded_at,
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def paper_master_frame():
+    return pd.DataFrame(
+        [
+            {
+                "paper_id": paper.paper_id,
+                "acceptance_status": paper.acceptance_status,
+                "title": paper.title,
+                "authors": paper.authors,
+                "notes": paper.notes,
+                "created_at": paper.created_at,
+                "updated_at": paper.updated_at,
+            }
+            for paper in InitialPaper.objects.all().order_by("paper_id")
+        ]
+    )
 
 
 def export_active_versions():
     path = _reports_folder() / f"active_publishable_versions_{_timestamp()}.xlsx"
     frame = submissions_to_frame(
         FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=False
+            active_version=True, excluded_from_publication=False, discarded=False
         )
     )
     _excel_safe_frame(frame).to_excel(path, index=False)
@@ -123,9 +170,33 @@ def export_active_versions():
 
 def export_old_versions():
     path = _reports_folder() / f"old_versions_{_timestamp()}.xlsx"
-    frame = submissions_to_frame(FinalSubmission.objects.filter(active_version=False))
+    frame = old_versions_frame()
     _excel_safe_frame(frame).to_excel(path, index=False)
     return path
+
+
+def old_versions_frame():
+    queryset = FinalSubmission.objects.filter(active_version=False)
+    frame = submissions_to_frame(queryset)
+    if frame.empty:
+        return frame
+    rows_by_final_id = {
+        row["submission"].final_submission_id: row for row in old_version_rows(queryset)
+    }
+    frame["old_version_status"] = frame["final_submission_id"].map(
+        lambda final_id: rows_by_final_id[final_id]["version_status_label"]
+    )
+    frame["inactive_reason"] = frame["final_submission_id"].map(
+        lambda final_id: rows_by_final_id[final_id]["inactive_reason"]
+    )
+    frame["active_replacement_final_id"] = frame["final_submission_id"].map(
+        lambda final_id: (
+            rows_by_final_id[final_id]["active_replacement"].final_submission_id
+            if rows_by_final_id[final_id]["active_replacement"]
+            else ""
+        )
+    )
+    return frame
 
 
 def export_error_report():
@@ -330,15 +401,18 @@ def export_all_reports():
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         active_frame = submissions_to_frame(
             FinalSubmission.objects.filter(
-                active_version=True, excluded_from_publication=False
+                active_version=True, excluded_from_publication=False, discarded=False
             )
         )
-        old_frame = submissions_to_frame(FinalSubmission.objects.filter(active_version=False))
+        old_frame = old_versions_frame()
         _excel_safe_frame(error_report_frame()).to_excel(
             writer, sheet_name="Readiness Issues", index=False
         )
         _excel_safe_frame(active_frame).to_excel(
             writer, sheet_name="Active Publishable", index=False
+        )
+        _excel_safe_frame(paper_master_frame()).to_excel(
+            writer, sheet_name="Paper Master", index=False
         )
         _excel_safe_frame(not_publishing_frame()).to_excel(
             writer, sheet_name="Not Publishing", index=False

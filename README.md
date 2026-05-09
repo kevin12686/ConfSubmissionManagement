@@ -158,6 +158,7 @@ Paper master imports use these columns:
 - `acceptance_status`
 - `title`
 - `authors`
+- `notes`
 
 Final submission imports use these columns:
 

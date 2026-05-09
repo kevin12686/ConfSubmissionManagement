@@ -159,7 +159,7 @@ def _needs_title_author_extraction_review(submission):
 
 
 def extraction_overwrite_summary():
-    active = FinalSubmission.objects.filter(active_version=True)
+    active = FinalSubmission.objects.filter(active_version=True, discarded=False)
     return {
         "active_count": active.count(),
         "with_extraction": active.filter(
@@ -174,7 +174,7 @@ def extract_active_title_authors(mode="needs_review"):
     extracted = 0
     errors = 0
     skipped = 0
-    submissions = FinalSubmission.objects.filter(active_version=True)
+    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False)
     for submission in submissions:
         if mode != "all" and not _needs_title_author_extraction_review(submission):
             skipped += 1
@@ -318,7 +318,7 @@ def unverify_extracted_title(submission):
 
 
 def title_author_extraction_rows(query="", status_filter="pending"):
-    submissions = FinalSubmission.objects.filter(active_version=True).order_by(
+    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False).order_by(
         "paper_id_filled", "final_submission_id"
     )
     if query:

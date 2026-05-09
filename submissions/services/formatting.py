@@ -34,7 +34,7 @@ def formatting_rows(query="", status_filter="needs_attention"):
         default=Value(3),
         output_field=IntegerField(),
     )
-    submissions = FinalSubmission.objects.filter(active_version=True).annotate(
+    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False).annotate(
         status_order=status_order
     )
     if query:
