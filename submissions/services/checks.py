@@ -4,6 +4,7 @@ import string
 from collections import defaultdict
 from pathlib import Path
 
+from django.db import transaction
 from django.db.models import Count, Q
 
 from submissions.models import (
@@ -913,27 +914,28 @@ def has_unresolved_duplicate_authors(submission):
 
 
 def rebuild_paper_authors():
-    PaperAuthor.objects.all().delete()
-    rows = []
-    for submission in FinalSubmission.objects.filter(
-        active_version=True,
-        excluded_from_publication=False,
-    ).exclude(
-        extracted_authors=""
-    ):
-        for index, author_name in enumerate(split_authors(submission.extracted_authors), start=1):
-            normalized = normalize_author_name(author_name)
-            if normalized:
-                rows.append(
-                    PaperAuthor(
-                        final_submission=submission,
-                        paper_id=submission.paper_id_filled,
-                        author_name=author_name,
-                        normalized_author_name=normalized,
-                        author_order=index,
+    with transaction.atomic():
+        PaperAuthor.objects.all().delete()
+        rows = []
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            excluded_from_publication=False,
+        ).exclude(
+            extracted_authors=""
+        ):
+            for index, author_name in enumerate(split_authors(submission.extracted_authors), start=1):
+                normalized = normalize_author_name(author_name)
+                if normalized:
+                    rows.append(
+                        PaperAuthor(
+                            final_submission=submission,
+                            paper_id=submission.paper_id_filled,
+                            author_name=author_name,
+                            normalized_author_name=normalized,
+                            author_order=index,
+                        )
                     )
-                )
-    PaperAuthor.objects.bulk_create(rows)
+        PaperAuthor.objects.bulk_create(rows, ignore_conflicts=True)
     return len(rows)
 
 

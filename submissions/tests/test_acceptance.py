@@ -509,7 +509,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             state = json.loads(archive.read("state.json").decode("utf-8"))
             archive_text = json.dumps({"manifest": manifest, "state": state})
         self.assertEqual(manifest["app_name"], "Conference Final Manager")
-        self.assertEqual(manifest["app_version"], "1.0.1")
+        self.assertEqual(manifest["app_version"], "1.0.2")
         self.assertEqual(manifest["state_archive_version"], 2)
         self.assertNotIn(str(self.root), archive_text)
         self.assertNotIn("/var/", archive_text)
