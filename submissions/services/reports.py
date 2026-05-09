@@ -8,10 +8,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission
-from submissions.services.checks import author_count_rows, error_report_rows, split_authors
+from submissions.models import AppSetting, FinalSubmission, InitialPaper
+from submissions.services.checks import (
+    active_master_submission_map,
+    author_count_rows,
+    error_report_rows,
+    publication_readiness_rows,
+    rebuild_paper_authors,
+    split_authors,
+)
 from submissions.services.file_manager import (
-    corrected_pdf_needs_processing,
     publication_pdf_info,
     publication_source_info,
     resolve_folder,
@@ -45,6 +51,12 @@ def _excel_safe_frame(frame):
     return frame.astype(object).map(_excel_safe_value)
 
 
+def _whole_percent(value):
+    if value is None:
+        return ""
+    return int(value)
+
+
 def error_report_frame():
     return pd.DataFrame(error_report_rows())
 
@@ -56,18 +68,46 @@ def author_count_frame():
             {
                 "normalized_author_name": row["normalized_author_name"],
                 "display_author_name": row["display_author_name"],
-                "paper_count": row["paper_count"],
+                "publication_paper_count": row["publication_paper_count"],
                 "paper_ids": row["paper_ids"],
+                "duplicate_author_papers": row["duplicate_author_papers"],
                 "status": row["status"],
+                "waiver_valid": row["waiver_valid"],
+                "waiver_reason": row["waiver_reason"],
+                "waiver_approved_count": row["waiver_approved_count"],
             }
             for row in rows
         ]
     )
 
 
+def not_publishing_frame():
+    rows = []
+    for item in FinalSubmission.objects.filter(
+        active_version=True, excluded_from_publication=True
+    ).order_by("paper_id_filled", "final_submission_id"):
+        rows.append(
+            {
+                "final_submission_id": item.final_submission_id,
+                "author_entered_paper_id": item.start2_paper_id_raw,
+                "paper_id_filled": item.paper_id_filled,
+                "final_submission_title": item.final_submission_title,
+                "final_submission_authors": item.final_submission_authors,
+                "reason": item.get_publication_exclusion_reason_display(),
+                "notes": item.publication_exclusion_notes,
+                "marked_at": item.publication_excluded_at,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def export_active_versions():
-    path = _reports_folder() / f"active_final_versions_{_timestamp()}.xlsx"
-    frame = submissions_to_frame(FinalSubmission.objects.filter(active_version=True))
+    path = _reports_folder() / f"active_publishable_versions_{_timestamp()}.xlsx"
+    frame = submissions_to_frame(
+        FinalSubmission.objects.filter(
+            active_version=True, excluded_from_publication=False
+        )
+    )
     _excel_safe_frame(frame).to_excel(path, index=False)
     return path
 
@@ -80,12 +120,14 @@ def export_old_versions():
 
 
 def export_error_report():
-    path = _reports_folder() / f"error_report_{_timestamp()}.xlsx"
+    rebuild_paper_authors()
+    path = _reports_folder() / f"readiness_issues_{_timestamp()}.xlsx"
     _excel_safe_frame(error_report_frame()).to_excel(path, index=False)
     return path
 
 
 def export_author_count():
+    rebuild_paper_authors()
     path = _reports_folder() / f"author_count_{_timestamp()}.xlsx"
     _excel_safe_frame(author_count_frame()).to_excel(path, index=False)
     return path
@@ -100,37 +142,39 @@ def _publication_title_filename(title, word_limit):
 
 
 def export_publication_package():
+    rebuild_paper_authors()
     settings_obj = AppSetting.load()
-    submissions = list(
-        FinalSubmission.objects.filter(active_version=True).order_by(
-            "paper_id_filled", "final_submission_id"
-        )
-    )
-    if not submissions:
-        raise ValueError("Publication package blocked because there are no active final submissions.")
+    papers = list(InitialPaper.objects.all().order_by("paper_id"))
+    if not papers:
+        raise ValueError("Publication package blocked because the Paper Master List is empty.")
 
-    missing = []
-    blocked = []
+    readiness_blockers = publication_readiness_rows()
+    if readiness_blockers:
+        preview = "; ".join(
+            f"{row['paper_id'] or 'No Paper ID'}"
+            f"{' / Final ' + str(row['final_submission_id']) if row.get('final_submission_id') else ''}: "
+            f"{row['category']}"
+            for row in readiness_blockers[:10]
+        )
+        if len(readiness_blockers) > 10:
+            preview += f"; +{len(readiness_blockers) - 10} more"
+        raise ValueError(
+            "Publication package blocked because publication readiness checks failed: "
+            f"{preview}"
+        )
+
+    active_by_paper = active_master_submission_map()
     package_items = []
-    for submission in submissions:
+    for paper in papers:
+        submission = active_by_paper.get(paper.paper_id)
+        if not submission:
+            continue
         pdf_info = publication_pdf_info(submission)
         source_info = publication_source_info(submission)
-        if not pdf_info["exists"]:
-            missing.append(f"{submission.paper_id_filled or submission.final_submission_id}: missing PDF")
-        if not source_info["exists"]:
-            missing.append(f"{submission.paper_id_filled or submission.final_submission_id}: missing source")
-        if corrected_pdf_needs_processing(submission):
-            blocked.append(
-                f"{submission.paper_id_filled or submission.final_submission_id}: corrected PDF needs Process PDFs"
-            )
         package_items.append((submission, pdf_info, source_info))
 
-    blockers = missing + blocked
-    if blockers:
-        preview = "; ".join(blockers[:8])
-        if len(blockers) > 8:
-            preview += f"; +{len(blockers) - 8} more"
-        raise ValueError(f"Publication package blocked because publication files are not ready: {preview}")
+    if not package_items:
+        raise ValueError("Publication package blocked because there are no publishable active final submissions.")
 
     timestamp = _timestamp()
     reports_folder = _reports_folder()
@@ -148,8 +192,8 @@ def export_publication_package():
                 "Extracted Author": submission.extracted_authors,
                 "Author Number": len(authors) if submission.extracted_authors else "",
                 "Page Number": submission.page_count,
-                "Similarity (P)": submission.similarity_score,
-                "Similarity (S)": submission.single_similarity_score,
+                "Similarity (P)": _whole_percent(submission.similarity_score),
+                "Similarity (S)": _whole_percent(submission.single_similarity_score),
             }
         )
 
@@ -186,16 +230,26 @@ def export_publication_package():
 
 
 def export_all_reports():
-    path = _reports_folder() / f"all_reports_{_timestamp()}.xlsx"
+    rebuild_paper_authors()
+    path = _reports_folder() / f"editorial_review_workbook_{_timestamp()}.xlsx"
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        active_frame = submissions_to_frame(FinalSubmission.objects.filter(active_version=True))
+        active_frame = submissions_to_frame(
+            FinalSubmission.objects.filter(
+                active_version=True, excluded_from_publication=False
+            )
+        )
         old_frame = submissions_to_frame(FinalSubmission.objects.filter(active_version=False))
+        _excel_safe_frame(error_report_frame()).to_excel(
+            writer, sheet_name="Readiness Issues", index=False
+        )
         _excel_safe_frame(active_frame).to_excel(
-            writer, sheet_name="Active Versions", index=False
+            writer, sheet_name="Active Publishable", index=False
         )
-        _excel_safe_frame(old_frame).to_excel(
-            writer, sheet_name="Old Versions", index=False
+        _excel_safe_frame(not_publishing_frame()).to_excel(
+            writer, sheet_name="Not Publishing", index=False
         )
-        _excel_safe_frame(error_report_frame()).to_excel(writer, sheet_name="Error Report", index=False)
-        _excel_safe_frame(author_count_frame()).to_excel(writer, sheet_name="Author Count", index=False)
+        _excel_safe_frame(author_count_frame()).to_excel(
+            writer, sheet_name="Author Count", index=False
+        )
+        _excel_safe_frame(old_frame).to_excel(writer, sheet_name="Old Versions", index=False)
     return Path(path)

@@ -1,9 +1,14 @@
 {% extends "submissions/base.html" %}
 {% block title %}Delete{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Delete {{ type }}</h1>
-<div class="alert alert-warning">This removes the database record. Files already copied to report or storage folders are not deleted.</div>
-<form method="post" class="d-flex gap-2">
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Delete {{ type }}</h1>
+        <div class="cfm-page-subtitle">Confirm before removing this database record.</div>
+    </div>
+</div>
+<div class="alert alert-warning cfm-attention">This removes the database record. Files already copied to report or storage folders are not deleted.</div>
+<form method="post" class="cfm-action-bar">
     {% csrf_token %}
     <button class="btn btn-danger">Delete</button>
     <a class="btn btn-outline-secondary" href="javascript:history.back()">Cancel</a>

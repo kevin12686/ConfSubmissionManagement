@@ -1,6 +1,47 @@
 from django.contrib import admin
 
-from .models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
+from .models import (
+    AppSetting,
+    AuthorLimitWaiver,
+    FinalSubmission,
+    FinalSubmissionFileState,
+    FinalSubmissionIdentityState,
+    FinalSubmissionPlagiarismState,
+    FinalSubmissionPublicationState,
+    FinalSubmissionReviewState,
+    InitialPaper,
+    PaperAuthor,
+)
+
+
+class FinalSubmissionIdentityStateInline(admin.StackedInline):
+    model = FinalSubmissionIdentityState
+    can_delete = False
+    extra = 0
+
+
+class FinalSubmissionFileStateInline(admin.StackedInline):
+    model = FinalSubmissionFileState
+    can_delete = False
+    extra = 0
+
+
+class FinalSubmissionReviewStateInline(admin.StackedInline):
+    model = FinalSubmissionReviewState
+    can_delete = False
+    extra = 0
+
+
+class FinalSubmissionPublicationStateInline(admin.StackedInline):
+    model = FinalSubmissionPublicationState
+    can_delete = False
+    extra = 0
+
+
+class FinalSubmissionPlagiarismStateInline(admin.StackedInline):
+    model = FinalSubmissionPlagiarismState
+    can_delete = False
+    extra = 0
 
 
 @admin.register(InitialPaper)
@@ -11,6 +52,13 @@ class InitialPaperAdmin(admin.ModelAdmin):
 
 @admin.register(FinalSubmission)
 class FinalSubmissionAdmin(admin.ModelAdmin):
+    inlines = (
+        FinalSubmissionIdentityStateInline,
+        FinalSubmissionFileStateInline,
+        FinalSubmissionReviewStateInline,
+        FinalSubmissionPublicationStateInline,
+        FinalSubmissionPlagiarismStateInline,
+    )
     list_display = (
         "final_submission_id",
         "paper_id_filled",
@@ -18,29 +66,42 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
         "upload_date",
         "active_version",
         "duplicate_submission",
+        "excluded_from_publication",
         "verification_status",
         "title_author_extraction_status",
+        "title_author_review_status",
         "title_author_verified",
+        "duplicate_author_review_status",
         "extracted_title_match_status",
         "extracted_title_verified",
         "format_status",
         "similarity_score",
         "single_similarity_score",
+        "plagiarism_report_stale",
         "page_count",
+        "page_limit_exception_approved",
+        "author_number_exception_approved",
         "processing_status",
     )
     list_filter = (
         "active_version",
         "duplicate_submission",
+        "excluded_from_publication",
+        "publication_exclusion_reason",
         "paper_id_verified",
         "verification_status",
         "processing_status",
         "title_author_extraction_status",
+        "title_author_review_status",
         "title_author_verified",
+        "duplicate_author_review_status",
         "extracted_title_match_status",
         "extracted_title_verified",
         "format_status",
         "plagiarism_status",
+        "plagiarism_report_stale",
+        "page_limit_exception_approved",
+        "author_number_exception_approved",
     )
     search_fields = (
         "final_submission_id",
@@ -57,9 +118,30 @@ class PaperAuthorAdmin(admin.ModelAdmin):
     search_fields = ("author_name", "normalized_author_name", "paper_id")
 
 
+@admin.register(AuthorLimitWaiver)
+class AuthorLimitWaiverAdmin(admin.ModelAdmin):
+    list_display = (
+        "display_author_name",
+        "normalized_author_name",
+        "approved",
+        "approved_publication_paper_count",
+        "approved_at",
+    )
+    list_filter = ("approved",)
+    search_fields = ("display_author_name", "normalized_author_name", "reason")
+
+
 @admin.register(AppSetting)
 class AppSettingAdmin(admin.ModelAdmin):
     fieldsets = (
+        (
+            "Conference",
+            {
+                "fields": (
+                    "conference_name",
+                )
+            },
+        ),
         (
             "Limits",
             {
@@ -86,7 +168,6 @@ class AppSettingAdmin(admin.ModelAdmin):
                     "reports_folder",
                     "extraction_results_folder",
                     "plagiarism_reports_folder",
-                    "title_author_script_path",
                 )
             },
         ),

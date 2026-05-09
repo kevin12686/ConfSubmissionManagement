@@ -1,9 +1,17 @@
 {% extends "submissions/base.html" %}
 {% block title %}Active Final Versions{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Active Final Versions</h1>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Active Final Versions</h1>
+        <div class="cfm-page-subtitle">Current final versions selected for the publication package.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
+    </div>
+</div>
 <div class="table-responsive">
-    <table class="table table-striped align-middle">
+    <table class="table table-striped align-middle cfm-table">
         <thead><tr><th>Paper ID</th><th>Final ID</th><th>Author-entered ID</th><th>Verify</th><th>Final Title</th><th>Final Authors</th><th>Pages</th><th>Publication PDF</th></tr></thead>
         <tbody>
         {% for row in rows %}
@@ -14,9 +22,9 @@
                 <td>{{ item.start2_paper_id_raw }}</td>
                 <td>
                     {% if item.paper_id_verified and item.verification_status == "title_mismatch" %}
-                        <span class="badge text-bg-warning">Paper ID verified, title differs</span>
+                        <span class="badge text-bg-warning">ID verified, title differs</span>
                     {% elif item.paper_id_verified %}
-                        <span class="badge text-bg-success">Paper ID verified</span>
+                        <span class="badge text-bg-success">ID verified</span>
                     {% elif item.verification_status == "title_mismatch" %}
                         <span class="badge text-bg-warning">Paper ID title mismatch</span>
                     {% elif item.verification_status == "invalid_paper_id" %}
@@ -30,8 +38,10 @@
                 <td>{{ item.page_count|default:"" }}</td>
                 <td>
                     {% if row.publication_pdf.exists %}
-                        <a href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
-                        <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                        <div class="cfm-status-line">
+                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                        </div>
                         <div class="small text-muted text-break">{{ row.publication_pdf.path }}</div>
                     {% else %}
                         <span class="badge text-bg-danger">No PDF</span>

@@ -1,13 +1,21 @@
 {% extends "submissions/base.html" %}
 {% block title %}Paper Master Record{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">{% if paper %}Edit{% else %}Add{% endif %} Paper Master Record</h1>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">{% if paper %}Edit{% else %}Add{% endif %} Paper Master Record</h1>
+        <div class="cfm-page-subtitle">Update the master metadata used for Paper ID verification and publication readiness checks.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:initial_paper_list' %}">Back to Paper Master List</a>
+    </div>
+</div>
 <form method="post" class="card">
     <div class="card-body">
         {% csrf_token %}
         {{ form.as_p }}
     </div>
-    <div class="card-footer d-flex gap-2">
+    <div class="card-footer cfm-action-bar">
         <button class="btn btn-primary">Save</button>
         <a class="btn btn-outline-secondary" href="{% url 'submissions:initial_paper_list' %}">Cancel</a>
     </div>

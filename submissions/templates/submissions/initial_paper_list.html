@@ -1,30 +1,35 @@
 {% extends "submissions/base.html" %}
 {% block title %}Paper Master List{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Paper Master List</h1>
-    <div class="d-flex gap-2">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'initial' %}">Download Template</a>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Paper Master List</h1>
+        <div class="cfm-page-subtitle">Source-of-truth accepted paper records used for matching and publication readiness checks.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'master' %}">Download Template</a>
         <a class="btn btn-primary" href="{% url 'submissions:initial_paper_add' %}">Add Paper</a>
     </div>
 </div>
-<div class="row g-3 mb-3">
+<div class="row g-3 mb-3 align-items-stretch">
     <div class="col-lg-5">
-        <form method="get" class="d-flex gap-2">
+        <form method="get" class="cfm-filter-panel h-100 cfm-inline-control">
             <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search papers">
             <button class="btn btn-outline-secondary">Search</button>
         </form>
     </div>
     <div class="col-lg-7">
-        <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_initial_papers' %}" class="d-flex gap-2 justify-content-lg-end">
+        <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_initial_papers' %}" class="cfm-filter-panel h-100 cfm-inline-control">
             {% csrf_token %}
-            {{ import_form.file }}
-            <button class="btn btn-outline-primary">Preview CSV/XLSX</button>
+            <div class="cfm-file-control-fill">
+                {{ import_form.file }}
+            </div>
+            <button class="btn btn-outline-primary flex-shrink-0">Preview CSV/XLSX</button>
         </form>
     </div>
 </div>
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle">
+    <table class="table table-striped table-hover align-middle cfm-table">
         <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th></th></tr></thead>
         <tbody>
         {% for paper in papers %}
@@ -33,9 +38,11 @@
                 <td>{{ paper.acceptance_status }}</td>
                 <td>{{ paper.title }}</td>
                 <td>{{ paper.authors|truncatechars:80 }}</td>
-                <td class="text-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:initial_paper_edit' paper.pk %}">Edit</a>
-                    <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:initial_paper_delete' paper.pk %}">Delete</a>
+                <td>
+                    <div class="cfm-table-actions">
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:initial_paper_edit' paper.pk %}">Edit</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:initial_paper_delete' paper.pk %}">Delete</a>
+                    </div>
                 </td>
             </tr>
         {% empty %}

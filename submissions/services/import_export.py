@@ -1,10 +1,15 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission, InitialPaper
+from submissions.models import (
+    AppSetting,
+    FinalSubmission,
+    InitialPaper,
+    sync_final_submission_state_records,
+)
 from submissions.services.checks import clean_identifier, resolve_official_paper_id
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
@@ -79,7 +84,16 @@ def parse_decimal(value):
     if value.startswith("<"):
         return Decimal("1")
     try:
-        return Decimal(value)
+        return round_percent(Decimal(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def round_percent(value):
+    if value is None:
+        return None
+    try:
+        return Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError):
         return None
 
@@ -316,6 +330,7 @@ def _mark_duplicate_submissions():
             submission.duplicate_submission = True
             submission.save(update_fields=["duplicate_submission", "updated_at"])
             duplicate_count += 1
+    sync_final_submission_state_records()
     return duplicate_count
 
 
@@ -412,8 +427,15 @@ def _attach_source(submission, source_file):
 def evaluate_imported_submissions():
     from submissions.services.verification import evaluate_submission
 
+    paper_candidates = list(InitialPaper.objects.all())
+    initial_paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
     for submission in FinalSubmission.objects.all():
-        evaluate_submission(submission, save=True)
+        evaluate_submission(
+            submission,
+            save=True,
+            initial_paper_by_id=initial_paper_by_id,
+            paper_candidates=paper_candidates,
+        )
 
 
 def submissions_to_frame(queryset):
@@ -441,12 +463,22 @@ def submissions_to_frame(queryset):
                 "extracted_title": item.extracted_title,
                 "extracted_authors": item.extracted_authors,
                 "page_count": item.page_count,
+                "page_limit_exception_approved": item.page_limit_exception_approved,
+                "page_limit_exception_reason": item.page_limit_exception_reason,
+                "page_limit_exception_page_count": item.page_limit_exception_page_count,
                 "pdf_hash": item.pdf_hash,
                 "title_author_extraction_status": item.title_author_extraction_status,
                 "title_author_extraction_message": item.title_author_extraction_message,
                 "title_author_verification_image": item.title_author_verification_image,
+                "title_author_review_status": item.title_author_review_status,
                 "title_author_verified": item.title_author_verified,
                 "title_author_verified_at": item.title_author_verified_at,
+                "duplicate_author_review_status": item.duplicate_author_review_status,
+                "duplicate_author_review_notes": item.duplicate_author_review_notes,
+                "duplicate_author_reviewed_at": item.duplicate_author_reviewed_at,
+                "author_number_exception_approved": item.author_number_exception_approved,
+                "author_number_exception_reason": item.author_number_exception_reason,
+                "author_number_exception_author_count": item.author_number_exception_author_count,
                 "extracted_title_match_status": item.extracted_title_match_status,
                 "extracted_title_match_score": item.extracted_title_match_score,
                 "extracted_title_match_message": item.extracted_title_match_message,
@@ -463,6 +495,7 @@ def submissions_to_frame(queryset):
                 "similarity_score": item.similarity_score,
                 "single_similarity_score": item.single_similarity_score,
                 "plagiarism_report_path": item.plagiarism_report_path,
+                "plagiarism_report_stale": item.plagiarism_report_stale,
                 "processing_status": item.processing_status,
                 "processing_message": item.processing_message,
                 "mapping_source": item.mapping_source,

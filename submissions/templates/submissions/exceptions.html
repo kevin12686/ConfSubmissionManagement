@@ -1,0 +1,105 @@
+{% extends "submissions/base.html" %}
+{% block title %}Exceptions{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Exceptions</h1>
+        <div class="cfm-page-subtitle">Only use exceptions for rare approved cases. Not allowed and stale exceptions block publication export.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+    </div>
+</div>
+
+<div class="row g-2 cfm-metric-strip">
+    <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Not allowed</div><div class="cfm-metric-value text-danger">{{ counts.not_allowed }}</div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Allowed</div><div class="cfm-metric-value text-info">{{ counts.allowed }}</div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Stale</div><div class="cfm-metric-value text-warning">{{ counts.stale }}</div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">All</div><div class="cfm-metric-value">{{ counts.all }}</div></div></div>
+</div>
+
+<ul class="nav nav-tabs cfm-tabs">
+    {% for option in filter_options %}
+        <li class="nav-item">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}">
+                {{ option.label }}
+                <span class="badge cfm-tab-count text-bg-{% if option.value == 'not_allowed' %}danger{% elif option.value == 'allowed' %}info{% elif option.value == 'stale' %}warning{% else %}secondary{% endif %}">{{ option.count }}</span>
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+
+<div class="vstack gap-3">
+    {% for row in rows %}
+        <div class="card cfm-review-card border-{{ row.status_level }}">
+            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <div>
+                    <span class="badge text-bg-{{ row.status_level }}">{{ row.status_label }}</span>
+                    <span class="badge text-bg-light text-dark border">{{ row.type_label }}</span>
+                    <strong>{{ row.subject }}</strong>
+                    {% if row.final_submission_id %}
+                        <span class="text-muted">Final ID {{ row.final_submission_id }}</span>
+                    {% endif %}
+                </div>
+                <div class="small text-muted">{{ row.limit_label }}</div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="small text-muted">Current value</div>
+                        <div class="fs-5">{{ row.current_value|default:"--" }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted">Approved value</div>
+                        <div>{{ row.approved_value|default:"--" }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted">Approved time</div>
+                        <div>{{ row.approved_at|default:"--" }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted">Paper IDs</div>
+                        <div class="text-break">{{ row.paper_ids|default:"--" }}</div>
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted">Reason</div>
+                        {% if row.reason %}
+                            <div class="border rounded p-2 bg-light">{{ row.reason }}</div>
+                        {% else %}
+                            <div class="text-muted">No exception reason recorded.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                {% if row.status == "allowed" %}
+                    <form method="post" class="d-flex justify-content-end">
+                        {% csrf_token %}
+                        <input type="hidden" name="exception_key" value="{{ row.key }}">
+                        <button class="btn btn-outline-danger" name="action" value="remove_exception">Remove exception</button>
+                    </form>
+                {% else %}
+                    <form method="post" class="row g-2 align-items-end">
+                        {% csrf_token %}
+                        <input type="hidden" name="exception_key" value="{{ row.key }}">
+                        <div class="col-lg-9">
+                            <label class="form-label" for="reason-{{ forloop.counter }}">Required reason</label>
+                            <textarea id="reason-{{ forloop.counter }}" class="form-control" name="reason" rows="2">{% if row.status == "stale" %}{{ row.reason }}{% endif %}</textarea>
+                        </div>
+                        <div class="col-lg-3 d-grid gap-2">
+                            <button class="btn btn-success" name="action" value="{% if row.status == 'stale' %}reapprove_exception{% else %}approve_exception{% endif %}">
+                                {% if row.status == 'stale' %}Re-approve exception{% else %}Allow exception{% endif %}
+                            </button>
+                            {% if row.status == "stale" %}
+                                <button class="btn btn-outline-danger" name="action" value="remove_exception">Remove exception</button>
+                            {% endif %}
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    {% empty %}
+        <div class="alert alert-success border cfm-attention">No exceptions in this filter.</div>
+    {% endfor %}
+</div>
+{% endblock %}

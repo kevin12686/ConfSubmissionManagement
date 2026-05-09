@@ -25,12 +25,28 @@
         text-decoration: line-through;
     }
 </style>
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Verify Paper IDs</h1>
-    <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Verify Paper IDs</h1>
+        <div class="cfm-page-subtitle">Resolve author-entered Paper IDs against the Paper Master List before publication checks continue.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
+    </div>
 </div>
 
-<form method="get" class="row g-2 align-items-end mb-3">
+<ul class="nav nav-tabs cfm-tabs">
+    {% for option in filter_options %}
+    <li class="nav-item">
+        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+            {{ option.label }}
+            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_verification' %}danger{% elif option.value == 'verified_with_diff' or option.value == 'title_mismatch' %}warning{% elif option.value == 'identical' %}success{% else %}secondary{% endif %}">{{ option.count }}</span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+
+<form method="get" class="row g-2 align-items-end cfm-filter-panel">
     <div class="col-lg-6">
         <label class="form-label" for="verify-search">Search</label>
         <input id="verify-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, or title">
@@ -50,15 +66,7 @@
     </div>
 </form>
 
-<div class="d-flex flex-wrap gap-2 mb-3">
-    {% for option in filter_options %}
-        <a class="btn btn-sm {% if option.value == current_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
-            {{ option.label }} <span class="badge text-bg-light text-dark">{{ option.count }}</span>
-        </a>
-    {% endfor %}
-</div>
-
-<div class="alert alert-light border">
+<div class="alert alert-light border cfm-attention">
     <strong>Diff guide:</strong>
     <mark class="diff-replace">yellow</mark> changed characters in Final text,
     <mark class="diff-insert">green</mark> extra characters in Final text,
@@ -67,30 +75,32 @@
 
 <div class="vstack gap-3">
     {% for row in rows %}
-        <div class="card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">
+        <div class="card cfm-review-card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">
             <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
                 <div>
                     <strong>Final ID {{ row.submission.final_submission_id }}</strong>
                     <span class="text-muted ms-2">Author-entered ID: {{ row.submission.start2_paper_id_raw|default:"None" }}</span>
                     <span class="text-muted ms-2">Paper ID: {{ row.submission.paper_id_filled|default:"None" }}</span>
                 </div>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
+                <div class="cfm-status-line">
                     {% if row.publication_pdf.exists %}
                         <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
                         <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                     {% else %}
                         <span class="badge text-bg-danger">No PDF</span>
                     {% endif %}
-                    {% if row.verified_with_diff %}
-                        <span class="badge text-bg-warning">Paper ID verified, title differs</span>
+                    {% if row.submission.excluded_from_publication %}
+                        <span class="badge text-bg-secondary">Excluded from publication</span>
+                    {% elif row.verified_with_diff %}
+                        <span class="badge text-bg-warning">ID verified, title differs</span>
                     {% elif row.is_identical %}
                         <span class="badge text-bg-success">Paper ID auto-verified by title</span>
                     {% elif row.is_verified %}
-                        <span class="badge text-bg-success">Paper ID verified</span>
+                        <span class="badge text-bg-success">ID verified</span>
                     {% elif row.status == "title_mismatch" %}
                         <span class="badge text-bg-warning">Paper ID title mismatch</span>
                     {% elif row.status == "invalid_paper_id" %}
-                        <span class="badge text-bg-warning">Paper ID not in master list</span>
+                        <span class="badge text-bg-danger">Cannot verify: ID not in Paper Master List</span>
                     {% else %}
                         <span class="badge text-bg-danger">Paper ID needs review</span>
                     {% endif %}
@@ -148,11 +158,43 @@
                                     <option value="{{ paper.paper_id }}">{{ paper.paper_id }} - {{ paper.title|truncatechars:70 }}</option>
                                 {% endfor %}
                             </select>
-                            <button class="btn btn-primary" name="action" value="verify">Verify</button>
-                            {% if row.suggested_paper %}
+                            <button class="btn btn-primary" name="action" value="verify" {% if row.submission.excluded_from_publication %}disabled{% endif %}>Verify</button>
+                            {% if row.suggested_paper and not row.submission.excluded_from_publication %}
                                 <button class="btn btn-outline-primary" name="action" value="use_suggestion">Use Suggestion</button>
                             {% endif %}
                         </form>
+                        {% if row.status == "invalid_paper_id" or row.submission.excluded_from_publication %}
+                            {% if row.submission.excluded_from_publication %}
+                                <form method="post" class="mt-2 text-end">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                    <span class="small text-muted me-2">
+                                        Reason: {{ row.submission.get_publication_exclusion_reason_display }}
+                                        {% if row.submission.publication_exclusion_notes %}- {{ row.submission.publication_exclusion_notes }}{% endif %}
+                                    </span>
+                                    <button class="btn btn-sm btn-outline-secondary" name="action" value="undo_not_publishing">Undo Not Publishing</button>
+                                </form>
+                            {% else %}
+                                <form method="post" class="row g-2 align-items-end mt-2">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                    <div class="col-md-3">
+                                        <select class="form-select form-select-sm" name="publication_exclusion_reason">
+                                            <option value="unpaid">Unpaid</option>
+                                            <option value="withdrawn">Withdrawn</option>
+                                            <option value="not_in_master">Not in Master List</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input class="form-control form-control-sm" name="publication_exclusion_notes" placeholder="Optional note">
+                                    </div>
+                                    <div class="col-md-3 text-end">
+                                        <button class="btn btn-sm btn-outline-danger" name="action" value="mark_not_publishing">Mark as Not Publishing</button>
+                                    </div>
+                                </form>
+                            {% endif %}
+                        {% endif %}
                         {% if row.is_verified %}
                             <form method="post" class="mt-2 text-end">
                                 {% csrf_token %}
@@ -166,7 +208,7 @@
             </div>
         </div>
     {% empty %}
-        <div class="alert alert-secondary">No final submissions found.</div>
+        <div class="cfm-empty">No final submissions found.</div>
     {% endfor %}
 </div>
 {% endblock %}

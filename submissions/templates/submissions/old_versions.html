@@ -1,9 +1,17 @@
 {% extends "submissions/base.html" %}
 {% block title %}Old Versions{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Old Versions</h1>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Old Versions</h1>
+        <div class="cfm-page-subtitle">Older or replaced final submissions retained for traceability.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:active_versions' %}">Active Versions</a>
+    </div>
+</div>
 <div class="table-responsive">
-    <table class="table table-striped align-middle">
+    <table class="table table-striped align-middle cfm-table">
         <thead><tr><th>Paper ID</th><th>Final ID</th><th>Author-entered ID</th><th>Verify</th><th>Pages</th><th>Current File</th><th>Processing</th></tr></thead>
         <tbody>
         {% for item in submissions %}

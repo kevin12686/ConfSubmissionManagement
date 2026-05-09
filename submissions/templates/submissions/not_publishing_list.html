@@ -1,0 +1,148 @@
+{% extends "submissions/base.html" %}
+{% block title %}Not Publishing List{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Not Publishing List</h1>
+        <div class="cfm-page-subtitle">Final submissions confirmed as not part of the publication package, plus unclassified finals that still need a decision.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
+        <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
+    </div>
+</div>
+
+<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+    <div class="col-lg-6">
+        <label class="form-label" for="not-publishing-search">Search</label>
+        <input id="not-publishing-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, title, author, or note">
+    </div>
+    <div class="col-lg-2">
+        <button class="btn btn-outline-secondary w-100">Search</button>
+    </div>
+    {% if q %}
+        <div class="col-lg-2">
+            <a class="btn btn-outline-secondary w-100" href="{% url 'submissions:not_publishing_list' %}">Reset</a>
+        </div>
+    {% endif %}
+</form>
+
+<div class="row g-2 cfm-metric-strip">
+    <div class="col-sm-6 col-lg-3">
+        <div class="cfm-metric">
+            <div class="cfm-metric-label">Needs Decision</div>
+            <div class="cfm-metric-value {% if needs_decision_count %}text-danger{% endif %}">{{ needs_decision_count }}</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="cfm-metric">
+            <div class="cfm-metric-label">Not Publishing</div>
+            <div class="cfm-metric-value">{{ excluded_count }}</div>
+        </div>
+    </div>
+</div>
+
+{% if needs_decision %}
+    <div class="alert alert-warning border cfm-attention">
+        <strong>{{ needs_decision_count }} final submission{{ needs_decision_count|pluralize }} need a decision.</strong>
+        Correct the Paper ID if this should publish, or mark it as Not Publishing if it was unpaid, withdrawn, or otherwise excluded.
+    </div>
+{% endif %}
+
+<section class="cfm-section">
+    <h2 class="h5">Needs Decision</h2>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle table-sm cfm-table">
+            <thead>
+                <tr>
+                    <th>Final ID</th>
+                    <th>Author-entered ID</th>
+                    <th>Resolved Paper ID</th>
+                    <th>Final Title</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for submission in needs_decision %}
+                <tr class="table-warning">
+                    <td>{{ submission.final_submission_id }}</td>
+                    <td>{{ submission.start2_paper_id_raw|default:"--" }}</td>
+                    <td>{{ submission.paper_id_filled|default:"--" }}</td>
+                    <td>{{ submission.final_submission_title|default:"--" }}</td>
+                    <td><span class="badge text-bg-danger">Not in Master - needs decision</span></td>
+                    <td class="cfm-wide-cell">
+                        <form method="post" class="row g-2 align-items-end">
+                            {% csrf_token %}
+                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" name="publication_exclusion_reason">
+                                    <option value="unpaid">Unpaid</option>
+                                    <option value="withdrawn">Withdrawn</option>
+                                    <option value="not_in_master">Not in Master List</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <input class="form-control form-control-sm" name="publication_exclusion_notes" placeholder="Optional note">
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-sm btn-outline-danger w-100" name="action" value="mark_not_publishing">Mark</button>
+                            </div>
+                        </form>
+                        <div class="mt-1">
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit Paper ID</a>
+                        </div>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6" class="text-muted">No unclassified final submissions outside the Paper Master List.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="cfm-section">
+    <h2 class="h5">Not Publishing</h2>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle table-sm cfm-table">
+            <thead>
+                <tr>
+                    <th>Final ID</th>
+                    <th>Paper ID</th>
+                    <th>Final Title</th>
+                    <th>Reason</th>
+                    <th>Note</th>
+                    <th>Marked At</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for submission in excluded %}
+                <tr>
+                    <td>{{ submission.final_submission_id }}</td>
+                    <td>{{ submission.paper_id_filled|default:"--" }}</td>
+                    <td>{{ submission.final_submission_title|default:"--" }}</td>
+                    <td><span class="badge text-bg-secondary">{{ submission.get_publication_exclusion_reason_display }}</span></td>
+                    <td>{{ submission.publication_exclusion_notes|default:"--" }}</td>
+                    <td>{% if submission.publication_excluded_at %}{{ submission.publication_excluded_at|date:"Y-m-d H:i" }}{% else %}--{% endif %}</td>
+                    <td>
+                        <div class="cfm-table-actions">
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                <button class="btn btn-sm btn-outline-secondary" name="action" value="undo_not_publishing">Undo</button>
+                            </form>
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit</a>
+                        </div>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-muted">No final submissions are marked Not Publishing.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

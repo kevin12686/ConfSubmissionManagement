@@ -1,9 +1,12 @@
 {% extends "submissions/base.html" %}
 {% block title %}Final Submissions{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Final Submissions</h1>
-    <div class="d-flex gap-2">
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Final Submissions</h1>
+        <div class="cfm-page-subtitle">Import, review, and edit author final-submission metadata and uploaded files.</div>
+    </div>
+    <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
         <a class="btn btn-primary" href="{% url 'submissions:final_submission_add' %}">Add Final Submission</a>
@@ -11,7 +14,7 @@
 </div>
 <div class="row g-3 mb-3">
     <div class="col-lg-5">
-        <form method="get" class="d-flex gap-2">
+        <form method="get" class="cfm-filter-panel d-flex gap-2">
             <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final submissions">
             <button class="btn btn-outline-secondary">Search</button>
         </form>
@@ -40,17 +43,18 @@
         </form>
     </div>
 </div>
-<div class="small text-muted border rounded px-2 py-1 mb-3">
-    <strong>Status guide:</strong>
-    <span class="badge text-bg-success">Current final version</span> newest corrected Paper ID version;
-    <span class="badge text-bg-secondary">Replaced by newer upload</span> older version;
-    <span class="badge text-bg-danger">Paper ID needs review</span> needs manual review;
-    <span class="badge text-bg-warning">Paper ID verified, title differs</span> manually verified but title differs;
-    <span class="badge text-bg-warning">Paper ID title mismatch</span> likely wrong Paper ID;
-    <span class="badge text-bg-success">Paper ID verified</span> checked or identical.
-</div>
+<details class="small text-muted border rounded px-2 py-1 mb-3">
+    <summary class="fw-semibold">Status guide</summary>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        <span><span class="badge text-bg-success">Current</span> newest version</span>
+        <span><span class="badge text-bg-secondary">Replaced</span> older version</span>
+        <span><span class="badge text-bg-danger">Needs review</span> Paper ID unchecked</span>
+        <span><span class="badge text-bg-warning">Title differs</span> verified but title differs</span>
+        <span><span class="badge text-bg-success">Verified</span> checked or identical</span>
+    </div>
+</details>
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle">
+    <table class="table table-striped table-hover align-middle cfm-table">
         <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Verify</th><th>Version</th><th>Final Title</th><th>PDF</th><th>Source</th><th>Plagiarism</th><th>Processing</th><th></th></tr></thead>
         <tbody>
         {% for item in submissions %}
@@ -60,9 +64,9 @@
                 <td>{{ item.paper_id_filled }}</td>
                 <td>
                     {% if item.paper_id_verified and item.verification_status == "title_mismatch" %}
-                        <span class="badge text-bg-warning">Paper ID verified, title differs</span>
+                        <span class="badge text-bg-warning">ID verified, title differs</span>
                     {% elif item.paper_id_verified %}
-                        <span class="badge text-bg-success">Paper ID verified</span>
+                        <span class="badge text-bg-success">ID verified</span>
                     {% elif item.verification_status == "title_mismatch" %}
                         <span class="badge text-bg-warning">Paper ID title mismatch</span>
                     {% elif item.verification_status == "invalid_paper_id" %}
@@ -78,15 +82,26 @@
                 <td>{{ item.source_original_file_name|default:item.source_current_file_path|truncatechars:30 }}</td>
                 <td>
                     {% if item.similarity_score != None and item.single_similarity_score != None %}
-                        P {{ item.similarity_score }}% / S {{ item.single_similarity_score }}%
+                        <div class="d-flex flex-wrap gap-1">
+                            <span class="badge text-bg-{{ item.plagiarism_percent_level }} {% if item.plagiarism_percent_level == 'light' %}text-dark{% endif %}">P {{ item.similarity_score|floatformat:"0" }}%</span>
+                            <span class="badge text-bg-{{ item.single_percent_level }} {% if item.single_percent_level == 'light' %}text-dark{% endif %}">S {{ item.single_similarity_score|floatformat:"0" }}%</span>
+                        </div>
                     {% else %}
-                        <span class="text-muted">Missing</span>
+                        <span class="badge text-bg-danger">Missing P/S</span>
+                    {% endif %}
+                    {% if item.plagiarism_report_path %}
+                        <div class="small mt-1"><a href="{% url 'submissions:plagiarism_report' item.pk %}" target="_blank" rel="noopener">Open report</a></div>
+                        {% if item.plagiarism_report_stale %}
+                            <div><span class="badge text-bg-warning">Old report</span></div>
+                        {% endif %}
                     {% endif %}
                 </td>
                 <td>{{ item.processing_status }}</td>
-                <td class="text-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
-                    <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
+                <td>
+                    <div class="cfm-table-actions">
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
+                    </div>
                 </td>
             </tr>
         {% empty %}

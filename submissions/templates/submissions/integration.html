@@ -1,23 +1,31 @@
 {% extends "submissions/base.html" %}
-{% block title %}CrossCheck / External Results{% endblock %}
+{% block title %}CrossCheck / System Backup{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">CrossCheck / External Results</h1>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">CrossCheck / System Backup</h1>
+        <div class="cfm-page-subtitle">Prepare plagiarism-check files and back up or restore the complete local system state.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review Plagiarism Issues</a>
+    </div>
+</div>
 <div class="row g-3">
     <div class="col-lg-6">
         <div class="card mb-3">
             <div class="card-body">
                 <h2 class="h5">Paper Export for CrossCheck</h2>
                 <p class="text-muted">Creates a downloadable ZIP with active publication PDFs named PaperID_token.pdf.</p>
-                <form method="post" class="row g-2 align-items-end">
+                <form method="post" class="vstack gap-2">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="prepare_crosscheck">
-                    <div class="col-md-8">
+                    <div>
                         {{ crosscheck_export_form.token.label_tag }}
                         {{ crosscheck_export_form.token }}
                         <div class="form-text">{{ crosscheck_export_form.token.help_text }}</div>
                     </div>
-                    <div class="col-md-4">
-                        <button class="btn btn-primary w-100">Prepare ZIP</button>
+                    <div class="cfm-action-bar">
+                        <button class="btn btn-primary">Prepare ZIP</button>
                     </div>
                 </form>
                 {% if crosscheck_export_result %}
@@ -44,9 +52,9 @@
         <div class="card mb-3">
             <div class="card-body">
                 <h2 class="h5">Import CrossCheck Result CSV</h2>
-                <p class="text-muted">Import filename, plagiarism_percent, single_percent, downloaded, and optional report_file_name.</p>
-                <p><a href="{% url 'submissions:download_template' 'crosscheck' %}">Download CrossCheck result template</a></p>
-                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                <p class="text-muted">Import filename, plagiarism_percent, and single_percent. Report PDFs are uploaded separately and matched by PaperID_token.pdf.</p>
+                <p><a href="{% url 'submissions:download_template' 'plagiarism' %}">Download plagiarism result template</a></p>
+                <form method="post" enctype="multipart/form-data" class="cfm-action-bar">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="import_crosscheck">
                     {{ crosscheck_result_form.file }}
@@ -66,7 +74,7 @@
             <div class="card-body">
                 <h2 class="h5">Upload CrossCheck Reports</h2>
                 <p class="text-muted">Reports are optional. Upload only the report PDFs that CrossCheck generated, named PaperID_token.pdf.</p>
-                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                <form method="post" enctype="multipart/form-data" class="cfm-action-bar">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="upload_crosscheck_reports">
                     {{ report_upload_form.report_files }}
@@ -84,32 +92,73 @@
         </div>
     </div>
     <div class="col-lg-6">
-        <div class="card">
+        <div class="card border-danger">
             <div class="card-body">
-                <h2 class="h5">Import External Results</h2>
-                <p class="text-muted">Import CSV/XLSX rows with final_submission_id, paper_id, extracted_title, extracted_authors, plagiarism_status, similarity_score, and plagiarism_report_path.</p>
-                <p><a href="{% url 'submissions:download_template' 'external' %}">Download external results template</a></p>
-                <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+                <h2 class="h5">System State Backup / Restore</h2>
+                <p class="text-muted">
+                    Download a complete ZIP snapshot with settings, conference name, database workflow state, review flags, exceptions, reports, PDFs, source files, and generated files.
+                </p>
+                <div class="cfm-action-bar mb-3">
+                    <a class="btn btn-success" href="{% url 'submissions:download_system_state' %}">Download System State ZIP</a>
+                </div>
+                <hr>
+                <h3 class="h6 text-danger">Restore System State</h3>
+                <p class="text-muted small mb-2">
+                    Restore replaces the current database, settings, conference name, and app-managed files. Upload a ZIP first to preview the restore.
+                </p>
+                <form method="post" enctype="multipart/form-data" class="vstack gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="import_external">
-                    {{ form.file }}
-                    <button class="btn btn-primary">Import External Results</button>
+                    <input type="hidden" name="action" value="preview_system_restore">
+                    {% include "submissions/includes/form_field.html" with field=system_state_restore_form.snapshot %}
+                    <div>
+                        <button class="btn btn-outline-danger">Preview Restore</button>
+                    </div>
                 </form>
-                {% if result %}
+                {% if system_state_preview %}
                     <hr>
-                    <ul class="mb-0">
-                        <li>Title/author rows updated: {{ result.updated_title_author }}</li>
-                        <li>Plagiarism rows updated: {{ result.updated_plagiarism }}</li>
-                        <li>Unmatched rows: {{ result.unmatched }}</li>
-                    </ul>
+                    <div class="alert alert-danger border">
+                        <strong>Restore preview only.</strong>
+                        Nothing has been changed yet. Apply only if this ZIP is the state you want to return to.
+                    </div>
+                    <dl class="row small">
+                        <dt class="col-sm-5">Conference name</dt>
+                        <dd class="col-sm-7">{{ system_state_preview.conference_name|default:"Local Conference" }}</dd>
+                        <dt class="col-sm-5">System version</dt>
+                        <dd class="col-sm-7">{{ system_state_preview.app_name }} v{{ system_state_preview.app_version }}</dd>
+                        <dt class="col-sm-5">State archive version</dt>
+                        <dd class="col-sm-7">v{{ system_state_preview.state_archive_version }}</dd>
+                        <dt class="col-sm-5">Files</dt>
+                        <dd class="col-sm-7">{{ system_state_preview.file_count }}</dd>
+                        <dt class="col-sm-5">Records</dt>
+                        <dd class="col-sm-7">
+                            Papers {{ system_state_preview.record_counts.initial_papers|default:0 }},
+                            finals {{ system_state_preview.record_counts.final_submissions|default:0 }},
+                            author rows {{ system_state_preview.record_counts.paper_authors|default:0 }}
+                        </dd>
+                        <dt class="col-sm-5">Settings</dt>
+                        <dd class="col-sm-7">
+                            pages {{ system_state_preview.settings_summary.page_minimum }}-{{ system_state_preview.settings_summary.page_limit }},
+                            max authors {{ system_state_preview.settings_summary.max_authors_per_paper }},
+                            timezone {{ system_state_preview.settings_summary.time_zone }}
+                        </dd>
+                    </dl>
+                    {% if system_state_preview.missing_files or system_state_preview.corrupt_files %}
+                        <div class="alert alert-warning">
+                            This snapshot has missing or corrupted files and cannot be restored.
+                        </div>
+                    {% else %}
+                        <form method="post" class="vstack gap-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="apply_system_restore">
+                            <input type="hidden" name="token" value="{{ system_state_preview.token }}">
+                            <label class="form-label" for="system-restore-confirmation">Type {{ system_state_confirmation_text }} to confirm</label>
+                            <input id="system-restore-confirmation" class="form-control" name="confirmation" autocomplete="off">
+                            <div>
+                                <button class="btn btn-danger">Apply Restore</button>
+                            </div>
+                        </form>
+                    {% endif %}
                 {% endif %}
-            </div>
-        </div>
-        <div class="card mt-3">
-            <div class="card-body">
-                <h2 class="h5">External Tool Notes</h2>
-                <p class="text-muted mb-2">This page only imports or exports files for external tools. Run title/author extraction from the dedicated Title/Author Extraction page.</p>
-                <button class="btn btn-outline-secondary" disabled>CrossCheck Selenium bot runs outside Django</button>
             </div>
         </div>
     </div>

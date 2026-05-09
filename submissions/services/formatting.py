@@ -16,7 +16,17 @@ from submissions.services.import_preview import (
 )
 
 
-def formatting_rows(query=""):
+FORMAT_FILTER_OPTIONS = [
+    {"value": "needs_attention", "label": "Needs attention"},
+    {"value": "pending", "label": "Pending"},
+    {"value": "needs_edit", "label": "Needs edit"},
+    {"value": "review_ok", "label": "Review OK"},
+    {"value": "edited", "label": "Edited"},
+    {"value": "all", "label": "All"},
+]
+
+
+def formatting_rows(query="", status_filter="needs_attention"):
     status_order = Case(
         When(format_status="pending", then=Value(0)),
         When(format_status="needs_edit", then=Value(1)),
@@ -34,7 +44,30 @@ def formatting_rows(query=""):
             | Q(final_submission_title__icontains=query)
             | Q(final_submission_authors__icontains=query)
         )
+    if status_filter == "pending":
+        submissions = submissions.filter(format_status="pending")
+    elif status_filter == "needs_edit":
+        submissions = submissions.filter(format_status="needs_edit")
+    elif status_filter == "review_ok":
+        submissions = submissions.filter(format_status="review_ok")
+    elif status_filter == "edited":
+        submissions = submissions.filter(
+            (Q(formatted_pdf_file__isnull=False) & ~Q(formatted_pdf_file=""))
+            | (Q(formatted_source_file__isnull=False) & ~Q(formatted_source_file=""))
+        )
+    elif status_filter == "all":
+        pass
+    else:
+        status_filter = "needs_attention"
+        submissions = submissions.exclude(format_status="review_ok")
     return submissions.order_by("status_order", "paper_id_filled", "final_submission_id")
+
+
+def formatting_filter_counts(query=""):
+    return {
+        option["value"]: formatting_rows(query, option["value"]).count()
+        for option in FORMAT_FILTER_OPTIONS
+    }
 
 
 def formatting_preview_info(submission):

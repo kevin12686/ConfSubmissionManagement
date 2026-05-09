@@ -1,25 +1,318 @@
 {% extends "submissions/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Settings</h1>
-<form method="post" class="card">
-    <div class="card-body">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="save_settings">
-        {{ form.as_p }}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Settings</h1>
+        <div class="cfm-page-subtitle">Configure publication checks, folder locations, and workflow defaults.</div>
     </div>
-    <div class="card-footer">
+    <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-outline-secondary" name="action" value="reset_folders">Reset folders to defaults</button>
+    </form>
+</div>
+
+{% if has_folder_warnings %}
+    <div class="alert alert-warning border cfm-attention">
+        <strong>Temporary or external folder path detected.</strong>
+        A path under <code>/var</code>, <code>/private/var</code>, or <code>/tmp</code> is temporary system storage. It may come from a previous test/export run and should usually be reset to <code>data/...</code>.
+    </div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_settings">
+
+    <div class="row g-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header fw-semibold">Conference</div>
+                <div class="card-body">
+                    {% include "submissions/includes/form_field.html" with field=form.conference_name %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Limits</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.page_minimum %}</div>
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.page_limit %}</div>
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.author_paper_limit %}</div>
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.max_authors_per_paper %}</div>
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.title_words_for_filename %}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Workflow</div>
+                <div class="card-body">
+                    {% include "submissions/includes/form_field.html" with field=form.active_version_rule %}
+                    {% include "submissions/includes/form_field.html" with field=form.time_zone %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Plagiarism Thresholds</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.plagiarism_percent_threshold %}</div>
+                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.single_similarity_threshold %}</div>
+                    </div>
+                    <div class="small text-muted">Scores greater than these thresholds are highlighted in reports and publication readiness checks.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Folder Policy</div>
+                <div class="card-body small">
+                    <p class="mb-2">Recommended folder paths are relative project paths under <code>data/</code>. Relative paths resolve from the project root.</p>
+                    <p class="mb-0">Absolute paths are allowed, but avoid temporary system folders.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header fw-semibold">Folders</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.incoming_folder %}
+                            {% if folder_warnings.incoming_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.incoming_folder }}</div>{% endif %}
+                        </div>
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.active_final_folder %}
+                            {% if folder_warnings.active_final_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.active_final_folder }}</div>{% endif %}
+                        </div>
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.old_versions_folder %}
+                            {% if folder_warnings.old_versions_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.old_versions_folder }}</div>{% endif %}
+                        </div>
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.reports_folder %}
+                            {% if folder_warnings.reports_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.reports_folder }}</div>{% endif %}
+                        </div>
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.extraction_results_folder %}
+                            {% if folder_warnings.extraction_results_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.extraction_results_folder }}</div>{% endif %}
+                        </div>
+                        <div class="col-lg-6">
+                            {% include "submissions/includes/form_field.html" with field=form.plagiarism_reports_folder %}
+                            {% if folder_warnings.plagiarism_reports_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.plagiarism_reports_folder }}</div>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="cfm-sticky-actions d-flex justify-content-end">
         <button class="btn btn-primary">Save Settings</button>
     </div>
 </form>
 
+<div class="card mt-4">
+    <div class="card-header fw-semibold">Storage Management</div>
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-3 mb-3">
+            <div>
+                <div class="text-muted small">Tracked size</div>
+                <div class="h5 mb-0">{{ storage_inventory.total_size_label }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Tracked files</div>
+                <div class="h5 mb-0">{{ storage_inventory.total_file_count }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Missing DB references</div>
+                <div class="h5 mb-0">{{ storage_inventory.missing_references|length }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Default cleanup candidates</div>
+                <div class="h5 mb-0">{{ storage_inventory.cleanup_candidates|length }}</div>
+            </div>
+        </div>
+
+        <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th class="text-end">Files</th>
+                        <th class="text-end">Size</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in storage_inventory.categories %}
+                        <tr>
+                            <td>{{ category.label }}</td>
+                            <td class="text-end">{{ category.count }}</td>
+                            <td class="text-end">{{ category.size_label }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3" class="text-muted">No managed files found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if storage_inventory.missing_references %}
+            <div class="alert alert-warning">
+                <div class="fw-semibold mb-2">Missing file references</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Submission</th>
+                                <th>Role</th>
+                                <th>Path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_inventory.missing_references|slice:":12" %}
+                                <tr>
+                                    <td>{{ row.final_submission_id }}{% if row.paper_id %} / {{ row.paper_id }}{% endif %}</td>
+                                    <td>{{ row.role }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if storage_inventory.missing_references|length > 12 %}
+                    <div class="small text-muted mt-2">Showing first 12 of {{ storage_inventory.missing_references|length }} missing references.</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <div class="row g-3 align-items-start">
+            <div class="col-lg-6">
+                <form method="post" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="repair_storage_paths">
+                    <div class="fw-semibold">Repair publication paths</div>
+                    <p class="small text-muted mb-3">Rebuild missing active/old publication PDF copies and refresh source paths from canonical uploads when possible.</p>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="force_repair" id="force-repair">
+                        <label class="form-check-label" for="force-repair">Re-copy even when target files already exist</label>
+                    </div>
+                    <button class="btn btn-outline-primary">Repair Paths</button>
+                </form>
+            </div>
+            <div class="col-lg-6">
+                <form method="post" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview_storage_cleanup">
+                    <div class="fw-semibold">Preview conservative cleanup</div>
+                    <p class="small text-muted mb-3">Default cleanup only selects generated cache and orphaned active/old outputs. Original uploads, corrected files, reports, packages, and backups are kept.</p>
+                    <button class="btn btn-outline-secondary">Create Cleanup Preview</button>
+                </form>
+            </div>
+        </div>
+
+        {% if storage_repair_result %}
+            <div class="alert alert-info mt-3 mb-0">
+                Repaired {{ storage_repair_result.pdf_repaired_count }} PDF paths and {{ storage_repair_result.source_repaired_count }} source paths.
+                {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} records that lacked source files or could not be copied.{% endif %}
+            </div>
+        {% endif %}
+
+        {% if storage_cleanup_preview %}
+            <div class="border rounded p-3 mt-3">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <div class="fw-semibold">Cleanup Preview</div>
+                        <div class="small text-muted">{{ storage_cleanup_preview.file_count }} files selected, {{ storage_cleanup_preview.total_size_label }} total. No files have been deleted.</div>
+                    </div>
+                </div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Reason</th>
+                                <th>Path</th>
+                                <th class="text-end">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_cleanup_preview.files|slice:":25" %}
+                                <tr>
+                                    <td>{{ row.reason }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                    <td class="text-end">{{ row.size_label }}</td>
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="3" class="text-muted">No default cleanup candidates.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if storage_cleanup_preview.files|length > 25 %}
+                    <div class="small text-muted mb-3">Showing first 25 of {{ storage_cleanup_preview.files|length }} files.</div>
+                {% endif %}
+                {% if storage_cleanup_preview.file_count %}
+                    <form method="post" class="row g-2 align-items-end">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="apply_storage_cleanup">
+                        <input type="hidden" name="cleanup_token" value="{{ storage_cleanup_preview.token }}">
+                        <div class="col-md-8">
+                            <label class="form-label" for="cleanup-confirmation">Type {{ storage_cleanup_confirmation_text }} to confirm</label>
+                            <input id="cleanup-confirmation" class="form-control" name="cleanup_confirmation" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-warning w-100">Apply Cleanup</button>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if storage_inventory.large_files %}
+            <details class="mt-3">
+                <summary class="fw-semibold">Largest managed files</summary>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Path</th>
+                                <th class="text-end">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_inventory.large_files %}
+                                <tr>
+                                    <td>{{ row.category }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                    <td class="text-end">{{ row.size_label }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        {% endif %}
+    </div>
+</div>
+
 <div class="card border-danger mt-4">
     <div class="card-header text-bg-danger">Maintenance</div>
     <div class="card-body">
-        <h2 class="h5">Clear Database</h2>
+        <h2 class="h5">Clear Database and Files</h2>
         <p class="text-muted">
-            Removes all Paper Master records, Final Submissions, verification states, and author count rows.
-            Settings are kept. Uploaded files, generated previews, reports, CrossCheck exports, and processing outputs under data folders are deleted.
+            Removes all Paper Master records, Final Submissions, verification states, exceptions, author count rows, settings, conference name, storage previews, system-state backups, uploaded files, reports, CrossCheck exports, and processing outputs.
+            After wiping, settings are recreated with defaults so the app can start a completely new conference.
+            Download a System State ZIP from Integrations first if you need to restore this conference later.
         </p>
         <form method="post" action="{% url 'submissions:clear_database' %}" class="row g-2 align-items-end">
             {% csrf_token %}
@@ -28,7 +321,7 @@
                 <input id="clear-confirmation" class="form-control" name="confirmation" autocomplete="off">
             </div>
             <div class="col-md-4">
-                <button class="btn btn-danger w-100">Clear Database</button>
+                <button class="btn btn-danger w-100">Clear Database and Files</button>
             </div>
         </form>
     </div>

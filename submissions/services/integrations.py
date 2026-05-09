@@ -1,6 +1,7 @@
 from django.utils import timezone
 
 from submissions.models import FinalSubmission
+from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
 from submissions.services.import_export import clean_value, normalize_columns, parse_decimal, read_table
 
 
@@ -34,6 +35,8 @@ def import_external_results(uploaded_file):
 
         title_author_changed = False
         plagiarism_changed = False
+        plagiarism_score_changed = False
+        plagiarism_report_changed = False
 
         if "extracted_title" in row:
             submission.extracted_title = clean_value(row.get("extracted_title"))
@@ -46,8 +49,14 @@ def import_external_results(uploaded_file):
             submission.title_author_imported_at = timezone.now()
             submission.title_author_extraction_status = "extracted"
             submission.title_author_extraction_message = "Imported from external results file."
+            submission.title_author_review_status = "pending"
             submission.title_author_verified = False
             submission.title_author_verified_at = None
+            submission.duplicate_author_review_status = "pending"
+            submission.duplicate_author_review_notes = ""
+            submission.duplicate_author_reviewed_at = None
+            if "extracted_authors" in row:
+                reset_author_number_exception(submission)
             submission.extracted_title_verified = False
             submission.extracted_title_verified_at = None
             submission.extracted_title_auto_verify_blocked = False
@@ -57,19 +66,33 @@ def import_external_results(uploaded_file):
             submission.plagiarism_status = clean_value(row.get("plagiarism_status"))
             plagiarism_changed = True
         if "similarity_score" in row:
-            submission.similarity_score = parse_decimal(row.get("similarity_score"))
+            similarity_score = parse_decimal(row.get("similarity_score"))
+            if submission.similarity_score != similarity_score:
+                plagiarism_score_changed = True
+            submission.similarity_score = similarity_score
             plagiarism_changed = True
         if "single_similarity_score" in row:
-            submission.single_similarity_score = parse_decimal(row.get("single_similarity_score"))
+            single_similarity_score = parse_decimal(row.get("single_similarity_score"))
+            if submission.single_similarity_score != single_similarity_score:
+                plagiarism_score_changed = True
+            submission.single_similarity_score = single_similarity_score
             plagiarism_changed = True
         if "plagiarism_report_path" in row:
             submission.plagiarism_report_path = clean_value(row.get("plagiarism_report_path"))
             plagiarism_changed = True
+            plagiarism_report_changed = True
         if plagiarism_changed:
+            if plagiarism_report_changed:
+                submission.plagiarism_report_stale = False
+            elif plagiarism_score_changed and submission.plagiarism_report_path:
+                submission.plagiarism_report_stale = True
             submission.plagiarism_imported_at = timezone.now()
             updated_plagiarism += 1
 
         submission.save()
+
+    if updated_title_author:
+        rebuild_paper_authors()
 
     return {
         "updated_title_author": updated_title_author,

@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
+from submissions.services.checks import reset_author_number_exception, reset_page_limit_exception
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.import_export import (
     MASTER_SHEET_NAME,
@@ -152,10 +153,18 @@ def _stats(rows):
 def preview_initial_import(uploaded_file):
     frame = normalize_columns(read_table(uploaded_file, [MASTER_SHEET_NAME]))
     rows = []
-    for row in frame.to_dict("records"):
+    seen_ids = {}
+    blocking_errors = []
+    for index, row in enumerate(frame.to_dict("records"), start=2):
         paper_id = clean_value(row.get("paper_id") or row.get("submission id") or row.get("initial_submission_id"))
         if not paper_id:
             continue
+        if paper_id in seen_ids:
+            blocking_errors.append(
+                f"Duplicate Paper ID '{paper_id}' in uploaded Master List rows {seen_ids[paper_id]} and {index}. Fix the file before applying."
+            )
+            continue
+        seen_ids[paper_id] = index
         new_values = {
             "paper_id": paper_id,
             "acceptance_status": clean_value(
@@ -214,7 +223,7 @@ def preview_initial_import(uploaded_file):
                 "corrected_files_archived": False,
             }
         )
-    return _make_payload("initial", rows)
+    return _make_payload("initial", rows, blocking_errors=blocking_errors)
 
 
 def preview_final_import(uploaded_file, submission_files=None):
@@ -223,10 +232,18 @@ def preview_final_import(uploaded_file, submission_files=None):
     token_dir = preview_root() / token
     upload_lookup, invalid_files = _save_temp_submission_files(submission_files or [], token_dir)
     rows = []
-    for row in frame.to_dict("records"):
+    seen_ids = {}
+    blocking_errors = []
+    for index, row in enumerate(frame.to_dict("records"), start=2):
         final_id = clean_value(row.get("final_submission_id") or row.get("submission id"))
         if not final_id:
             continue
+        if final_id in seen_ids:
+            blocking_errors.append(
+                f"Duplicate Final ID '{final_id}' in uploaded Final Submission rows {seen_ids[final_id]} and {index}. Fix the file before applying."
+            )
+            continue
+        seen_ids[final_id] = index
         raw_paper_id = clean_value(
             row.get("start2_paper_id_raw")
             or row.get("author_entered_paper_id")
@@ -249,12 +266,12 @@ def preview_final_import(uploaded_file, submission_files=None):
             rows.append(_new_final_row(final_id, new_values, files))
             continue
         rows.append(_changed_final_row(existing, new_values, files))
-    payload = _make_payload("final", rows, token=token)
+    payload = _make_payload("final", rows, token=token, blocking_errors=blocking_errors)
     payload["invalid_files"] = invalid_files
     return _write_payload(payload)
 
 
-def _make_payload(kind, rows, token=None):
+def _make_payload(kind, rows, token=None, blocking_errors=None):
     created_at = _now()
     payload = {
         "token": token or uuid.uuid4().hex,
@@ -263,6 +280,7 @@ def _make_payload(kind, rows, token=None):
         "expires_at": (created_at + timedelta(hours=PREVIEW_TTL_HOURS)).isoformat(),
         "database_signature": _database_signature(),
         "rows": rows,
+        "blocking_errors": blocking_errors or [],
     }
     payload["stats"] = _stats(rows)
     return _write_payload(payload)
@@ -271,6 +289,12 @@ def _make_payload(kind, rows, token=None):
 def _new_final_row(final_id, new_values, files):
     pdf_change = "new" if files.get("pdf") else "missing"
     source_change = "new" if files.get("source") else "missing"
+    has_pdf = bool(files.get("pdf"))
+    has_source = bool(files.get("source"))
+    invalid_master_id = bool(
+        new_values["paper_id_filled"]
+        and not InitialPaper.objects.filter(paper_id=new_values["paper_id_filled"]).exists()
+    )
     return {
         "type": "final",
         "status": "new",
@@ -278,13 +302,14 @@ def _new_final_row(final_id, new_values, files):
         "new": new_values,
         "changes": [],
         "file_changes": _file_changes(files, pdf_change, source_change),
-        "paper_id_review_reset": False,
-        "title_match_reset": False,
-        "title_author_review_reset": False,
-        "pdf_reset": False,
-        "source_reset": False,
+        "paper_id_review_reset": True,
+        "title_match_reset": has_pdf,
+        "title_author_review_reset": has_pdf,
+        "pdf_reset": has_pdf,
+        "source_reset": has_source,
         "corrected_files_archived": False,
         "author_entered_id_changed": False,
+        "invalid_master_id": invalid_master_id,
         "active_version_impact": "Active versions will be recalculated after apply.",
     }
 
@@ -421,6 +446,8 @@ def _file_hash(path):
 def apply_import_preview(token):
     payload = load_preview(token)
     _assert_fresh(payload)
+    if payload.get("blocking_errors"):
+        raise ValueError("Preview has blocking errors. Fix the uploaded file and preview again.")
     if payload["kind"] == "initial":
         result = _apply_initial(payload)
     elif payload["kind"] == "final":
@@ -455,6 +482,11 @@ def _apply_final(payload):
         submission, created = FinalSubmission.objects.get_or_create(
             final_submission_id=values["final_submission_id"]
         )
+        if created:
+            submission.excluded_from_publication = False
+            submission.publication_exclusion_reason = ""
+            submission.publication_exclusion_notes = ""
+            submission.publication_excluded_at = None
         submission.start2_paper_id_raw = values["start2_paper_id_raw"]
         if created or row.get("author_entered_id_changed"):
             submission.paper_id_filled = values["paper_id_filled"]
@@ -467,7 +499,12 @@ def _apply_final(payload):
         if row.get("title_match_reset"):
             _reset_extracted_title_match(submission, "Final title or PDF changed; extracted title comparison required again.")
         if row.get("pdf_reset"):
-            _reset_pdf_dependent_state(submission)
+            _reset_pdf_dependent_state(
+                submission,
+                "New PDF uploaded; needs Process PDFs."
+                if row.get("status") == "new"
+                else "PDF changed; needs Process PDFs.",
+            )
         if row.get("source_reset"):
             _reset_source_dependent_state(submission)
         if row.get("corrected_files_archived"):
@@ -480,9 +517,11 @@ def _apply_final(payload):
             _attach_file(submission, file_changes["source"], "source")
     determine_active_versions()
     from submissions.services.import_export import _mark_duplicate_submissions, evaluate_imported_submissions
+    from submissions.services.checks import rebuild_paper_authors
 
     _mark_duplicate_submissions()
     evaluate_imported_submissions()
+    rebuild_paper_authors()
     return payload["stats"]
 
 
@@ -510,14 +549,15 @@ def _reset_extracted_title_match(submission, message):
     submission.extracted_title_match_message = message
 
 
-def _reset_pdf_dependent_state(submission):
+def _reset_pdf_dependent_state(submission, processing_message="PDF changed; needs Process PDFs."):
     submission.page_count = None
+    reset_page_limit_exception(submission)
     submission.pdf_hash = ""
     submission.thumbnail_folder = ""
     submission.thumbnail_status = ""
     submission.thumbnail_message = ""
     submission.processing_status = "pending"
-    submission.processing_message = "PDF changed; needs Process PDFs."
+    submission.processing_message = processing_message
     submission.extracted_title = ""
     submission.extracted_authors = ""
     submission.title_author_source = "unknown"
@@ -525,21 +565,31 @@ def _reset_pdf_dependent_state(submission):
     submission.title_author_extraction_status = "pending"
     submission.title_author_extraction_message = ""
     submission.title_author_verification_image = ""
+    submission.title_author_review_status = "pending"
     submission.title_author_verified = False
     submission.title_author_verified_at = None
+    submission.duplicate_author_review_status = "pending"
+    submission.duplicate_author_review_notes = ""
+    submission.duplicate_author_reviewed_at = None
+    reset_author_number_exception(submission)
     _reset_extracted_title_match(submission, "PDF changed; extracted title comparison required again.")
     submission.plagiarism_status = ""
     submission.similarity_score = None
     submission.single_similarity_score = None
     submission.plagiarism_report_path = ""
+    submission.plagiarism_report_stale = False
     submission.plagiarism_imported_at = None
     submission.format_status = "pending"
 
 
 def _reset_source_dependent_state(submission):
     submission.format_status = "pending"
+    submission.title_author_review_status = "pending"
     submission.title_author_verified = False
     submission.title_author_verified_at = None
+    submission.duplicate_author_review_status = "pending"
+    submission.duplicate_author_review_notes = ""
+    submission.duplicate_author_reviewed_at = None
     _reset_extracted_title_match(
         submission,
         "Source file changed; title/author review required again.",

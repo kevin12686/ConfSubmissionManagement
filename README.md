@@ -2,21 +2,127 @@
 
 A local no-login Django + SQLite application for managing conference final submissions.
 
-This project intentionally does not implement plagiarism checking, PDF title extraction, or PDF author extraction. It only stores manual or imported results from external tools.
+This project intentionally does not run plagiarism checking. It stores plagiarism scores and reports imported from external tools.
 
-The title/author extraction integration calls your existing `ExportTitleAuthor.py` script. The extraction logic remains in that script; Django only runs it, stores the extracted fields, saves the verification image, and tracks manual verification.
+Title/author extraction is built in to the Django system. The built-in extractor preserves the established PDF title/author extraction behavior, stores the extracted fields, saves the verification image, and tracks manual review.
 
-## Setup
+## Quick Start On This Computer
+
+```bash
+./scripts/start_local.sh
+```
+
+Open <http://127.0.0.1:8000/>.
+
+On macOS, you can also double-click `start.command` in Finder. It creates `.venv` if needed, installs requirements, applies migrations, creates local data folders, and starts the server.
+
+If macOS says the script is not executable after copying the folder, run:
+
+```bash
+chmod +x start.command scripts/start_local.sh
+```
+
+## New Computer Setup
+
+Use this process when installing the system on a new computer.
+
+### 1. Install prerequisites
+
+- Python 3.12 or newer
+- Terminal access
+- The full project folder
+- Optional: a System State ZIP from the old computer if you want to restore an existing conference
+
+No login, cloud service, or separate database server is required. The app uses local SQLite and local files under `data/`.
+
+The first run needs internet access to install Python packages. After packages are installed, normal local use does not require internet access except for Bootstrap CDN assets in the browser UI.
+
+### 2. Copy the project folder
+
+Copy the whole `SubmissionManagementSystem` folder to the new computer. Do not copy only selected files; the app expects the Django project, templates, sample data, scripts, and requirements to stay together.
+
+### 3. Start the app
+
+From Terminal:
+
+```bash
+cd /path/to/SubmissionManagementSystem
+./scripts/start_local.sh
+```
+
+Or on macOS, double-click:
+
+```text
+start.command
+```
+
+The script will:
+
+- create `.venv` if it does not exist
+- install packages from `requirements.txt`
+- create the local `data/` folders
+- run `python manage.py migrate`
+- start the local server at <http://127.0.0.1:8000/>
+
+The script does not install Python itself. If `python3` is missing, install Python first and run the script again.
+
+### 4. Restore an existing conference state
+
+If you exported a System State ZIP from another computer:
+
+1. Open <http://127.0.0.1:8000/integrations/crosscheck/>.
+2. Use `Restore System State`.
+3. Upload the System State ZIP.
+4. Review the preview.
+5. Type `RESTORE SYSTEM STATE` to apply.
+
+The archive is portable. It includes settings, conference name, database state, PDFs, source files, reports, previews, and managed files. File references are restored into the new computer's local `data/` folders, not the old computer's absolute paths.
+
+### 5. Stop the app
+
+Press `Ctrl+C` in the Terminal window running the server.
+
+## Manual Setup
+
+If you do not want to use the start script:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python manage.py migrate
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8000
 ```
 
 Open <http://127.0.0.1:8000/>.
+
+## Architecture
+
+The codebase is organized around domain-oriented controller and application layers:
+
+- `submissions/controllers/`: thin Django controllers grouped by workflow.
+- `submissions/application/selectors.py`: read/query composition for page contexts.
+- `submissions/application/commands.py`: side-effectful workflow actions with result objects.
+- `submissions/services/`: domain services for import, processing, verification, reporting, and integrations.
+- `submissions/models.py`: legacy core records plus one-to-one state mirrors for identity, files, reviews, publication, and plagiarism.
+- `submissions/tests/`: acceptance regression tests and shared factories.
+
+The current model split is intentionally transitional. Existing `FinalSubmission` fields remain the behavior source of truth while the one-to-one state models are kept in sync. This keeps migrations safe and gives future changes a stable place to move reads and writes one domain at a time.
+
+Primary routes now follow workflow domains:
+
+- `/papers/`
+- `/submissions/`
+- `/reviews/paper-ids/`
+- `/reviews/title-authors/`
+- `/reviews/formatting/`
+- `/reviews/exceptions/`
+- `/processing/pdfs/`
+- `/integrations/crosscheck/`
+- `/integrations/system-state/download/`
+- `/reports/`
+- `/settings/`
 
 ## Main Folders
 
@@ -26,14 +132,21 @@ Open <http://127.0.0.1:8000/>.
 - `data/reports/`: Excel exports.
 - `data/extraction_results/`: suggested location for external extraction output files.
 - `data/plagiarism_reports/`: suggested location for plagiarism reports from external tools.
+- `data/media/final_submissions/`: canonical uploaded final PDFs.
+- `data/media/source_submissions/`: canonical uploaded source files.
+- `data/media/formatted_pdfs/`: corrected PDF uploads.
+- `data/media/formatted_sources/`: corrected source uploads.
+- `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: regenerated cache files.
 
 Folder paths and limits can be changed from the Settings page.
+
+The Settings page also includes Storage Management. It inventories managed files, shows missing database references, previews cleanup candidates, and repairs missing active/old publication paths. Cleanup is preview-first: a GET request never deletes files, and the default cleanup only selects regenerated cache plus orphaned active/old publication outputs. Original uploads, corrected uploads, reports, publication packages, plagiarism reports, and system state backups are retained by default.
 
 ## CSV/XLSX Imports
 
 Templates are in `sample_data/`:
 
-- `initial_papers_template.csv` for the Paper Master List
+- `paper_master_list_template.csv` for the Paper Master List
 - `final_submissions_template.csv`
 - `external_results_template.csv`
 
@@ -65,11 +178,7 @@ External results are matched by `final_submission_id` first. If that is missing 
 
 ## Title/Author Extraction
 
-Open the Title/Author page to run extraction on active PDFs. The app calls the script path configured in Settings:
-
-```text
-/Users/kevin/Codes/UTDConferenceTools/PDF Title/ExportTitleAuthor.py
-```
+Open the Title/Author page to run extraction on active PDFs. No external script path is required.
 
 For each active PDF, the app stores:
 

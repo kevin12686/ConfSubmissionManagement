@@ -1,12 +1,12 @@
 {% extends "submissions/base.html" %}
 {% block title %}Organized List{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+<div class="cfm-page-header">
     <div>
-        <h1 class="h3 mb-0">Organized List</h1>
-        <div class="text-muted small">Current publication-prep checklist. PDF links open the version currently intended for publication.</div>
+        <h1 class="h3 cfm-page-title">Organized List</h1>
+        <div class="cfm-page-subtitle">Current publication-prep checklist. PDF links open the version currently intended for publication.</div>
     </div>
-    <div class="d-flex gap-2">
+    <div class="cfm-page-actions">
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify IDs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
@@ -15,7 +15,7 @@
 </div>
 
 {% if summary.needs_process_pdfs %}
-    <div class="alert alert-warning border d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
+    <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
         <div>
             <div class="fw-semibold">{{ summary.needs_process_pdfs }} corrected PDF{{ summary.needs_process_pdfs|pluralize }} need Process PDFs.</div>
             <div class="small">
@@ -31,16 +31,19 @@
     </div>
 {% endif %}
 
-<div class="row g-2 mb-3">
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Rows</div><div class="fs-5">{{ summary.total_rows }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">No Final</div><div class="fs-5">{{ summary.missing_final }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Paper ID Review</div><div class="fs-5">{{ summary.unverified }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Page Issues</div><div class="fs-5">{{ summary.page_errors }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">No Plagiarism</div><div class="fs-5">{{ summary.missing_plagiarism }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Page Range</div><div class="fs-5">{{ settings_obj.page_minimum }}-{{ settings_obj.page_limit }}</div></div></div>
+<div class="row g-2 cfm-metric-strip">
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Rows</div><div class="cfm-metric-value">{{ summary.total_rows }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">No Final</div><div class="cfm-metric-value {% if summary.missing_final %}text-danger{% endif %}">{{ summary.missing_final }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Review</div><div class="cfm-metric-value {% if summary.unverified %}text-warning{% endif %}">{{ summary.unverified }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Issues</div><div class="cfm-metric-value {% if summary.page_errors %}text-warning{% endif %}">{{ summary.page_errors }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">No Plagiarism</div><div class="cfm-metric-value {% if summary.missing_plagiarism %}text-warning{% endif %}">{{ summary.missing_plagiarism }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicates</div><div class="cfm-metric-value {% if summary.publication_duplicates %}text-danger{% endif %}">{{ summary.publication_duplicates }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicate Authors</div><div class="cfm-metric-value {% if summary.duplicate_author_issues %}text-danger{% endif %}">{{ summary.duplicate_author_issues }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Not Publishing</div><div class="cfm-metric-value">{{ summary.excluded_from_publication }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Range</div><div class="cfm-metric-value">{{ settings_obj.page_minimum }}-{{ settings_obj.page_limit }}</div></div></div>
 </div>
 
-<form method="get" class="row g-2 align-items-end mb-3">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel">
     <div class="col-lg-5">
         <label class="form-label" for="organized-search">Search</label>
         <input id="organized-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search paper ID, title, authors, final ID, status">
@@ -72,11 +75,10 @@
 </form>
 
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle table-sm">
+    <table class="table table-striped table-hover align-middle table-sm cfm-table">
         <thead>
             <tr>
                 <th>Paper ID</th>
-                <th>Verify</th>
                 <th>Title Check</th>
                 <th>Authors</th>
                 <th>Pages</th>
@@ -91,14 +93,19 @@
         <tbody>
         {% for row in rows %}
             {% with paper=row.paper submission=row.submission %}
-            <tr class="{% if row.over_author_limit %}table-danger{% elif row.row_type == 'unmatched' %}table-warning{% elif not submission %}table-danger{% endif %}">
+            <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid %}table-danger{% elif row.row_type == 'unmatched' %}table-warning{% elif not submission %}table-danger{% endif %}">
                 <td>
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
+                    <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
                     {% if row.row_type == 'unmatched' %}<div class="small text-danger">Not in Paper Master</div>{% endif %}
+                    {% for badge in row.duplicate_badges %}
+                        <div><span class="badge text-bg-danger">{{ badge }}</span></div>
+                    {% endfor %}
                 </td>
-                <td><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></td>
-                <td style="min-width: 420px;">
-                    {% if row.title_check.all_exact_identical %}
+                <td class="cfm-wide-cell">
+                    {% if not row.title_check.extracted_title %}
+                        <span class="badge text-bg-danger">Missing extracted title</span>
+                    {% elif row.title_check.all_exact_identical %}
                         <div>{{ row.title_check.extracted_title }}</div>
                     {% else %}
                         <div><span class="fw-semibold">Extracted:</span> {% if row.title_check.extracted_title %}{{ row.title_check.extracted_title }}{% else %}<span class="text-danger">Missing</span>{% endif %}</div>
@@ -135,17 +142,60 @@
                 <td>
                     <span class="badge text-bg-{{ row.author_count_level }}">{{ row.author_count_label }}</span>
                     {% if row.over_author_limit %}
-                        <div class="small text-danger">Over limit: {{ settings_obj.max_authors_per_paper }}</div>
+                        {% if row.author_number_exception_status == "allowed" %}
+                            <div class="mt-1"><span class="badge text-bg-info">Allowed exception</span></div>
+                        {% elif row.author_number_exception_status == "stale" %}
+                            <div class="mt-1"><span class="badge text-bg-warning">Stale allowed exception</span></div>
+                        {% else %}
+                            <div class="mt-1"><span class="badge text-bg-danger">Not allowed</span></div>
+                        {% endif %}
+                        <div class="small"><a href="{% url 'submissions:exceptions_center' %}">Manage exception</a></div>
+                    {% endif %}
+                    {% if row.unresolved_duplicate_authors %}
+                        <div class="mt-1"><span class="badge text-bg-danger">Duplicate author</span></div>
+                        <div class="small text-danger">
+                            {% for duplicate in row.duplicate_authors %}
+                                {{ duplicate.display_names|join:", " }}{% if not forloop.last %}; {% endif %}
+                            {% endfor %}
+                        </div>
+                        <form method="post" class="mt-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                            <input class="form-control form-control-sm mb-1" name="duplicate_author_review_notes" placeholder="Reason, e.g. confirmed different people">
+                            <button class="btn btn-sm btn-outline-success" name="action" value="mark_duplicate_author_reviewed">Mark reviewed</button>
+                        </form>
+                    {% elif row.has_duplicate_authors %}
+                        <div class="mt-1"><span class="badge text-bg-secondary">Duplicate author reviewed</span></div>
+                        {% if submission.duplicate_author_review_notes %}
+                            <div class="small text-muted">{{ submission.duplicate_author_review_notes }}</div>
+                        {% endif %}
+                        <form method="post" class="mt-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                            <button class="btn btn-sm btn-outline-danger" name="action" value="reset_duplicate_author_review">Back to pending</button>
+                        </form>
                     {% endif %}
                 </td>
                 <td>
                     {% if submission and submission.page_count %}<strong>{{ submission.page_count }}</strong>{% else %}<span class="text-muted">--</span>{% endif %}
                     <div><span class="badge text-bg-{{ row.page_level }}">{{ row.page_label }}</span></div>
+                    {% if row.page_level == "info" or row.page_label == "Stale allowed exception" or row.page_label|slice:":9" == "Below min" or row.page_label|slice:":10" == "Over limit" %}
+                        {% if row.page_level == "info" %}
+                            <div><span class="badge text-bg-info">Allowed exception</span></div>
+                        {% elif row.page_label == "Stale allowed exception" %}
+                            <div><span class="badge text-bg-warning">Stale allowed exception</span></div>
+                        {% else %}
+                            <div><span class="badge text-bg-danger">Not allowed</span></div>
+                        {% endif %}
+                        <div class="small"><a href="{% url 'submissions:exceptions_center' %}">Manage exception</a></div>
+                    {% endif %}
                 </td>
                 <td>
                     {% if row.publication_pdf.exists %}
-                        <a href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
-                        <div><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span></div>
+                        <div class="cfm-status-line">
+                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                        </div>
                     {% elif submission %}
                         <span class="badge text-bg-danger">No PDF</span>
                     {% endif %}
@@ -161,14 +211,17 @@
                     {% if submission %}
                         {% if submission.similarity_score != None and submission.single_similarity_score != None %}
                             <div class="d-flex flex-wrap gap-1">
-                                <span class="badge text-bg-{{ row.plagiarism_percent_level }} {% if row.plagiarism_percent_level == 'light' %}text-dark{% endif %}">P {{ submission.similarity_score }}%</span>
-                                <span class="badge text-bg-{{ row.single_percent_level }} {% if row.single_percent_level == 'light' %}text-dark{% endif %}">S {{ submission.single_similarity_score }}%</span>
+                                <span class="badge text-bg-{{ row.plagiarism_percent_level }} {% if row.plagiarism_percent_level == 'light' %}text-dark{% endif %}">P {{ submission.similarity_score|floatformat:"0" }}%</span>
+                                <span class="badge text-bg-{{ row.single_percent_level }} {% if row.single_percent_level == 'light' %}text-dark{% endif %}">S {{ submission.single_similarity_score|floatformat:"0" }}%</span>
                             </div>
                         {% else %}
                             <span class="badge text-bg-danger">Missing P/S</span>
                         {% endif %}
                         {% if submission.plagiarism_report_path %}
                             <div class="small mt-1"><a href="{% url 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a></div>
+                            {% if submission.plagiarism_report_stale %}
+                                <div><span class="badge text-bg-warning">Old report</span></div>
+                            {% endif %}
                         {% endif %}
                     {% endif %}
                 </td>
@@ -182,13 +235,15 @@
                         {% endif %}
                     {% endif %}
                 </td>
-                <td class="text-end">
-                    <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ forloop.counter }}" aria-expanded="false" aria-controls="details-{{ forloop.counter }}">Details</button>
-                    {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit</a>{% endif %}
+                <td>
+                    <div class="cfm-table-actions">
+                        <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ forloop.counter }}" aria-expanded="false" aria-controls="details-{{ forloop.counter }}">Details</button>
+                        {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit</a>{% endif %}
+                    </div>
                 </td>
             </tr>
             <tr class="collapse" id="details-{{ forloop.counter }}">
-                <td colspan="11">
+                <td colspan="10">
                     <div class="row g-2 small">
                         <div class="col-md-2">
                             <div class="text-muted">Accept Status</div>
@@ -220,7 +275,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="11" class="text-muted">No records found.</td></tr>
+            <tr><td colspan="10" class="text-muted">No records found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -1,12 +1,14 @@
 {% extends "submissions/base.html" %}
 {% block title %}Formatting Review{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+<div class="cfm-page-header">
     <div>
-        <h1 class="h3 mb-0">Formatting Review</h1>
-        <div class="text-muted small">Review the first-page title/author area, open the publication PDF when needed, then mark the formatting workflow status.</div>
+        <h1 class="h3 cfm-page-title">Formatting Review</h1>
+        <div class="cfm-page-subtitle">Review the first-page title/author area, open the publication PDF when needed, then mark the formatting workflow status.</div>
     </div>
-    <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
+    </div>
 </div>
 
 <style>
@@ -26,17 +28,47 @@
     }
 </style>
 
-<form method="get" class="d-flex gap-2 mb-3" style="max-width: 680px;">
-    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
-    <button class="btn btn-outline-secondary">Search</button>
-    {% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}">Clear</a>{% endif %}
+<ul class="nav nav-tabs cfm-tabs">
+    {% for option in filter_options %}
+    <li class="nav-item">
+        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+            {{ option.label }}
+            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+
+<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+    <div class="col-lg-6">
+        <label class="form-label" for="formatting-search">Search</label>
+        <input id="formatting-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
+    </div>
+    <div class="col-lg-3">
+        <label class="form-label" for="formatting-filter">Filter</label>
+        <select id="formatting-filter" class="form-select" name="filter">
+            {% for option in filter_options %}
+                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>
+                    {{ option.label }} ({{ option.count }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-lg-2">
+        <button class="btn btn-outline-secondary w-100">Apply</button>
+    </div>
+    {% if q or current_filter != "needs_attention" %}
+        <div class="col-lg-1">
+            <a class="btn btn-outline-secondary w-100" href="{% url 'submissions:formatting' %}">Clear</a>
+        </div>
+    {% endif %}
 </form>
 
 {% for row in rows %}
     {% with item=row.submission form=row.form %}
-    <div class="card mb-3">
+    <div class="card cfm-review-card">
         <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
-            <div>
+            <div class="cfm-status-line">
                 <strong>{{ item.paper_id_filled }}</strong>
                 <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
                 <span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}warning{% else %}secondary{% endif %}">
@@ -139,6 +171,6 @@
     </div>
     {% endwith %}
 {% empty %}
-    <div class="text-muted border rounded p-4">No active submissions found.</div>
+    <div class="cfm-empty">No active submissions found.</div>
 {% endfor %}
 {% endblock %}

@@ -1,12 +1,14 @@
 {% extends "submissions/base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+<div class="cfm-page-header">
     <div>
-        <h1 class="h3 mb-0">Dashboard</h1>
-        <div class="text-muted small">Start from the workflow below, then use Organized List as the main publication-prep checklist.</div>
+        <h1 class="h3 cfm-page-title">Dashboard</h1>
+        <div class="cfm-page-subtitle">Start from the workflow below, then use Organized List as the main publication-prep checklist.</div>
     </div>
-    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+    <div class="cfm-page-actions">
+        <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -39,7 +41,21 @@
     <div class="col-md-6 col-xl-4">
         <div class="card h-100">
             <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 3</div>
+                <div class="text-muted small text-uppercase">Step 2b</div>
+                <h2 class="h5">Not publishing decisions</h2>
+                <p class="text-muted flex-grow-1">Classify finals not in the Paper Master List: correct the Paper ID or mark unpaid/withdrawn papers as not publishing.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="badge text-bg-{% if counts.unclassified_not_in_master %}danger{% else %}success{% endif %}">{{ counts.unclassified_not_in_master }} need decision</span>
+                    <span class="badge text-bg-secondary">{{ counts.excluded_from_publication }} not publishing</span>
+                    <a class="btn btn-primary" href="{% url 'submissions:not_publishing_list' %}">Review</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 4</div>
                 <h2 class="h5">Process PDFs</h2>
                 <p class="text-muted flex-grow-1">Scan incoming PDFs, calculate page counts and hashes, generate previews, and place active/old versions.</p>
                 <div>
@@ -52,11 +68,12 @@
     <div class="col-md-6 col-xl-4">
         <div class="card h-100">
             <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 4</div>
+                <div class="text-muted small text-uppercase">Step 5</div>
                 <h2 class="h5">Title/Author Extraction</h2>
                 <p class="text-muted flex-grow-1">Run extraction on active PDFs, then verify extracted title/authors and title matches.</p>
                 <div>
-                    <span class="badge text-bg-{% if counts.missing_title_author_extraction or counts.unverified_title_author_extraction %}warning{% else %}success{% endif %}">{{ counts.unverified_title_author_extraction }} unverified</span>
+                    <span class="badge text-bg-{% if counts.title_author_pending %}warning{% else %}success{% endif %}">{{ counts.title_author_pending }} Pending</span>
+                    <span class="badge text-bg-{% if counts.title_author_red_flag %}danger{% else %}success{% endif %}">{{ counts.title_author_red_flag }} Red Flag</span>
                     <a class="btn btn-primary ms-2" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
                 </div>
             </div>
@@ -65,12 +82,26 @@
     <div class="col-md-6 col-xl-4">
         <div class="card h-100">
             <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 5</div>
+                <div class="text-muted small text-uppercase">Step 6</div>
                 <h2 class="h5">Formatting Review</h2>
                 <p class="text-muted flex-grow-1">Review publication PDFs and corrected files, then mark formatting status for each active paper.</p>
                 <div>
-                    <span class="badge text-bg-light text-dark">{{ counts.active_final_versions }} active versions</span>
+                    <span class="badge text-bg-{% if counts.format_not_ok %}warning{% else %}success{% endif %}">{{ counts.format_not_ok }} not OK</span>
                     <a class="btn btn-primary ms-2" href="{% url 'submissions:formatting' %}">Formatting Review</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="text-muted small text-uppercase">Step 7</div>
+                <h2 class="h5">Plagiarism results</h2>
+                <p class="text-muted flex-grow-1">Check imported Plagiarism % and Single % values against the configured thresholds.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="badge text-bg-{% if counts.missing_plagiarism_result %}warning{% else %}success{% endif %}">{{ counts.missing_plagiarism_result }} missing</span>
+                    <span class="badge text-bg-{% if counts.plagiarism_over_threshold or counts.single_over_threshold %}danger{% else %}success{% endif %}">{{ counts.plagiarism_over_threshold|add:counts.single_over_threshold }} over threshold</span>
+                    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review</a>
                 </div>
             </div>
         </div>
@@ -91,16 +122,35 @@
 </div>
 
 <h2 class="h5 mb-3">System Overview</h2>
-<div class="row g-3">
-    {% for label, value in counts.items %}
-        <div class="col-sm-6 col-lg-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small text-uppercase">{{ label|cut:"_" }}</div>
-                    <div class="display-6">{{ value }}</div>
+<div class="vstack gap-3">
+    {% for section in metric_sections %}
+        <section class="cfm-section">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+                <div>
+                    <h3 class="h6 mb-1">{{ section.title }}</h3>
+                    <div class="text-muted small">{{ section.description }}</div>
                 </div>
             </div>
-        </div>
+            <div class="row g-3">
+                {% for metric in section.metrics %}
+                    <div class="col-sm-6 col-xl-4">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div class="text-muted small text-uppercase">{{ metric.label }}</div>
+                                    <span class="badge text-bg-{{ metric.level }}">{{ metric.status_label }}</span>
+                                </div>
+                                <div class="display-6 mb-2">{{ metric.value }}</div>
+                                <p class="text-muted small flex-grow-1 mb-3">{{ metric.help }}</p>
+                                {% if metric.action_url %}
+                                    <a class="btn btn-sm btn-outline-primary align-self-start" href="{{ metric.action_url }}">{{ metric.action_label }}</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
     {% endfor %}
 </div>
 {% endblock %}

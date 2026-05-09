@@ -61,9 +61,9 @@ def title_diff_html(initial_title, final_title):
     return text_diff_html(initial_title, final_title)
 
 
-def best_title_match(final_title):
+def best_title_match(final_title, papers=None):
     scored = []
-    for paper in InitialPaper.objects.all():
+    for paper in papers if papers is not None else InitialPaper.objects.all():
         score = title_similarity(final_title, paper.title)
         if score is not None:
             scored.append((score, paper))
@@ -74,9 +74,65 @@ def best_title_match(final_title):
     return paper, score
 
 
-def evaluate_submission(submission, save=False):
-    initial = InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
-    suggested_paper, suggested_score = best_title_match(submission.final_submission_title)
+def evaluate_submission(
+    submission,
+    save=False,
+    initial_paper_by_id=None,
+    paper_candidates=None,
+):
+    if submission.excluded_from_publication:
+        status = "invalid_paper_id"
+        score = None
+        message = "Excluded from publication."
+        initial = (
+            initial_paper_by_id.get(submission.paper_id_filled)
+            if initial_paper_by_id is not None
+            else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
+        )
+        suggested_paper, suggested_score = None, None
+        if save:
+            submission.verification_status = status
+            submission.title_match_score = score
+            submission.verification_message = message
+            submission.paper_id_verified = False
+            submission.save(
+                update_fields=[
+                    "verification_status",
+                    "title_match_score",
+                    "verification_message",
+                    "paper_id_verified",
+                    "updated_at",
+                ]
+            )
+        return {
+            "submission": submission,
+            "publication_pdf": publication_pdf_info(submission),
+            "initial_paper": initial,
+            "suggested_paper": suggested_paper,
+            "suggested_score": suggested_score,
+            "status": status,
+            "score": score,
+            "message": message,
+            "is_identical": False,
+            "is_verified": False,
+            "verified_with_diff": False,
+            "needs_verification": False,
+            "final_title_diff_html": title_diff_html(
+                initial.title if initial else "", submission.final_submission_title
+            ),
+            "final_authors_diff_html": text_diff_html(
+                initial.authors if initial else "", submission.final_submission_authors
+            ),
+        }
+
+    initial = (
+        initial_paper_by_id.get(submission.paper_id_filled)
+        if initial_paper_by_id is not None
+        else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
+    )
+    suggested_paper, suggested_score = best_title_match(
+        submission.final_submission_title, paper_candidates
+    ) if not initial else (None, None)
 
     if not submission.paper_id_filled or not initial:
         status = "invalid_paper_id"
@@ -88,8 +144,11 @@ def evaluate_submission(submission, save=False):
     else:
         score = title_similarity(submission.final_submission_title, initial.title)
         if score is None:
-            status = "pending"
-            message = "Missing final title or Paper Master title."
+            status = "verified" if submission.paper_id_verified else "pending"
+            if submission.paper_id_verified:
+                message = "Paper ID manually verified; title comparison is incomplete because a title is missing."
+            else:
+                message = "Missing final title or Paper Master title."
         elif titles_identical(submission.final_submission_title, initial.title):
             status = "verified"
             if submission.auto_verify_blocked:
@@ -104,14 +163,21 @@ def evaluate_submission(submission, save=False):
             status = "verified" if submission.paper_id_verified else "pending"
             message = f"Title similarity with {initial.paper_id}: {score}%."
         else:
-            status = "title_mismatch"
-            if suggested_paper and suggested_paper.paper_id != initial.paper_id:
-                message = (
-                    f"Title similarity with current Paper ID is {score}%. "
-                    f"Best title match is {suggested_paper.paper_id} ({suggested_score}%)."
-                )
+            if submission.paper_id_verified:
+                status = "verified"
+                message = f"Paper ID manually verified; title differs from {initial.paper_id} ({score}%)."
             else:
-                message = f"Title similarity with {initial.paper_id}: {score}%."
+                suggested_paper, suggested_score = best_title_match(
+                    submission.final_submission_title, paper_candidates
+                )
+                status = "title_mismatch"
+                if suggested_paper and suggested_paper.paper_id != initial.paper_id:
+                    message = (
+                        f"Title similarity with current Paper ID is {score}%. "
+                        f"Best title match is {suggested_paper.paper_id} ({suggested_score}%)."
+                    )
+                else:
+                    message = f"Title similarity with {initial.paper_id}: {score}%."
 
     if save:
         submission.verification_status = status
@@ -165,10 +231,15 @@ def evaluate_submission(submission, save=False):
 
 
 def verify_submission(submission, corrected_paper_id=None):
+    if submission.excluded_from_publication:
+        raise ValueError("Cannot verify: this final submission is marked Not Publishing.")
     if corrected_paper_id:
         submission.paper_id_filled = corrected_paper_id
     elif submission.start2_paper_id_raw and not submission.paper_id_filled:
         submission.paper_id_filled = resolve_official_paper_id(submission.start2_paper_id_raw)
+
+    if not InitialPaper.objects.filter(paper_id=submission.paper_id_filled).exists():
+        raise ValueError("Cannot verify: ID not in Paper Master List.")
 
     submission.paper_id_verified = True
     submission.auto_verify_blocked = False
@@ -179,6 +250,62 @@ def verify_submission(submission, corrected_paper_id=None):
             "paper_id_verified",
             "auto_verify_blocked",
             "verified_at",
+            "updated_at",
+        ]
+    )
+    determine_active_versions()
+    _mark_duplicate_submissions()
+    return evaluate_submission(submission, save=True)
+
+
+def mark_not_publishing(submission, reason="unpaid", notes=""):
+    submission.excluded_from_publication = True
+    submission.publication_exclusion_reason = reason or "unpaid"
+    submission.publication_exclusion_notes = notes or ""
+    submission.publication_excluded_at = timezone.now()
+    submission.paper_id_verified = False
+    submission.auto_verify_blocked = True
+    submission.verified_at = None
+    submission.verification_status = "invalid_paper_id"
+    submission.verification_message = "Marked Not Publishing; excluded from publication readiness checks."
+    submission.save(
+        update_fields=[
+            "excluded_from_publication",
+            "publication_exclusion_reason",
+            "publication_exclusion_notes",
+            "publication_excluded_at",
+            "paper_id_verified",
+            "auto_verify_blocked",
+            "verified_at",
+            "verification_status",
+            "verification_message",
+            "updated_at",
+        ]
+    )
+    determine_active_versions()
+    _mark_duplicate_submissions()
+    return evaluate_submission(submission, save=True)
+
+
+def undo_not_publishing(submission):
+    submission.excluded_from_publication = False
+    submission.publication_exclusion_reason = ""
+    submission.publication_exclusion_notes = ""
+    submission.publication_excluded_at = None
+    submission.paper_id_verified = False
+    submission.auto_verify_blocked = True
+    submission.verified_at = None
+    submission.verification_message = "Not Publishing was undone; Paper ID review required again."
+    submission.save(
+        update_fields=[
+            "excluded_from_publication",
+            "publication_exclusion_reason",
+            "publication_exclusion_notes",
+            "publication_excluded_at",
+            "paper_id_verified",
+            "auto_verify_blocked",
+            "verified_at",
+            "verification_message",
             "updated_at",
         ]
     )
@@ -204,9 +331,16 @@ def unverify_submission(submission):
 
 def verification_rows(queryset=None):
     queryset = queryset or FinalSubmission.objects.all()
+    paper_candidates = list(InitialPaper.objects.all())
+    initial_paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
     rows = []
     for submission in queryset.select_related():
-        result = evaluate_submission(submission, save=True)
+        result = evaluate_submission(
+            submission,
+            save=False,
+            initial_paper_by_id=initial_paper_by_id,
+            paper_candidates=paper_candidates,
+        )
         rows.append(result)
     return sorted(rows, key=verification_sort_key)
 

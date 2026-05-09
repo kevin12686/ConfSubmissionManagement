@@ -1,5 +1,15 @@
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
-from submissions.services.checks import split_authors
+from submissions.services.checks import (
+    author_number_count,
+    duplicate_authors_in_paper,
+    has_unresolved_duplicate_authors,
+    publication_duplicate_map,
+)
+from submissions.services.exceptions import (
+    author_number_exception_status,
+    exception_status_label,
+    page_exception_status,
+)
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
     publication_pdf_info,
@@ -20,6 +30,7 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "pdf_issues", "label": "PDF issues"},
     {"value": "source_issues", "label": "Source issues"},
     {"value": "extraction_issues", "label": "Extraction issues"},
+    {"value": "missing_plagiarism", "label": "Missing plagiarism"},
     {"value": "plagiarism_issues", "label": "Plagiarism issues"},
     {"value": "format_not_ok", "label": "Format not OK"},
 ]
@@ -44,10 +55,20 @@ def _page_status(submission, settings_obj):
     if submission.processing_status == "error":
         return "PDF error", "danger"
     if submission.page_count is None:
-        return "Not processed", "secondary"
+        return "Not processed", "warning"
     if submission.page_count < settings_obj.page_minimum:
+        status = page_exception_status(submission, settings_obj)
+        if status == "allowed":
+            return "Allowed exception", "info"
+        if status == "stale":
+            return "Stale allowed exception", "warning"
         return f"Below min {settings_obj.page_minimum}", "warning"
     if submission.page_count > settings_obj.page_limit:
+        status = page_exception_status(submission, settings_obj)
+        if status == "allowed":
+            return "Allowed exception", "info"
+        if status == "stale":
+            return "Stale allowed exception", "warning"
         return f"Over limit {settings_obj.page_limit}", "danger"
     return "Page OK", "success"
 
@@ -55,14 +76,16 @@ def _page_status(submission, settings_obj):
 def _verification_status(submission):
     if not submission:
         return "No final", "secondary"
+    if submission.excluded_from_publication:
+        return "Excluded from publication", "secondary"
     if submission.paper_id_verified and submission.verification_status == "title_mismatch":
-        return "Paper ID verified, title differs", "warning"
+        return "ID verified, title differs", "warning"
     if submission.paper_id_verified:
-        return "Paper ID verified", "success"
+        return "ID verified", "success"
     if submission.verification_status == "title_mismatch":
         return "Paper ID title mismatch", "warning"
     if submission.verification_status == "invalid_paper_id":
-        return "Paper ID not in master list", "warning"
+        return "Not in Master - needs decision", "danger"
     return "Paper ID needs review", "danger"
 
 
@@ -122,20 +145,22 @@ def _source_status(submission):
 def _extraction_status(submission):
     if not submission:
         return "", "secondary"
+    if submission.title_author_review_status == "red_flag":
+        return "Red Flag", "danger"
     missing = []
     if not submission.extracted_title:
         missing.append("title")
     if not submission.extracted_authors:
         missing.append("authors")
     if not missing:
-        if submission.title_author_verified and submission.extracted_title_verified:
-            return "Reviewed", "success"
-        if not submission.extracted_title_verified:
-            return "Extracted title needs comparison", "warning"
-        return "Extraction needs review", "warning"
+        if submission.title_author_review_status == "review_ok":
+            return "Review OK", "success"
+        if submission.title_author_review_status == "red_flag":
+            return "Red Flag", "danger"
+        return "Pending", "warning"
     if len(missing) == 2:
-        return "No extracted title/authors", "warning"
-    return f"No extracted {missing[0]}", "warning"
+        return "No extracted title/authors", "danger"
+    return f"No extracted {missing[0]}", "danger"
 
 
 def _author_count_status(submission, settings_obj):
@@ -145,14 +170,29 @@ def _author_count_status(submission, settings_obj):
             "author_count_label": "No authors",
             "author_count_level": "danger",
             "over_author_limit": False,
+            "duplicate_authors": [],
+            "has_duplicate_authors": False,
+            "unresolved_duplicate_authors": False,
         }
-    author_count = len(split_authors(submission.extracted_authors))
+    author_count = author_number_count(submission)
     over_limit = author_count > settings_obj.max_authors_per_paper
+    exception_status = author_number_exception_status(submission, settings_obj)
+    waiver_valid = exception_status == "allowed"
+    duplicate_authors = duplicate_authors_in_paper(submission.extracted_authors)
+    unresolved_duplicate_authors = has_unresolved_duplicate_authors(submission)
     return {
         "author_count": author_count,
         "author_count_label": f"{author_count} author{'s' if author_count != 1 else ''}",
-        "author_count_level": "danger" if over_limit else "success",
+        "author_count_level": "info"
+        if over_limit and waiver_valid
+        else ("warning" if exception_status == "stale" else ("danger" if over_limit or unresolved_duplicate_authors else "success")),
         "over_author_limit": over_limit,
+        "author_number_exception_valid": waiver_valid,
+        "author_number_exception_status": exception_status,
+        "author_number_exception_label": exception_status_label(exception_status),
+        "duplicate_authors": duplicate_authors,
+        "has_duplicate_authors": bool(duplicate_authors),
+        "unresolved_duplicate_authors": unresolved_duplicate_authors,
     }
 
 
@@ -298,6 +338,17 @@ def _has_plagiarism_issue(row):
     )
 
 
+def _has_missing_plagiarism(row):
+    submission = row["submission"]
+    return bool(
+        submission
+        and (
+            submission.similarity_score is None
+            or submission.single_similarity_score is None
+        )
+    )
+
+
 def _has_format_issue(row):
     return bool(row["submission"] and row["submission"].format_status != "review_ok")
 
@@ -317,11 +368,13 @@ def _needs_attention(row):
         [
             not row["submission"],
             row["row_type"] == "unmatched",
+            row.get("duplicate_badges"),
             row["verify_level"] in {"danger", "warning"},
             _has_pdf_issue(row),
             _has_page_issue(row),
             _has_title_issue(row),
             row["author_count_level"] == "danger",
+            row.get("unresolved_duplicate_authors"),
             _has_source_issue(row),
             _has_extraction_issue(row),
             _has_plagiarism_issue(row),
@@ -333,15 +386,17 @@ def _needs_attention(row):
 def _attention_priority(row):
     if not row["submission"] or row["row_type"] == "unmatched" or not row["publication_pdf"]["exists"]:
         return 0
-    if _has_page_issue(row):
+    if row.get("duplicate_badges"):
         return 1
-    if _has_extraction_issue(row) or _has_title_issue(row):
+    if _has_page_issue(row):
         return 2
-    if _has_plagiarism_issue(row):
+    if _has_extraction_issue(row) or _has_title_issue(row):
         return 3
-    if _has_format_issue(row):
+    if _has_plagiarism_issue(row):
         return 4
-    return 5
+    if _has_format_issue(row):
+        return 5
+    return 6
 
 
 def _format_status_rank(row):
@@ -361,11 +416,12 @@ def _filter_rows(rows, current_filter):
         ),
         "title_issues": _has_title_issue,
         "no_authors": lambda row: row["author_count"] is None,
-        "author_over_limit": lambda row: row["over_author_limit"],
+        "author_over_limit": lambda row: row["over_author_limit"] and not row.get("author_number_exception_valid"),
         "page_issues": _has_page_issue,
         "pdf_issues": _has_pdf_issue,
         "source_issues": _has_source_issue,
         "extraction_issues": _has_extraction_issue,
+        "missing_plagiarism": _has_missing_plagiarism,
         "plagiarism_issues": _has_plagiarism_issue,
         "format_not_ok": _has_format_issue,
     }
@@ -420,6 +476,7 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
     settings_obj = AppSetting.load()
     papers = list(InitialPaper.objects.all())
     valid_paper_ids = {paper.paper_id for paper in papers}
+    duplicate_map = publication_duplicate_map()
     active_submissions = (
         FinalSubmission.objects.filter(active_version=True)
         .order_by("paper_id_filled", "-created_at", "-final_submission_id")
@@ -446,6 +503,7 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
                 "submission": submission,
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
+                "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
                 "needs_processing_after_formatting": corrected_pdf_needs_processing(submission)
                 if submission
                 else False,
@@ -476,6 +534,8 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
         )
 
     for submission in active_submissions:
+        if submission.excluded_from_publication:
+            continue
         if submission.paper_id_filled in valid_paper_ids:
             continue
         page_label, page_level = _page_status(submission, settings_obj)
@@ -493,6 +553,7 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
                 "submission": submission,
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
+                "duplicate_badges": duplicate_map.get(submission.pk, []),
                 "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
                 "title_check": _title_check(None, submission),
                 "page_label": page_label,
@@ -558,6 +619,15 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
                 or row["submission"].single_similarity_score is None
             )
         ),
+        "publication_duplicates": sum(
+            1 for row in filtered_rows if row["submission"] and row.get("duplicate_badges")
+        ),
+        "duplicate_author_issues": sum(
+            1 for row in filtered_rows if row["submission"] and row.get("unresolved_duplicate_authors")
+        ),
+        "excluded_from_publication": FinalSubmission.objects.filter(
+            active_version=True, excluded_from_publication=True
+        ).count(),
         "needs_process_pdfs": len(needs_process_rows),
         "needs_process_pdf_labels": [
             f"{_row_paper_id(row) or 'No Paper ID'} / Final {row['submission'].final_submission_id}"

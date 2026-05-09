@@ -9,15 +9,13 @@ from django.utils import timezone
 
 from submissions.models import AppSetting, FinalSubmission
 from submissions.services.file_manager import publication_pdf_info, resolve_folder
-from submissions.services.import_export import clean_value, normalize_columns, read_table
+from submissions.services.import_export import clean_value, normalize_columns, read_table, round_percent
 
 
 CROSSCHECK_RESULT_TEMPLATE_COLUMNS = [
     "filename",
     "plagiarism_percent",
     "single_percent",
-    "downloaded",
-    "report_file_name",
 ]
 
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -136,19 +134,20 @@ def import_crosscheck_results(uploaded_file):
 
         plagiarism_percent = _parse_percent(row.get("plagiarism_percent"))
         single_percent = _parse_percent(row.get("single_percent"))
+        score_changed = (
+            submission.similarity_score != plagiarism_percent
+            or submission.single_similarity_score != single_percent
+        )
         submission.similarity_score = plagiarism_percent
         submission.single_similarity_score = single_percent
-        report_file_name = clean_value(row.get("report_file_name"))
-        if report_file_name:
-            report_path = resolve_folder(AppSetting.load().plagiarism_reports_folder) / report_file_name
-            if report_path.exists():
-                submission.plagiarism_report_path = str(report_path)
+        if score_changed and submission.plagiarism_report_path:
+            submission.plagiarism_report_stale = True
         submission.plagiarism_imported_at = timezone.now()
         submission.save(
             update_fields=[
                 "similarity_score",
                 "single_similarity_score",
-                "plagiarism_report_path",
+                "plagiarism_report_stale",
                 "plagiarism_imported_at",
                 "updated_at",
             ]
@@ -180,8 +179,16 @@ def upload_crosscheck_reports(files):
             for chunk in file_obj.chunks():
                 output.write(chunk)
         submission.plagiarism_report_path = str(target)
+        submission.plagiarism_report_stale = False
         submission.plagiarism_imported_at = timezone.now()
-        submission.save(update_fields=["plagiarism_report_path", "plagiarism_imported_at", "updated_at"])
+        submission.save(
+            update_fields=[
+                "plagiarism_report_path",
+                "plagiarism_report_stale",
+                "plagiarism_imported_at",
+                "updated_at",
+            ]
+        )
         updated += 1
 
     return {"updated": updated, "invalid": invalid, "unmatched": unmatched}
@@ -201,7 +208,7 @@ def _parse_percent(value):
     if value.strip().startswith("<"):
         return Decimal("1")
     try:
-        return Decimal(value)
+        return round_percent(Decimal(value))
     except (InvalidOperation, ValueError):
         return None
 

@@ -1,50 +1,100 @@
 {% extends "submissions/base.html" %}
 {% block title %}Error Report{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Error Report</h1>
-    <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Error Report</h1>
+        <div class="cfm-page-subtitle">Grouped by severity first, then workflow area.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+    </div>
 </div>
-{% if sections %}
-    <div class="row g-2 mb-3">
-        {% for section in sections %}
+
+{% if rows %}
+    <div class="row g-2 cfm-metric-strip">
+        {% for section in severity_sections %}
             <div class="col-sm-6 col-lg-3">
-                <div class="border rounded p-2">
-                    <div class="small text-muted">{{ section.group }}</div>
-                    <div class="fs-5">{{ section.count }}</div>
+                <div class="cfm-metric">
+                    <div class="cfm-metric-label">{{ section.label }}</div>
+                    <div class="cfm-metric-value text-{{ section.level }}">{{ section.count }}</div>
                 </div>
             </div>
         {% endfor %}
     </div>
 
-    <div class="vstack gap-3">
-        {% for section in sections %}
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <span class="badge text-bg-{{ section.level }}">{{ section.group }}</span>
-                        <span class="text-muted small ms-2">{{ section.count }} issue{{ section.count|pluralize }}</span>
-                    </div>
-                </div>
-                <div class="table-responsive border-0 rounded-0">
-                    <table class="table table-striped align-middle mb-0">
-                        <thead><tr><th>Category</th><th>Paper ID</th><th>Final ID</th><th>Message</th></tr></thead>
-                        <tbody>
-                        {% for row in section.rows %}
-                            <tr>
-                                <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
-                                <td>{{ row.paper_id }}</td>
-                                <td>{{ row.final_submission_id }}</td>
-                                <td>{{ row.message }}</td>
-                            </tr>
+    <ul class="nav nav-tabs cfm-tabs" id="errorSeverityTabs" role="tablist">
+        {% for section in severity_sections %}
+            <li class="nav-item" role="presentation">
+                <button
+                    class="nav-link {% if forloop.first %}active{% endif %}"
+                    id="tab-{{ section.severity }}"
+                    data-bs-toggle="tab"
+                    data-bs-target="#panel-{{ section.severity }}"
+                    type="button"
+                    role="tab"
+                    aria-controls="panel-{{ section.severity }}"
+                    aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+                >
+                    {{ section.label }}
+                    <span class="badge cfm-tab-count text-bg-{{ section.level }}">{{ section.count }}</span>
+                </button>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <div class="tab-content">
+        {% for section in severity_sections %}
+            <div
+                class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                id="panel-{{ section.severity }}"
+                role="tabpanel"
+                aria-labelledby="tab-{{ section.severity }}"
+                tabindex="0"
+            >
+                {% if section.count %}
+                    <div class="vstack gap-3">
+                        {% for group in section.groups %}
+                            <div class="card cfm-review-card">
+                                <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                                    <div>
+                                        <span class="badge text-bg-{{ section.level }}">{{ section.label }}</span>
+                                        <span class="badge text-bg-{{ group.level }}">{{ group.group }}</span>
+                                    </div>
+                                    <span class="text-muted small">{{ group.count }} issue{{ group.count|pluralize }}</span>
+                                </div>
+                                <div class="table-responsive border-0 rounded-0">
+                                    <table class="table table-striped align-middle cfm-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Category</th>
+                                                <th>Paper ID</th>
+                                                <th>Final ID</th>
+                                                <th>Message</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        {% for row in group.rows %}
+                                            <tr>
+                                                <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
+                                                <td>{{ row.paper_id|default:"--" }}</td>
+                                                <td>{{ row.final_submission_id|default:"--" }}</td>
+                                                <td>{{ row.message }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                    </div>
+                {% else %}
+                    <div class="alert alert-success border cfm-attention">No {{ section.label }} issues.</div>
+                {% endif %}
             </div>
         {% endfor %}
     </div>
 {% else %}
-    <div class="alert alert-success border">No errors found.</div>
+    <div class="alert alert-success border cfm-attention">No errors found.</div>
 {% endif %}
 {% endblock %}

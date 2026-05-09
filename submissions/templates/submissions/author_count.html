@@ -1,21 +1,47 @@
 {% extends "submissions/base.html" %}
 {% block title %}Author Count{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Author Count</h1>
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Author Count</h1>
+        <div class="cfm-page-subtitle">Review publication author limits and manage exceptions for approved special cases.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-primary" href="{% url 'submissions:exceptions_center' %}">Exceptions</a>
+    </div>
+</div>
 <div class="table-responsive">
-    <table class="table table-striped align-middle">
-        <thead><tr><th>Normalized Name</th><th>Display Name</th><th>Paper Count</th><th>Paper IDs</th><th>Status</th></tr></thead>
+    <table class="table table-striped align-middle cfm-table">
+        <thead><tr><th>Normalized Name</th><th>Display Name</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
         <tbody>
         {% for row in rows %}
-            <tr class="{% if row.over_limit %}table-warning{% endif %}">
+            <tr class="{% if row.over_limit and not row.waiver_valid %}table-warning{% endif %}">
                 <td>{{ row.normalized_author_name }}</td>
                 <td>{{ row.display_author_name }}</td>
-                <td>{{ row.paper_count }}</td>
+                <td>{{ row.publication_paper_count }}</td>
                 <td>{{ row.paper_ids }}</td>
-                <td>{{ row.status }}</td>
+                <td>{{ row.duplicate_author_papers|default:"--" }}</td>
+                <td>
+                    {% if row.over_limit and row.waiver_valid %}
+                        <span class="badge text-bg-info">Allowed exception</span>
+                    {% elif row.over_limit and row.waiver and row.waiver.approved %}
+                        <span class="badge text-bg-warning">Stale allowed exception</span>
+                    {% elif row.over_limit %}
+                        <span class="badge text-bg-danger">Not allowed</span>
+                    {% else %}
+                        <span class="badge text-bg-success">OK</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.over_limit %}
+                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:exceptions_center' %}">Manage exception</a>
+                    {% else %}
+                        <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
             </tr>
         {% empty %}
-            <tr><td colspan="5" class="text-muted">No author counts available.</td></tr>
+            <tr><td colspan="7" class="text-muted">No author counts available.</td></tr>
         {% endfor %}
         </tbody>
     </table>

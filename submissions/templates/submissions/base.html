@@ -7,8 +7,14 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
-            --cfm-border: #6c757d;
-            --cfm-border-strong: #343a40;
+            --cfm-bg: #f6f7f9;
+            --cfm-surface: #ffffff;
+            --cfm-border: #b8c0cc;
+            --cfm-border-strong: #677180;
+            --cfm-muted: #5f6b7a;
+        }
+        body {
+            background: var(--cfm-bg);
         }
         .border,
         .card,
@@ -29,6 +35,192 @@
         .table-responsive {
             border: 1px solid var(--cfm-border);
             border-radius: 0.375rem;
+            background: var(--cfm-surface);
+        }
+        .cfm-page-header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        .cfm-page-title {
+            margin-bottom: 0;
+        }
+        .cfm-page-subtitle {
+            color: var(--cfm-muted);
+            font-size: 0.875rem;
+            margin-top: 0.15rem;
+            max-width: 58rem;
+        }
+        .cfm-page-actions,
+        .cfm-action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .cfm-status-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .cfm-status-line .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 31px;
+        }
+        .cfm-review-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        .cfm-status-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+        .cfm-status-buttons form {
+            display: inline-flex;
+        }
+        .cfm-status-buttons .btn {
+            border-radius: 0.375rem !important;
+        }
+        .cfm-table-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .cfm-table-actions form {
+            display: inline-flex;
+            margin: 0;
+        }
+        .cfm-attention {
+            box-shadow: inset 4px 0 0 currentColor;
+        }
+        .cfm-filter-panel {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .cfm-inline-control {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-bottom: 0;
+        }
+        .cfm-inline-control .form-control,
+        .cfm-inline-control .btn {
+            min-height: 38px;
+        }
+        .cfm-tabs {
+            gap: 0.35rem;
+            border-bottom: 1px solid var(--cfm-border);
+            margin-bottom: 1rem;
+        }
+        .cfm-tabs .nav-link {
+            border: 1px solid transparent;
+            border-top-left-radius: 0.5rem;
+            border-top-right-radius: 0.5rem;
+            color: #334155;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .cfm-tabs .nav-link:hover {
+            border-color: #d7dce3 #d7dce3 var(--cfm-border);
+            background: #f8f9fb;
+        }
+        .cfm-tabs .nav-link.active {
+            background: var(--cfm-surface);
+            border-color: var(--cfm-border) var(--cfm-border) var(--cfm-surface);
+            color: #111827;
+            font-weight: 600;
+        }
+        .cfm-tab-count {
+            font-size: 0.72rem;
+            line-height: 1;
+        }
+        .cfm-file-control-fill {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .cfm-file-control-fill,
+        .cfm-file-control-fill input[type="file"] {
+            width: 100%;
+        }
+        .cfm-file-control-fill input[type="file"] {
+            height: 100%;
+            min-height: 38px;
+        }
+        .cfm-metric-strip {
+            margin-bottom: 1rem;
+        }
+        .cfm-metric {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            padding: 0.65rem 0.75rem;
+            height: 100%;
+        }
+        .cfm-metric-label {
+            color: var(--cfm-muted);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .cfm-metric-value {
+            font-size: 1.35rem;
+            font-weight: 650;
+            line-height: 1.15;
+        }
+        .cfm-section {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .cfm-review-card {
+            margin-bottom: 1rem;
+        }
+        .cfm-review-card .card-header {
+            background: #f8f9fb;
+        }
+        .cfm-review-card .card-footer {
+            background: #fbfcfd;
+        }
+        .cfm-table {
+            margin-bottom: 0;
+        }
+        .cfm-empty {
+            background: var(--cfm-surface);
+            border: 1px dashed var(--cfm-border);
+            border-radius: 0.5rem;
+            color: var(--cfm-muted);
+            padding: 1.25rem;
+        }
+        .cfm-wide-cell {
+            min-width: 420px;
+        }
+        .cfm-sticky-actions {
+            position: sticky;
+            bottom: 0;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(6px);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            margin-top: 1rem;
         }
     </style>
 </head>
@@ -46,12 +238,13 @@
                     <a class="nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'submissions:dashboard' %}" {% if current_url == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
                 </li>
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'organized_list' or current_url == 'verify_paper_ids' or current_url == 'process' or current_url == 'title_author_extraction' or current_url == 'formatting' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'organized_list' or current_url == 'verify_paper_ids' or current_url == 'not_publishing_list' or current_url == 'process' or current_url == 'title_author_extraction' or current_url == 'formatting' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Workflow
                     </a>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item {% if current_url == 'organized_list' %}active{% endif %}" href="{% url 'submissions:organized_list' %}">Organized List</a></li>
                         <li><a class="dropdown-item {% if current_url == 'verify_paper_ids' %}active{% endif %}" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'not_publishing_list' %}active{% endif %}" href="{% url 'submissions:not_publishing_list' %}">Not Publishing List</a></li>
                         <li><a class="dropdown-item {% if current_url == 'process' %}active{% endif %}" href="{% url 'submissions:process' %}">Process PDFs</a></li>
                         <li><a class="dropdown-item {% if current_url == 'title_author_extraction' %}active{% endif %}" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a></li>
                         <li><a class="dropdown-item {% if current_url == 'formatting' %}active{% endif %}" href="{% url 'submissions:formatting' %}">Formatting Review</a></li>
@@ -67,7 +260,7 @@
                     </ul>
                 </li>
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'author_count' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'exceptions_center' or current_url == 'author_count' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Reports
                     </a>
                     <ul class="dropdown-menu">
@@ -75,6 +268,7 @@
                         <li><a class="dropdown-item {% if current_url == 'active_versions' %}active{% endif %}" href="{% url 'submissions:active_versions' %}">Active Final Versions</a></li>
                         <li><a class="dropdown-item {% if current_url == 'old_versions' %}active{% endif %}" href="{% url 'submissions:old_versions' %}">Old Versions</a></li>
                         <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}">Error Report</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}">Exceptions</a></li>
                         <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}">Author Count</a></li>
                     </ul>
                 </li>
@@ -83,19 +277,34 @@
                         Integrations
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}">CrossCheck / External Results</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}">CrossCheck / System Backup</a></li>
                     </ul>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_url == 'settings' %}active{% endif %}" href="{% url 'submissions:settings' %}" {% if current_url == 'settings' %}aria-current="page"{% endif %}>Settings</a>
                 </li>
             </ul>
+            <div class="navbar-text ms-lg-3 text-light fw-semibold">
+                {{ current_conference_name|default:"Local Conference" }}
+            </div>
         </div>
     </div>
 </nav>
 {% endwith %}
 
 <main class="container-fluid py-4">
+    {% if global_workflow_alerts.corrected_pdf_needs_processing %}
+        <div class="alert alert-danger border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-center" role="alert">
+            <div>
+                <strong>Process PDFs needed:</strong>
+                {{ global_workflow_alerts.corrected_pdf_needs_processing }} corrected PDF{{ global_workflow_alerts.corrected_pdf_needs_processing|pluralize }} uploaded after the current page count/hash/active-final copy.
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-sm btn-danger" href="{% url 'submissions:process' %}">Run Process PDFs</a>
+                <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">View PDF Issues</a>
+            </div>
+        </div>
+    {% endif %}
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
@@ -106,6 +315,13 @@
     {% endif %}
     {% block content %}{% endblock %}
 </main>
+
+<footer class="border-top bg-white py-3">
+    <div class="container-fluid d-flex flex-wrap gap-2 justify-content-between small text-muted">
+        <div>{{ app_name }} v{{ app_version }} · State archive v{{ state_archive_version }}</div>
+        <div>© {{ copyright_year }} Chih-Wei Hsu</div>
+    </div>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

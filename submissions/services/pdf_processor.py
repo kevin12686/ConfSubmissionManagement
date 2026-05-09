@@ -9,7 +9,8 @@ from django.db import transaction
 from django.utils import timezone
 from pypdf import PdfReader
 
-from submissions.models import AppSetting, FinalSubmission
+from submissions.models import AppSetting, FinalSubmission, sync_final_submission_state_records
+from submissions.services.checks import reset_page_limit_exception
 from submissions.services.file_manager import (
     copy_pdf_to_folder,
     resolve_folder,
@@ -142,9 +143,17 @@ def determine_active_versions():
             if newest:
                 newest.active_version = True
                 newest.save(update_fields=["active_version", "updated_at"])
+    sync_final_submission_state_records()
+    from submissions.services.checks import rebuild_paper_authors
+
+    rebuild_paper_authors()
 
 
-def process_submission_pdf(submission):
+def _thumbnail_folder_ready(submission):
+    return bool(submission.thumbnail_folder and Path(submission.thumbnail_folder).exists())
+
+
+def process_submission_pdf(submission, force=False):
     path = source_pdf_path(submission)
     if not path:
         submission.processing_status = "error"
@@ -153,8 +162,21 @@ def process_submission_pdf(submission):
         return False
 
     try:
-        submission.page_count = calculate_page_count(path)
-        submission.pdf_hash = calculate_pdf_hash(path)
+        previous_page_count = submission.page_count
+        new_hash = calculate_pdf_hash(path)
+        if (
+            not force
+            and submission.processing_status == "processed"
+            and submission.pdf_hash == new_hash
+            and submission.page_count is not None
+            and _thumbnail_folder_ready(submission)
+        ):
+            return None
+        new_page_count = calculate_page_count(path)
+        if previous_page_count != new_page_count:
+            reset_page_limit_exception(submission)
+        submission.page_count = new_page_count
+        submission.pdf_hash = new_hash
         thumbnail_dir = render_pdf_thumbnails(submission, path)
         submission.processing_status = "processed"
         submission.processing_message = "PDF page count, hash, and thumbnails computed."
@@ -166,6 +188,10 @@ def process_submission_pdf(submission):
         submission.save(
             update_fields=[
                 "page_count",
+                "page_limit_exception_approved",
+                "page_limit_exception_reason",
+                "page_limit_exception_page_count",
+                "page_limit_exception_approved_at",
                 "pdf_hash",
                 "processing_status",
                 "processing_message",
@@ -195,40 +221,24 @@ def process_submission_pdf(submission):
 
 
 def place_processed_files():
-    setting = AppSetting.load()
-    active_folder = resolve_folder(setting.active_final_folder)
-    old_folder = resolve_folder(setting.old_versions_folder)
-    moved = 0
+    from submissions.services.storage_inventory import repair_publication_paths
 
-    for submission in FinalSubmission.objects.all():
-        source = source_pdf_path(submission)
-        if not source:
-            continue
-        paper_part = sanitize_filename_part(submission.paper_id_filled or "NO_PAPER_ID")
-        if submission.active_version:
-            title_part = title_short_name(
-                submission.extracted_title, setting.title_words_for_filename
-            )
-            filename = f"{paper_part}-{title_part}.pdf"
-            target = copy_pdf_to_folder(submission, active_folder, filename)
-        else:
-            filename = f"{paper_part}-{sanitize_filename_part(submission.final_submission_id)}.pdf"
-            target = copy_pdf_to_folder(submission, old_folder, filename)
-        if target:
-            submission.current_file_path = str(target)
-            submission.save(update_fields=["current_file_path", "updated_at"])
-            moved += 1
-    return moved
+    result = repair_publication_paths(force=True)
+    return result["pdf_repaired_count"]
 
 
-def process_all_pdfs():
+def process_all_pdfs(force=False):
     scan_result = scan_incoming_folder()
     processed = 0
+    skipped = 0
     errors = 0
     error_rows = []
     for submission in FinalSubmission.objects.all():
-        if process_submission_pdf(submission):
+        result = process_submission_pdf(submission, force=force)
+        if result is True:
             processed += 1
+        elif result is None:
+            skipped += 1
         else:
             errors += 1
             error_rows.append(
@@ -245,6 +255,7 @@ def process_all_pdfs():
         "scanned_created": scan_result["created"],
         "scanned_updated": scan_result["updated"],
         "processed": processed,
+        "skipped": skipped,
         "errors": errors,
         "error_rows": error_rows,
         "files_placed": placed,

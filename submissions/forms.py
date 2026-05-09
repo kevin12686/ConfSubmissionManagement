@@ -1,6 +1,7 @@
 from django import forms
 
 from .models import AppSetting, FinalSubmission, InitialPaper
+from .services.import_export import round_percent
 
 
 class BootstrapMixin:
@@ -30,6 +31,12 @@ class InitialPaperForm(BootstrapMixin, forms.ModelForm):
 
 
 class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
+    plagiarism_report_file = forms.FileField(
+        required=False,
+        label="Upload / replace plagiarism report",
+        help_text="PDF only. Leave blank to keep the existing report.",
+    )
+
     class Meta:
         model = FinalSubmission
         fields = [
@@ -45,23 +52,28 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
             "extracted_authors",
             "title_author_source",
             "title_author_extraction_message",
-            "title_author_verified",
+            "title_author_review_status",
+            "duplicate_author_review_status",
+            "duplicate_author_review_notes",
             "extracted_title_match_message",
             "extracted_title_verified",
             "similarity_score",
             "single_similarity_score",
-            "plagiarism_report_path",
             "processing_message",
+            "excluded_from_publication",
+            "publication_exclusion_reason",
+            "publication_exclusion_notes",
         ]
         widgets = {
             "upload_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "final_submission_authors": forms.Textarea(attrs={"rows": 3}),
             "extracted_authors": forms.Textarea(attrs={"rows": 3}),
             "title_author_extraction_message": forms.Textarea(attrs={"rows": 2}),
+            "duplicate_author_review_notes": forms.Textarea(attrs={"rows": 2}),
             "extracted_title_match_message": forms.Textarea(attrs={"rows": 2}),
             "processing_message": forms.Textarea(attrs={"rows": 2}),
+            "publication_exclusion_notes": forms.Textarea(attrs={"rows": 2}),
         }
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["paper_id_filled"].label = "Official Paper ID"
@@ -69,12 +81,41 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
         self.fields["final_submission_title"].label = "Final Title"
         self.fields["final_submission_authors"].label = "Final Authors"
         self.fields["title_author_extraction_message"].label = "Title/Author Extraction Message"
-        self.fields["title_author_verified"].label = "Title/Author Reviewed"
+        self.fields["title_author_review_status"].label = "Title/Author Review Status"
+        self.fields["duplicate_author_review_status"].label = "Duplicate Author Review"
+        self.fields["duplicate_author_review_notes"].label = "Duplicate Author Notes"
         self.fields["extracted_title_match_message"].label = "Extracted Title Match Message"
         self.fields["extracted_title_verified"].label = "Extracted Title Matched"
         self.fields["similarity_score"].label = "Plagiarism %"
         self.fields["single_similarity_score"].label = "Single %"
+        self.fields["similarity_score"].widget.attrs.update({"step": "1", "min": "0"})
+        self.fields["single_similarity_score"].widget.attrs.update({"step": "1", "min": "0"})
+        if self.instance and self.instance.pk:
+            if self.instance.similarity_score is not None:
+                self.initial["similarity_score"] = int(self.instance.similarity_score)
+            if self.instance.single_similarity_score is not None:
+                self.initial["single_similarity_score"] = int(self.instance.single_similarity_score)
+        self.fields["excluded_from_publication"].label = "Not Publishing"
+        self.fields["publication_exclusion_reason"].label = "Not Publishing Reason"
+        self.fields["publication_exclusion_notes"].label = "Not Publishing Notes"
         self._apply_bootstrap()
+
+    def clean_plagiarism_report_file(self):
+        report_file = self.cleaned_data.get("plagiarism_report_file")
+        if not report_file:
+            return report_file
+        if not report_file.name.lower().endswith(".pdf"):
+            raise forms.ValidationError("Plagiarism report must be a PDF file.")
+        content_type = getattr(report_file, "content_type", "")
+        if content_type and content_type not in {"application/pdf", "application/octet-stream"}:
+            raise forms.ValidationError("Plagiarism report must be a PDF file.")
+        return report_file
+
+    def clean_similarity_score(self):
+        return round_percent(self.cleaned_data.get("similarity_score"))
+
+    def clean_single_similarity_score(self):
+        return round_percent(self.cleaned_data.get("single_similarity_score"))
 
 
 class ImportFileForm(BootstrapMixin, forms.Form):
@@ -83,6 +124,23 @@ class ImportFileForm(BootstrapMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._apply_bootstrap()
+
+
+class SystemStateRestoreForm(BootstrapMixin, forms.Form):
+    snapshot = forms.FileField(
+        label="System state ZIP",
+        help_text="Upload a ZIP created by Download System State ZIP.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_bootstrap()
+
+    def clean_snapshot(self):
+        snapshot = self.cleaned_data.get("snapshot")
+        if snapshot and not snapshot.name.lower().endswith(".zip"):
+            raise forms.ValidationError("System state snapshot must be a ZIP file.")
+        return snapshot
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -161,6 +219,7 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = AppSetting
         fields = [
+            "conference_name",
             "page_minimum",
             "page_limit",
             "author_paper_limit",
@@ -176,11 +235,14 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "plagiarism_reports_folder",
             "plagiarism_percent_threshold",
             "single_similarity_threshold",
-            "title_author_script_path",
         ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["conference_name"].label = "Conference name"
+        self.fields["conference_name"].help_text = (
+            "Shown in the top-right navbar and included in system state backups."
+        )
         self.fields["page_minimum"].label = "Page minimum"
         self.fields["page_limit"].label = "Page limit"
         self.fields["max_authors_per_paper"].label = "Max authors per paper"
@@ -191,7 +253,16 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
         )
         self.fields["time_zone"].label = "Time zone"
         self.fields["time_zone"].help_text = "Default is Dallas / Central Time."
+        folder_help = "Use relative paths like data/reports unless you intentionally need an absolute folder."
+        for field_name in [
+            "incoming_folder",
+            "active_final_folder",
+            "old_versions_folder",
+            "reports_folder",
+            "extraction_results_folder",
+            "plagiarism_reports_folder",
+        ]:
+            self.fields[field_name].help_text = folder_help
         self.fields["plagiarism_percent_threshold"].label = "Plagiarism % threshold"
         self.fields["single_similarity_threshold"].label = "Single % threshold"
-        self.fields["title_author_script_path"].label = "Title/author extraction script path"
         self._apply_bootstrap()

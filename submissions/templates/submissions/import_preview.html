@@ -1,30 +1,32 @@
 {% extends "submissions/base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+<div class="cfm-page-header">
     <div>
-        <h1 class="h3 mb-0">{{ title }}</h1>
-        <div class="text-muted small">No database or file changes have been applied yet. Review the differences, then confirm if this is correct.</div>
+        <h1 class="h3 cfm-page-title">{{ title }}</h1>
+        <div class="cfm-page-subtitle">No database or file changes have been applied yet. Review the differences, then confirm if this is correct.</div>
     </div>
-    <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
+    </div>
 </div>
 
-<div class="alert alert-warning border">
+<div class="alert alert-warning border cfm-attention">
     <strong>Confirm before apply.</strong>
     Only apply if this preview matches your intended import. If the database changes before you confirm, apply will be blocked and you must preview again.
 </div>
 
-<div class="row g-2 mb-3">
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">New</div><div class="fs-5">{{ preview.stats.new }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Unchanged</div><div class="fs-5">{{ preview.stats.unchanged }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Changed</div><div class="fs-5">{{ preview.stats.metadata_updated }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Paper ID Reset</div><div class="fs-5">{{ preview.stats.paper_id_review_reset }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">PDF Reset</div><div class="fs-5">{{ preview.stats.pdf_reset }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="border rounded p-2"><div class="small text-muted">Source Reset</div><div class="fs-5">{{ preview.stats.source_reset }}</div></div></div>
+<div class="row g-2 cfm-metric-strip">
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">New</div><div class="cfm-metric-value">{{ preview.stats.new }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Unchanged</div><div class="cfm-metric-value">{{ preview.stats.unchanged }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Changed</div><div class="cfm-metric-value {% if preview.stats.metadata_updated %}text-warning{% endif %}">{{ preview.stats.metadata_updated }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Reset</div><div class="cfm-metric-value {% if preview.stats.paper_id_review_reset %}text-danger{% endif %}">{{ preview.stats.paper_id_review_reset }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">PDF Reset</div><div class="cfm-metric-value {% if preview.stats.pdf_reset %}text-danger{% endif %}">{{ preview.stats.pdf_reset }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Source Reset</div><div class="cfm-metric-value {% if preview.stats.source_reset %}text-warning{% endif %}">{{ preview.stats.source_reset }}</div></div></div>
 </div>
 
 {% if preview.invalid_files %}
-    <div class="alert alert-danger border">
+    <div class="alert alert-danger border cfm-attention">
         <div class="fw-semibold">Files ignored because filenames did not match FinalID_file_Submit_PDF.ext or FinalID_file_Submit_Source.ext:</div>
         <ul class="mb-0">
             {% for name in preview.invalid_files %}
@@ -34,8 +36,19 @@
     </div>
 {% endif %}
 
+{% if preview.blocking_errors %}
+    <div class="alert alert-danger border cfm-attention">
+        <div class="fw-semibold">Apply is blocked. Fix these upload file problems first:</div>
+        <ul class="mb-0">
+            {% for error in preview.blocking_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
 <div class="table-responsive mb-3">
-    <table class="table table-striped table-hover align-middle table-sm">
+    <table class="table table-striped table-hover align-middle table-sm cfm-table">
         <thead>
             <tr>
                 <th>ID</th>
@@ -58,7 +71,7 @@
                         <span class="badge text-bg-success">Unchanged</span>
                     {% endif %}
                 </td>
-                <td style="min-width: 320px;">
+                <td class="cfm-wide-cell">
                     {% if row.changes %}
                         {% for change in row.changes %}
                             <div class="border rounded p-2 mb-1">
@@ -78,6 +91,9 @@
                     {% endif %}
                     {% if row.type == "final" %}
                         <div class="small text-muted">Uploaded ID is treated as Author-entered ID. Resolved Paper ID after apply: {{ row.new.paper_id_filled|default:"--" }}</div>
+                        {% if row.invalid_master_id %}
+                            <div class="small text-danger fw-semibold">Needs decision: correct the Paper ID or mark this final submission as Not Publishing.</div>
+                        {% endif %}
                     {% endif %}
                     {% if row.active_version_impact %}
                         <div class="small text-muted">{{ row.active_version_impact }}</div>
@@ -87,14 +103,20 @@
                     {% if row.file_changes %}
                         <div>PDF: <span class="badge text-bg-{% if row.file_changes.pdf.status == 'different' or row.file_changes.pdf.status == 'new' %}warning{% elif row.file_changes.pdf.status == 'same' %}success{% else %}secondary{% endif %}">{{ row.file_changes.pdf.status }}</span></div>
                         {% if row.file_changes.pdf.original_name %}<div class="small text-muted text-break">{{ row.file_changes.pdf.original_name }}</div>{% endif %}
+                        {% if row.file_changes.pdf.status == "new" or row.file_changes.pdf.status == "different" %}
+                            <div class="small text-danger">PDF checks will be pending. Run Process PDFs after applying.</div>
+                        {% endif %}
                         <div class="mt-1">Source: <span class="badge text-bg-{% if row.file_changes.source.status == 'different' or row.file_changes.source.status == 'new' %}warning{% elif row.file_changes.source.status == 'same' %}success{% else %}secondary{% endif %}">{{ row.file_changes.source.status }}</span></div>
                         {% if row.file_changes.source.original_name %}<div class="small text-muted text-break">{{ row.file_changes.source.original_name }}</div>{% endif %}
+                        {% if row.file_changes.source.status == "new" or row.file_changes.source.status == "different" %}
+                            <div class="small text-danger">Format review will be pending.</div>
+                        {% endif %}
                     {% else %}
                         <span class="text-muted">No file upload in this import.</span>
                     {% endif %}
                 </td>
                 <td>
-                    {% if row.paper_id_review_reset %}<div><span class="badge text-bg-danger">Paper ID review reset</span></div>{% endif %}
+                    {% if row.paper_id_review_reset %}<div><span class="badge text-bg-danger">{% if row.status == "new" %}Paper ID review required{% else %}Paper ID review reset{% endif %}</span></div>{% endif %}
                     {% if row.title_author_review_reset %}<div><span class="badge text-bg-danger">Title/author review reset</span></div>{% endif %}
                     {% if row.title_match_reset %}<div><span class="badge text-bg-danger">Title match reset</span></div>{% endif %}
                     {% if row.pdf_reset %}<div><span class="badge text-bg-danger">PDF checks reset</span></div>{% endif %}
@@ -112,11 +134,11 @@
     </table>
 </div>
 
-<form method="post" action="{{ apply_url }}" class="d-flex flex-wrap gap-2 justify-content-end">
+<form method="post" action="{{ apply_url }}" class="cfm-action-bar justify-content-end">
     {% csrf_token %}
     <input type="hidden" name="action" value="apply_preview">
     <input type="hidden" name="preview_token" value="{{ preview.token }}">
     <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
-    <button class="btn btn-danger">Apply Confirmed Changes</button>
+    <button class="btn btn-danger" {% if preview.blocking_errors %}disabled{% endif %}>Apply Confirmed Changes</button>
 </form>
 {% endblock %}

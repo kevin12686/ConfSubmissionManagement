@@ -30,7 +30,11 @@ def title_short_name(title, word_limit):
 def source_pdf_path(submission):
     if submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists():
         return Path(submission.formatted_pdf_file.path)
-    if submission.current_file_path and Path(submission.current_file_path).exists():
+    if (
+        submission.processing_status == "processed"
+        and submission.current_file_path
+        and Path(submission.current_file_path).exists()
+    ):
         return Path(submission.current_file_path)
     if submission.pdf_file and Path(submission.pdf_file.path).exists():
         return Path(submission.pdf_file.path)
@@ -46,7 +50,11 @@ def publication_pdf_info(submission):
             source="corrected",
             url=reverse("submissions:publication_pdf", args=[submission.pk]),
         )
-    if submission.current_file_path and Path(submission.current_file_path).exists():
+    if (
+        submission.processing_status == "processed"
+        and submission.current_file_path
+        and Path(submission.current_file_path).exists()
+    ):
         path = Path(submission.current_file_path)
         return _publication_file_info(
             path=path,
