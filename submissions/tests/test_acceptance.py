@@ -2145,6 +2145,55 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             plagiarism_report_path=str(self.make_pdf_file("reports/P004.pdf")),
             plagiarism_report_stale=True,
         )
+        self.make_master_paper("P005", "Clean Paper", "Ada")
+        self.make_final_submission(
+            final_submission_id="5",
+            paper_id_filled="P005",
+            final_submission_title="Clean Paper",
+            extracted_title="Clean Paper",
+        )
+        self.make_master_paper("P006", "Master Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="6",
+            paper_id_filled="P006",
+            final_submission_title="Verified Different Title",
+            extracted_title="Verified Different Title",
+            paper_id_verified=True,
+            verification_status="verified",
+            verification_message="Paper ID manually verified; title differs.",
+        )
+        self.make_master_paper("P007", "Format Pending", "Ada")
+        self.make_final_submission(
+            final_submission_id="7",
+            paper_id_filled="P007",
+            final_submission_title="Format Pending",
+            extracted_title="Format Pending",
+            format_status="pending",
+        )
+        self.make_master_paper("P008", "Soft Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="8",
+            paper_id_filled="P008",
+            final_submission_title="Soft Title",
+            extracted_title="Soft: Title",
+            extracted_title_verified=True,
+        )
+        self.make_master_paper("P009", "Unverified Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P009",
+            final_submission_title="Unverified Title",
+            extracted_title="Unverified Title",
+            extracted_title_verified=False,
+        )
+        self.make_master_paper("P010", "Missing Extracted Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P010",
+            final_submission_title="Missing Extracted Title",
+            extracted_title="",
+            extracted_title_verified=False,
+        )
 
         rows, summary, _settings_obj, current_filter, current_sort = organized_list_rows()
         ordered_ids = [
@@ -2152,13 +2201,47 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             for row in rows
         ]
 
-        self.assertEqual(current_filter, "needs_attention")
+        self.assertEqual(current_filter, "all")
         self.assertEqual(current_sort, "needs_attention")
-        self.assertEqual(ordered_ids, ["P001", "P002", "P003", "P004"])
+        self.assertEqual(
+            ordered_ids,
+            ["P001", "P002", "P003", "P010", "P009", "P004", "P007", "P006", "P008", "P005"],
+        )
         self.assertEqual(summary["missing_final"], 1)
-        self.assertEqual(summary["unverified"], 1)
+        self.assertEqual(summary["unverified"], 2)
         self.assertEqual(summary["page_errors"], 1)
         self.assertEqual(summary["missing_plagiarism"], 0)
+
+        needs_attention_rows, _summary, _settings_obj, current_filter, current_sort = organized_list_rows(
+            current_filter="needs_attention"
+        )
+        needs_attention_ids = [
+            row["paper"].paper_id if row["paper"] else row["submission"].paper_id_filled
+            for row in needs_attention_rows
+        ]
+        self.assertEqual(current_filter, "needs_attention")
+        self.assertEqual(current_sort, "needs_attention")
+        self.assertEqual(
+            needs_attention_ids,
+            ["P001", "P002", "P003", "P010", "P009", "P004", "P007", "P006", "P008"],
+        )
+        self.assertNotIn("P005", needs_attention_ids)
+
+        title_issue_rows, _summary, _settings_obj, current_filter, current_sort = organized_list_rows(
+            current_filter="title_issues"
+        )
+        title_issue_ids = [
+            row["paper"].paper_id if row["paper"] else row["submission"].paper_id_filled
+            for row in title_issue_rows
+        ]
+        self.assertEqual(current_filter, "title_issues")
+        self.assertEqual(title_issue_ids, ["P010", "P009", "P006", "P008"])
+        self.assertLess(title_issue_ids.index("P009"), title_issue_ids.index("P006"))
+        self.assertLess(title_issue_ids.index("P006"), title_issue_ids.index("P008"))
+
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(response, "Clean Paper")
+        self.assertContains(response, "Verified Different Title")
 
     def test_editor_visible_data_matches_publication_package_contents(self):
         self.make_master_paper("P001", "Main Ready Paper", "Ada Lovelace; Alan Turing")

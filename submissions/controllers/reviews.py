@@ -165,7 +165,7 @@ def organized_list(request):
         return redirect(request.get_full_path())
 
     q = _search_query(request)
-    current_filter = request.GET.get("filter", "needs_attention")
+    current_filter = request.GET.get("filter", "all")
     current_sort = request.GET.get("sort", "needs_attention")
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q, current_filter, current_sort

@@ -21,8 +21,8 @@ from submissions.services.verification import normalize_title, text_diff_html, t
 
 
 ORGANIZED_LIST_FILTER_OPTIONS = [
-    {"value": "needs_attention", "label": "Needs attention"},
     {"value": "all", "label": "All"},
+    {"value": "needs_attention", "label": "Needs attention"},
     {"value": "missing_final", "label": "Missing final"},
     {"value": "paper_id_review", "label": "Paper ID needs review"},
     {"value": "title_issues", "label": "Title issues"},
@@ -361,6 +361,69 @@ def _has_format_issue(row):
     return bool(row["submission"] and row["submission"].format_status != "review_ok")
 
 
+def _is_verified_title_diff(row):
+    submission = row["submission"]
+    return bool(
+        submission
+        and submission.paper_id_verified
+        and row["verify_level"] == "warning"
+        and row["verify_label"] == "ID verified, title differs"
+    )
+
+
+def _has_missing_title_issue(row):
+    if not row["submission"]:
+        return False
+    title_check = row["title_check"]
+    return bool(
+        not title_check["master_title"]
+        or not title_check["final_title"]
+        or not title_check["extracted_title"]
+    )
+
+
+def _has_title_match_unverified_issue(row):
+    submission = row["submission"]
+    title_check = row["title_check"]
+    return bool(
+        submission
+        and title_check["final_title"]
+        and title_check["extracted_title"]
+        and not submission.extracted_title_verified
+    )
+
+
+def _has_hard_title_diff(row):
+    return any(
+        comparison["status"] == "hard"
+        for comparison in row["title_check"]["comparisons"]
+    )
+
+
+def _has_verified_hard_title_diff(row):
+    submission = row["submission"]
+    return bool(
+        submission
+        and (
+            _is_verified_title_diff(row)
+            or (
+                submission.extracted_title_verified
+                and _has_hard_title_diff(row)
+            )
+        )
+    )
+
+
+def _has_soft_title_issue(row):
+    return bool(
+        row["title_check"]["has_soft_diff"]
+        or any(
+            comparison["status"] == "soft"
+            for comparison in row["title_check"]["comparisons"]
+        )
+    )
+
+
 def _has_author_issue(row):
     return bool(
         row["submission"]
@@ -373,12 +436,11 @@ def _has_author_issue(row):
 
 
 def _has_title_issue(row):
-    title_check = row["title_check"]
     return bool(
-        title_check["has_hard_diff"]
-        or not title_check["master_title"]
-        or not title_check["final_title"]
-        or not title_check["extracted_title"]
+        _has_missing_title_issue(row)
+        or _has_title_match_unverified_issue(row)
+        or _has_verified_hard_title_diff(row)
+        or _has_soft_title_issue(row)
     )
 
 
@@ -410,15 +472,15 @@ def _attention_priority(row):
         return 2
     if row.get("duplicate_badges"):
         return 3
-    if row["verify_level"] == "warning":
-        return 4
     if _has_pdf_issue(row):
-        return 5
+        return 4
     if _has_page_issue(row):
-        return 6
+        return 5
     if _has_source_issue(row):
+        return 6
+    if _has_missing_title_issue(row):
         return 7
-    if _has_title_issue(row):
+    if _has_title_match_unverified_issue(row):
         return 8
     if _has_extraction_issue(row):
         return 9
@@ -428,6 +490,10 @@ def _attention_priority(row):
         return 11
     if _has_format_issue(row):
         return 12
+    if _has_verified_hard_title_diff(row):
+        return 13
+    if _has_soft_title_issue(row):
+        return 14
     return 99
 
 
@@ -504,7 +570,7 @@ def _sort_rows(rows, current_sort):
     return sorted(rows, key=lambda row: (_attention_priority(row), _row_paper_id(row)))
 
 
-def organized_list_rows(query="", current_filter="needs_attention", current_sort="needs_attention"):
+def organized_list_rows(query="", current_filter="all", current_sort="needs_attention"):
     settings_obj = AppSetting.load()
     papers = list(InitialPaper.objects.all())
     valid_paper_ids = {paper.paper_id for paper in papers}
@@ -616,7 +682,7 @@ def organized_list_rows(query="", current_filter="needs_attention", current_sort
     valid_filter_values = {option["value"] for option in ORGANIZED_LIST_FILTER_OPTIONS}
     valid_sort_values = {option["value"] for option in ORGANIZED_LIST_SORT_OPTIONS}
     if current_filter not in valid_filter_values:
-        current_filter = "needs_attention"
+        current_filter = "all"
     if current_sort not in valid_sort_values:
         current_sort = "needs_attention"
 

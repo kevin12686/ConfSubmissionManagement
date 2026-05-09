@@ -67,7 +67,7 @@
     <div class="col-lg-1 d-flex gap-2">
         <button class="btn btn-outline-secondary w-100">Apply</button>
     </div>
-    {% if q or current_filter != "needs_attention" or current_sort != "needs_attention" %}
+    {% if q or current_filter != "all" or current_sort != "needs_attention" %}
         <div class="col-12">
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:organized_list' %}">Reset filters</a>
         </div>
