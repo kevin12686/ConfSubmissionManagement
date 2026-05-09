@@ -12,12 +12,18 @@
 </div>
 <div class="table-responsive">
     <table class="table table-striped align-middle cfm-table">
-        <thead><tr><th>Normalized Name</th><th>Display Name</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
+        <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
         <tbody>
         {% for row in rows %}
             <tr class="{% if row.over_limit and not row.waiver_valid %}table-warning{% endif %}">
                 <td>{{ row.normalized_author_name }}</td>
-                <td>{{ row.display_author_name }}</td>
+                <td>
+                    {% for name in row.display_author_names %}
+                        <div>{{ name }}</div>
+                    {% empty %}
+                        <span class="text-muted">--</span>
+                    {% endfor %}
+                </td>
                 <td>{{ row.publication_paper_count }}</td>
                 <td>{{ row.paper_ids }}</td>
                 <td>{{ row.duplicate_author_papers|default:"--" }}</td>

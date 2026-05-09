@@ -41,6 +41,8 @@ def _reports_folder():
 
 
 def _excel_safe_value(value):
+    if pd.isna(value):
+        return ""
     if isinstance(value, pd.Timestamp):
         value = value.to_pydatetime()
     if isinstance(value, datetime) and timezone.is_aware(value):

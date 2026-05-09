@@ -56,7 +56,12 @@ from submissions.services.integrations import import_external_results
 from submissions.services.import_preview import apply_import_preview, preview_final_import
 from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import determine_active_versions
-from submissions.services.reports import export_publication_package
+from submissions.services.reports import (
+    author_count_frame,
+    export_active_versions,
+    export_all_reports,
+    export_publication_package,
+)
 from submissions.services.crosscheck import import_crosscheck_results, upload_crosscheck_reports
 from submissions.services.system_state import (
     CONFIRMATION_TEXT,
@@ -1385,6 +1390,49 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             2,
         )
 
+    def test_author_count_displays_distinct_original_author_spellings(self):
+        self.make_master_paper("P001", "First", "Chih-Wei Hsu")
+        self.make_master_paper("P002", "Second", "ChihWei Hsu")
+        self.make_master_paper("P003", "Third", "Chih-Wei Hsu")
+        self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="First",
+            extracted_title="First",
+            extracted_authors="Chih-Wei Hsu",
+        )
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Second",
+            extracted_title="Second",
+            extracted_authors="ChihWei Hsu",
+        )
+        self.make_final_submission(
+            final_submission_id="3",
+            paper_id_filled="P003",
+            final_submission_title="Third",
+            extracted_title="Third",
+            extracted_authors="Chih-Wei Hsu",
+        )
+
+        rebuild_paper_authors()
+        rows = author_count_rows()
+        author_row = next(row for row in rows if row["normalized_author_name"] == "chihwei hsu")
+
+        self.assertEqual(author_row["publication_paper_count"], 3)
+        self.assertEqual(author_row["display_author_names"], ["Chih-Wei Hsu", "ChihWei Hsu"])
+        self.assertEqual(author_row["display_author_name"], "Chih-Wei Hsu; ChihWei Hsu")
+
+        response = self.client.get(reverse("submissions:author_count"))
+        self.assertContains(response, "Display Names")
+        self.assertContains(response, "Chih-Wei Hsu")
+        self.assertContains(response, "ChihWei Hsu")
+
+        frame = author_count_frame()
+        exported_row = frame[frame["normalized_author_name"] == "chihwei hsu"].iloc[0]
+        self.assertEqual(exported_row["display_author_name"], "Chih-Wei Hsu; ChihWei Hsu")
+
     def test_unclassified_final_blocks_until_marked_not_publishing(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
         self.make_final_submission(final_submission_id="ready", paper_id_filled="P001")
@@ -2242,6 +2290,32 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:organized_list"))
         self.assertContains(response, "Clean Paper")
         self.assertContains(response, "Verified Different Title")
+
+    def test_excel_exports_handle_nat_datetime_values(self):
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        self.make_master_paper("P002", "Second Paper", "Grace")
+        first = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            title_author_verified_at=timezone.now(),
+        )
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Second Paper",
+            extracted_title="Second Paper",
+            title_author_verified_at=None,
+        )
+        first.publication_excluded_at = None
+        first.save(update_fields=["publication_excluded_at"])
+
+        active_path = export_active_versions()
+        workbook_path = export_all_reports()
+
+        self.assertTrue(Path(active_path).exists())
+        self.assertTrue(Path(workbook_path).exists())
 
     def test_editor_visible_data_matches_publication_package_contents(self):
         self.make_master_paper("P001", "Main Ready Paper", "Ada Lovelace; Alan Turing")

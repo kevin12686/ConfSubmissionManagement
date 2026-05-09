@@ -941,7 +941,7 @@ def author_count_rows():
     setting = AppSetting.load()
     authors = list(
         PaperAuthor.objects.select_related("final_submission").order_by(
-            "normalized_author_name", "author_order", "author_name"
+            "normalized_author_name", "id"
         )
     )
     grouped = defaultdict(list)
@@ -955,7 +955,11 @@ def author_count_rows():
     }
     rows = []
     for normalized_name, author_group in grouped.items():
-        display_name = author_group[0].author_name if author_group else ""
+        display_names = []
+        for author in author_group:
+            if author.author_name and author.author_name not in display_names:
+                display_names.append(author.author_name)
+        display_name = "; ".join(display_names)
         paper_ids = sorted({author.paper_id for author in author_group if author.paper_id})
         paper_count = len(paper_ids)
         over_limit = paper_count > setting.author_paper_limit
@@ -972,6 +976,7 @@ def author_count_rows():
             {
                 "normalized_author_name": normalized_name,
                 "display_author_name": display_name,
+                "display_author_names": display_names,
                 "publication_paper_count": paper_count,
                 "paper_count": paper_count,
                 "paper_ids": ", ".join(paper_ids),
