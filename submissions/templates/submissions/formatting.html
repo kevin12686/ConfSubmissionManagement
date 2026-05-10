@@ -8,7 +8,7 @@
     </div>
     <div class="cfm-page-actions">
         {% if mode == "single" %}
-            <a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
+            <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
         {% else %}
             <a class="btn btn-outline-dark" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Single Paper Mode</a>
         {% endif %}
@@ -101,7 +101,6 @@
                 <input type="hidden" name="mode" value="{{ formatting_confirmation.mode }}">
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">
                 <input type="hidden" name="q" value="{{ formatting_confirmation.q }}">
-                <input type="hidden" name="next_submission" value="{{ formatting_confirmation.next_submission }}">
                 <button class="btn btn-warning">Confirm save corrected files anyway</button>
             </form>
             <form method="post">
@@ -125,16 +124,16 @@
         </div>
         <div class="cfm-page-actions">
             {% if single_navigation.previous %}
-                <a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.previous.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Previous</a>
+                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.previous.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Previous</a>
             {% else %}
                 <button class="btn btn-outline-secondary" disabled>Previous</button>
             {% endif %}
             {% if single_navigation.next %}
-                <a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.next.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next</a>
+                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.next.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next</a>
             {% else %}
                 <button class="btn btn-outline-secondary" disabled>Next</button>
             {% endif %}
-            <a class="btn btn-outline-dark" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
+            <a class="btn btn-outline-dark" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
         </div>
     </div>
 {% endif %}
@@ -208,13 +207,12 @@
                     {% endif %}
                 </div>
                 <div class="col-xl-5">
-                    <form method="post" enctype="multipart/form-data" class="row g-2">
+                    <form method="post" enctype="multipart/form-data" class="row g-2" {% if mode == "single" %}data-formatting-single-form="true"{% endif %}>
                         {% csrf_token %}
                         <input type="hidden" name="submission_id" value="{{ item.pk }}">
                         <input type="hidden" name="mode" value="{{ mode }}">
                         <input type="hidden" name="filter" value="{{ current_filter }}">
                         <input type="hidden" name="q" value="{{ q }}">
-                        {% if single_navigation %}<input type="hidden" name="next_submission" value="{{ single_navigation.next_id }}">{% endif %}
                         <div class="col-md-6">
                             <label class="form-label" for="{{ form.corrected_pdf.id_for_label }}_{{ item.pk }}">Corrected PDF</label>
                             {{ form.corrected_pdf }}
@@ -240,8 +238,15 @@
                             <label class="form-label" for="{{ form.format_notes.id_for_label }}_{{ item.pk }}">Notes</label>
                             {{ form.format_notes }}
                         </div>
-                        <div class="col-12 text-end">
-                            <button class="btn btn-primary">{% if mode == "single" %}Save and go next{% else %}Save Formatting Update{% endif %}</button>
+                        <div class="col-12 d-flex flex-wrap gap-2 justify-content-end align-items-center">
+                            <button class="btn btn-primary">{% if mode == "single" %}Save{% else %}Save Formatting Update{% endif %}</button>
+                            {% if mode == "single" %}
+                                {% if single_navigation.next %}
+                                    <a class="btn btn-outline-primary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.next.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Go next</a>
+                                {% else %}
+                                    <button class="btn btn-outline-secondary" disabled>No next paper</button>
+                                {% endif %}
+                            {% endif %}
                         </div>
                     </form>
                 </div>
@@ -252,4 +257,68 @@
 {% empty %}
     <div class="cfm-empty">No active submissions found.</div>
 {% endfor %}
+{% if mode == "single" %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const form = document.querySelector("[data-formatting-single-form='true']");
+    if (!form) {
+        return;
+    }
+
+    let hasUnsavedChanges = false;
+    let isSubmitting = false;
+    const warningMessage = "You have unsaved formatting changes. Leave without saving?";
+
+    const markDirty = function (event) {
+        const target = event.target;
+        if (!target.matches("input, select, textarea")) {
+            return;
+        }
+        if (["hidden", "submit", "button"].includes(target.type)) {
+            return;
+        }
+        hasUnsavedChanges = true;
+    };
+
+    form.addEventListener("input", markDirty);
+    form.addEventListener("change", markDirty);
+    form.addEventListener("submit", function () {
+        isSubmitting = true;
+        hasUnsavedChanges = false;
+    });
+    document.querySelectorAll("form:not([data-formatting-single-form='true'])").forEach(function (pageForm) {
+        pageForm.addEventListener("submit", function (event) {
+            if (!hasUnsavedChanges) {
+                isSubmitting = true;
+                return;
+            }
+            if (window.confirm(warningMessage)) {
+                isSubmitting = true;
+                return;
+            }
+            event.preventDefault();
+        });
+    });
+
+    document.querySelectorAll("[data-unsaved-check='true']").forEach(function (link) {
+        link.addEventListener("click", function (event) {
+            if (!hasUnsavedChanges) {
+                return;
+            }
+            if (!window.confirm(warningMessage)) {
+                event.preventDefault();
+            }
+        });
+    });
+
+    window.addEventListener("beforeunload", function (event) {
+        if (!hasUnsavedChanges || isSubmitting) {
+            return;
+        }
+        event.preventDefault();
+        event.returnValue = "";
+    });
+});
+</script>
+{% endif %}
 {% endblock %}

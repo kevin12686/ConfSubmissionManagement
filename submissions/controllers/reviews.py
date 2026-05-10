@@ -391,7 +391,7 @@ def formatting(request):
             token = request.POST.get("preview_token", "")
             try:
                 submission = apply_formatting_upload_preview(token)
-                messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                messages.success(request, _formatting_success_message(submission, mode))
                 return _formatting_redirect_after_save(request, current_filter, q, mode)
             except Exception as exc:
                 messages.error(request, str(exc))
@@ -411,7 +411,6 @@ def formatting(request):
                             "mode": mode,
                             "filter": current_filter,
                             "q": q,
-                            "next_submission": request.POST.get("next_submission", ""),
                         }
                         messages.warning(
                             request,
@@ -419,11 +418,11 @@ def formatting(request):
                         )
                     elif preview.get("token"):
                         apply_formatting_upload_preview(preview["token"])
-                        messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                        messages.success(request, _formatting_success_message(submission, mode))
                         return _formatting_redirect_after_save(request, current_filter, q, mode)
                     else:
                         update_formatting_submission(submission, form.cleaned_data)
-                        messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                        messages.success(request, _formatting_success_message(submission, mode))
                         return _formatting_redirect_after_save(request, current_filter, q, mode)
                 except Exception as exc:
                     messages.error(request, f"Formatting update failed: {exc}")
@@ -472,17 +471,24 @@ def formatting(request):
     )
 
 
+def _formatting_success_message(submission, mode):
+    if mode == "single":
+        return (
+            f"Formatting saved for {submission.final_submission_id}. "
+            "Review this paper, then go next when ready."
+        )
+    return f"Formatting record updated for {submission.final_submission_id}."
+
+
 def _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=False):
     query = {"filter": current_filter}
     if q:
         query["q"] = q
     if mode == "single":
-        next_submission = request.POST.get("next_submission", "")
         current_submission = request.POST.get("submission_id", "")
-        target_submission = current_submission if stay_on_current else next_submission
-        if target_submission:
+        if current_submission:
             query["mode"] = "single"
-            query["submission"] = target_submission
+            query["submission"] = current_submission
             return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")
         messages.success(request, "Single Paper Mode complete for the current filter.")
     return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")

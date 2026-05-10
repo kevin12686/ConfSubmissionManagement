@@ -2368,8 +2368,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Corrected Source (ZIP)")
         self.assertContains(response, "Original Source (TeX)")
         self.assertContains(response, "Original Source (Unknown)")
+        self.assertNotContains(response, "data-formatting-single-form")
 
-    def test_formatting_single_mode_shows_one_paper_and_advances_after_save(self):
+    def test_formatting_single_mode_shows_one_paper_and_saves_without_advancing(self):
         self.make_master_paper("P001", "First Format Paper", "Ada")
         self.make_master_paper("P002", "Second Format Paper", "Grace")
         first = self.make_final_submission(
@@ -2395,8 +2396,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Previous")
         self.assertContains(response, "Next")
         self.assertContains(response, "Back to list")
+        self.assertContains(response, "Go next")
+        self.assertContains(response, "data-unsaved-check")
+        self.assertContains(response, "data-formatting-single-form")
+        self.assertNotContains(response, "Save and go next")
         self.assertContains(response, "First Format Paper")
         self.assertNotContains(response, "Second Format Paper</div>")
+        self.assertContains(response, f"submission={second.pk}")
 
         with patch("submissions.services.formatting.get_title_author") as extractor:
             response = self.client.post(
@@ -2405,7 +2411,6 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                     "submission_id": first.pk,
                     "mode": "single",
                     "filter": "all",
-                    "next_submission": second.pk,
                     "format_status": "pending",
                     "format_notes": "source only",
                     "corrected_source": self.uploaded_file("fixed.docx", b"fixed source"),
@@ -2413,7 +2418,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             )
         extractor.assert_not_called()
         self.assertEqual(response.status_code, 302)
-        self.assertIn(f"submission={second.pk}", response["Location"])
+        self.assertIn(f"submission={first.pk}", response["Location"])
+        self.assertNotIn(f"submission={second.pk}", response["Location"])
 
     def test_formatting_corrected_pdf_title_guard_requires_confirmation_before_saving(self):
         self.make_master_paper("P001", "Correct Paper Title", "Ada")
@@ -2463,6 +2469,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
+        self.assertIn(f"submission={submission.pk}", response["Location"])
         submission.refresh_from_db()
         self.assertTrue(submission.formatted_pdf_file)
         self.assertEqual(submission.extracted_title, "Existing Extracted Title")
