@@ -14,6 +14,7 @@ urlpatterns = [
     path("papers/import/", views.import_initial_papers_view, name="import_initial_papers"),
     path("submissions/organized/", views.organized_list, name="organized_list"),
     path("submissions/<int:pk>/publication-pdf/", views.publication_pdf, name="publication_pdf"),
+    path("submissions/<int:pk>/publication-source/", views.publication_source, name="publication_source"),
     path("submissions/<int:pk>/plagiarism-report/", views.plagiarism_report, name="plagiarism_report"),
     path("submissions/", views.final_submission_list, name="final_submission_list"),
     path("submissions/editor-upload/", views.editor_upload_form, name="editor_upload"),

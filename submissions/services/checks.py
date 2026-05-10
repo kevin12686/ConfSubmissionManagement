@@ -981,6 +981,15 @@ def author_count_rows():
             normalized_author_name__in=grouped.keys()
         )
     }
+    all_paper_ids = {author.paper_id for author in authors if author.paper_id}
+    active_submission_by_paper_id = {}
+    for submission in FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+        paper_id_filled__in=all_paper_ids,
+    ).order_by("paper_id_filled", "-updated_at", "-pk"):
+        active_submission_by_paper_id.setdefault(submission.paper_id_filled, submission)
     rows = []
     for normalized_name, author_group in grouped.items():
         display_names = []
@@ -989,6 +998,24 @@ def author_count_rows():
                 display_names.append(author.author_name)
         display_name = "; ".join(display_names)
         paper_ids = sorted({author.paper_id for author in author_group if author.paper_id})
+        paper_links = []
+        for paper_id in paper_ids:
+            submission = active_submission_by_paper_id.get(paper_id)
+            pdf_info = publication_pdf_info(submission) if submission else {
+                "url": "",
+                "label": "No PDF",
+                "source": "missing",
+                "exists": False,
+            }
+            paper_links.append(
+                {
+                    "paper_id": paper_id,
+                    "url": pdf_info["url"] if pdf_info["exists"] else "",
+                    "label": pdf_info["label"],
+                    "source": pdf_info["source"],
+                    "exists": pdf_info["exists"],
+                }
+            )
         paper_count = len(paper_ids)
         over_limit = paper_count > setting.author_paper_limit
         waiver = waivers.get(normalized_name)
@@ -1008,6 +1035,7 @@ def author_count_rows():
                 "publication_paper_count": paper_count,
                 "paper_count": paper_count,
                 "paper_ids": ", ".join(paper_ids),
+                "paper_links": paper_links,
                 "duplicate_author_papers": ", ".join(sorted(set(duplicate_papers))),
                 "status": "Allowed" if over_limit and waiver_valid else ("Over limit" if over_limit else "OK"),
                 "over_limit": over_limit,

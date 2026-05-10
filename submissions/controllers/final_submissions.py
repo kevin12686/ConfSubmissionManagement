@@ -143,6 +143,15 @@ def publication_pdf(request, pk):
     return FileResponse(path.open("rb"), content_type="application/pdf", filename=path.name)
 
 
+def publication_source(request, pk):
+    submission = get_object_or_404(FinalSubmission, pk=pk)
+    info = publication_source_info(submission)
+    if not info["exists"]:
+        raise Http404("Publication source file not found.")
+    path = Path(info["path"])
+    return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)
+
+
 def plagiarism_report(request, pk):
     submission = get_object_or_404(FinalSubmission, pk=pk)
     if not submission.plagiarism_report_path:

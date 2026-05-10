@@ -25,7 +25,19 @@
                     {% endfor %}
                 </td>
                 <td>{{ row.publication_paper_count }}</td>
-                <td>{{ row.paper_ids }}</td>
+                <td>
+                    {% for paper in row.paper_links %}
+                        {% if not forloop.first %}<span class="text-muted">,</span>{% endif %}
+                        {% if paper.exists %}
+                            <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.paper_id }}</a>
+                        {% else %}
+                            <span class="text-muted">{{ paper.paper_id }}</span>
+                            <span class="badge text-bg-danger">No PDF</span>
+                        {% endif %}
+                    {% empty %}
+                        <span class="text-muted">--</span>
+                    {% endfor %}
+                </td>
                 <td>{{ row.duplicate_author_papers|default:"--" }}</td>
                 <td>
                     {% if row.over_limit and row.waiver_valid %}

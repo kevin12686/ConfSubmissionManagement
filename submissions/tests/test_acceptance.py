@@ -1877,6 +1877,83 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         exported_row = frame[frame["normalized_author_name"] == "chihwei hsu"].iloc[0]
         self.assertEqual(exported_row["display_author_name"], "Chih-Wei Hsu; ChihWei Hsu")
 
+    def test_author_count_paper_ids_link_to_current_publication_pdfs(self):
+        for paper_id, title in [
+            ("P010", "Corrected Link"),
+            ("P011", "Active Link"),
+            ("P012", "Original Link"),
+            ("P013", "Missing Link"),
+        ]:
+            self.make_master_paper(paper_id, title, "Link Author")
+
+        corrected = self.make_final_submission(
+            final_submission_id="1010",
+            paper_id_filled="P010",
+            final_submission_title="Corrected Link",
+            extracted_title="Corrected Link",
+            extracted_authors="Link Author",
+        )
+        corrected.formatted_pdf_file.save(
+            "corrected-link.pdf",
+            ContentFile(b"corrected publication pdf"),
+            save=True,
+        )
+        active_final = self.make_final_submission(
+            final_submission_id="1011",
+            paper_id_filled="P011",
+            final_submission_title="Active Link",
+            extracted_title="Active Link",
+            extracted_authors="Link Author",
+        )
+        original = self.make_final_submission(
+            final_submission_id="1012",
+            paper_id_filled="P012",
+            final_submission_title="Original Link",
+            extracted_title="Original Link",
+            extracted_authors="Link Author",
+            current_file_path="",
+        )
+        original.pdf_file.save(
+            "original-link.pdf",
+            ContentFile(b"original publication pdf"),
+            save=True,
+        )
+        missing = self.make_final_submission(
+            final_submission_id="1013",
+            paper_id_filled="P013",
+            final_submission_title="Missing Link",
+            extracted_title="Missing Link",
+            extracted_authors="Link Author",
+            current_file_path="",
+            pdf_file=None,
+        )
+        inactive_old = self.make_final_submission(
+            final_submission_id="1009",
+            paper_id_filled="P010",
+            final_submission_title="Corrected Link",
+            extracted_title="Corrected Link",
+            extracted_authors="Link Author",
+            active_version=False,
+            current_file_path=str(self.make_pdf_file("old-link.pdf", b"old pdf")),
+        )
+
+        rebuild_paper_authors()
+        author_row = next(row for row in author_count_rows() if row["normalized_author_name"] == "link author")
+        link_by_paper_id = {link["paper_id"]: link for link in author_row["paper_links"]}
+
+        self.assertEqual(link_by_paper_id["P010"]["source"], "corrected")
+        self.assertEqual(link_by_paper_id["P011"]["source"], "processed")
+        self.assertEqual(link_by_paper_id["P012"]["source"], "original")
+        self.assertFalse(link_by_paper_id["P013"]["exists"])
+        self.assertNotEqual(link_by_paper_id["P010"]["url"], reverse("submissions:publication_pdf", args=[inactive_old.pk]))
+
+        response = self.client.get(reverse("submissions:author_count"))
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[corrected.pk]))
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[active_final.pk]))
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[original.pk]))
+        self.assertContains(response, "No PDF")
+        self.assertNotContains(response, reverse("submissions:publication_pdf", args=[inactive_old.pk]))
+
     def test_unclassified_final_blocks_until_marked_not_publishing(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
         self.make_final_submission(final_submission_id="ready", paper_id_filled="P001")
@@ -3249,6 +3326,64 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:organized_list"))
         self.assertContains(response, "Clean Paper")
         self.assertContains(response, "Verified Different Title")
+
+    def test_organized_list_details_download_current_publication_files(self):
+        self.make_master_paper("P001", "Download Files", "Ada")
+        active = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Download Files",
+            extracted_title="Download Files",
+            current_file_path=str(self.make_pdf_file("active-publication.pdf", b"active pdf")),
+            source_current_file_path=str(self.make_source_file("active-source.zip", b"active source")),
+        )
+        inactive = self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            final_submission_title="Download Files",
+            extracted_title="Download Files",
+            active_version=False,
+            current_file_path=str(self.make_pdf_file("old-publication.pdf", b"old pdf")),
+            source_current_file_path=str(self.make_source_file("old-source.zip", b"old source")),
+        )
+
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(response, "Download publication files")
+        self.assertContains(response, "Download PDF")
+        self.assertContains(response, "Download Source")
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[active.pk]))
+        self.assertContains(response, reverse("submissions:publication_source", args=[active.pk]))
+        self.assertNotContains(response, reverse("submissions:publication_pdf", args=[inactive.pk]))
+        self.assertNotContains(response, reverse("submissions:publication_source", args=[inactive.pk]))
+
+        source_response = self.client.get(reverse("submissions:publication_source", args=[active.pk]))
+        self.assertEqual(source_response.status_code, 200)
+        self.assertIn("attachment", source_response["Content-Disposition"])
+        self.assertEqual(b"".join(source_response.streaming_content), b"active source")
+
+    def test_final_submission_edit_separates_publication_and_original_files(self):
+        self.make_master_paper("P001", "Edit Files", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Edit Files",
+            extracted_title="Edit Files",
+            current_file_path=str(self.make_pdf_file("edit-active.pdf", b"active pdf")),
+            source_current_file_path=str(self.make_source_file("edit-active.docx", b"active source")),
+            original_file_name="10_file_Submit_PDF.pdf",
+            source_original_file_name="10_file_Submit_Source.zip",
+        )
+
+        response = self.client.get(reverse("submissions:final_submission_edit", args=[submission.pk]))
+        self.assertContains(response, "Current Publication Files")
+        self.assertContains(response, "Original Submission Files")
+        self.assertContains(response, "Open PDF")
+        self.assertContains(response, "Download Source")
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[submission.pk]))
+        self.assertContains(response, reverse("submissions:publication_source", args=[submission.pk]))
+        self.assertContains(response, "10_file_Submit_PDF.pdf")
+        self.assertContains(response, "10_file_Submit_Source.zip")
+        self.assertContains(response, "Uploads here replace original submission files only")
 
     def test_excel_exports_handle_nat_datetime_values(self):
         self.make_master_paper("P001", "Ready Paper", "Ada", notes="Internal editorial note")

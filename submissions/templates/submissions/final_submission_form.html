@@ -116,40 +116,56 @@
                 <div class="card-header fw-semibold">Files</div>
                 <div class="card-body">
                     {% if submission %}
-                        <div class="row g-2 mb-3 small">
-                            <div class="col-md-6">
-                                <div class="text-muted">Original PDF</div>
-                                <div class="text-break">{{ submission.original_file_name|default:"No original PDF uploaded" }}</div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted">Original Source</div>
-                                <div class="text-break">{{ submission.source_original_file_name|default:"No original source uploaded" }}</div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted">Current Publication PDF</div>
-                                {% if publication_pdf.exists %}
-                                    <div><span class="badge text-bg-primary">{{ publication_pdf.label }}</span></div>
-                                    <div class="text-break">{{ publication_pdf.path }}</div>
-                                {% else %}
-                                    <span class="text-danger">No PDF available</span>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted">Current Publication Source</div>
-                                {% if publication_source.exists %}
-                                    <div><span class="badge text-bg-secondary">{{ publication_source.label }}</span></div>
-                                    <div class="text-break">{{ publication_source.path }}</div>
-                                {% else %}
-                                    <span class="text-danger">No source available</span>
-                                {% endif %}
+                        <div class="border rounded p-3 mb-3">
+                            <h3 class="h6 mb-2">Current Publication Files</h3>
+                            <div class="row g-2 small">
+                                <div class="col-md-6">
+                                    <div class="text-muted">Publication PDF</div>
+                                    {% if publication_pdf.exists %}
+                                        <div><span class="badge text-bg-primary">{{ publication_pdf.label }}</span></div>
+                                        <div class="text-break">{{ publication_pdf.path }}</div>
+                                        <a class="btn btn-sm btn-outline-dark mt-2" href="{{ publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                                    {% else %}
+                                        <span class="text-danger">No PDF available</span>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="text-muted">Publication Source</div>
+                                    {% if publication_source.exists %}
+                                        <div><span class="badge text-bg-secondary">{{ publication_source.label }}</span></div>
+                                        <div class="text-break">{{ publication_source.path }}</div>
+                                        <a class="btn btn-sm btn-outline-dark mt-2" href="{% url 'submissions:publication_source' submission.pk %}">Download Source</a>
+                                    {% else %}
+                                        <span class="text-danger">No source available</span>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
+                        <div class="border rounded p-3 mb-3">
+                            <h3 class="h6 mb-2">Original Submission Files</h3>
+                            <div class="row g-2 small mb-3">
+                                <div class="col-md-6">
+                                    <div class="text-muted">Original PDF</div>
+                                    <div class="text-break">{{ submission.original_file_name|default:"No original PDF uploaded" }}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="text-muted">Original Source</div>
+                                    <div class="text-break">{{ submission.source_original_file_name|default:"No original source uploaded" }}</div>
+                                </div>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.pdf_file %}</div>
+                                <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>
+                            </div>
+                            <div class="form-text">Uploads here replace original submission files only. Formatting corrections are managed from Formatting Review.</div>
+                        </div>
+                    {% else %}
+                        <div class="row g-3">
+                            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.pdf_file %}</div>
+                            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>
+                        </div>
+                        <div class="form-text">Upload the original final-submission PDF and source file. Formatting corrections are managed from Formatting Review after creation.</div>
                     {% endif %}
-                    <div class="row g-3">
-                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.pdf_file %}</div>
-                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>
-                    </div>
-                    <div class="form-text">PDF and source upload here are the original submission files. Formatting corrections are managed from Formatting Review.</div>
                 </div>
             </div>
         </div>

@@ -13,6 +13,7 @@ from .controllers.final_submissions import (
     import_final_submissions_view,
     plagiarism_report,
     publication_pdf,
+    publication_source,
 )
 from .controllers.reviews import (
     exceptions_center,

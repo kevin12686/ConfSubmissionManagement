@@ -285,6 +285,24 @@
                                 <span class="text-muted">--</span>
                             {% endif %}
                         </div>
+                        <div class="col-md-4">
+                            <div class="text-muted">Download publication files</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% if row.publication_pdf.exists %}
+                                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" download>Download PDF</a>
+                                {% else %}
+                                    <span class="badge text-bg-danger">No PDF</span>
+                                {% endif %}
+                                {% if row.publication_source.exists %}
+                                    <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:publication_source' submission.pk %}">Download Source</a>
+                                {% else %}
+                                    <span class="badge text-bg-danger">No source</span>
+                                {% endif %}
+                            </div>
+                            {% if row.publication_source.exists %}
+                                <div class="small text-muted text-break mt-1">{{ row.publication_source.path }}</div>
+                            {% endif %}
+                        </div>
                         {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
                             <div class="col-12">
                                 <div class="text-muted">Editor upload note</div>
