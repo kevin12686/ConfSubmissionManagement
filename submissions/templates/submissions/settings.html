@@ -141,6 +141,10 @@
                 <div class="text-muted small">Default cleanup candidates</div>
                 <div class="h5 mb-0">{{ storage_inventory.cleanup_candidates|length }}</div>
             </div>
+            <div>
+                <div class="text-muted small">Report/export cleanup candidates</div>
+                <div class="h5 mb-0">{{ storage_inventory.report_export_cleanup_candidates|length }}</div>
+            </div>
         </div>
 
         <div class="table-responsive mb-3">
@@ -213,9 +217,20 @@
                 <form method="post" class="border rounded p-3 h-100">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="preview_storage_cleanup">
+                    <input type="hidden" name="cleanup_policy" value="generated_cache_or_orphan_output">
                     <div class="fw-semibold">Preview conservative cleanup</div>
-                    <p class="small text-muted mb-3">Default cleanup only selects generated cache and orphaned active/old outputs. Original uploads, corrected files, reports, packages, and backups are kept.</p>
+                    <p class="small text-muted mb-3">Default cleanup only selects unreferenced generated cache and orphaned active/old outputs. Referenced thumbnails and previews are kept because the UI uses them.</p>
                     <button class="btn btn-outline-secondary">Create Cleanup Preview</button>
+                </form>
+            </div>
+            <div class="col-lg-6">
+                <form method="post" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview_storage_cleanup">
+                    <input type="hidden" name="cleanup_policy" value="generated_reports_exports">
+                    <div class="fw-semibold">Preview generated reports/exports cleanup</div>
+                    <p class="small text-muted mb-3">Deletes generated Excel/ZIP downloads and external upload packages that can be recreated. Plagiarism report PDFs and system state backups are kept.</p>
+                    <button class="btn btn-outline-secondary">Create Reports/Exports Cleanup Preview</button>
                 </form>
             </div>
         </div>
@@ -232,6 +247,7 @@
                 <div class="d-flex justify-content-between align-items-start gap-3">
                     <div>
                         <div class="fw-semibold">Cleanup Preview</div>
+                        <div class="small text-muted">Policy: {{ storage_cleanup_preview.policy_label }}</div>
                         <div class="small text-muted">{{ storage_cleanup_preview.file_count }} files selected, {{ storage_cleanup_preview.total_size_label }} total. No files have been deleted.</div>
                     </div>
                 </div>

@@ -28,6 +28,7 @@ FORMAT_FILTER_OPTIONS = [
     {"value": "pending", "label": "Pending"},
     {"value": "needs_edit", "label": "Needs edit"},
     {"value": "review_ok", "label": "Review OK"},
+    {"value": "review_ok_no_edit", "label": "Review OK, no edit"},
     {"value": "edited", "label": "Edited"},
     {"value": "all", "label": "All"},
 ]
@@ -263,6 +264,12 @@ def formatting_rows(query="", status_filter="needs_attention"):
         submissions = submissions.filter(format_status="needs_edit")
     elif status_filter == "review_ok":
         submissions = submissions.filter(format_status="review_ok")
+    elif status_filter == "review_ok_no_edit":
+        submissions = submissions.filter(format_status="review_ok").filter(
+            Q(formatted_pdf_file__isnull=True) | Q(formatted_pdf_file="")
+        ).filter(
+            Q(formatted_source_file__isnull=True) | Q(formatted_source_file="")
+        )
     elif status_filter == "edited":
         submissions = submissions.filter(
             (Q(formatted_pdf_file__isnull=False) & ~Q(formatted_pdf_file=""))

@@ -25,6 +25,11 @@ GENERATED_CACHE_DIRS = {
     "format_previews": "Generated format previews",
     "title_author_verification": "Generated title/author verification images",
 }
+REPORT_EXPORT_EXTENSIONS = {".xlsx", ".zip"}
+POLICY_LABELS = {
+    "generated_cache_or_orphan_output": "Conservative cleanup",
+    "generated_reports_exports": "Generated reports/exports cleanup",
+}
 @dataclass(frozen=True)
 class StoragePathRef:
     path: Path
@@ -129,6 +134,14 @@ def _cleanup_managed_output_roots(settings_obj):
     ]
 
 
+def _cleanup_report_export_roots(settings_obj):
+    return [
+        _configured_folder(settings_obj.reports_folder),
+        django_settings.BASE_DIR / "data" / "crosscheck_upload",
+        django_settings.BASE_DIR / "data" / "plagiarism_upload",
+    ]
+
+
 def _iter_files(root):
     if not root.exists():
         return
@@ -217,7 +230,7 @@ def build_storage_inventory():
     for key, file_info in sorted(all_files.items()):
         path = file_info["path"]
         category = file_info["category"]
-        referenced = key in refs
+        referenced = key in refs or _file_is_under_referenced_cache_path(path, refs)
         if not referenced:
             orphaned.append(
                 {
@@ -271,6 +284,7 @@ def build_storage_inventory():
         "missing_references": missing_refs,
         "orphaned_files": orphaned,
         "cleanup_candidates": cleanup_candidates,
+        "report_export_cleanup_candidates": _report_export_cleanup_candidates(settings_obj),
         "large_files": large_files,
         "total_size": sum(row["size"] for row in categories.values()),
         "total_size_label": _format_size(sum(row["size"] for row in categories.values())),
@@ -278,12 +292,44 @@ def build_storage_inventory():
     }
 
 
-def preview_storage_cleanup(policy="generated_cache"):
+def _file_is_under_referenced_cache_path(path, refs):
+    for ref in refs.values():
+        if ref.category != "generated_cache" or not ref.path.exists() or not ref.path.is_dir():
+            continue
+        if _relative_to(path, ref.path):
+            return True
+    return False
+
+
+def _report_export_cleanup_candidates(settings_obj):
+    candidates = []
+    for root in _cleanup_report_export_roots(settings_obj):
+        for path in _iter_files(root) or []:
+            if root == _configured_folder(settings_obj.reports_folder) and path.suffix.lower() not in REPORT_EXPORT_EXTENSIONS:
+                continue
+            candidates.append(
+                {
+                    "path": str(path.resolve()),
+                    "category": "report_export",
+                    "size": _path_size(path),
+                    "size_label": _format_size(_path_size(path)),
+                    "reason": "Generated report/export download can be regenerated.",
+                }
+            )
+    return candidates
+
+
+def preview_storage_cleanup(policy="generated_cache_or_orphan_output"):
     inventory = build_storage_inventory()
-    candidates = inventory["cleanup_candidates"]
+    if policy == "generated_reports_exports":
+        candidates = inventory["report_export_cleanup_candidates"]
+    else:
+        policy = "generated_cache_or_orphan_output"
+        candidates = inventory["cleanup_candidates"]
     payload = {
         "token": uuid.uuid4().hex,
         "policy": policy,
+        "policy_label": POLICY_LABELS.get(policy, policy.replace("_", " ").title()),
         "created_at": timezone.now().isoformat(),
         "expires_at": (
             timezone.now() + timedelta(seconds=CLEANUP_PREVIEW_TTL_SECONDS)
@@ -327,6 +373,18 @@ def _deletable_path(path, category=None):
         allowed_roots.extend(
             root.resolve() for root in _cleanup_managed_output_roots(settings_obj)
         )
+    if category == "report_export":
+        settings_obj = AppSetting.load()
+        reports_root = _configured_folder(settings_obj.reports_folder).resolve()
+        if _relative_to(resolved, reports_root):
+            return resolved.suffix.lower() in REPORT_EXPORT_EXTENSIONS
+        for root in _cleanup_report_export_roots(settings_obj)[1:]:
+            try:
+                resolved.relative_to(root.resolve())
+                return True
+            except ValueError:
+                continue
+        return False
     for root in allowed_roots:
         try:
             resolved.relative_to(root)

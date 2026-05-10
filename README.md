@@ -140,7 +140,7 @@ Primary routes now follow workflow domains:
 
 Folder paths and limits can be changed from the Settings page.
 
-The Settings page also includes Storage Management. It inventories managed files, shows missing database references, previews cleanup candidates, and repairs missing active/old publication paths. Cleanup is preview-first: a GET request never deletes files, and the default cleanup only selects regenerated cache plus orphaned active/old publication outputs. Original uploads, corrected uploads, reports, publication packages, plagiarism reports, and system state backups are retained by default.
+The Settings page also includes Storage Management. It inventories managed files, shows missing database references, previews cleanup candidates, and repairs missing active/old publication paths. Cleanup is preview-first: a GET request never deletes files. Conservative cleanup only selects unreferenced regenerated cache plus orphaned active/old publication outputs, so thumbnails and previews still referenced by the database are kept. A separate generated reports/exports cleanup can remove regenerated Excel/ZIP downloads and external upload packages. Original uploads, corrected uploads, plagiarism report PDFs, and system state backups are retained by cleanup actions.
 
 ## CSV/XLSX Imports
 

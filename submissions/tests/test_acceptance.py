@@ -393,9 +393,18 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         )
 
     def test_storage_cleanup_preview_and_apply_are_conservative(self):
+        response = self.client.get(reverse("submissions:settings"))
+        self.assertContains(response, "Preview conservative cleanup")
+        self.assertContains(response, "Preview generated reports/exports cleanup")
+        self.assertContains(response, "Referenced thumbnails and previews are kept")
         submission = self.make_final_submission(final_submission_id="8102", paper_id_filled="S002")
         submission.pdf_file.save("protected-original.pdf", ContentFile(b"original"), save=True)
         submission.formatted_pdf_file.save("protected-corrected.pdf", ContentFile(b"corrected"), save=True)
+        referenced_thumbnail = self.media_root / "pdf_thumbnails" / "8102" / "page-1.png"
+        referenced_thumbnail.parent.mkdir(parents=True, exist_ok=True)
+        referenced_thumbnail.write_bytes(b"thumb")
+        submission.thumbnail_folder = str(referenced_thumbnail.parent)
+        submission.save(update_fields=["thumbnail_folder", "updated_at"])
         original_path = Path(submission.pdf_file.path)
         corrected_path = Path(submission.formatted_pdf_file.path)
         cache_file = self.media_root / "format_previews" / "cleanup-me.png"
@@ -414,6 +423,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertIn(orphan_output.resolve(), selected_paths)
         self.assertNotIn(original_path.resolve(), selected_paths)
         self.assertNotIn(corrected_path.resolve(), selected_paths)
+        self.assertNotIn(referenced_thumbnail.resolve(), selected_paths)
         with self.assertRaises(ValueError):
             apply_storage_cleanup(preview["token"], "wrong")
         self.assertTrue(cache_file.exists())
@@ -425,6 +435,56 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertFalse(orphan_output.exists())
         self.assertTrue(original_path.exists())
         self.assertTrue(corrected_path.exists())
+        self.assertTrue(referenced_thumbnail.exists())
+
+    def test_storage_cleanup_reports_exports_policy_preserves_reference_files(self):
+        settings_obj = AppSetting.load()
+        reports_root = Path(settings_obj.reports_folder)
+        reports_root.mkdir(parents=True, exist_ok=True)
+        report_excel = reports_root / "active_publishable_versions.xlsx"
+        report_zip = reports_root / "publication_package_draft.zip"
+        report_text = reports_root / "notes.txt"
+        for path in [report_excel, report_zip, report_text]:
+            path.write_bytes(b"report")
+        crosscheck_zip = self.root / "data" / "crosscheck_upload" / "TOKEN" / "crosscheck_upload_TOKEN.zip"
+        crosscheck_zip.parent.mkdir(parents=True, exist_ok=True)
+        crosscheck_zip.write_bytes(b"crosscheck")
+        plagiarism_report = Path(settings_obj.plagiarism_reports_folder) / "P001_TOKEN.pdf"
+        plagiarism_report.parent.mkdir(parents=True, exist_ok=True)
+        plagiarism_report.write_bytes(b"plagiarism report")
+        system_backup = self.root / "data" / "system_state_backups" / "system_state.zip"
+        system_backup.parent.mkdir(parents=True, exist_ok=True)
+        system_backup.write_bytes(b"backup")
+        submission = self.make_final_submission(final_submission_id="8103", paper_id_filled="S003")
+        referenced_thumbnail = self.media_root / "pdf_thumbnails" / "8103" / "page-1.png"
+        referenced_thumbnail.parent.mkdir(parents=True, exist_ok=True)
+        referenced_thumbnail.write_bytes(b"thumb")
+        submission.thumbnail_folder = str(referenced_thumbnail.parent)
+        submission.save(update_fields=["thumbnail_folder", "updated_at"])
+
+        with override_settings(BASE_DIR=self.root):
+            preview = preview_storage_cleanup("generated_reports_exports")
+
+        selected_paths = {Path(row["path"]).resolve() for row in preview["files"]}
+        self.assertIn(report_excel.resolve(), selected_paths)
+        self.assertIn(report_zip.resolve(), selected_paths)
+        self.assertIn(crosscheck_zip.resolve(), selected_paths)
+        self.assertNotIn(report_text.resolve(), selected_paths)
+        self.assertNotIn(plagiarism_report.resolve(), selected_paths)
+        self.assertNotIn(system_backup.resolve(), selected_paths)
+        self.assertNotIn(referenced_thumbnail.resolve(), selected_paths)
+
+        with override_settings(BASE_DIR=self.root):
+            result = apply_storage_cleanup(preview["token"], CLEANUP_CONFIRMATION_TEXT)
+
+        self.assertGreaterEqual(result["deleted_count"], 3)
+        self.assertFalse(report_excel.exists())
+        self.assertFalse(report_zip.exists())
+        self.assertFalse(crosscheck_zip.exists())
+        self.assertTrue(report_text.exists())
+        self.assertTrue(plagiarism_report.exists())
+        self.assertTrue(system_backup.exists())
+        self.assertTrue(referenced_thumbnail.exists())
 
     def test_repair_publication_paths_recreates_active_and_old_outputs(self):
         active = self.make_final_submission(final_submission_id="8201", paper_id_filled="S003")
@@ -2369,6 +2429,61 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Original Source (TeX)")
         self.assertContains(response, "Original Source (Unknown)")
         self.assertNotContains(response, "data-formatting-single-form")
+
+    def test_formatting_review_ok_no_edit_filter(self):
+        self.make_master_paper("P001", "Review OK Original", "Ada")
+        self.make_master_paper("P002", "Review OK Source Edited", "Grace")
+        self.make_master_paper("P003", "Pending Original", "Alan")
+        self.make_master_paper("P004", "Review OK PDF Edited", "Katherine")
+        original = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Review OK Original",
+            extracted_title="Review OK Original",
+            format_status="review_ok",
+        )
+        source_edited = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Review OK Source Edited",
+            extracted_title="Review OK Source Edited",
+            format_status="review_ok",
+        )
+        pending = self.make_final_submission(
+            final_submission_id="103",
+            paper_id_filled="P003",
+            final_submission_title="Pending Original",
+            extracted_title="Pending Original",
+            format_status="pending",
+        )
+        pdf_edited = self.make_final_submission(
+            final_submission_id="104",
+            paper_id_filled="P004",
+            final_submission_title="Review OK PDF Edited",
+            extracted_title="Review OK PDF Edited",
+            format_status="review_ok",
+        )
+        source_edited.formatted_source_file.save("corrected_source.docx", ContentFile(b"fixed"), save=True)
+        pdf_edited.formatted_pdf_file.save("corrected_pdf.pdf", ContentFile(b"%PDF fixed"), save=True)
+
+        response = self.client.get(
+            reverse("submissions:formatting"),
+            {"filter": "review_ok_no_edit"},
+        )
+
+        self.assertContains(response, "Review OK, no edit")
+        self.assertContains(response, original.final_submission_title)
+        self.assertNotContains(response, source_edited.final_submission_title)
+        self.assertNotContains(response, pdf_edited.final_submission_title)
+        self.assertNotContains(response, pending.final_submission_title)
+
+        response = self.client.get(
+            reverse("submissions:formatting"),
+            {"filter": "review_ok_no_edit", "q": "Original"},
+        )
+        self.assertContains(response, original.final_submission_title)
+        self.assertNotContains(response, source_edited.final_submission_title)
+        self.assertNotContains(response, pdf_edited.final_submission_title)
 
     def test_formatting_single_mode_shows_one_paper_and_saves_without_advancing(self):
         self.make_master_paper("P001", "First Format Paper", "Ada")

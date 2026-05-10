@@ -192,11 +192,12 @@ def app_settings(request):
         return redirect("submissions:settings")
 
     if request.method == "POST" and request.POST.get("action") == "preview_storage_cleanup":
-        storage_cleanup_preview = preview_storage_cleanup("generated_cache_or_orphan_output")
+        cleanup_policy = request.POST.get("cleanup_policy", "generated_cache_or_orphan_output")
+        storage_cleanup_preview = preview_storage_cleanup(cleanup_policy)
         messages.info(
             request,
             (
-                f"Storage cleanup preview created for {storage_cleanup_preview['file_count']} files "
+                f"{storage_cleanup_preview['policy_label']} preview created for {storage_cleanup_preview['file_count']} files "
                 f"({storage_cleanup_preview['total_size_label']}). Nothing was deleted."
             ),
         )

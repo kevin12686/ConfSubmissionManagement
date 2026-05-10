@@ -38,7 +38,7 @@
     <li class="nav-item">
         <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
             {{ option.label }}
-            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
+            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' or option.value == 'review_ok_no_edit' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
         </a>
     </li>
     {% endfor %}
