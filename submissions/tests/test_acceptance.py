@@ -4,6 +4,7 @@ import json
 import shutil
 import tempfile
 import zipfile
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,7 +18,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from submissions.forms import FinalSubmissionForm
+from submissions.forms import CrossCheckExportForm, FinalSubmissionForm, default_crosscheck_token
 from submissions.models import (
     AppSetting,
     AuthorLimitWaiver,
@@ -1128,6 +1129,11 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         self.assertEqual(active.similarity_score, 6)
         self.assertEqual(active.single_similarity_score, 2)
         self.assertEqual(publication_readiness_rows(), [])
+
+    def test_crosscheck_export_form_uses_dynamic_default_token(self):
+        self.assertEqual(default_crosscheck_token(date(2026, 5, 10)), "MAY102026_1")
+        self.assertEqual(default_crosscheck_token(date(2026, 12, 3)), "DEC032026_1")
+        self.assertEqual(CrossCheckExportForm().fields["token"].initial(date(2026, 5, 10)), "MAY102026_1")
 
     def test_not_publishing_reactivated_replacement_requires_fresh_editor_verification(self):
         self.make_master_paper("P001", "Reactivated Paper", "Ada")
@@ -3732,6 +3738,39 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.refresh_from_db()
         self.assertFalse(submission.title_author_verified)
         self.assertFalse(submission.extracted_title_verified)
+
+    def test_error_report_includes_discarded_and_not_publishing_as_info(self):
+        self.make_master_paper("P001", "Discarded Info", "Ada")
+        discarded = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Discarded Info",
+            extracted_title="Discarded Info",
+        )
+        discard_submission(discarded, "Use editor-uploaded email version instead.")
+
+        self.make_master_paper("P002", "Not Publishing Info", "Grace")
+        not_publishing = self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="Not Publishing Info",
+            extracted_title="Not Publishing Info",
+        )
+        mark_not_publishing(not_publishing, "unpaid", "No publication fee received.")
+
+        rows = error_report_rows()
+        by_category = {row["category"]: row for row in rows}
+
+        self.assertEqual(by_category["Discarded Final Submission"]["severity"], "info")
+        self.assertEqual(by_category["Not Publishing Final Submission"]["severity"], "info")
+        self.assertEqual(by_category["Discarded Final Submission"]["group"], "Version Tracking")
+        self.assertIn("Use editor-uploaded email version instead.", by_category["Discarded Final Submission"]["message"])
+        self.assertIn("No publication fee received.", by_category["Not Publishing Final Submission"]["message"])
+
+        page = self.client.get(reverse("submissions:error_report"))
+        self.assertContains(page, "Discarded Final Submission")
+        self.assertContains(page, "Not Publishing Final Submission")
+        self.assertContains(page, "Version Tracking")
 
     def test_import_preview_service_is_covered_by_view_ready_data(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")

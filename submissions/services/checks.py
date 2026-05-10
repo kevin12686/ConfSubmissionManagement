@@ -85,6 +85,13 @@ ERROR_GROUPS = {
             "Duplicate Publication Source",
         },
     },
+    "Version Tracking": {
+        "level": "info",
+        "categories": {
+            "Discarded Final Submission",
+            "Not Publishing Final Submission",
+        },
+    },
 }
 
 ERROR_GROUP_ORDER = [
@@ -94,6 +101,7 @@ ERROR_GROUP_ORDER = [
     "Formatting",
     "Plagiarism",
     "Publication Duplicates",
+    "Version Tracking",
     "Other",
 ]
 
@@ -133,6 +141,8 @@ ERROR_CATEGORY_SEVERITY = {
     "Formatting Not Review OK": "medium",
     "Missing Plagiarism Result": "medium",
     "Replaced Final Submission": "info",
+    "Discarded Final Submission": "info",
+    "Not Publishing Final Submission": "info",
     "Allowed Page Exception": "info",
     "Allowed Author Number Exception": "info",
     "Allowed Author Paper Count Exception": "info",
@@ -1195,6 +1205,31 @@ def error_report_rows():
                 "paper_id": submission.paper_id_filled,
                 "final_submission_id": submission.final_submission_id,
                 "message": "A newer mapped final submission exists for this Paper ID.",
+            }
+        )
+    for submission in FinalSubmission.objects.filter(discarded=True):
+        note = submission.discard_notes.strip() if submission.discard_notes else ""
+        rows.append(
+            {
+                "category": "Discarded Final Submission",
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "message": f"This final submission version was discarded. {note}".strip(),
+            }
+        )
+    for submission in FinalSubmission.objects.filter(excluded_from_publication=True):
+        reason = submission.get_publication_exclusion_reason_display()
+        note = (
+            submission.publication_exclusion_notes.strip()
+            if submission.publication_exclusion_notes
+            else ""
+        )
+        rows.append(
+            {
+                "category": "Not Publishing Final Submission",
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "message": f"Marked not publishing ({reason}). {note}".strip(),
             }
         )
     return _annotate_error_rows(rows)

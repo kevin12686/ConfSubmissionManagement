@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 
 from .models import AppSetting, FinalSubmission, InitialPaper
 from .services.import_export import round_percent
@@ -198,12 +199,17 @@ class MultipleFileField(forms.FileField):
         return [single_clean(data, initial)] if data else []
 
 
+def default_crosscheck_token(date_value=None):
+    date_value = date_value or timezone.localdate()
+    return f"{date_value.strftime('%b').upper()}{date_value.day:02d}{date_value.year}_1"
+
+
 class CrossCheckExportForm(BootstrapMixin, forms.Form):
     token = forms.CharField(
         label="Batch token",
         max_length=80,
-        initial="MAY082026",
-        help_text="Used in filenames like PaperID_token.pdf. Use letters, numbers, underscore, or hyphen.",
+        initial=default_crosscheck_token,
+        help_text="Default format is MONDDYYYY_1, such as MAY102026_1. Used in filenames like PaperID_token.pdf.",
     )
 
     def __init__(self, *args, **kwargs):
