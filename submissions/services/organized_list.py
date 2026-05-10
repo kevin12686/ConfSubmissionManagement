@@ -14,7 +14,7 @@ from submissions.services.exceptions import (
     page_exception_status,
 )
 from submissions.services.file_manager import (
-    corrected_pdf_needs_processing,
+    active_pdf_needs_processing,
     publication_pdf_info,
     publication_source_info,
 )
@@ -615,7 +615,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "publication_source": publication_source,
                 "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
                 "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
-                "needs_processing_after_formatting": corrected_pdf_needs_processing(submission)
+                "needs_processing_after_formatting": active_pdf_needs_processing(submission)
                 if submission
                 else False,
                 "title_check": _title_check(paper, submission),
@@ -666,7 +666,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "publication_source": publication_source,
                 "duplicate_badges": duplicate_map.get(submission.pk, []),
                 "version_conflict": submission.paper_id_filled in conflict_paper_ids,
-                "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
+                "needs_processing_after_formatting": active_pdf_needs_processing(submission),
                 "title_check": _title_check(None, submission),
                 "page_label": page_label,
                 "page_level": page_level,

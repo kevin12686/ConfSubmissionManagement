@@ -1331,6 +1331,133 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             {row["category"] for row in publication_readiness_rows()},
         )
 
+    def test_editor_upload_title_guard_and_process_alert(self):
+        paper = self.make_master_paper("P010", "Guarded Editor Paper", "Ada")
+
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Guarded Editor Paper", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Guarded Editor Paper",
+                    "final_submission_authors": "Ada",
+                    "notes": "Author emailed replacement.\nUse this version.",
+                    "pdf_file": self.uploaded_file("guarded.pdf", b"%PDF guarded"),
+                    "source_file": self.uploaded_file("guarded.docx", b"source"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        editor = FinalSubmission.objects.get(submission_origin="editor_upload", paper_id_filled="P010")
+        self.assertTrue(editor.paper_id_verified)
+        self.assertEqual(editor.processing_status, "pending")
+        self.make_master_paper("P012", "Missing PDF Paper", "Grace")
+        self.make_final_submission(
+            final_submission_id="1200",
+            paper_id_filled="P012",
+            final_submission_title="Missing PDF Paper",
+            extracted_title="Missing PDF Paper",
+            current_file_path="",
+            processing_status="pending",
+            page_count=None,
+            pdf_hash="",
+        )
+        self.make_master_paper("P014", "Pending Start2 Paper", "Grace")
+        start2_pending = self.make_final_submission(
+            final_submission_id="1400",
+            paper_id_filled="P014",
+            final_submission_title="Pending Start2 Paper",
+            extracted_title="Pending Start2 Paper",
+            current_file_path=str(self.make_pdf_file("pending-start2.pdf", b"%PDF pending")),
+            processing_status="pending",
+            page_count=None,
+            pdf_hash="",
+        )
+
+        page = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(page, "Process PDFs needed")
+        self.assertContains(page, "2 active PDFs")
+        self.assertContains(page, "2 need processing")
+        self.assertContains(page, "1 missing PDFs")
+        self.assertContains(page, "Active PDFs Need Process")
+
+        process_page = self.client.get(reverse("submissions:process"))
+        self.assertContains(process_page, "Active PDFs not processed")
+        self.assertContains(process_page, editor.final_submission_id)
+        self.assertContains(process_page, start2_pending.final_submission_id)
+
+        final_list = self.client.get(reverse("submissions:final_submission_list"), {"filter": "editor_uploads"})
+        self.assertContains(final_list, "Editor note")
+        self.assertContains(final_list, "Author emailed replacement.")
+
+        organized = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(organized, "Editor note")
+        self.assertContains(organized, "Author emailed replacement.")
+
+    def test_editor_upload_title_diff_requires_confirmation_and_manual_id_review(self):
+        paper = self.make_master_paper("P011", "Master Editor Paper", "Ada")
+
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Master Editor Paper", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Different Final Title",
+                    "final_submission_authors": "Ada",
+                    "notes": "Email version with a title mismatch.",
+                    "pdf_file": self.uploaded_file("mismatch.pdf", b"%PDF mismatch"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Editor upload title check")
+        self.assertContains(response, "PDF title differs from Final")
+        self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+
+        token = response.context["editor_upload_confirmation"]["token"]
+        response = self.client.post(
+            reverse("submissions:editor_upload"),
+            {
+                "action": "confirm_editor_upload",
+                "preview_token": token,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        editor = FinalSubmission.objects.get(submission_origin="editor_upload", paper_id_filled="P011")
+        self.assertFalse(editor.paper_id_verified)
+        self.assertTrue(editor.auto_verify_blocked)
+        self.assertEqual(editor.verification_status, "pending")
+
+    def test_editor_upload_title_extraction_error_requires_confirmation(self):
+        paper = self.make_master_paper("P013", "Extraction Error Editor Paper", "Ada")
+
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            side_effect=ValueError("cannot read title"),
+        ):
+            response = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Extraction Error Editor Paper",
+                    "final_submission_authors": "Ada",
+                    "notes": "Email version with unreadable title.",
+                    "pdf_file": self.uploaded_file("bad.pdf", b"%PDF bad"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Editor upload title check")
+        self.assertContains(response, "Title extraction failed")
+        self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+
     def test_discarding_editor_upload_returns_start2_to_active_version(self):
         paper = self.make_master_paper("P001", "Back To Start2", "Ada")
         start2 = self.make_final_submission(

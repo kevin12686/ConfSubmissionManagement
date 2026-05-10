@@ -30,14 +30,10 @@ def title_short_name(title, word_limit):
 def source_pdf_path(submission):
     if submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists():
         return Path(submission.formatted_pdf_file.path)
-    if (
-        submission.processing_status == "processed"
-        and submission.current_file_path
-        and Path(submission.current_file_path).exists()
-    ):
-        return Path(submission.current_file_path)
     if submission.pdf_file and Path(submission.pdf_file.path).exists():
         return Path(submission.pdf_file.path)
+    if submission.current_file_path and Path(submission.current_file_path).exists():
+        return Path(submission.current_file_path)
     return None
 
 
@@ -109,6 +105,40 @@ def corrected_pdf_needs_processing(submission):
         return calculate_pdf_hash(submission.formatted_pdf_file.path) != submission.pdf_hash
     except Exception:
         return True
+
+
+def pdf_available_for_processing(submission):
+    candidates = [
+        getattr(submission.formatted_pdf_file, "path", "") if submission.formatted_pdf_file else "",
+        submission.current_file_path,
+        getattr(submission.pdf_file, "path", "") if submission.pdf_file else "",
+    ]
+    return any(candidate and Path(candidate).exists() for candidate in candidates)
+
+
+def active_pdf_needs_processing(submission):
+    if not pdf_available_for_processing(submission):
+        return False
+    return bool(
+        submission.processing_status != "processed"
+        or submission.page_count is None
+        or not submission.pdf_hash
+        or corrected_pdf_needs_processing(submission)
+    )
+
+
+def active_pdfs_needing_processing():
+    from submissions.models import FinalSubmission
+
+    return [
+        submission
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        )
+        if active_pdf_needs_processing(submission)
+    ]
 
 
 def _publication_file_info(path, label, source, url):

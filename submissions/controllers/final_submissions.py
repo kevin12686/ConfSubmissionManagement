@@ -84,8 +84,9 @@ from submissions.services.file_manager import (
     sanitize_filename_part,
 )
 from submissions.services.editor_uploads import (
-    create_editor_submission,
+    apply_editor_upload_preview,
     discard_submission,
+    preview_editor_upload,
     undo_discard_submission,
 )
 from submissions.services.organized_list import (
@@ -233,20 +234,13 @@ def final_submission_form(request, pk=None):
 
 
 def editor_upload_form(request):
-    form = EditorUploadForm(
-        request.POST or None,
-        request.FILES or None,
-        initial_paper_id=request.GET.get("paper_id", ""),
-    )
-    if request.method == "POST" and form.is_valid():
+    editor_upload_confirmation = None
+    if request.method == "POST" and request.POST.get("action") == "confirm_editor_upload":
+        form = EditorUploadForm(initial_paper_id=request.POST.get("paper_id", ""))
         try:
-            submission = create_editor_submission(
-                paper=form.cleaned_data["paper"],
-                pdf_file=form.cleaned_data["pdf_file"],
-                source_file=form.cleaned_data.get("source_file"),
-                notes=form.cleaned_data["notes"],
-                final_submission_title=form.cleaned_data.get("final_submission_title", ""),
-                final_submission_authors=form.cleaned_data.get("final_submission_authors", ""),
+            submission = apply_editor_upload_preview(
+                request.POST.get("preview_token", ""),
+                confirmed=True,
             )
             messages.success(
                 request,
@@ -255,7 +249,43 @@ def editor_upload_form(request):
             return redirect("submissions:final_submission_list")
         except Exception as exc:
             messages.error(request, str(exc))
-    return render(request, "submissions/editor_upload_form.html", {"form": form})
+            return render(
+                request,
+                "submissions/editor_upload_form.html",
+                {"form": form, "editor_upload_confirmation": None},
+            )
+    form = EditorUploadForm(
+        request.POST or None,
+        request.FILES or None,
+        initial_paper_id=request.GET.get("paper_id", ""),
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            preview = preview_editor_upload(form.cleaned_data)
+            if preview["requires_confirmation"]:
+                editor_upload_confirmation = preview
+                messages.warning(
+                    request,
+                    "Editor upload PDF title differs from the selected Paper Master or Final Title. Confirm before creating this version.",
+                )
+                return render(
+                    request,
+                    "submissions/editor_upload_form.html",
+                    {"form": form, "editor_upload_confirmation": editor_upload_confirmation},
+                )
+            submission = apply_editor_upload_preview(preview["token"], confirmed=False)
+            messages.success(
+                request,
+                f"Editor upload {submission.final_submission_id} created. Run Process PDFs before publication.",
+            )
+            return redirect("submissions:final_submission_list")
+        except Exception as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "submissions/editor_upload_form.html",
+        {"form": form, "editor_upload_confirmation": editor_upload_confirmation},
+    )
 
 
 def final_submission_delete(request, pk):

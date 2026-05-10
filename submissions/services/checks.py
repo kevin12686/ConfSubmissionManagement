@@ -15,7 +15,9 @@ from submissions.models import (
     PaperAuthor,
 )
 from submissions.services.file_manager import (
+    active_pdf_needs_processing,
     corrected_pdf_needs_processing,
+    pdf_available_for_processing,
     publication_pdf_info,
     publication_source_info,
 )
@@ -1065,7 +1067,7 @@ def dashboard_counts():
     format_pending = active.filter(format_status="pending").count()
     format_needs_edit = active.filter(format_status="needs_edit").count()
     corrected_pdf_processing_needed = sum(
-        1 for submission in active if corrected_pdf_needs_processing(submission)
+        1 for submission in active if active_pdf_needs_processing(submission)
     )
     master_by_id = {paper.paper_id: paper for paper in InitialPaper.objects.all()}
     unverified_paper_ids = sum(
@@ -1124,7 +1126,7 @@ def dashboard_counts():
             and not submission.has_valid_page_limit_exception
         ),
         "missing_pdfs": sum(
-            1 for submission in active if not publication_pdf_info(submission)["exists"]
+            1 for submission in active if not pdf_available_for_processing(submission)
         ),
         "authors_over_limit": sum(
             1 for row in author_rows if row["over_limit"] and not row["waiver_valid"]
@@ -1150,6 +1152,7 @@ def dashboard_counts():
         "format_pending": format_pending,
         "format_needs_edit": format_needs_edit,
         "format_not_ok": format_pending + format_needs_edit,
+        "active_pdfs_need_processing": corrected_pdf_processing_needed,
         "corrected_pdf_needs_processing": corrected_pdf_processing_needed,
         "start2_editor_conflicts": editor_conflict_count(),
     }

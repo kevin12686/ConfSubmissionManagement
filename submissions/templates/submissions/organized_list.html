@@ -21,7 +21,7 @@
 {% if summary.needs_process_pdfs %}
     <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
         <div>
-            <div class="fw-semibold">{{ summary.needs_process_pdfs }} corrected PDF{{ summary.needs_process_pdfs|pluralize }} need Process PDFs.</div>
+            <div class="fw-semibold">{{ summary.needs_process_pdfs }} active PDF{{ summary.needs_process_pdfs|pluralize }} need Process PDFs.</div>
             <div class="small">
                 {% for label in summary.needs_process_pdf_labels %}
                     <span class="badge text-bg-warning">{{ label }}</span>
@@ -109,6 +109,9 @@
 	                    {% endif %}
 	                    {% if paper and paper.notes %}
 	                        <div><span class="badge text-bg-warning">Note</span></div>
+	                    {% endif %}
+	                    {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+	                        <div><span class="badge text-bg-primary">Editor note</span></div>
 	                    {% endif %}
 	                    {% for badge in row.duplicate_badges %}
                         <div><span class="badge text-bg-danger">{{ badge }}</span></div>
@@ -282,6 +285,12 @@
                                 <span class="text-muted">--</span>
                             {% endif %}
                         </div>
+                        {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+                            <div class="col-12">
+                                <div class="text-muted">Editor upload note</div>
+                                <div class="border rounded bg-light p-2 text-break">{{ submission.editor_upload_notes|linebreaksbr }}</div>
+                            </div>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

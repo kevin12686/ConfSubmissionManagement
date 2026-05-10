@@ -57,9 +57,10 @@
             <div class="card-body d-flex flex-column">
                 <div class="text-muted small text-uppercase">Step 4</div>
                 <h2 class="h5">Process PDFs</h2>
-                <p class="text-muted flex-grow-1">Scan incoming PDFs, calculate page counts and hashes, generate previews, and place active/old versions.</p>
-                <div>
-                    <span class="badge text-bg-{% if counts.page_limit_errors or counts.page_minimum_errors or counts.missing_pdfs %}warning{% else %}success{% endif %}">{{ counts.missing_pdfs }} missing PDFs</span>
+                <p class="text-muted flex-grow-1">Calculate page counts and hashes, generate previews, and refresh active/old publication files.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="badge text-bg-{% if counts.active_pdfs_need_processing %}warning{% else %}success{% endif %}">{{ counts.active_pdfs_need_processing }} need processing</span>
+                    <span class="badge text-bg-{% if counts.missing_pdfs %}danger{% else %}success{% endif %}">{{ counts.missing_pdfs }} missing PDFs</span>
                     <a class="btn btn-primary ms-2" href="{% url 'submissions:process' %}">Process PDFs</a>
                 </div>
             </div>

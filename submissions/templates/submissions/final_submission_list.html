@@ -142,6 +142,9 @@
 	                    <div class="cfm-table-actions">
 	                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
 	                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
+	                        {% if item.submission_origin == "editor_upload" and item.editor_upload_notes %}
+	                            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#editor-note-row-{{ item.pk }}" aria-expanded="false" aria-controls="editor-note-row-{{ item.pk }}">Editor note</button>
+	                        {% endif %}
 	                        {% if not item.discarded %}
 	                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#discard-row-{{ item.pk }}" aria-expanded="false" aria-controls="discard-row-{{ item.pk }}">Discard</button>
 	                        {% endif %}
@@ -155,6 +158,20 @@
 	                    {% endif %}
 	                </td>
 	            </tr>
+	            {% if item.submission_origin == "editor_upload" and item.editor_upload_notes %}
+	            <tr class="collapse" id="editor-note-row-{{ item.pk }}">
+	                <td colspan="9">
+	                    <div class="border rounded p-3 bg-light">
+	                        <div class="fw-semibold mb-1">Editor upload note</div>
+	                        <div class="small text-muted mb-2">
+	                            Final {{ item.final_submission_id }} / Paper {{ item.paper_id_filled|default:"--" }}
+	                            {% if item.editor_uploaded_at %}/ Uploaded {{ item.editor_uploaded_at }}{% endif %}
+	                        </div>
+	                        <div class="text-break">{{ item.editor_upload_notes|linebreaksbr }}</div>
+	                    </div>
+	                </td>
+	            </tr>
+	            {% endif %}
 	            {% if not item.discarded %}
 	            <tr class="collapse" id="discard-row-{{ item.pk }}">
 	                <td colspan="9">

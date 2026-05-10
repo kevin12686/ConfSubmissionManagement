@@ -7,7 +7,11 @@ from submissions.services.checks import (
     paper_id_effectively_verified,
     paper_title_matches_master,
 )
-from submissions.services.file_manager import publication_pdf_info
+from submissions.services.file_manager import (
+    active_pdfs_needing_processing,
+    pdf_available_for_processing,
+    publication_pdf_info,
+)
 from submissions.services.pdf_processor import processed_pdf_rows
 from submissions.services.editor_uploads import editor_conflict_paper_ids
 from submissions.services.version_history import (
@@ -154,9 +158,20 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
 
 
 def processed_pdf_context():
+    active_missing_pdf_rows = [
+        submission
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        )
+        if not pdf_available_for_processing(submission)
+    ]
     return {
         "processed_rows": processed_pdf_rows(),
         "settings_obj": AppSetting.load(),
+        "active_needs_processing_rows": active_pdfs_needing_processing(),
+        "active_missing_pdf_rows": active_missing_pdf_rows,
     }
 
 
