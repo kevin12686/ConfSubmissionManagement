@@ -65,7 +65,7 @@ from submissions.services.editor_uploads import (
     undo_discard_submission,
 )
 from submissions.services.organized_list import organized_list_rows
-from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions
 from submissions.services.reports import (
     author_count_frame,
     export_active_versions,
@@ -223,6 +223,29 @@ class EditorialAcceptanceTestCase(TestCase):
             )
         return FinalSubmission.objects.create(**values)
 
+    def mark_submission_publication_ready(self, submission, title=None, authors="Ada Lovelace; Alan Turing"):
+        title = title or submission.final_submission_title or "Ready Paper"
+        pdf_info = publication_pdf_info(submission)
+        submission.extracted_title = title
+        submission.extracted_authors = authors
+        submission.title_author_source = "manual"
+        submission.title_author_review_status = "review_ok"
+        submission.title_author_verified = True
+        submission.extracted_title_verified = True
+        submission.duplicate_author_review_status = "review_ok"
+        submission.page_count = 8
+        submission.processing_status = "processed"
+        submission.processing_message = "Ready."
+        submission.pdf_hash = calculate_pdf_hash(pdf_info["path"]) if pdf_info["exists"] else "ready-hash"
+        submission.paper_id_verified = True
+        submission.verification_status = "verified"
+        submission.format_status = "review_ok"
+        submission.similarity_score = 1
+        submission.single_similarity_score = 1
+        submission.plagiarism_report_stale = False
+        submission.save()
+        return submission
+
     def uploaded_csv(self, name, text):
         return SimpleUploadedFile(name, text.encode("utf-8-sig"), content_type="text/csv")
 
@@ -284,7 +307,7 @@ class EditorialAcceptanceTestCase(TestCase):
                 self.assertEqual(row["Similarity (P)"], str(expected["similarity_score"]))
                 self.assertEqual(row["Similarity (S)"], str(expected["single_similarity_score"]))
                 self.assertEqual(archive.read(expected["pdf_arcname"]), expected["pdf_bytes"])
-            self.assertEqual(archive.read(expected["source_arcname"]), expected["source_bytes"])
+                self.assertEqual(archive.read(expected["source_arcname"]), expected["source_bytes"])
 
 
 class StorageManagementTests(EditorialAcceptanceTestCase):
@@ -1677,6 +1700,163 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertEqual(publication_readiness_rows(), [])
 
 
+class EditorPublicationVersionMatrixTests(EditorialAcceptanceTestCase):
+    def organized_row_for(self, paper_id):
+        rows, _summary, _settings_obj, _current_filter, _current_sort = organized_list_rows()
+        return next(row for row in rows if row["paper"].paper_id == paper_id)
+
+    def assert_organized_files(self, paper_id, submission, pdf_bytes, source_bytes):
+        row = self.organized_row_for(paper_id)
+        self.assertEqual(row["submission"].pk, submission.pk)
+        self.assertEqual(Path(row["publication_pdf"]["path"]).read_bytes(), pdf_bytes)
+        self.assertEqual(Path(row["publication_source"]["path"]).read_bytes(), source_bytes)
+
+    def test_editor_discard_undo_matrix_keeps_organized_list_and_package_on_active_version(self):
+        paper = self.make_master_paper("P001", "Matrix Paper", "Ada")
+        old_start2 = self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            final_submission_title="Matrix Paper",
+            extracted_title="Matrix Paper",
+            current_file_path=str(self.make_pdf_file("start2-v9.pdf", b"start2 v9 pdf")),
+            source_current_file_path=str(self.make_source_file("start2-v9.docx", b"start2 v9 source")),
+        )
+        current_start2 = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Matrix Paper",
+            extracted_title="Matrix Paper",
+            current_file_path=str(self.make_pdf_file("start2-v10.pdf", b"start2 v10 pdf")),
+            source_current_file_path=str(self.make_source_file("start2-v10.docx", b"start2 v10 source")),
+        )
+        determine_active_versions()
+        old_start2.refresh_from_db()
+        current_start2.refresh_from_db()
+        self.assertFalse(old_start2.active_version)
+        self.assertTrue(current_start2.active_version)
+        self.assert_organized_files("P001", current_start2, b"start2 v10 pdf", b"start2 v10 source")
+
+        editor = create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Use email replacement.",
+        )
+        self.mark_submission_publication_ready(editor, title="Matrix Paper")
+        determine_active_versions()
+        editor.refresh_from_db()
+        current_start2.refresh_from_db()
+
+        self.assertTrue(editor.active_version)
+        self.assertFalse(current_start2.active_version)
+        self.assert_organized_files("P001", editor, b"editor pdf", b"editor source")
+        self.assert_publication_blocked("Start2/Editor Version Conflict")
+
+        draft_path = export_publication_package(force=True)
+        with zipfile.ZipFile(draft_path) as archive:
+            self.assertEqual(archive.read("PDF/P001-Matrix Paper.pdf"), b"editor pdf")
+            self.assertEqual(archive.read("Source/P001-Matrix Paper.docx"), b"editor source")
+            self.assertNotEqual(archive.read("PDF/P001-Matrix Paper.pdf"), b"start2 v10 pdf")
+
+        discard_submission(editor, "Email replacement rejected; use Start2 v10.")
+        editor.refresh_from_db()
+        current_start2.refresh_from_db()
+
+        self.assertTrue(current_start2.active_version)
+        self.assertFalse(editor.active_version)
+        self.assert_organized_files("P001", current_start2, b"start2 v10 pdf", b"start2 v10 source")
+        zip_path = export_publication_package()
+        with zipfile.ZipFile(zip_path) as archive:
+            self.assertEqual(archive.read("PDF/P001-Matrix Paper.pdf"), b"start2 v10 pdf")
+            self.assertEqual(archive.read("Source/P001-Matrix Paper.docx"), b"start2 v10 source")
+
+        undo_discard_submission(editor)
+        editor.refresh_from_db()
+        current_start2.refresh_from_db()
+
+        self.assertTrue(editor.active_version)
+        self.assertFalse(current_start2.active_version)
+        self.assert_organized_files("P001", editor, b"editor pdf", b"editor source")
+        self.assert_publication_blocked("Start2/Editor Version Conflict")
+
+    def test_inactive_corrected_files_never_leak_to_organized_list_or_publication_package(self):
+        self.make_master_paper("P001", "No Leak Paper", "Ada")
+        old = self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            final_submission_title="No Leak Paper",
+            extracted_title="No Leak Paper",
+            current_file_path=str(self.make_pdf_file("old-original.pdf", b"old original pdf")),
+            source_current_file_path=str(self.make_source_file("old-original.docx", b"old original source")),
+        )
+        old.formatted_pdf_file.save("old-corrected.pdf", ContentFile(b"old corrected pdf"), save=True)
+        old.formatted_source_file.save("old-corrected.docx", ContentFile(b"old corrected source"), save=True)
+        active = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="No Leak Paper",
+            extracted_title="No Leak Paper",
+            current_file_path=str(self.make_pdf_file("active.pdf", b"active pdf")),
+            source_current_file_path=str(self.make_source_file("active.docx", b"active source")),
+        )
+        determine_active_versions()
+        old.refresh_from_db()
+        active.refresh_from_db()
+
+        self.assertFalse(old.active_version)
+        self.assertTrue(active.active_version)
+        self.assert_organized_files("P001", active, b"active pdf", b"active source")
+
+        zip_path = export_publication_package()
+        with zipfile.ZipFile(zip_path) as archive:
+            pdf_bytes = archive.read("PDF/P001-No Leak Paper.pdf")
+            source_bytes = archive.read("Source/P001-No Leak Paper.docx")
+            self.assertEqual(pdf_bytes, b"active pdf")
+            self.assertEqual(source_bytes, b"active source")
+            self.assertNotEqual(pdf_bytes, b"old corrected pdf")
+            self.assertNotEqual(source_bytes, b"old corrected source")
+
+    def test_active_editor_corrected_files_are_used_after_start2_is_discarded(self):
+        paper = self.make_master_paper("P001", "Corrected Editor", "Ada")
+        start2 = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Corrected Editor",
+            extracted_title="Corrected Editor",
+            current_file_path=str(self.make_pdf_file("start2.pdf", b"start2 pdf")),
+            source_current_file_path=str(self.make_source_file("start2.docx", b"start2 source")),
+        )
+        editor = create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor-original.pdf", b"editor original pdf"),
+            source_file=self.uploaded_file("editor-original.docx", b"editor original source"),
+            notes="Publisher supplied final correction.",
+        )
+        editor.formatted_pdf_file.save("editor-corrected.pdf", ContentFile(b"editor corrected pdf"), save=False)
+        editor.formatted_source_file.save(
+            "editor-corrected.docx", ContentFile(b"editor corrected source"), save=False
+        )
+        self.mark_submission_publication_ready(editor, title="Corrected Editor")
+        discard_submission(start2, "Editor corrected package is the publication version.")
+        editor.refresh_from_db()
+        start2.refresh_from_db()
+
+        self.assertTrue(editor.active_version)
+        self.assertTrue(start2.discarded)
+        self.assertEqual(publication_readiness_rows(), [])
+        self.assert_organized_files(
+            "P001",
+            editor,
+            b"editor corrected pdf",
+            b"editor corrected source",
+        )
+
+        zip_path = export_publication_package()
+        with zipfile.ZipFile(zip_path) as archive:
+            self.assertEqual(archive.read("PDF/P001-Corrected Editor.pdf"), b"editor corrected pdf")
+            self.assertEqual(archive.read("Source/P001-Corrected Editor.docx"), b"editor corrected source")
+
+
 class DuplicatePublicationTests(EditorialAcceptanceTestCase):
     def test_duplicate_title_pdf_and_source_block_publication_and_appear_in_reports(self):
         shared_pdf = self.make_pdf_file("shared.pdf", b"shared pdf")
@@ -2147,6 +2327,205 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Publication package is not ready")
         self.assertContains(response, "Unverified Title/Author Extraction")
         self.assertContains(response, "Open Readiness Issues")
+
+    def test_formatting_review_shows_source_file_type_labels(self):
+        self.make_master_paper("P001", "Word Source", "Ada")
+        self.make_master_paper("P002", "Zip Source", "Grace")
+        self.make_master_paper("P003", "Tex Source", "Alan")
+        self.make_master_paper("P004", "Unknown Source", "Katherine")
+        word = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Word Source",
+            extracted_title="Word Source",
+        )
+        zip_submission = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Zip Source",
+            extracted_title="Zip Source",
+        )
+        tex = self.make_final_submission(
+            final_submission_id="103",
+            paper_id_filled="P003",
+            final_submission_title="Tex Source",
+            extracted_title="Tex Source",
+        )
+        unknown = self.make_final_submission(
+            final_submission_id="104",
+            paper_id_filled="P004",
+            final_submission_title="Unknown Source",
+            extracted_title="Unknown Source",
+        )
+        word.source_file.save("word_source.docx", ContentFile(b"word"), save=True)
+        zip_submission.source_file.save("zip_source.docx", ContentFile(b"zip original"), save=True)
+        zip_submission.formatted_source_file.save("corrected_source.zip", ContentFile(b"zip"), save=True)
+        tex.source_file.save("source.tex", ContentFile(b"tex"), save=True)
+        unknown.source_file.save("source.pages", ContentFile(b"unknown"), save=True)
+
+        response = self.client.get(reverse("submissions:formatting"), {"filter": "all"})
+        self.assertContains(response, "Original Source (Word)")
+        self.assertContains(response, "Corrected Source (ZIP)")
+        self.assertContains(response, "Original Source (TeX)")
+        self.assertContains(response, "Original Source (Unknown)")
+
+    def test_formatting_single_mode_shows_one_paper_and_advances_after_save(self):
+        self.make_master_paper("P001", "First Format Paper", "Ada")
+        self.make_master_paper("P002", "Second Format Paper", "Grace")
+        first = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="First Format Paper",
+            extracted_title="First Format Paper",
+            format_status="pending",
+        )
+        second = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Second Format Paper",
+            extracted_title="Second Format Paper",
+            format_status="pending",
+        )
+
+        response = self.client.get(
+            reverse("submissions:formatting"),
+            {"mode": "single", "filter": "all", "submission": first.pk},
+        )
+        self.assertContains(response, "Single Paper Mode")
+        self.assertContains(response, "Previous")
+        self.assertContains(response, "Next")
+        self.assertContains(response, "Back to list")
+        self.assertContains(response, "First Format Paper")
+        self.assertNotContains(response, "Second Format Paper</div>")
+
+        with patch("submissions.services.formatting.get_title_author") as extractor:
+            response = self.client.post(
+                reverse("submissions:formatting"),
+                {
+                    "submission_id": first.pk,
+                    "mode": "single",
+                    "filter": "all",
+                    "next_submission": second.pk,
+                    "format_status": "pending",
+                    "format_notes": "source only",
+                    "corrected_source": self.uploaded_file("fixed.docx", b"fixed source"),
+                },
+            )
+        extractor.assert_not_called()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(f"submission={second.pk}", response["Location"])
+
+    def test_formatting_corrected_pdf_title_guard_requires_confirmation_before_saving(self):
+        self.make_master_paper("P001", "Correct Paper Title", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Correct Paper Title",
+            extracted_title="Existing Extracted Title",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Wrong Paper Title", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:formatting"),
+                {
+                    "submission_id": submission.pk,
+                    "mode": "single",
+                    "filter": "all",
+                    "format_status": "pending",
+                    "format_notes": "corrected pdf",
+                    "corrected_pdf": self.uploaded_file("wrong.pdf", b"%PDF wrong"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Corrected PDF title check")
+        self.assertContains(response, "Confirm save corrected files anyway")
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
+        self.assertEqual(submission.extracted_title, "Existing Extracted Title")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+
+        token = response.context["formatting_confirmation"]["token"]
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            {
+                "action": "confirm_formatting_upload",
+                "preview_token": token,
+                "submission_id": submission.pk,
+                "mode": "single",
+                "filter": "all",
+                "format_status": "pending",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertTrue(submission.formatted_pdf_file)
+        self.assertEqual(submission.extracted_title, "Existing Extracted Title")
+        self.assertEqual(submission.title_author_review_status, "pending")
+
+    def test_formatting_corrected_pdf_matching_title_saves_without_confirmation(self):
+        self.make_master_paper("P001", "Matching Paper Title", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Matching Paper Title",
+            extracted_title="Existing Extracted Title",
+        )
+
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Matching Paper Title", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:formatting"),
+                {
+                    "submission_id": submission.pk,
+                    "filter": "all",
+                    "format_status": "pending",
+                    "format_notes": "matching corrected pdf",
+                    "corrected_source": self.uploaded_file("actually_pdf.pdf", b"%PDF corrected"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertTrue(submission.formatted_pdf_file)
+        self.assertEqual(submission.extracted_title, "Existing Extracted Title")
+        self.assertEqual(submission.title_author_review_status, "pending")
+
+    def test_formatting_corrected_pdf_extraction_error_requires_confirmation(self):
+        self.make_master_paper("P001", "Extraction Error Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Extraction Error Paper",
+            extracted_title="Existing Extracted Title",
+        )
+
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            side_effect=ValueError("cannot read title"),
+        ):
+            response = self.client.post(
+                reverse("submissions:formatting"),
+                {
+                    "submission_id": submission.pk,
+                    "filter": "all",
+                    "format_status": "pending",
+                    "format_notes": "bad corrected pdf",
+                    "corrected_pdf": self.uploaded_file("bad.pdf", b"%PDF bad"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Title extraction failed")
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
 
     def test_identical_title_auto_verifies_without_manual_click(self):
         self.make_master_paper("P001", title="Exactly Matching Title")

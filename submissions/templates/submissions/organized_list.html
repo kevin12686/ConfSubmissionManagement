@@ -37,13 +37,13 @@
 
 <div class="row g-2 cfm-metric-strip">
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Rows</div><div class="cfm-metric-value">{{ summary.total_rows }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">No Final</div><div class="cfm-metric-value {% if summary.missing_final %}text-danger{% endif %}">{{ summary.missing_final }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Review</div><div class="cfm-metric-value {% if summary.unverified %}text-warning{% endif %}">{{ summary.unverified }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Issues</div><div class="cfm-metric-value {% if summary.page_errors %}text-warning{% endif %}">{{ summary.page_errors }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">No Plagiarism</div><div class="cfm-metric-value {% if summary.missing_plagiarism %}text-warning{% endif %}">{{ summary.missing_plagiarism }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicates</div><div class="cfm-metric-value {% if summary.publication_duplicates %}text-danger{% endif %}">{{ summary.publication_duplicates }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Version Conflicts</div><div class="cfm-metric-value {% if summary.version_conflicts %}text-warning{% endif %}">{{ summary.version_conflicts }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Duplicate Authors</div><div class="cfm-metric-value {% if summary.duplicate_author_issues %}text-danger{% endif %}">{{ summary.duplicate_author_issues }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.missing_final %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">No Final</div><div class="cfm-metric-value">{{ summary.missing_final }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.unverified %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Paper ID Review</div><div class="cfm-metric-value">{{ summary.unverified }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.page_errors %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Page Issues</div><div class="cfm-metric-value">{{ summary.page_errors }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.missing_plagiarism %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">No Plagiarism</div><div class="cfm-metric-value">{{ summary.missing_plagiarism }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.publication_duplicates %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">Duplicates</div><div class="cfm-metric-value">{{ summary.publication_duplicates }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.version_conflicts %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Version Conflicts</div><div class="cfm-metric-value">{{ summary.version_conflicts }}</div></div></div>
+    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.duplicate_author_issues %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">Duplicate Authors</div><div class="cfm-metric-value">{{ summary.duplicate_author_issues }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Not Publishing</div><div class="cfm-metric-value">{{ summary.excluded_from_publication }}</div></div></div>
     <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Range</div><div class="cfm-metric-value">{{ settings_obj.page_minimum }}-{{ settings_obj.page_limit }}</div></div></div>
 </div>

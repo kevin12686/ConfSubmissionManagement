@@ -2,6 +2,7 @@ import csv
 import logging
 import shutil
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.conf import settings as django_settings
@@ -69,9 +70,15 @@ from submissions.services.system_state import (
 )
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
+    apply_formatting_upload_preview,
+    corrected_source_type_label,
+    formatting_single_navigation,
+    formatting_upload_confirmation,
     formatting_filter_counts,
     formatting_preview_info,
     formatting_rows,
+    original_source_type_label,
+    preview_formatting_upload,
     update_formatting_submission,
 )
 from submissions.services.file_manager import (
@@ -370,19 +377,69 @@ def title_author_extraction(request):
 
 def formatting(request):
     q = _search_query(request)
-    current_filter = request.GET.get("filter", "needs_attention")
+    current_filter = request.POST.get("filter") or request.GET.get("filter", "needs_attention")
+    mode = request.POST.get("mode") or request.GET.get("mode", "list")
     valid_filters = {option["value"] for option in FORMAT_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "needs_attention"
+    if mode != "single":
+        mode = "list"
+    formatting_confirmation = None
     if request.method == "POST":
-        submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
-        form = FormattingUploadForm(request.POST, request.FILES, submission=submission)
-        if form.is_valid():
-            update_formatting_submission(submission, form.cleaned_data)
-            messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
-            return redirect("submissions:formatting")
-        messages.error(request, "Formatting update failed. Check the uploaded files and status.")
+        action = request.POST.get("action", "save")
+        if action == "confirm_formatting_upload":
+            token = request.POST.get("preview_token", "")
+            try:
+                submission = apply_formatting_upload_preview(token)
+                messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                return _formatting_redirect_after_save(request, current_filter, q, mode)
+            except Exception as exc:
+                messages.error(request, str(exc))
+        elif action == "cancel_formatting_upload":
+            messages.info(request, "Corrected file upload canceled. No formatting files were changed.")
+            return _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=True)
+        else:
+            submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
+            form = FormattingUploadForm(request.POST, request.FILES, submission=submission)
+            if form.is_valid():
+                try:
+                    preview = preview_formatting_upload(submission, form.cleaned_data)
+                    if preview.get("token") and preview.get("requires_confirmation"):
+                        formatting_confirmation = {
+                            **preview,
+                            "submission": submission,
+                            "mode": mode,
+                            "filter": current_filter,
+                            "q": q,
+                            "next_submission": request.POST.get("next_submission", ""),
+                        }
+                        messages.warning(
+                            request,
+                            "Corrected PDF title does not match. Confirm before saving corrected files.",
+                        )
+                    elif preview.get("token"):
+                        apply_formatting_upload_preview(preview["token"])
+                        messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                        return _formatting_redirect_after_save(request, current_filter, q, mode)
+                    else:
+                        update_formatting_submission(submission, form.cleaned_data)
+                        messages.success(request, f"Formatting record updated for {submission.final_submission_id}.")
+                        return _formatting_redirect_after_save(request, current_filter, q, mode)
+                except Exception as exc:
+                    messages.error(request, f"Formatting update failed: {exc}")
+            else:
+                messages.error(request, "Formatting update failed. Check the uploaded files and status.")
 
+    all_submissions = list(formatting_rows(q, current_filter))
+    single_navigation = None
+    if mode == "single":
+        requested_id = request.POST.get("submission_id") or request.GET.get("submission")
+        current_submission = next(
+            (submission for submission in all_submissions if str(submission.pk) == str(requested_id)),
+            all_submissions[0] if all_submissions else None,
+        )
+        all_submissions = [current_submission] if current_submission else []
+        single_navigation = formatting_single_navigation(current_submission, q, current_filter)
     rows = [
         {
             "submission": submission,
@@ -390,8 +447,10 @@ def formatting(request):
             "publication_pdf": publication_pdf_info(submission),
             "preview": formatting_preview_info(submission),
             "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
+            "original_source_type_label": original_source_type_label(submission),
+            "corrected_source_type_label": corrected_source_type_label(submission),
         }
-        for submission in formatting_rows(q, current_filter)
+        for submission in all_submissions
     ]
     filter_counts = formatting_filter_counts(q)
     filter_options = [
@@ -406,8 +465,27 @@ def formatting(request):
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,
+            "mode": mode,
+            "single_navigation": single_navigation,
+            "formatting_confirmation": formatting_confirmation,
         },
     )
+
+
+def _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=False):
+    query = {"filter": current_filter}
+    if q:
+        query["q"] = q
+    if mode == "single":
+        next_submission = request.POST.get("next_submission", "")
+        current_submission = request.POST.get("submission_id", "")
+        target_submission = current_submission if stay_on_current else next_submission
+        if target_submission:
+            query["mode"] = "single"
+            query["submission"] = target_submission
+            return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")
+        messages.success(request, "Single Paper Mode complete for the current filter.")
+    return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")
 
 
 def not_publishing_list(request):
