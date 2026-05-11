@@ -19,6 +19,99 @@
     </div>
 {% endif %}
 
+{% if active_version_change_report %}
+    <div class="alert alert-warning border cfm-attention">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+            <div>
+                <strong>Active final version rule changed.</strong>
+                {{ active_version_change_report.changed_count }} paper{{ active_version_change_report.changed_count|pluralize }} changed active final version.
+                Review these papers in Organized List before publication.
+            </div>
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+        </div>
+        <div class="small mt-2">
+            Rule changed from <code>{{ active_version_change_report.old_rule }}</code> to <code>{{ active_version_change_report.new_rule }}</code>.
+            Existing review flags were not reset; the current publication candidate may now be a different Final Submission.
+        </div>
+        {% if active_version_change_report.changes %}
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle cfm-table">
+                    <thead>
+                        <tr>
+                            <th>Paper ID</th>
+                            <th>Previous active Final</th>
+                            <th>New active Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for change in active_version_change_report.changes %}
+                            <tr>
+                                <td>{{ change.paper_id }}</td>
+                                <td>{{ change.old_final_id }} <span class="text-muted">({{ change.old_origin }})</span></td>
+                                <td>{{ change.new_final_id }} <span class="text-muted">({{ change.new_origin }})</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
+
+{% if active_version_rule_preview %}
+    <div class="alert alert-danger border cfm-attention">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+            <div>
+                <strong>Active Version Rule Change Preview.</strong>
+                {{ active_version_rule_preview.report.changed_count }} paper{{ active_version_rule_preview.report.changed_count|pluralize }} would change active final version.
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="confirm_active_rule_change">
+                    <input type="hidden" name="preview_token" value="{{ active_version_rule_preview.token }}">
+                    <button class="btn btn-sm btn-danger">Confirm and Apply Rule Change</button>
+                </form>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="cancel_active_rule_preview">
+                    <button class="btn btn-sm btn-outline-dark">Cancel / Back to Settings</button>
+                </form>
+            </div>
+        </div>
+        <div class="small mt-2">
+            Rule would change from <code>{{ active_version_rule_preview.report.old_rule }}</code> to <code>{{ active_version_rule_preview.report.new_rule }}</code>.
+            Nothing has been saved yet. Existing review flags will not be reset if you confirm.
+        </div>
+        {% if active_version_rule_preview.report.changed_count == 0 %}
+            <div class="alert alert-info border mt-3 mb-0">
+                0 changed means both rules currently select the same active final versions. It does not mean Final ID and upload date are identical for every row.
+            </div>
+        {% else %}
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle cfm-table">
+                    <thead>
+                        <tr>
+                            <th>Paper ID</th>
+                            <th>Current active Final</th>
+                            <th>Preview active Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for change in active_version_rule_preview.report.changes %}
+                            <tr>
+                                <td>{{ change.paper_id }}</td>
+                                <td>{{ change.old_final_id }} <span class="text-muted">({{ change.old_origin }})</span></td>
+                                <td>{{ change.new_final_id }} <span class="text-muted">({{ change.new_origin }})</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
+
 <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="save_settings">

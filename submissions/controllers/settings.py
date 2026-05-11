@@ -1,4 +1,5 @@
 import csv
+import uuid
 import logging
 import shutil
 from pathlib import Path
@@ -181,6 +182,8 @@ def _clear_data_files(settings_obj):
 def app_settings(request):
     settings_obj = AppSetting.load()
     old_active_version_rule = settings_obj.active_version_rule
+    active_version_change_report = request.session.pop("active_version_change_report", None)
+    active_version_rule_preview = request.session.get("active_version_rule_preview")
     storage_cleanup_preview = None
     storage_cleanup_result = None
     storage_repair_result = None
@@ -231,15 +234,83 @@ def app_settings(request):
             ),
         )
 
+    if request.method == "POST" and request.POST.get("action") == "cancel_active_rule_preview":
+        request.session.pop("active_version_rule_preview", None)
+        messages.info(request, "Active version rule change was cancelled. Settings were not changed.")
+        return redirect("submissions:settings")
+
+    if request.method == "POST" and request.POST.get("action") == "confirm_active_rule_change":
+        preview = request.session.get("active_version_rule_preview")
+        if not preview or request.POST.get("preview_token") != preview.get("token"):
+            messages.error(request, "Active version rule preview expired. Preview the change again.")
+            return redirect("submissions:settings")
+        current_snapshot = _active_version_snapshot()
+        if current_snapshot != preview.get("before_snapshot"):
+            request.session.pop("active_version_rule_preview", None)
+            messages.error(
+                request,
+                "Active versions changed after the preview was created. Preview the rule change again before applying.",
+            )
+            return redirect("submissions:settings")
+        form = AppSettingForm(preview["form_data"], instance=settings_obj)
+        if form.is_valid():
+            saved_settings = form.save()
+            determine_active_versions()
+            _mark_duplicate_submissions()
+            result_report = {
+                **preview["report"],
+                "applied": True,
+            }
+            request.session["active_version_change_report"] = result_report
+            request.session.pop("active_version_rule_preview", None)
+            messages.warning(
+                request,
+                (
+                    f"Active final version rule changed. {result_report['changed_count']} "
+                    "paper(s) changed active final version; review the report below."
+                ),
+            )
+            return redirect("submissions:settings")
+        messages.error(request, "Saved preview is no longer valid. Preview the settings change again.")
+        request.session.pop("active_version_rule_preview", None)
+        return redirect("submissions:settings")
+
     form_data = request.POST if request.POST.get("action") == "save_settings" else None
     form = AppSettingForm(form_data, instance=settings_obj)
     if request.method == "POST" and request.POST.get("action") == "save_settings" and form.is_valid():
-        saved_settings = form.save()
-        if saved_settings.active_version_rule != old_active_version_rule:
-            determine_active_versions()
-            _mark_duplicate_submissions()
+        if form.cleaned_data["active_version_rule"] != old_active_version_rule:
+            before_active_versions = _active_version_snapshot()
+            after_active_versions = _active_version_snapshot_for_rule(
+                form.cleaned_data["active_version_rule"]
+            )
+            changed_active_versions = _active_version_changes(
+                before_active_versions,
+                after_active_versions,
+            )
+            report = {
+                "old_rule": old_active_version_rule,
+                "new_rule": form.cleaned_data["active_version_rule"],
+                "changed_count": len(changed_active_versions),
+                "changes": changed_active_versions,
+            }
+            request.session["active_version_rule_preview"] = {
+                "token": uuid.uuid4().hex,
+                "form_data": request.POST.copy(),
+                "before_snapshot": before_active_versions,
+                "report": report,
+            }
+            messages.warning(
+                request,
+                (
+                    f"Preview active final version rule change: {len(changed_active_versions)} "
+                    "paper(s) would change active final version. Confirm before applying."
+                ),
+            )
+            return redirect("submissions:settings")
+        form.save()
         messages.success(request, "Settings saved.")
         return redirect("submissions:settings")
+    active_version_rule_preview = request.session.get("active_version_rule_preview")
     folder_warnings = _folder_path_warnings(settings_obj)
     storage_inventory = build_storage_inventory()
     return render(
@@ -254,8 +325,88 @@ def app_settings(request):
             "storage_cleanup_result": storage_cleanup_result,
             "storage_cleanup_confirmation_text": CLEANUP_CONFIRMATION_TEXT,
             "storage_repair_result": storage_repair_result,
+            "active_version_change_report": active_version_change_report,
+            "active_version_rule_preview": active_version_rule_preview,
         },
     )
+
+
+def _active_version_snapshot():
+    return {
+        submission.paper_id_filled: {
+            "final_submission_id": submission.final_submission_id,
+            "submission_origin": submission.get_submission_origin_display(),
+        }
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+        ).exclude(paper_id_filled="")
+    }
+
+
+def _active_version_snapshot_for_rule(rule):
+    snapshot = {}
+    paper_ids = (
+        FinalSubmission.objects.filter(discarded=False)
+        .exclude(paper_id_filled="")
+        .order_by()
+        .values_list("paper_id_filled", flat=True)
+        .distinct()
+    )
+    for paper_id in paper_ids:
+        submissions = list(
+            FinalSubmission.objects.filter(paper_id_filled=paper_id, discarded=False)
+        )
+        editor_submissions = [
+            submission
+            for submission in submissions
+            if submission.submission_origin == "editor_upload"
+        ]
+        candidate_submissions = editor_submissions or submissions
+        selected = _select_active_candidate_for_rule(candidate_submissions, rule)
+        if selected:
+            snapshot[paper_id] = {
+                "final_submission_id": selected.final_submission_id,
+                "submission_origin": selected.get_submission_origin_display(),
+            }
+    return snapshot
+
+
+def _select_active_candidate_for_rule(submissions, rule):
+    from submissions.services.pdf_processor import final_submission_sort_key
+
+    if not submissions:
+        return None
+    if rule == "upload_date":
+        return max(
+            submissions,
+            key=lambda submission: (
+                submission.upload_date,
+                final_submission_sort_key(submission),
+            ),
+        )
+    return max(submissions, key=final_submission_sort_key)
+
+
+def _active_version_changes(before, after):
+    changes = []
+    for paper_id in sorted(set(before) | set(after)):
+        old = before.get(paper_id)
+        new = after.get(paper_id)
+        old_final_id = old["final_submission_id"] if old else ""
+        new_final_id = new["final_submission_id"] if new else ""
+        if old_final_id == new_final_id:
+            continue
+        changes.append(
+            {
+                "paper_id": paper_id,
+                "old_final_id": old_final_id or "--",
+                "old_origin": old["submission_origin"] if old else "--",
+                "new_final_id": new_final_id or "--",
+                "new_origin": new["submission_origin"] if new else "--",
+            }
+        )
+    return changes
 
 
 def _folder_path_warnings(settings_obj):

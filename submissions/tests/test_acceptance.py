@@ -3367,6 +3367,158 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("attachment", source_response["Content-Disposition"])
         self.assertEqual(b"".join(source_response.streaming_content), b"active source")
 
+    def test_settings_active_version_rule_change_reports_changed_papers_without_resetting_flags(self):
+        self.make_master_paper("P001", "Rule Change", "Ada")
+        older_newer_date = timezone.now()
+        older = self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            final_submission_title="Rule Change",
+            extracted_title="Rule Change",
+            upload_date=older_newer_date,
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        newer = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Rule Change",
+            extracted_title="Rule Change",
+            upload_date=older_newer_date - timezone.timedelta(days=1),
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        determine_active_versions()
+        older.refresh_from_db()
+        newer.refresh_from_db()
+        self.assertFalse(older.active_version)
+        self.assertTrue(newer.active_version)
+
+        settings_obj = AppSetting.load()
+        post_data = {
+            "action": "save_settings",
+            "conference_name": settings_obj.conference_name,
+            "page_minimum": settings_obj.page_minimum,
+            "page_limit": settings_obj.page_limit,
+            "author_paper_limit": settings_obj.author_paper_limit,
+            "max_authors_per_paper": settings_obj.max_authors_per_paper,
+            "title_words_for_filename": settings_obj.title_words_for_filename,
+            "active_version_rule": "upload_date",
+            "time_zone": settings_obj.time_zone,
+            "incoming_folder": settings_obj.incoming_folder,
+            "active_final_folder": settings_obj.active_final_folder,
+            "old_versions_folder": settings_obj.old_versions_folder,
+            "reports_folder": settings_obj.reports_folder,
+            "extraction_results_folder": settings_obj.extraction_results_folder,
+            "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,
+            "plagiarism_percent_threshold": settings_obj.plagiarism_percent_threshold,
+            "single_similarity_threshold": settings_obj.single_similarity_threshold,
+        }
+        response = self.client.post(reverse("submissions:settings"), post_data, follow=True)
+
+        older.refresh_from_db()
+        newer.refresh_from_db()
+        settings_obj.refresh_from_db()
+        self.assertEqual(settings_obj.active_version_rule, "final_id")
+        self.assertFalse(older.active_version)
+        self.assertTrue(newer.active_version)
+        self.assertContains(response, "Active Version Rule Change Preview")
+        self.assertContains(response, "1 paper would change active final version")
+        self.assertContains(response, "P001")
+        self.assertContains(response, "10")
+        self.assertContains(response, "9")
+
+        preview = self.client.session["active_version_rule_preview"]
+        response = self.client.post(
+            reverse("submissions:settings"),
+            {
+                "action": "confirm_active_rule_change",
+                "preview_token": preview["token"],
+            },
+            follow=True,
+        )
+
+        older.refresh_from_db()
+        newer.refresh_from_db()
+        settings_obj.refresh_from_db()
+        self.assertEqual(settings_obj.active_version_rule, "upload_date")
+        self.assertTrue(older.active_version)
+        self.assertFalse(newer.active_version)
+        self.assertTrue(older.paper_id_verified)
+        self.assertTrue(newer.paper_id_verified)
+        self.assertContains(response, "Active final version rule changed.")
+        self.assertContains(response, "1 paper changed active final version")
+        self.assertContains(response, "P001")
+        self.assertContains(response, "10")
+        self.assertContains(response, "9")
+        self.assertContains(response, "Existing review flags were not reset")
+
+    def test_active_version_rule_preview_zero_changed_and_stale_confirm(self):
+        self.make_master_paper("P001", "No Change Rule", "Ada")
+        first = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="No Change Rule",
+            extracted_title="No Change Rule",
+            upload_date=timezone.now() - timezone.timedelta(days=1),
+        )
+        second = self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P001",
+            final_submission_title="No Change Rule",
+            extracted_title="No Change Rule",
+            upload_date=timezone.now(),
+        )
+        determine_active_versions()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertFalse(first.active_version)
+        self.assertTrue(second.active_version)
+
+        settings_obj = AppSetting.load()
+        post_data = {
+            "action": "save_settings",
+            "conference_name": settings_obj.conference_name,
+            "page_minimum": settings_obj.page_minimum,
+            "page_limit": settings_obj.page_limit,
+            "author_paper_limit": settings_obj.author_paper_limit,
+            "max_authors_per_paper": settings_obj.max_authors_per_paper,
+            "title_words_for_filename": settings_obj.title_words_for_filename,
+            "active_version_rule": "upload_date",
+            "time_zone": settings_obj.time_zone,
+            "incoming_folder": settings_obj.incoming_folder,
+            "active_final_folder": settings_obj.active_final_folder,
+            "old_versions_folder": settings_obj.old_versions_folder,
+            "reports_folder": settings_obj.reports_folder,
+            "extraction_results_folder": settings_obj.extraction_results_folder,
+            "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,
+            "plagiarism_percent_threshold": settings_obj.plagiarism_percent_threshold,
+            "single_similarity_threshold": settings_obj.single_similarity_threshold,
+        }
+        response = self.client.post(reverse("submissions:settings"), post_data, follow=True)
+        self.assertContains(response, "0 papers would change active final version")
+        self.assertContains(response, "both rules currently select the same active final versions")
+        settings_obj.refresh_from_db()
+        self.assertEqual(settings_obj.active_version_rule, "final_id")
+
+        preview = self.client.session["active_version_rule_preview"]
+        first.active_version = True
+        first.save(update_fields=["active_version", "updated_at"])
+        second.active_version = False
+        second.save(update_fields=["active_version", "updated_at"])
+
+        response = self.client.post(
+            reverse("submissions:settings"),
+            {
+                "action": "confirm_active_rule_change",
+                "preview_token": preview["token"],
+            },
+            follow=True,
+        )
+        settings_obj.refresh_from_db()
+        self.assertEqual(settings_obj.active_version_rule, "final_id")
+        self.assertContains(response, "Active versions changed after the preview was created")
+
     def test_final_submission_edit_separates_publication_and_original_files(self):
         self.make_master_paper("P001", "Edit Files", "Ada")
         submission = self.make_final_submission(
