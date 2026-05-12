@@ -47,7 +47,30 @@
     </div>
 {% endif %}
 
+{% if preview.kind == "initial" and preview.stats.notes_changed %}
+    <div class="card border-warning mb-3">
+        <div class="card-header fw-semibold">Notes import choice</div>
+        <div class="card-body">
+            <p class="text-muted mb-3">
+                Paper Master List files usually do not include notes added inside this system.
+                Preserve existing notes unless you intentionally want to replace them from the import file.
+            </p>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="notes_policy" id="notes-policy-preserve-display" value="preserve_existing_notes" form="apply-import-preview-form" checked>
+                    <label class="form-check-label" for="notes-policy-preserve-display">Preserve existing system notes</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="notes_policy" id="notes-policy-apply-display" value="apply_imported_notes" form="apply-import-preview-form">
+                    <label class="form-check-label" for="notes-policy-apply-display">Apply imported notes</label>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
 <div class="table-responsive mb-3">
+    <div class="small text-muted p-2 border-bottom">Rows are sorted by attention needed; unchanged rows are shown last.</div>
     <table class="table table-striped table-hover align-middle table-sm cfm-table">
         <thead>
             <tr>
@@ -78,6 +101,12 @@
                                 <div class="fw-semibold">{{ change.label }}</div>
                                 <div class="small"><span class="text-muted">Old:</span> {{ change.old|default:"--" }}</div>
                                 <div class="small"><span class="text-muted">New:</span> {{ change.new|default:"--" }}</div>
+                                {% if row.type == "initial" and change.field == "notes" %}
+                                    <div class="small">
+                                        <span class="badge text-bg-info">Default: will preserve existing note</span>
+                                        <span class="badge text-bg-secondary">Choose Apply imported notes to replace it</span>
+                                    </div>
+                                {% endif %}
                                 {% if change.reset %}<div class="small text-danger">{{ change.reset }}</div>{% endif %}
                             </div>
                         {% endfor %}
@@ -140,10 +169,13 @@
     </table>
 </div>
 
-<form method="post" action="{{ apply_url }}" class="cfm-action-bar justify-content-end">
+<form method="post" action="{{ apply_url }}" class="cfm-action-bar justify-content-end" id="apply-import-preview-form">
     {% csrf_token %}
     <input type="hidden" name="action" value="apply_preview">
     <input type="hidden" name="preview_token" value="{{ preview.token }}">
+    {% if preview.kind == "initial" and not preview.stats.notes_changed %}
+        <input type="hidden" name="notes_policy" value="preserve_existing_notes">
+    {% endif %}
     <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Cancel</a>
     <button class="btn btn-danger" {% if preview.blocking_errors %}disabled{% endif %}>Apply Confirmed Changes</button>
 </form>

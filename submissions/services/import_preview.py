@@ -124,6 +124,7 @@ def _stats(rows):
         "new": 0,
         "unchanged": 0,
         "metadata_updated": 0,
+        "notes_changed": 0,
         "paper_id_review_reset": 0,
         "title_match_reset": 0,
         "title_author_review_reset": 0,
@@ -138,6 +139,8 @@ def _stats(rows):
             stats["unchanged"] += 1
         if row.get("changes"):
             stats["metadata_updated"] += 1
+        if row.get("notes_changed"):
+            stats["notes_changed"] += 1
         for key in [
             "paper_id_review_reset",
             "title_match_reset",
@@ -190,6 +193,7 @@ def preview_initial_import(uploaded_file):
                     "pdf_reset": False,
                     "source_reset": False,
                     "corrected_files_archived": False,
+                    "notes_changed": False,
                 }
             )
             continue
@@ -210,6 +214,7 @@ def preview_initial_import(uploaded_file):
             if change
         ]
         master_title_changed = any(change["field"] == "title" for change in changes)
+        notes_changed = any(change["field"] == "notes" for change in changes)
         affected_count = FinalSubmission.objects.filter(paper_id_filled=paper_id).count() if master_title_changed else 0
         rows.append(
             {
@@ -224,9 +229,23 @@ def preview_initial_import(uploaded_file):
                 "pdf_reset": False,
                 "source_reset": False,
                 "corrected_files_archived": False,
+                "notes_changed": notes_changed,
             }
         )
+    rows.sort(key=_initial_preview_sort_key)
     return _make_payload("initial", rows, blocking_errors=blocking_errors)
+
+
+def _initial_preview_sort_key(row):
+    if row.get("paper_id_review_reset"):
+        priority = 0
+    elif row.get("status") == "new":
+        priority = 1
+    elif row.get("status") == "changed":
+        priority = 2
+    else:
+        priority = 3
+    return priority, row.get("identifier", "")
 
 
 def preview_final_import(uploaded_file, submission_files=None):
@@ -273,9 +292,44 @@ def preview_final_import(uploaded_file, submission_files=None):
             rows.append(_protected_editor_upload_row(existing, new_values))
             continue
         rows.append(_changed_final_row(existing, new_values, files))
+    rows.sort(key=_final_preview_sort_key)
     payload = _make_payload("final", rows, token=token, blocking_errors=blocking_errors)
     payload["invalid_files"] = invalid_files
     return _write_payload(payload)
+
+
+def _final_preview_sort_key(row):
+    if row.get("skip_apply") or row.get("invalid_master_id"):
+        priority = 0
+    elif (
+        row.get("paper_id_review_reset")
+        or row.get("title_match_reset")
+        or row.get("title_author_review_reset")
+    ):
+        priority = 1
+    elif (
+        row.get("pdf_reset")
+        or row.get("source_reset")
+        or row.get("corrected_files_archived")
+    ):
+        priority = 2
+    elif row.get("status") == "new":
+        priority = 3
+    elif row.get("status") == "changed":
+        priority = 4
+    else:
+        priority = 5
+    return priority, _preview_identifier_sort_key(row.get("identifier", ""))
+
+
+def _preview_identifier_sort_key(value):
+    text = str(value or "")
+    parts = re.split(r"(\d+)", text)
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.lower())
+        for part in parts
+        if part
+    )
 
 
 def _make_payload(kind, rows, token=None, blocking_errors=None):
@@ -476,13 +530,13 @@ def _file_hash(path):
     return digest.hexdigest()
 
 
-def apply_import_preview(token):
+def apply_import_preview(token, **options):
     payload = load_preview(token)
     _assert_fresh(payload)
     if payload.get("blocking_errors"):
         raise ValueError("Preview has blocking errors. Fix the uploaded file and preview again.")
     if payload["kind"] == "initial":
-        result = _apply_initial(payload)
+        result = _apply_initial(payload, **options)
     elif payload["kind"] == "final":
         result = _apply_final(payload)
     else:
@@ -492,19 +546,23 @@ def apply_import_preview(token):
 
 
 @transaction.atomic
-def _apply_initial(payload):
+def _apply_initial(payload, notes_policy="preserve_existing_notes"):
+    apply_imported_notes = notes_policy == "apply_imported_notes"
     for row in payload["rows"]:
         if row.get("skip_apply"):
             continue
         values = row["new"]
+        existing = InitialPaper.objects.filter(paper_id=values["paper_id"]).first()
+        defaults = {
+            "acceptance_status": values["acceptance_status"],
+            "title": values["title"],
+            "authors": values["authors"],
+        }
+        if not existing or apply_imported_notes:
+            defaults["notes"] = values["notes"]
         paper, _created = InitialPaper.objects.update_or_create(
             paper_id=values["paper_id"],
-            defaults={
-                "acceptance_status": values["acceptance_status"],
-                "title": values["title"],
-                "authors": values["authors"],
-                "notes": values["notes"],
-            },
+            defaults=defaults,
         )
         if row.get("paper_id_review_reset"):
             _reset_paper_id_review_for_paper(paper.paper_id, "Master Title changed; Paper ID review required again.")

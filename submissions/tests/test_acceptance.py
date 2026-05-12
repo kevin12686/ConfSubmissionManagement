@@ -683,8 +683,109 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
         apply_import_preview(preview["token"])
         paper = InitialPaper.objects.get(paper_id="P001")
         submission.refresh_from_db()
+        self.assertEqual(paper.notes, "Old note")
+        self.assertTrue(submission.paper_id_verified)
+
+        preview = preview_initial_import(
+            self.uploaded_csv(
+                "master.csv",
+                'paper_id,acceptance_status,title,authors,notes\n'
+                'P001,accepted,Stable Title,Ada,"  New note  \n\n\n  keep this  "\n',
+            )
+        )
+        apply_import_preview(preview["token"], notes_policy="apply_imported_notes")
+        paper.refresh_from_db()
+        submission.refresh_from_db()
         self.assertEqual(paper.notes, "New note\n\nkeep this")
         self.assertTrue(submission.paper_id_verified)
+
+    def test_paper_master_import_view_preserves_or_applies_notes_by_choice(self):
+        self.make_master_paper("P001", "Stable Title", "Ada", notes="System note")
+
+        response = self.client.post(
+            reverse("submissions:import_initial_papers"),
+            {
+                "file": self.uploaded_csv(
+                    "master.csv",
+                    "paper_id,acceptance_status,title,authors,notes\n"
+                    "P001,accepted,Stable Title,Ada,Imported note\n"
+                    "P002,accepted,New Title,Grace,New row note\n",
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Notes import choice")
+        self.assertContains(response, "Preserve existing system notes")
+        self.assertContains(response, "Apply imported notes")
+        self.assertContains(response, "Default: will preserve existing note")
+        token = response.context["preview"]["token"]
+
+        response = self.client.post(
+            reverse("submissions:import_initial_papers"),
+            {
+                "action": "apply_preview",
+                "preview_token": token,
+                "notes_policy": "preserve_existing_notes",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(InitialPaper.objects.get(paper_id="P001").notes, "System note")
+        self.assertEqual(InitialPaper.objects.get(paper_id="P002").notes, "New row note")
+
+        response = self.client.post(
+            reverse("submissions:import_initial_papers"),
+            {
+                "file": self.uploaded_csv(
+                    "master.csv",
+                    "paper_id,acceptance_status,title,authors,notes\n"
+                    "P001,accepted,Stable Title,Ada,Imported note\n",
+                ),
+            },
+        )
+        token = response.context["preview"]["token"]
+        response = self.client.post(
+            reverse("submissions:import_initial_papers"),
+            {
+                "action": "apply_preview",
+                "preview_token": token,
+                "notes_policy": "apply_imported_notes",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(InitialPaper.objects.get(paper_id="P001").notes, "Imported note")
+
+    def test_paper_master_import_preview_sorts_attention_rows_first(self):
+        self.make_master_paper("P001", "Old Title", "Ada")
+        self.make_master_paper("P002", "Same Title", "Ada")
+        self.make_master_paper("P003", "Notes Title", "Ada", notes="System note")
+
+        preview = preview_initial_import(
+            self.uploaded_csv(
+                "master.csv",
+                "paper_id,acceptance_status,title,authors,notes\n"
+                "P002,accepted,Same Title,Ada,\n"
+                "P004,accepted,New Title,Grace,New note\n"
+                "P003,accepted,Notes Title,Ada,Imported note\n"
+                "P001,accepted,New Title,Ada,\n",
+            )
+        )
+        ordered_ids = [row["identifier"] for row in preview["rows"]]
+        self.assertEqual(ordered_ids, ["P001", "P004", "P003", "P002"])
+
+        response = self.client.post(
+            reverse("submissions:import_initial_papers"),
+            {
+                "file": self.uploaded_csv(
+                    "master.csv",
+                    "paper_id,acceptance_status,title,authors,notes\n"
+                    "P002,accepted,Same Title,Ada,\n"
+                    "P004,accepted,New Title,Grace,New note\n"
+                    "P003,accepted,Notes Title,Ada,Imported note\n"
+                    "P001,accepted,New Title,Ada,\n",
+                ),
+            },
+        )
+        self.assertContains(response, "Rows are sorted by attention needed; unchanged rows are shown last.")
 
     def test_initial_import_reads_preferred_xlsx_sheet(self):
         buffer = io.BytesIO()
@@ -777,6 +878,79 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
         self.assertEqual(submission.format_status, "pending")
         self.assertIsNone(submission.similarity_score)
         self.assertFalse(submission.title_author_verified)
+
+    def test_final_import_preview_sorts_attention_rows_first(self):
+        self.make_master_paper("P001", "Reset Paper", "Ada")
+        self.make_master_paper("P002", "File Paper", "Ada")
+        self.make_master_paper("P003", "New Paper", "Ada")
+        self.make_master_paper("P004", "Metadata Paper", "Ada")
+        self.make_master_paper("P005", "Same Paper", "Ada")
+        self.make_master_paper("P006", "Editor Paper", "Ada")
+
+        reset_submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Reset Paper",
+            extracted_title="Reset Paper",
+        )
+        file_submission = self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="File Paper",
+            extracted_title="File Paper",
+        )
+        metadata_submission = self.make_final_submission(
+            final_submission_id="40",
+            paper_id_filled="P004",
+            final_submission_title="Metadata Paper",
+            final_submission_authors="Old Author",
+            extracted_title="Metadata Paper",
+        )
+        self.make_final_submission(
+            final_submission_id="50",
+            paper_id_filled="P005",
+            final_submission_title="Same Paper",
+            extracted_title="Same Paper",
+        )
+        self.make_final_submission(
+            final_submission_id="60",
+            paper_id_filled="P006",
+            final_submission_title="Editor Paper",
+            extracted_title="Editor Paper",
+            submission_origin="editor_upload",
+        )
+        reset_submission.paper_id_verified = True
+        reset_submission.verification_status = "verified"
+        reset_submission.save(update_fields=["paper_id_verified", "verification_status", "updated_at"])
+        metadata_submission.paper_id_verified = True
+        metadata_submission.save(update_fields=["paper_id_verified", "updated_at"])
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "50,P005,Same Paper,Ada,2026-05-01 09:00:00\n"
+                "30,P003,New Paper,Ada,2026-05-03 09:00:00\n"
+                "40,P004,Metadata Paper,New Author,2026-05-01 09:00:00\n"
+                "10,P001,Changed Reset Title,Ada,2026-05-01 09:00:00\n"
+                "70,UNKNOWN,Unknown Paper,Ada,2026-05-07 09:00:00\n"
+                "20,P002,File Paper,Ada,2026-05-01 09:00:00\n"
+                "60,P006,Editor Paper,Ada,2026-05-01 09:00:00\n",
+            ),
+            submission_files=[
+                self.uploaded_file("20_file_Submit_PDF.pdf", b"%PDF changed"),
+            ],
+        )
+        ordered_ids = [row["identifier"] for row in preview["rows"]]
+        self.assertEqual(ordered_ids, ["60", "70", "10", "20", "30", "40", "50"])
+
+        apply_import_preview(preview["token"])
+        metadata_submission.refresh_from_db()
+        file_submission.refresh_from_db()
+        reset_submission.refresh_from_db()
+        self.assertEqual(metadata_submission.final_submission_authors, "New Author")
+        self.assertEqual(file_submission.processing_status, "pending")
+        self.assertFalse(reset_submission.paper_id_verified)
 
 
 class VersionAndFileSelectionTests(EditorialAcceptanceTestCase):

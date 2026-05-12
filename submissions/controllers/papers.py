@@ -157,7 +157,10 @@ def initial_paper_delete(request, pk):
 def import_initial_papers_view(request):
     if request.method == "POST" and request.POST.get("action") == "apply_preview":
         try:
-            result = apply_paper_master_preview(request.POST.get("preview_token", ""))
+            result = apply_paper_master_preview(
+                request.POST.get("preview_token", ""),
+                notes_policy=request.POST.get("notes_policy", "preserve_existing_notes"),
+            )
             messages.success(request, result.message)
         except Exception as exc:
             logger.exception("Paper master apply failed")

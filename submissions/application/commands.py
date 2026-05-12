@@ -28,8 +28,11 @@ class ImportApplyResult:
         )
 
 
-def apply_paper_master_preview(token):
-    return ImportApplyResult("paper_master", apply_import_preview(token))
+def apply_paper_master_preview(token, notes_policy="preserve_existing_notes"):
+    return ImportApplyResult(
+        "paper_master",
+        apply_import_preview(token, notes_policy=notes_policy),
+    )
 
 
 def apply_final_submission_preview(token):
