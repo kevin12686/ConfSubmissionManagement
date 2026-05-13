@@ -9,3 +9,4 @@ data/**/*.pdf
 data/**/*.zip
 data/reports/*.xlsx
 data/reports/*.csv
+data

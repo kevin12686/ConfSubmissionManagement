@@ -16,6 +16,8 @@ Open <http://127.0.0.1:8000/>.
 
 On macOS, you can also double-click `start.command` in Finder. It creates `.venv` if needed, installs requirements, applies migrations, creates local data folders, and starts the server.
 
+On Windows, double-click `start_windows.bat` in File Explorer, or run it from Command Prompt. It performs the same setup/start steps as the macOS script.
+
 If macOS says the script is not executable after copying the folder, run:
 
 ```bash
@@ -29,7 +31,7 @@ Use this process when installing the system on a new computer.
 ### 1. Install prerequisites
 
 - Python 3.12 or newer
-- Terminal access
+- Terminal, Command Prompt, or PowerShell access
 - The full project folder
 - Optional: a System State ZIP from the old computer if you want to restore an existing conference
 
@@ -56,6 +58,12 @@ Or on macOS, double-click:
 start.command
 ```
 
+Or on Windows, double-click:
+
+```text
+start_windows.bat
+```
+
 The script will:
 
 - create `.venv` if it does not exist
@@ -65,6 +73,8 @@ The script will:
 - start the local server at <http://127.0.0.1:8000/>
 
 The script does not install Python itself. If `python3` is missing, install Python first and run the script again.
+
+On Windows, install Python from <https://www.python.org/downloads/windows/> and enable `Add python.exe to PATH` during installation. The Windows script first tries the Python launcher `py -3`, then falls back to `python`.
 
 ### 4. Restore an existing conference state
 
