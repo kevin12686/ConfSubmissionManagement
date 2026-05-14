@@ -45,6 +45,13 @@ PATH_TEXT_FIELDS = {
     "title_author_verification_image",
     "plagiarism_report_path",
 }
+TEMP_SNAPSHOT_EXCLUDED_DIRS = {
+    "formatting_upload_previews",
+    "import_previews",
+    "storage_cleanup_previews",
+    "system_state_restore_previews",
+    "system_state_backups",
+}
 MODEL_SPECS = [
     ("settings", AppSetting),
     ("initial_papers", InitialPaper),
@@ -156,19 +163,32 @@ def _managed_roots(settings_obj):
 
 
 def _is_excluded_file(path):
-    parts = set(path.parts)
-    return bool(
-        {
-            "format_previews",
-            "import_previews",
-            "pdf_thumbnails",
-            "storage_cleanup_previews",
-            "system_state_restore_previews",
-            "system_state_backups",
-            "title_author_verification",
-        }
-        & parts
-    )
+    return bool(TEMP_SNAPSHOT_EXCLUDED_DIRS & set(path.parts))
+
+
+def _path_candidates(value):
+    candidates = []
+    raw = str(value).strip()
+    if not raw:
+        return candidates
+
+    def add(path):
+        try:
+            resolved = str(Path(path).expanduser().resolve())
+        except (OSError, RuntimeError):
+            resolved = str(path)
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    add(raw)
+    media_url = str(django_settings.MEDIA_URL or "")
+    if media_url and raw.startswith(media_url):
+        add(Path(django_settings.MEDIA_ROOT) / raw[len(media_url) :].lstrip("/"))
+    raw_path = Path(raw).expanduser()
+    if not raw_path.is_absolute():
+        add(Path(django_settings.MEDIA_ROOT) / raw)
+        add(django_settings.BASE_DIR / raw)
+    return candidates
 
 
 def _collect_file_entries(settings_obj):
@@ -291,6 +311,7 @@ def export_system_state(reason="manual"):
         "record_counts": _model_counts(),
         "database_signature": state["database_signature"],
         "file_count": len(file_entries),
+        "artifact_counts": _artifact_counts(manifest_files),
         "files": manifest_files,
         "root_maps": root_maps,
     }
@@ -327,8 +348,12 @@ def preview_system_state_restore(uploaded_file):
         "state_archive_version": manifest.get("state_archive_version", manifest.get("snapshot_version")),
         "record_counts": manifest.get("record_counts", {}),
         "file_count": manifest.get("file_count", 0),
+        "artifact_counts": manifest.get("artifact_counts") or _artifact_counts(
+            manifest.get("files", [])
+        ),
         "missing_files": validation["missing"],
         "corrupt_files": validation["corrupt"],
+        "referenced_artifact_warnings": _referenced_artifact_warnings(state),
         "settings_summary": _settings_summary(state),
     }
     (target_dir / "preview.json").write_text(json.dumps(preview, indent=2), encoding="utf-8")
@@ -477,21 +502,83 @@ def _portable_folder_setting(field_name, value):
 def _portable_path_value(value, path_aliases, root_aliases):
     if not value:
         return value
-    try:
-        resolved_value = str(Path(value).expanduser().resolve())
-    except (OSError, RuntimeError):
-        resolved_value = str(value)
-    if resolved_value in path_aliases:
-        return path_aliases[resolved_value]["token"]
+    candidates = _path_candidates(value)
+    for resolved_value in candidates:
+        if resolved_value in path_aliases:
+            return path_aliases[resolved_value]["token"]
     for old_root, alias in sorted(root_aliases.items(), key=lambda item: len(item[0]), reverse=True):
-        if resolved_value == old_root:
-            return alias["token"]
-        prefix = old_root.rstrip("/") + "/"
-        if resolved_value.startswith(prefix):
-            return f"{alias['token']}/{resolved_value[len(prefix):]}"
+        for resolved_value in candidates:
+            if resolved_value == old_root:
+                return alias["token"]
+            prefix = old_root.rstrip("/") + "/"
+            if resolved_value.startswith(prefix):
+                return f"{alias['token']}/{resolved_value[len(prefix):]}"
     if _is_temp_path(str(value)) or Path(str(value)).is_absolute():
         return ""
     return value
+
+
+def _artifact_counts(files):
+    counts = {
+        "original_and_corrected_files": 0,
+        "title_author_verification_images": 0,
+        "pdf_thumbnails": 0,
+        "format_previews": 0,
+        "reports_exports": 0,
+        "other_files": 0,
+    }
+    for entry in files:
+        zip_path = entry.get("zip_path", "")
+        if "/title_author_verification/" in zip_path:
+            counts["title_author_verification_images"] += 1
+        elif "/pdf_thumbnails/" in zip_path:
+            counts["pdf_thumbnails"] += 1
+        elif "/format_previews/" in zip_path:
+            counts["format_previews"] += 1
+        elif (
+            "/reports/" in zip_path
+            or "/plagiarism_reports/" in zip_path
+            or "/crosscheck_upload/" in zip_path
+            or "/plagiarism_upload/" in zip_path
+        ):
+            counts["reports_exports"] += 1
+        elif (
+            "/final_submissions/" in zip_path
+            or "/source_submissions/" in zip_path
+            or "/formatted_pdfs/" in zip_path
+            or "/formatted_sources/" in zip_path
+            or "/active_final/" in zip_path
+            or "/old_versions/" in zip_path
+        ):
+            counts["original_and_corrected_files"] += 1
+        else:
+            counts["other_files"] += 1
+    return counts
+
+
+def _referenced_artifact_warnings(state):
+    warnings = []
+    for row in state.get("models", {}).get("final_submissions", []):
+        final_id = row.get("final_submission_id") or row.get("id") or "Unknown"
+        image = row.get("title_author_verification_image") or ""
+        if image and not str(image).startswith(("snapshot-file:", "snapshot-root:")):
+            warnings.append(
+                {
+                    "final_submission_id": final_id,
+                    "field": "title_author_verification_image",
+                    "message": "Verification image path was not included as a portable snapshot file.",
+                }
+            )
+        thumbnail_folder = row.get("thumbnail_folder") or ""
+        if thumbnail_folder and not str(thumbnail_folder).startswith(("snapshot-file:", "snapshot-root:")):
+            warnings.append(
+                {
+                    "final_submission_id": final_id,
+                    "field": "thumbnail_folder",
+                    "message": "Thumbnail folder path was not included as a portable snapshot path.",
+                }
+            )
+    return warnings
 
 
 def _restore_target(entry):
@@ -589,14 +676,12 @@ def _remap_path_value(value, path_map, root_map):
             prefix = root_token + "/"
             if value.startswith(prefix):
                 return str(Path(restored_root) / value[len(prefix) :])
-    try:
-        resolved_value = str(Path(value).expanduser().resolve())
-    except (OSError, RuntimeError):
-        resolved_value = value
-    if resolved_value in path_map:
-        return path_map[resolved_value]
+    candidates = _path_candidates(value)
+    for resolved_value in candidates:
+        if resolved_value in path_map:
+            return path_map[resolved_value]
     for old_root, new_root in sorted(root_map, key=lambda item: len(item[0]), reverse=True):
-        compare_values = {value, resolved_value}
+        compare_values = {value, *candidates}
         if old_root in compare_values:
             return new_root
         prefix = old_root.rstrip("/") + "/"

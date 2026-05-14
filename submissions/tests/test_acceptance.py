@@ -542,10 +542,28 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         pdf_path = self.media_root / "active" / "R001.pdf"
         source_path = self.media_root / "source" / "R001.docx"
         report_path = self.media_root / "reports" / "R001_report.pdf"
+        verification_image = (
+            self.media_root
+            / "title_author_verification"
+            / "9001"
+            / "R001.pdf.png"
+        )
+        thumbnail_path = self.media_root / "pdf_thumbnails" / "9001" / "page-1.png"
+        format_preview = self.media_root / "format_previews" / "9001-preview.png"
+        temp_formatting_preview = (
+            self.media_root
+            / "formatting_upload_previews"
+            / "temp-token"
+            / "corrected_pdf.pdf"
+        )
         for path, payload in [
             (pdf_path, b"publication pdf"),
             (source_path, b"publication source"),
             (report_path, b"plagiarism report"),
+            (verification_image, b"title author review image"),
+            (thumbnail_path, b"thumbnail image"),
+            (format_preview, b"format preview"),
+            (temp_formatting_preview, b"temporary formatting upload"),
         ]:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
@@ -558,6 +576,12 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             current_file_path=str(pdf_path),
             source_current_file_path=str(source_path),
             plagiarism_report_path=str(report_path),
+            title_author_verification_image=(
+                f"{django_settings.MEDIA_URL}title_author_verification/9001/R001.pdf.png"
+            ),
+            thumbnail_folder="pdf_thumbnails/9001",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
         )
         PaperAuthor.objects.create(
             final_submission=submission,
@@ -576,8 +600,23 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         )
 
         snapshot = export_system_state()
+        with zipfile.ZipFile(snapshot["path"]) as archive:
+            names = set(archive.namelist())
+            self.assertIn(
+                "files/media/title_author_verification/9001/R001.pdf.png",
+                names,
+            )
+            self.assertIn("files/media/pdf_thumbnails/9001/page-1.png", names)
+            self.assertIn("files/media/format_previews/9001-preview.png", names)
+            self.assertNotIn(
+                "files/media/formatting_upload_previews/temp-token/corrected_pdf.pdf",
+                names,
+            )
         FinalSubmission.objects.create(final_submission_id="temp", paper_id_filled="TEMP")
         pdf_path.unlink()
+        verification_image.unlink()
+        thumbnail_path.unlink()
+        format_preview.unlink()
         upload = SimpleUploadedFile(
             "snapshot.zip",
             snapshot["path"].read_bytes(),
@@ -600,6 +639,19 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         self.assertEqual(Path(restored.current_file_path).read_bytes(), b"publication pdf")
         self.assertTrue(Path(restored.source_current_file_path).exists())
         self.assertTrue(Path(restored.plagiarism_report_path).exists())
+        self.assertTrue(Path(restored.title_author_verification_image).exists())
+        self.assertEqual(
+            Path(restored.title_author_verification_image).read_bytes(),
+            b"title author review image",
+        )
+        self.assertTrue((Path(restored.thumbnail_folder) / "page-1.png").exists())
+        self.assertEqual(
+            (Path(restored.thumbnail_folder) / "page-1.png").read_bytes(),
+            b"thumbnail image",
+        )
+        self.assertTrue((self.media_root / "format_previews" / "9001-preview.png").exists())
+        self.assertEqual(restored.title_author_review_status, "review_ok")
+        self.assertTrue(restored.title_author_verified)
         self.assertEqual(PaperAuthor.objects.count(), 1)
         self.assertEqual(AuthorLimitWaiver.objects.count(), 1)
         self.assertTrue(Path(result["pre_restore_backup"]).exists())

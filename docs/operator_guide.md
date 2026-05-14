@@ -136,7 +136,7 @@ Use `/reports/` for exports.
 
 ## Backup, Cleanup, And Clear Database
 
-Download a System State ZIP before moving machines, archiving work, or clearing data.
+Download a System State ZIP before moving machines, archiving work, or clearing data. The snapshot includes settings, conference name, database workflow state, managed PDFs/source files, plagiarism reports, title/author verification images, page thumbnails, and format previews. Temporary import/restore/upload preview tokens are not included.
 
 Use Storage Management in Settings for preview-first cleanup:
 

@@ -129,6 +129,17 @@
                         <dd class="col-sm-7">v{{ system_state_preview.state_archive_version }}</dd>
                         <dt class="col-sm-5">Files</dt>
                         <dd class="col-sm-7">{{ system_state_preview.file_count }}</dd>
+                        <dt class="col-sm-5">Review artifacts</dt>
+                        <dd class="col-sm-7">
+                            title/author images {{ system_state_preview.artifact_counts.title_author_verification_images|default:0 }},
+                            thumbnails {{ system_state_preview.artifact_counts.pdf_thumbnails|default:0 }},
+                            format previews {{ system_state_preview.artifact_counts.format_previews|default:0 }}
+                        </dd>
+                        <dt class="col-sm-5">Reports / managed files</dt>
+                        <dd class="col-sm-7">
+                            reports {{ system_state_preview.artifact_counts.reports_exports|default:0 }},
+                            original/corrected/current files {{ system_state_preview.artifact_counts.original_and_corrected_files|default:0 }}
+                        </dd>
                         <dt class="col-sm-5">Records</dt>
                         <dd class="col-sm-7">
                             Papers {{ system_state_preview.record_counts.initial_papers|default:0 }},
@@ -146,7 +157,25 @@
                         <div class="alert alert-warning">
                             This snapshot has missing or corrupted files and cannot be restored.
                         </div>
-                    {% else %}
+                    {% endif %}
+                    {% if system_state_preview.referenced_artifact_warnings %}
+                        <div class="alert alert-warning">
+                            <div class="fw-semibold">Some referenced review artifacts are not portable in this snapshot.</div>
+                            <ul class="mb-0">
+                                {% for warning in system_state_preview.referenced_artifact_warnings %}
+                                    <li>{{ warning.final_submission_id }}: {{ warning.message }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+                    {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
+                        {% if system_state_preview.referenced_artifact_warnings %}
+                            <div class="alert alert-info">
+                                You can still restore this ZIP, but the listed review artifacts may need to be regenerated or checked after restore.
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                    {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
                         <form method="post" class="vstack gap-2">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="apply_system_restore">

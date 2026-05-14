@@ -176,6 +176,8 @@ It does not remove original uploads, corrected files, plagiarism report PDFs, Sy
 
 Run Process PDFs for page thumbnails. Run Title/Author Extraction for verification images. Referenced thumbnails and previews are not removed by conservative cleanup.
 
+If they are missing after a System State restore, the ZIP may have been created by an older app version that did not include all review artifacts. Use a fresh System State ZIP from the original machine when possible; otherwise regenerate the missing artifacts and re-check the affected reviews before final export.
+
 ### System State restore says unsupported version
 
 The ZIP was created by a different state archive version. Use the matching app version shown in the footer and in the ZIP manifest.

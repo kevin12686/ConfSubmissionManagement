@@ -124,9 +124,9 @@ The app stores local data under `data/` by default:
 - `data/old_versions/`: retained inactive outputs.
 - `data/reports/`: generated Excel/ZIP exports.
 - `data/plagiarism_reports/`: uploaded plagiarism report PDFs.
-- `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: generated UI previews.
+- `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: generated UI/review artifacts used by Process PDFs, Formatting Review, and Title/Author Review.
 
-Folder paths can be changed in Settings. System State restore remaps managed paths into the current computer's local project folder instead of preserving old absolute paths.
+Folder paths can be changed in Settings. System State ZIPs include referenced review artifacts such as title/author verification images, page thumbnails, and format previews, while excluding temporary preview tokens. System State restore remaps managed paths into the current computer's local project folder instead of preserving old absolute paths.
 
 ## Manual Commands
 

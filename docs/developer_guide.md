@@ -92,7 +92,8 @@ Use app-managed file helpers instead of ad hoc path logic.
 - Publication source must resolve through corrected, then current/original priority.
 - Do not delete old uploads for traceability.
 - Do not expose editable path text fields for user-managed files when upload/link UI is safer.
-- System State restore must remap files into the current project `data/` tree.
+- System State backup must include referenced review artifacts, including title/author verification images, PDF thumbnails, and format previews.
+- System State restore must remap files into the current project `data/` tree and must not preserve old machine-specific absolute paths.
 
 ## Tests
 
