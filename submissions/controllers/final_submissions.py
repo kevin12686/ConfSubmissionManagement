@@ -78,6 +78,8 @@ from submissions.services.formatting import (
 )
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
+    final_submission_display_pdf_info,
+    final_submission_display_source_info,
     publication_pdf_info,
     publication_source_info,
     resolve_folder,
@@ -148,6 +150,24 @@ def publication_source(request, pk):
     info = publication_source_info(submission)
     if not info["exists"]:
         raise Http404("Publication source file not found.")
+    path = Path(info["path"])
+    return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)
+
+
+def final_submission_display_pdf(request, pk):
+    submission = get_object_or_404(FinalSubmission, pk=pk)
+    info = final_submission_display_pdf_info(submission)
+    if not info["exists"]:
+        raise Http404("Final submission PDF not found.")
+    path = Path(info["path"])
+    return FileResponse(path.open("rb"), content_type="application/pdf", filename=path.name)
+
+
+def final_submission_display_source(request, pk):
+    submission = get_object_or_404(FinalSubmission, pk=pk)
+    info = final_submission_display_source_info(submission)
+    if not info["exists"]:
+        raise Http404("Final submission source file not found.")
     path = Path(info["path"])
     return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)
 

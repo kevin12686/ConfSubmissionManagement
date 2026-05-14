@@ -2455,6 +2455,119 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 
+    def test_final_submission_list_files_show_corrected_then_original(self):
+        self.make_master_paper("P001", "Display Files", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Display Files",
+            current_file_path=str(self.make_pdf_file("active-final.pdf", b"active final pdf")),
+            source_current_file_path=str(self.make_source_file("active-final.docx", b"active source")),
+            original_file_name="10_file_Submit_PDF.pdf",
+            source_original_file_name="10_file_Submit_Source.zip",
+        )
+        submission.pdf_file.save("10_file_Submit_PDF.pdf", ContentFile(b"original pdf"), save=True)
+        submission.source_file.save("10_file_Submit_Source.zip", ContentFile(b"original source"), save=True)
+        submission.formatted_pdf_file.save("corrected.pdf", ContentFile(b"corrected pdf"), save=True)
+        submission.formatted_source_file.save("corrected.docx", ContentFile(b"corrected source"), save=True)
+
+        page = self.client.get(reverse("submissions:final_submission_list"))
+        pdf_url = reverse("submissions:final_submission_display_pdf", args=[submission.pk])
+        source_url = reverse("submissions:final_submission_display_source", args=[submission.pk])
+        self.assertContains(page, "Original or Corrected files")
+        self.assertContains(page, pdf_url)
+        self.assertContains(page, source_url)
+        self.assertContains(page, "corrected.pdf")
+        self.assertContains(page, "corrected.docx")
+        self.assertContains(page, "Corrected")
+        self.assertNotContains(page, "active-final.pdf")
+        self.assertNotContains(page, "active-final.docx")
+        self.assertNotContains(page, reverse("submissions:publication_pdf", args=[submission.pk]))
+        self.assertNotContains(page, reverse("submissions:publication_source", args=[submission.pk]))
+
+        pdf_response = self.client.get(pdf_url)
+        self.assertEqual(b"".join(pdf_response.streaming_content), b"corrected pdf")
+        source_response = self.client.get(source_url)
+        self.assertEqual(b"".join(source_response.streaming_content), b"corrected source")
+
+        submission.formatted_pdf_file.delete(save=True)
+        submission.formatted_source_file.delete(save=True)
+        page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(page, "10_file_Submit_PDF.pdf")
+        self.assertContains(page, "10_file_Submit_Source.zip")
+        self.assertContains(page, "Original")
+        self.assertNotContains(page, "active-final.pdf")
+        self.assertNotContains(page, "active-final.docx")
+        self.assertEqual(b"".join(self.client.get(pdf_url).streaming_content), b"original pdf")
+        self.assertEqual(b"".join(self.client.get(source_url).streaming_content), b"original source")
+
+    def test_final_submission_display_file_links_404_when_only_current_paths_exist(self):
+        self.make_master_paper("P001", "Missing Row Files", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Missing Row Files",
+            current_file_path="",
+            source_current_file_path="",
+        )
+        page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(page, "No PDF")
+        self.assertContains(page, "No source")
+        self.assertEqual(
+            self.client.get(reverse("submissions:final_submission_display_pdf", args=[submission.pk])).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(reverse("submissions:final_submission_display_source", args=[submission.pk])).status_code,
+            404,
+        )
+
+    def test_replaced_final_submission_file_links_stay_on_that_row_originals(self):
+        self.make_master_paper("P001", "Replaced Files", "Ada")
+        replaced = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Replaced Files",
+            active_version=False,
+            current_file_path=str(self.make_pdf_file("replaced-current.pdf", b"replaced pdf")),
+            source_current_file_path=str(self.make_source_file("replaced-current.docx", b"replaced source")),
+            original_file_name="replaced-original.pdf",
+            source_original_file_name="replaced-original.docx",
+        )
+        replaced.pdf_file.save("replaced-original.pdf", ContentFile(b"replaced original pdf"), save=True)
+        replaced.source_file.save("replaced-original.docx", ContentFile(b"replaced original source"), save=True)
+        active = self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P001",
+            final_submission_title="Replaced Files",
+            active_version=True,
+            current_file_path=str(self.make_pdf_file("active-current.pdf", b"active pdf")),
+            source_current_file_path=str(self.make_source_file("active-current.docx", b"active source")),
+        )
+
+        page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(page, reverse("submissions:final_submission_display_pdf", args=[replaced.pk]))
+        self.assertNotContains(page, reverse("submissions:final_submission_display_pdf", args=[active.pk]))
+        self.assertContains(page, "replaced-original.pdf")
+        self.assertNotContains(page, "replaced-current.pdf")
+        self.assertNotContains(page, "active-current.pdf")
+        self.assertEqual(
+            b"".join(
+                self.client.get(
+                    reverse("submissions:final_submission_display_pdf", args=[replaced.pk])
+                ).streaming_content
+            ),
+            b"replaced original pdf",
+        )
+        self.assertEqual(
+            b"".join(
+                self.client.get(
+                    reverse("submissions:final_submission_display_source", args=[replaced.pk])
+                ).streaming_content
+            ),
+            b"replaced original source",
+        )
+
     def test_old_versions_are_classified_and_exported(self):
         self.make_master_paper("P001", "Versioned Paper", "Ada")
         replaced = self.make_final_submission(

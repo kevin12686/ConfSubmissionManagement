@@ -4,7 +4,7 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Final Submissions</h1>
-        <div class="cfm-page-subtitle">Import, review, and edit author final-submission metadata and uploaded files.</div>
+        <div class="cfm-page-subtitle">Import, review, and edit author final-submission metadata and Original or Corrected files for this submission row. Use Organized List for current publication files.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
@@ -105,17 +105,27 @@
 	                <td class="cfm-title-cell">{{ item.final_submission_title }}</td>
 	                <td class="cfm-file-cell">
 	                    <div class="mb-2">
-	                        <div><span class="badge text-bg-primary">PDF</span></div>
-	                        {% if item.original_file_name or item.current_file_path %}
-	                            <div class="small">{{ item.original_file_name|default:item.current_file_path|truncatechars:42 }}</div>
+	                        <div>
+	                            <span class="badge text-bg-primary">PDF</span>
+	                            {% if item.display_pdf.exists %}<span class="badge text-bg-{% if item.display_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ item.display_pdf.label }}</span>{% endif %}
+	                        </div>
+	                        {% if item.display_pdf.exists %}
+	                            <div class="small">
+	                                <a href="{{ item.display_pdf.url }}" target="_blank" rel="noopener">{{ item.display_pdf.filename|truncatechars:42 }}</a>
+	                            </div>
 	                        {% else %}
 	                            <div class="small text-warning">No PDF</div>
 	                        {% endif %}
 	                    </div>
 	                    <div>
-	                        <div><span class="badge text-bg-secondary">Source</span></div>
-	                        {% if item.source_original_file_name or item.source_current_file_path %}
-	                            <div class="small">{{ item.source_original_file_name|default:item.source_current_file_path|truncatechars:42 }}</div>
+	                        <div>
+	                            <span class="badge text-bg-secondary">Source</span>
+	                            {% if item.display_source.exists %}<span class="badge text-bg-{% if item.display_source.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ item.display_source.label }}</span>{% endif %}
+	                        </div>
+	                        {% if item.display_source.exists %}
+	                            <div class="small">
+	                                <a href="{{ item.display_source.url }}">{{ item.display_source.filename|truncatechars:42 }}</a>
+	                            </div>
 	                        {% else %}
 	                            <div class="small text-muted">No source</div>
 	                        {% endif %}

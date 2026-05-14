@@ -94,6 +94,44 @@ def publication_source_info(submission):
     return _publication_file_info(path=None, label="No source", source="missing", url="")
 
 
+def final_submission_display_pdf_info(submission):
+    if submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists():
+        return _submission_file_info(
+            path=Path(submission.formatted_pdf_file.path),
+            label="Corrected",
+            source="corrected",
+            url=reverse("submissions:final_submission_display_pdf", args=[submission.pk]),
+        )
+    if submission.pdf_file and Path(submission.pdf_file.path).exists():
+        return _submission_file_info(
+            path=Path(submission.pdf_file.path),
+            label="Original",
+            source="original",
+            url=reverse("submissions:final_submission_display_pdf", args=[submission.pk]),
+            filename=submission.original_file_name,
+        )
+    return _submission_file_info(path=None, label="No PDF", source="missing", url="")
+
+
+def final_submission_display_source_info(submission):
+    if submission.formatted_source_file and Path(submission.formatted_source_file.path).exists():
+        return _submission_file_info(
+            path=Path(submission.formatted_source_file.path),
+            label="Corrected",
+            source="corrected",
+            url=reverse("submissions:final_submission_display_source", args=[submission.pk]),
+        )
+    if submission.source_file and Path(submission.source_file.path).exists():
+        return _submission_file_info(
+            path=Path(submission.source_file.path),
+            label="Original",
+            source="original",
+            url=reverse("submissions:final_submission_display_source", args=[submission.pk]),
+            filename=submission.source_original_file_name,
+        )
+    return _submission_file_info(path=None, label="No source", source="missing", url="")
+
+
 def corrected_pdf_needs_processing(submission):
     if not submission.formatted_pdf_file or not Path(submission.formatted_pdf_file.path).exists():
         return False
@@ -148,6 +186,13 @@ def _publication_file_info(path, label, source, url):
         "source": source,
         "url": url,
         "exists": bool(path and path.exists()),
+    }
+
+
+def _submission_file_info(path, label, source, url, filename=""):
+    return {
+        **_publication_file_info(path, label, source, url),
+        "filename": filename or (path.name if path else ""),
     }
 
 

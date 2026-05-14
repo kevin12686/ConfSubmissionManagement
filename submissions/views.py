@@ -11,6 +11,8 @@ from .controllers.final_submissions import (
     final_submission_form,
     final_submission_list,
     import_final_submissions_view,
+    final_submission_display_pdf,
+    final_submission_display_source,
     plagiarism_report,
     publication_pdf,
     publication_source,

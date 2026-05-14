@@ -9,6 +9,8 @@ from submissions.services.checks import (
 )
 from submissions.services.file_manager import (
     active_pdfs_needing_processing,
+    final_submission_display_pdf_info,
+    final_submission_display_source_info,
     pdf_available_for_processing,
     publication_pdf_info,
 )
@@ -144,6 +146,8 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
         submission.verification_badge_label = label
         submission.verification_badge_level = level
         submission.version_conflict = submission.paper_id_filled in conflict_ids
+        submission.display_pdf = final_submission_display_pdf_info(submission)
+        submission.display_source = final_submission_display_source_info(submission)
     filter_tabs = [
         {**option, "count": tab_counts.get(option["value"], 0)}
         for option in FINAL_SUBMISSION_FILTER_OPTIONS
