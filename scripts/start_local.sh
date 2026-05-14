@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 HOST="${DJANGO_HOST:-127.0.0.1}"
 PORT="${DJANGO_PORT:-8000}"
+SERVER_URL="http://${HOST}:${PORT}/"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     echo "Python 3 was not found. Install Python 3 first, then run this script again."
@@ -39,8 +40,12 @@ python manage.py migrate
 
 echo
 echo "Conference Final Manager is starting."
-echo "Open: http://${HOST}:${PORT}/"
+echo "Open: ${SERVER_URL}"
 echo "Press Ctrl+C in this window to stop the server."
 echo
+
+if [ "$(uname -s)" = "Darwin" ] && [ "${OPEN_BROWSER:-1}" != "0" ]; then
+    (sleep 2; open "${SERVER_URL}") >/dev/null 2>&1 &
+fi
 
 python manage.py runserver "${HOST}:${PORT}"

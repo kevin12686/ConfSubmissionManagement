@@ -6,6 +6,7 @@ cd /d "%ROOT_DIR%" || goto error
 
 if "%DJANGO_HOST%"=="" set "DJANGO_HOST=127.0.0.1"
 if "%DJANGO_PORT%"=="" set "DJANGO_PORT=8000"
+set "SERVER_URL=http://%DJANGO_HOST%:%DJANGO_PORT%/"
 
 if not exist ".venv\Scripts\python.exe" (
     echo Creating local virtual environment...
@@ -48,9 +49,13 @@ echo Applying database migrations...
 
 echo.
 echo Conference Final Manager is starting.
-echo Open: http://%DJANGO_HOST%:%DJANGO_PORT%/
+echo Open: %SERVER_URL%
 echo Press Ctrl+C in this window to stop the server.
 echo.
+
+if not "%OPEN_BROWSER%"=="0" (
+    start "" cmd /c "timeout /t 2 /nobreak >nul && start "" "%SERVER_URL%""
+)
 
 "%PYTHON%" manage.py runserver %DJANGO_HOST%:%DJANGO_PORT%
 goto end
