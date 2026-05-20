@@ -5,6 +5,7 @@ import zipfile
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from django.db import models
 from django.utils import timezone
 
 from submissions.models import AppSetting, FinalSubmission
@@ -19,6 +20,12 @@ CROSSCHECK_RESULT_TEMPLATE_COLUMNS = [
 ]
 
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+CROSSCHECK_EXPORT_ALL = "all"
+CROSSCHECK_EXPORT_MISSING_RESULTS = "missing_results"
+CROSSCHECK_EXPORT_SCOPES = {
+    CROSSCHECK_EXPORT_ALL,
+    CROSSCHECK_EXPORT_MISSING_RESULTS,
+}
 
 
 def validate_token(token):
@@ -48,34 +55,33 @@ def crosscheck_export_root():
     return resolve_folder("data/crosscheck_upload")
 
 
-def prepare_crosscheck_upload(token):
+def prepare_crosscheck_upload(token, scope=CROSSCHECK_EXPORT_ALL):
     token = validate_token(token)
-    target_dir = crosscheck_export_root() / token
+    if scope not in CROSSCHECK_EXPORT_SCOPES:
+        raise ValueError("Unknown CrossCheck export scope.")
+    target_dir = _crosscheck_export_dir(token, scope)
     if target_dir.exists():
         shutil.rmtree(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest_path = target_dir / f"crosscheck_manifest_{token}.csv"
-    zip_path = target_dir / f"crosscheck_upload_{token}.zip"
+    manifest_path = target_dir / _crosscheck_manifest_name(token, scope)
+    zip_path = target_dir / _crosscheck_zip_name(token, scope)
     exported = []
     skipped = []
+    fieldnames = [
+        "export_scope",
+        "paper_id",
+        "final_submission_id",
+        "source_publication_pdf",
+        "exported_filename",
+    ]
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        fieldnames.extend(["missing_plagiarism_percent", "missing_single_percent"])
 
     with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
-        writer = csv.DictWriter(
-            manifest_file,
-            fieldnames=[
-                "paper_id",
-                "final_submission_id",
-                "source_publication_pdf",
-                "exported_filename",
-            ],
-        )
+        writer = csv.DictWriter(manifest_file, fieldnames=fieldnames)
         writer.writeheader()
-        for submission in FinalSubmission.objects.filter(
-            active_version=True,
-            discarded=False,
-            excluded_from_publication=False,
-        ).order_by("paper_id_filled"):
+        for submission in _crosscheck_export_queryset(scope):
             paper_id = clean_value(submission.paper_id_filled)
             if not paper_id:
                 skipped.append(_skip_row(submission, "Missing Paper ID."))
@@ -91,14 +97,21 @@ def prepare_crosscheck_upload(token):
             exported_filename = f"{paper_id}_{token}.pdf"
             target_pdf = target_dir / exported_filename
             shutil.copy2(publication_pdf["path"], target_pdf)
-            exported.append(
-                {
-                    "paper_id": paper_id,
-                    "final_submission_id": submission.final_submission_id,
-                    "source_publication_pdf": publication_pdf["path"],
-                    "exported_filename": exported_filename,
-                }
-            )
+            row = {
+                "export_scope": scope,
+                "paper_id": paper_id,
+                "final_submission_id": submission.final_submission_id,
+                "source_publication_pdf": publication_pdf["path"],
+                "exported_filename": exported_filename,
+            }
+            if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+                row.update(
+                    {
+                        "missing_plagiarism_percent": submission.similarity_score is None,
+                        "missing_single_percent": submission.single_similarity_score is None,
+                    }
+                )
+            exported.append(row)
             writer.writerow(exported[-1])
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -108,14 +121,63 @@ def prepare_crosscheck_upload(token):
 
     return {
         "token": token,
+        "scope": scope,
+        "scope_label": _crosscheck_scope_label(scope),
         "target_dir": str(target_dir),
         "zip_path": str(zip_path),
+        "zip_filename": zip_path.name,
         "download_url": "",
         "manifest_path": str(manifest_path),
         "exported_count": len(exported),
         "skipped_count": len(skipped),
         "skipped": skipped,
     }
+
+
+def crosscheck_zip_path(token, scope=CROSSCHECK_EXPORT_ALL):
+    token = validate_token(token)
+    if scope not in CROSSCHECK_EXPORT_SCOPES:
+        raise ValueError("Unknown CrossCheck export scope.")
+    return _crosscheck_export_dir(token, scope) / _crosscheck_zip_name(token, scope)
+
+
+def _crosscheck_export_queryset(scope):
+    queryset = FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+    )
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        queryset = queryset.filter(
+            models.Q(similarity_score__isnull=True)
+            | models.Q(single_similarity_score__isnull=True)
+        )
+    return queryset.order_by("paper_id_filled")
+
+
+def _crosscheck_export_dir(token, scope):
+    root = crosscheck_export_root() / token
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        return root / "missing"
+    return root
+
+
+def _crosscheck_zip_name(token, scope):
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        return f"crosscheck_missing_upload_{token}.zip"
+    return f"crosscheck_upload_{token}.zip"
+
+
+def _crosscheck_manifest_name(token, scope):
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        return f"crosscheck_missing_manifest_{token}.csv"
+    return f"crosscheck_manifest_{token}.csv"
+
+
+def _crosscheck_scope_label(scope):
+    if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
+        return "Missing CrossCheck results only"
+    return "All publication PDFs"
 
 
 def import_crosscheck_results(uploaded_file):

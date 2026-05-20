@@ -37,6 +37,7 @@ urlpatterns = [
     path("integrations/crosscheck/", views.integration, name="integration"),
     path("integrations/system-state/", views.integration, name="system_state"),
     path("integrations/crosscheck/zip/<str:token>/", views.download_crosscheck_zip, name="download_crosscheck_zip"),
+    path("integrations/crosscheck/zip/<str:token>/<str:scope>/", views.download_crosscheck_zip_scoped, name="download_crosscheck_zip_scoped"),
     path("integrations/system-state/download/", views.download_system_state, name="download_system_state"),
     path("settings/", views.app_settings, name="settings"),
     path("settings/clear-database/", views.clear_database, name="clear_database"),

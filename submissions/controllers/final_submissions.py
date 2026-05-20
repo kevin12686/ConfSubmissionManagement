@@ -2,6 +2,7 @@ import csv
 import logging
 import shutil
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.conf import settings as django_settings
@@ -10,6 +11,7 @@ from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 
 from submissions.forms import (
@@ -215,6 +217,7 @@ def final_submission_list(request):
 
 def final_submission_form(request, pk=None):
     submission = get_object_or_404(FinalSubmission, pk=pk) if pk else None
+    return_url = _safe_return_url(request)
     if submission and request.method == "POST" and request.POST.get("action") in {
         "discard_submission",
         "undo_discard_submission",
@@ -228,7 +231,10 @@ def final_submission_form(request, pk=None):
                 messages.success(request, f"Final submission {submission.final_submission_id} restored.")
         except Exception as exc:
             messages.error(request, str(exc))
-        return redirect("submissions:final_submission_edit", pk=submission.pk)
+        edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
+        if return_url:
+            edit_url = f"{edit_url}?{urlencode({'next': return_url})}"
+        return redirect(edit_url)
     form = FinalSubmissionForm(
         request.POST or None, request.FILES or None, instance=submission
     )
@@ -254,12 +260,28 @@ def final_submission_form(request, pk=None):
         ]
         suffix = f" ({'; '.join(details)})." if details else "."
         messages.success(request, f"Final submission saved{suffix}")
+        if return_url:
+            return redirect(return_url)
         return redirect("submissions:final_submission_list")
-    context = {"form": form, "submission": submission}
+    context = {"form": form, "submission": submission, "return_url": return_url}
     if submission:
         context["publication_pdf"] = publication_pdf_info(submission)
         context["publication_source"] = publication_source_info(submission)
     return render(request, "submissions/final_submission_form.html", context)
+
+
+def _safe_return_url(request):
+    candidate = request.POST.get("next") or request.GET.get("next") or ""
+    candidate = candidate.strip()
+    if not candidate:
+        return ""
+    if url_has_allowed_host_and_scheme(
+        candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    return ""
 
 
 def editor_upload_form(request):

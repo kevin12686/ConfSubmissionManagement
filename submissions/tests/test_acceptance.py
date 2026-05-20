@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 from unittest.mock import patch
 
 import pandas as pd
@@ -74,7 +75,12 @@ from submissions.services.reports import (
     export_old_versions,
     export_publication_package,
 )
-from submissions.services.crosscheck import import_crosscheck_results, upload_crosscheck_reports
+from submissions.services.crosscheck import (
+    CROSSCHECK_EXPORT_MISSING_RESULTS,
+    import_crosscheck_results,
+    prepare_crosscheck_upload,
+    upload_crosscheck_reports,
+)
 from submissions.services.system_state import (
     CONFIRMATION_TEXT,
     apply_system_state_restore,
@@ -1356,10 +1362,119 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         self.assertEqual(active.single_similarity_score, 2)
         self.assertEqual(publication_readiness_rows(), [])
 
+    def test_crosscheck_missing_results_export_uses_current_publication_pdfs(self):
+        self.make_master_paper("P001", "Needs CrossCheck Corrected", "Ada")
+        corrected = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Needs CrossCheck Corrected",
+            extracted_title="Needs CrossCheck Corrected",
+            current_file_path=str(self.make_pdf_file("p001-active.pdf", b"active-final p001")),
+            similarity_score=None,
+            single_similarity_score=2,
+        )
+        corrected.formatted_pdf_file.save(
+            "corrected-p001.pdf",
+            ContentFile(b"corrected publication p001"),
+            save=True,
+        )
+        self.make_master_paper("P002", "Needs CrossCheck Active Final", "Ada")
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="Needs CrossCheck Active Final",
+            extracted_title="Needs CrossCheck Active Final",
+            current_file_path=str(self.make_pdf_file("p002-active.pdf", b"active-final p002")),
+            similarity_score=3,
+            single_similarity_score=None,
+        )
+        self.make_master_paper("P003", "Already Checked", "Ada")
+        self.make_final_submission(
+            final_submission_id="30",
+            paper_id_filled="P003",
+            final_submission_title="Already Checked",
+            extracted_title="Already Checked",
+            current_file_path=str(self.make_pdf_file("p003-active.pdf", b"active-final p003")),
+            similarity_score=4,
+            single_similarity_score=1,
+        )
+        self.make_master_paper("P004", "Discarded Missing", "Ada")
+        self.make_final_submission(
+            final_submission_id="40",
+            paper_id_filled="P004",
+            final_submission_title="Discarded Missing",
+            extracted_title="Discarded Missing",
+            discarded=True,
+            similarity_score=None,
+            single_similarity_score=None,
+        )
+        self.make_master_paper("P005", "Excluded Missing", "Ada")
+        self.make_final_submission(
+            final_submission_id="50",
+            paper_id_filled="P005",
+            final_submission_title="Excluded Missing",
+            extracted_title="Excluded Missing",
+            excluded_from_publication=True,
+            similarity_score=None,
+            single_similarity_score=None,
+        )
+
+        all_result = prepare_crosscheck_upload("TOKEN")
+        missing_result = prepare_crosscheck_upload("TOKEN", scope=CROSSCHECK_EXPORT_MISSING_RESULTS)
+
+        self.assertTrue(Path(all_result["zip_path"]).exists())
+        self.assertTrue(Path(missing_result["zip_path"]).exists())
+        self.assertNotEqual(all_result["zip_path"], missing_result["zip_path"])
+        with zipfile.ZipFile(all_result["zip_path"]) as archive:
+            self.assertIn("P003_TOKEN.pdf", archive.namelist())
+        with zipfile.ZipFile(missing_result["zip_path"]) as archive:
+            names = set(archive.namelist())
+            self.assertIn("P001_TOKEN.pdf", names)
+            self.assertIn("P002_TOKEN.pdf", names)
+            self.assertNotIn("P003_TOKEN.pdf", names)
+            self.assertNotIn("P004_TOKEN.pdf", names)
+            self.assertNotIn("P005_TOKEN.pdf", names)
+            self.assertEqual(archive.read("P001_TOKEN.pdf"), b"corrected publication p001")
+            self.assertEqual(archive.read("P002_TOKEN.pdf"), b"active-final p002")
+            manifest_name = f"crosscheck_missing_manifest_TOKEN.csv"
+            rows = list(
+                csv.DictReader(io.StringIO(archive.read(manifest_name).decode("utf-8-sig")))
+            )
+        by_id = {row["paper_id"]: row for row in rows}
+        self.assertEqual(by_id["P001"]["export_scope"], CROSSCHECK_EXPORT_MISSING_RESULTS)
+        self.assertEqual(by_id["P001"]["missing_plagiarism_percent"], "True")
+        self.assertEqual(by_id["P001"]["missing_single_percent"], "False")
+        self.assertEqual(by_id["P002"]["missing_plagiarism_percent"], "False")
+        self.assertEqual(by_id["P002"]["missing_single_percent"], "True")
+
     def test_crosscheck_export_form_uses_dynamic_default_token(self):
         self.assertEqual(default_crosscheck_token(date(2026, 5, 10)), "MAY102026_1")
         self.assertEqual(default_crosscheck_token(date(2026, 12, 3)), "DEC032026_1")
         self.assertEqual(CrossCheckExportForm().fields["token"].initial(date(2026, 5, 10)), "MAY102026_1")
+
+    def test_crosscheck_integration_page_has_all_and_missing_export_actions(self):
+        self.make_master_paper("P001", "Needs Missing Export", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Needs Missing Export",
+            extracted_title="Needs Missing Export",
+            current_file_path=str(self.make_pdf_file("p001-crosscheck.pdf", b"p001 pdf")),
+            similarity_score=None,
+            single_similarity_score=None,
+        )
+
+        page = self.client.get(reverse("submissions:integration"))
+        self.assertContains(page, "Prepare All Publication PDFs ZIP")
+        self.assertContains(page, "Prepare Missing Results Only ZIP")
+
+        response = self.client.post(
+            reverse("submissions:integration"),
+            {"action": "prepare_crosscheck_missing", "token": "TOKEN"},
+        )
+        self.assertContains(response, "Missing CrossCheck results only")
+        self.assertContains(response, "Download Missing Results ZIP")
+        self.assertContains(response, "1 exported")
 
     def test_not_publishing_reactivated_replacement_requires_fresh_editor_verification(self):
         self.make_master_paper("P001", "Reactivated Paper", "Ada")
@@ -3881,6 +3996,87 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "10_file_Submit_PDF.pdf")
         self.assertContains(response, "10_file_Submit_Source.zip")
         self.assertContains(response, "Uploads here replace original submission files only")
+
+    def test_final_submission_edit_returns_to_organized_list_when_next_is_safe(self):
+        self.make_master_paper("P001", "Return To Organized", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Return To Organized",
+            extracted_title="Return To Organized",
+        )
+        organized_url = (
+            reverse("submissions:organized_list")
+            + "?filter=all&sort=needs_attention&q=P001"
+        )
+
+        organized = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "all", "sort": "needs_attention", "q": "P001"},
+        )
+        self.assertContains(organized, f"next={quote(organized_url, safe='/')}")
+
+        edit_page = self.client.get(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            {"next": organized_url},
+        )
+        self.assertContains(
+            edit_page,
+            f'<input type="hidden" name="next" value="{organized_url}">',
+            html=True,
+        )
+        self.assertContains(edit_page, f'<a class="btn btn-outline-secondary" href="{organized_url}">Back</a>', html=True)
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                next=organized_url,
+                final_submission_title="Return To Organized Updated",
+            ),
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], organized_url)
+
+    def test_final_submission_edit_falls_back_without_safe_next(self):
+        self.make_master_paper("P001", "Return Fallback", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Return Fallback",
+            extracted_title="Return Fallback",
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                final_submission_title="Final Submissions Return",
+            ),
+        )
+        self.assertRedirects(response, reverse("submissions:final_submission_list"))
+
+        malicious = "https://example.com/steal"
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(submission, next=malicious),
+        )
+        self.assertRedirects(response, reverse("submissions:final_submission_list"))
+
+        invalid = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                next=reverse("submissions:organized_list"),
+                final_submission_id="",
+            ),
+        )
+        self.assertEqual(invalid.status_code, 200)
+        self.assertContains(
+            invalid,
+            f'<input type="hidden" name="next" value="{reverse("submissions:organized_list")}">',
+            html=True,
+        )
 
     def test_excel_exports_handle_nat_datetime_values(self):
         self.make_master_paper("P001", "Ready Paper", "Ada", notes="Internal editorial note")

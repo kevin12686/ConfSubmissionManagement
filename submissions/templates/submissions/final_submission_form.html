@@ -7,7 +7,11 @@
         <div class="cfm-page-subtitle">Update one final submission record. Fields are grouped by editorial workflow.</div>
     </div>
     <div class="cfm-page-actions">
-        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Back to Final Submissions</a>
+        {% if return_url %}
+            <a class="btn btn-outline-secondary" href="{{ return_url }}">Back</a>
+        {% else %}
+            <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Back to Final Submissions</a>
+        {% endif %}
         {% if submission %}
             <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?q={{ submission.paper_id_filled|urlencode }}">Open in Organized List</a>
         {% endif %}
@@ -67,6 +71,7 @@
 
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
+    {% if return_url %}<input type="hidden" name="next" value="{{ return_url }}">{% endif %}
 
     <div class="row g-3">
         {% if submission %}
@@ -272,7 +277,11 @@
     </div>
 
     <div class="cfm-sticky-actions cfm-action-bar justify-content-end">
-        <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Cancel</a>
+        {% if return_url %}
+            <a class="btn btn-outline-secondary" href="{{ return_url }}">Cancel</a>
+        {% else %}
+            <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Cancel</a>
+        {% endif %}
         <button class="btn btn-primary">Save Final Submission</button>
     </div>
 </form>

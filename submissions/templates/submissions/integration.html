@@ -15,23 +15,26 @@
         <div class="card mb-3">
             <div class="card-body">
                 <h2 class="h5">Paper Export for CrossCheck</h2>
-                <p class="text-muted">Creates a downloadable ZIP with active publication PDFs named PaperID_token.pdf.</p>
+                <p class="text-muted">Creates downloadable ZIP files with active publication PDFs named PaperID_token.pdf. Use the missing-results option when you only need papers without Plagiarism % or Single %.</p>
                 <form method="post" class="vstack gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="prepare_crosscheck">
                     <div>
                         {{ crosscheck_export_form.token.label_tag }}
                         {{ crosscheck_export_form.token }}
                         <div class="form-text">{{ crosscheck_export_form.token.help_text }}</div>
                     </div>
                     <div class="cfm-action-bar">
-                        <button class="btn btn-primary">Prepare ZIP</button>
+                        <button class="btn btn-primary" name="action" value="prepare_crosscheck">Prepare All Publication PDFs ZIP</button>
+                        <button class="btn btn-outline-primary" name="action" value="prepare_crosscheck_missing">Prepare Missing Results Only ZIP</button>
                     </div>
                 </form>
                 {% if crosscheck_export_result %}
                     <hr>
+                    <div class="small text-muted mb-2">Export scope: <strong>{{ crosscheck_export_result.scope_label }}</strong></div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <a class="btn btn-success" href="{{ crosscheck_export_result.download_url }}">Download CrossCheck ZIP</a>
+                        <a class="btn btn-success" href="{{ crosscheck_export_result.download_url }}">
+                            {% if crosscheck_export_result.scope == "missing_results" %}Download Missing Results ZIP{% else %}Download CrossCheck ZIP{% endif %}
+                        </a>
                         <span class="badge text-bg-success">{{ crosscheck_export_result.exported_count }} exported</span>
                         <span class="badge text-bg-warning">{{ crosscheck_export_result.skipped_count }} skipped</span>
                     </div>

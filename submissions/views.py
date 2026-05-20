@@ -36,6 +36,7 @@ from .controllers.exports import (
 )
 from .controllers.integrations import (
     download_crosscheck_zip,
+    download_crosscheck_zip_scoped,
     download_system_state,
     integration,
 )

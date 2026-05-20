@@ -33,12 +33,13 @@ from submissions.services.checks import (
     reset_author_number_exception,
 )
 from submissions.services.crosscheck import (
+    CROSSCHECK_EXPORT_ALL,
+    CROSSCHECK_EXPORT_MISSING_RESULTS,
     CROSSCHECK_RESULT_TEMPLATE_COLUMNS,
-    crosscheck_export_root,
+    crosscheck_zip_path,
     import_crosscheck_results,
     prepare_crosscheck_upload,
     upload_crosscheck_reports,
-    validate_token,
 )
 from submissions.services.exceptions import (
     EXCEPTION_FILTER_OPTIONS,
@@ -132,16 +133,26 @@ def integration(request):
     system_state_restore_form = SystemStateRestoreForm()
     if request.method == "POST":
         action = request.POST.get("action")
-        if action == "prepare_crosscheck":
+        if action in {"prepare_crosscheck", "prepare_crosscheck_missing"}:
             crosscheck_export_form = CrossCheckExportForm(request.POST)
             if crosscheck_export_form.is_valid():
                 try:
+                    scope = (
+                        CROSSCHECK_EXPORT_MISSING_RESULTS
+                        if action == "prepare_crosscheck_missing"
+                        else CROSSCHECK_EXPORT_ALL
+                    )
                     crosscheck_export_result = prepare_crosscheck_upload(
-                        crosscheck_export_form.cleaned_data["token"]
+                        crosscheck_export_form.cleaned_data["token"],
+                        scope=scope,
                     )
                     crosscheck_export_result["download_url"] = reverse(
-                        "submissions:download_crosscheck_zip",
-                        args=[crosscheck_export_result["token"]],
+                        "submissions:download_crosscheck_zip"
+                        if scope == CROSSCHECK_EXPORT_ALL
+                        else "submissions:download_crosscheck_zip_scoped",
+                        args=[crosscheck_export_result["token"]]
+                        if scope == CROSSCHECK_EXPORT_ALL
+                        else [crosscheck_export_result["token"], scope],
                     )
                     messages.success(request, "CrossCheck ZIP prepared.")
                 except Exception as exc:
@@ -225,8 +236,14 @@ def integration(request):
 
 
 def download_crosscheck_zip(request, token):
-    token = validate_token(token)
-    path = crosscheck_export_root() / token / f"crosscheck_upload_{token}.zip"
+    path = crosscheck_zip_path(token)
+    if not path.exists():
+        raise Http404("CrossCheck ZIP not found.")
+    return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)
+
+
+def download_crosscheck_zip_scoped(request, token, scope):
+    path = crosscheck_zip_path(token, scope=scope)
     if not path.exists():
         raise Http404("CrossCheck ZIP not found.")
     return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)

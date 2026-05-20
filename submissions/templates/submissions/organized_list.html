@@ -253,7 +253,7 @@
                 <td>
                     <div class="cfm-table-actions">
                         <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ forloop.counter }}" aria-expanded="false" aria-controls="details-{{ forloop.counter }}">Details</button>
-                        {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit</a>{% endif %}
+                        {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}
                     </div>
                 </td>
             </tr>
