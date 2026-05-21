@@ -6,6 +6,7 @@ from django.utils.safestring import mark_safe
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
+from submissions.services.audit import audit_success
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.import_export import _mark_duplicate_submissions
@@ -258,7 +259,18 @@ def verify_submission(submission, corrected_paper_id=None):
     )
     determine_active_versions()
     _mark_duplicate_submissions()
-    return evaluate_submission(submission, save=True)
+    result = evaluate_submission(submission, save=True)
+    audit_success(
+        "verify_paper_id",
+        "Paper ID verified.",
+        submission=submission,
+        after={
+            "paper_id_filled": submission.paper_id_filled,
+            "verification_status": submission.verification_status,
+            "title_match_score": submission.title_match_score,
+        },
+    )
+    return result
 
 
 def mark_not_publishing(submission, reason="unpaid", notes=""):
@@ -287,7 +299,18 @@ def mark_not_publishing(submission, reason="unpaid", notes=""):
     )
     determine_active_versions()
     _mark_duplicate_submissions()
-    return evaluate_submission(submission, save=True)
+    result = evaluate_submission(submission, save=True)
+    audit_success(
+        "mark_not_publishing",
+        "Final submission marked Not Publishing.",
+        submission=submission,
+        after={
+            "excluded_from_publication": True,
+            "publication_exclusion_reason": submission.publication_exclusion_reason,
+            "publication_exclusion_notes": submission.publication_exclusion_notes,
+        },
+    )
+    return result
 
 
 def undo_not_publishing(submission):
@@ -314,7 +337,15 @@ def undo_not_publishing(submission):
     )
     determine_active_versions()
     _mark_duplicate_submissions()
-    return evaluate_submission(submission, save=True)
+    result = evaluate_submission(submission, save=True)
+    audit_success(
+        "undo_not_publishing",
+        "Final submission moved back to publication review.",
+        submission=submission,
+        after={"excluded_from_publication": False},
+        reset_flags={"paper_id_review": True},
+    )
+    return result
 
 
 def unverify_submission(submission):
@@ -329,7 +360,14 @@ def unverify_submission(submission):
             "updated_at",
         ]
     )
-    return evaluate_submission(submission, save=True)
+    result = evaluate_submission(submission, save=True)
+    audit_success(
+        "unverify_paper_id",
+        "Paper ID moved back to unverified.",
+        submission=submission,
+        reset_flags={"paper_id_review": True},
+    )
+    return result
 
 
 def verification_rows(queryset=None):

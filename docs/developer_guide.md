@@ -66,6 +66,7 @@ Put reusable workflow behavior in services:
 - Reports and publication ZIPs: `reports.py`.
 - Storage cleanup: `storage_inventory.py`.
 - Backup/restore: `system_state.py`.
+- Audit logging: `audit.py`.
 
 Do not put processing or integration logic directly in views.
 
@@ -101,6 +102,22 @@ Use app-managed file helpers instead of ad hoc path logic.
 
 Process PDFs is not a read-only page-count operation. It calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, recalculates active versions, rebuilds author cache, and syncs the publication PDF debug folder. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
 
+## Audit Logging Requirements
+
+Any new workflow that changes records, files, review status, publication readiness, settings, exports, cleanup, or backup/restore must write an audit event through `submissions/services/audit.py`.
+
+Use the helper that matches the result:
+
+- `audit_preview()` for preview-before-apply steps.
+- `audit_requested()` for dangerous requests such as Clear Database.
+- `audit_success()` after a successful state change or export.
+- `audit_failure()` when an operation fails.
+- `audit_blocked()` when the app intentionally blocks an export or workflow because readiness checks failed.
+
+Audit events should include the relevant Paper ID, Final Submission ID, changed fields, before/after values, reset flags, file changes, file hashes, and result counts. Store paths as portable project/media-relative references; never log binary PDF/source/report content.
+
+Clear Database must preserve `data/logs/audit.log` unless the user explicitly checks the audit-clear checkbox. System State backup must include the active audit log and archived logs.
+
 ## Tests
 
 Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add scenario tests when changing:
@@ -112,6 +129,7 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - File priority or publication package output.
 - System State export/restore.
 - Storage cleanup policy.
+- Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
 
 Use factories in `submissions/tests/factories.py` rather than duplicating setup when possible.

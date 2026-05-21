@@ -1,9 +1,11 @@
+import hashlib
 from pathlib import Path
 
 from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import AppSetting
+from submissions.services.audit import audit_success
 from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
 from submissions.services.file_manager import resolve_folder, sanitize_filename_part
 from submissions.services.import_export import _mark_duplicate_submissions
@@ -32,6 +34,152 @@ PUBLISHING_DECISION_FIELDS = {
     "publication_exclusion_reason",
     "publication_exclusion_notes",
 }
+REVIEW_STATUS_FIELDS = {
+    "title_author_source",
+    "title_author_extraction_message",
+    "title_author_review_status",
+    "duplicate_author_review_status",
+    "duplicate_author_review_notes",
+    "extracted_title_match_message",
+    "extracted_title_verified",
+    "processing_message",
+}
+
+
+def _audit_file_value(value):
+    if not value:
+        return ""
+    try:
+        if getattr(value, "name", ""):
+            return value.path
+    except (OSError, ValueError):
+        return getattr(value, "name", "") or ""
+    return getattr(value, "name", "") or str(value)
+
+
+def _audit_field_value(submission, field_name):
+    field = "plagiarism_report_path" if field_name == "plagiarism_report_file" else field_name
+    value = getattr(submission, field, "")
+    if hasattr(value, "name") and hasattr(value, "storage"):
+        return _audit_file_value(value)
+    return value
+
+
+def _audit_snapshot(submission, fields):
+    return {
+        field: _audit_field_value(submission, field)
+        for field in sorted(fields)
+    }
+
+
+def _audit_fields_for_change(changed_fields, pdf_changed, source_changed, report_file):
+    fields = set(changed_fields)
+    if changed_fields & IDENTITY_FIELDS:
+        fields.update(
+            {
+                "paper_id_verified",
+                "auto_verify_blocked",
+                "verification_status",
+                "title_match_score",
+                "verification_message",
+                "active_version",
+                "duplicate_submission",
+            }
+        )
+    if pdf_changed:
+        fields.update(
+            {
+                "current_file_path",
+                "original_file_name",
+                "page_count",
+                "processing_status",
+                "processing_message",
+                "pdf_hash",
+                "thumbnail_folder",
+                "thumbnail_status",
+                "extracted_title",
+                "extracted_authors",
+                "title_author_review_status",
+                "format_status",
+                "similarity_score",
+                "single_similarity_score",
+                "plagiarism_report_path",
+                "plagiarism_report_stale",
+                "formatted_pdf_file",
+                "formatted_source_file",
+            }
+        )
+    if source_changed:
+        fields.update(
+            {
+                "source_current_file_path",
+                "source_original_file_name",
+                "title_author_review_status",
+                "title_author_verified",
+                "extracted_title_verified",
+                "format_status",
+                "formatted_source_file",
+            }
+        )
+    if changed_fields & EXTRACTED_METADATA_FIELDS:
+        fields.update(
+            {
+                "title_author_source",
+                "title_author_extraction_status",
+                "title_author_review_status",
+                "title_author_verified",
+                "duplicate_author_review_status",
+                "extracted_title_verified",
+            }
+        )
+    if changed_fields & PLAGIARISM_FIELDS or report_file:
+        fields.update(
+            {
+                "plagiarism_report_file",
+                "plagiarism_report_path",
+                "plagiarism_report_stale",
+                "plagiarism_imported_at",
+            }
+        )
+    if changed_fields & (PUBLISHING_DECISION_FIELDS | REVIEW_STATUS_FIELDS):
+        fields.update(
+            {
+                "paper_id_verified",
+                "auto_verify_blocked",
+                "verification_status",
+                "verification_message",
+                "title_author_verified",
+                "extracted_title_verified",
+            }
+        )
+    return fields
+
+
+def _file_sha256(path):
+    if not path:
+        return ""
+    try:
+        file_path = Path(path)
+        if not file_path.exists() or not file_path.is_file():
+            return ""
+        digest = hashlib.sha256()
+        with file_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return ""
+
+
+def _audit_file_hashes(submission, pdf_changed, source_changed, report_file):
+    hashes = {}
+    if pdf_changed:
+        hashes["pdf_file_sha256"] = _file_sha256(_audit_file_value(submission.pdf_file))
+    if source_changed:
+        hashes["source_file_sha256"] = _file_sha256(_audit_file_value(submission.source_file))
+    if report_file:
+        hashes["plagiarism_report_sha256"] = _file_sha256(submission.plagiarism_report_path)
+    return hashes
 
 
 def _empty_summary():
@@ -170,6 +318,7 @@ def _apply_publishing_decision(submission, changed_fields, summary):
 @transaction.atomic
 def apply_final_submission_manual_edit(_submission, form, report_file=None):
     """Apply a FinalSubmission edit with publication-critical reset rules."""
+    original = _submission.__class__.objects.get(pk=_submission.pk)
     obj = form.save(commit=False)
     changed_fields = set(form.changed_data)
     report_file = (
@@ -186,6 +335,13 @@ def apply_final_submission_manual_edit(_submission, form, report_file=None):
         {"final_submission_id", "paper_id_filled", "upload_date"} & changed_fields
     )
     extracted_metadata_changed = bool(EXTRACTED_METADATA_FIELDS & changed_fields)
+    audit_fields = _audit_fields_for_change(
+        changed_fields,
+        pdf_changed,
+        source_changed,
+        report_file,
+    )
+    audit_before = _audit_snapshot(original, audit_fields)
 
     if identity_changed:
         _reset_identity_review(
@@ -259,4 +415,20 @@ def apply_final_submission_manual_edit(_submission, form, report_file=None):
     if "extracted_authors" in changed_fields or pdf_changed:
         rebuild_paper_authors()
 
+    audit_after = _audit_snapshot(obj, audit_fields)
+    audit_success(
+        "final_submission_manual_edit",
+        "Final submission manually edited.",
+        submission=obj,
+        changed_fields=sorted(changed_fields),
+        before=audit_before,
+        after=audit_after,
+        reset_flags=summary,
+        file_changes={
+            "pdf_changed": pdf_changed,
+            "source_changed": source_changed,
+            "report_uploaded": bool(report_file),
+        },
+        file_hashes=_audit_file_hashes(obj, pdf_changed, source_changed, report_file),
+    )
     return obj, summary

@@ -108,6 +108,7 @@ from submissions.services.title_author_extraction import (
     verify_title_author,
 )
 from submissions.services import reports
+from submissions.services.audit import audit_failure, audit_success
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -151,6 +152,16 @@ def organized_list(request):
                     "updated_at",
                 ]
             )
+            audit_success(
+                "duplicate_author_review",
+                "Duplicate author review marked OK.",
+                request=request,
+                submission=submission,
+                after={
+                    "duplicate_author_review_status": submission.duplicate_author_review_status,
+                    "notes": submission.duplicate_author_review_notes,
+                },
+            )
             messages.success(
                 request,
                 f"Duplicate author review marked OK for {submission.final_submission_id}.",
@@ -166,6 +177,13 @@ def organized_list(request):
                     "duplicate_author_reviewed_at",
                     "updated_at",
                 ]
+            )
+            audit_success(
+                "duplicate_author_review_reset",
+                "Duplicate author review moved back to pending.",
+                request=request,
+                submission=submission,
+                reset_flags={"duplicate_author_review": True},
             )
             messages.warning(
                 request,
@@ -235,6 +253,7 @@ def verify_paper_ids(request):
             verify_submission(submission, corrected_paper_id)
             messages.success(request, f"Final submission {submission.final_submission_id} verified.")
         except ValueError as exc:
+            audit_failure("verify_paper_id", exc, "Paper ID verification failed.", request=request, submission=submission)
             messages.error(request, str(exc))
         return redirect("submissions:verify_paper_ids")
 
@@ -297,6 +316,12 @@ def title_author_extraction(request):
         action = request.POST.get("action")
         if action == "extract_needs_review":
             result = extract_active_title_authors(mode="needs_review")
+            audit_success(
+                "title_author_extract_needs_review",
+                "Title/author extraction completed for needs-review papers.",
+                request=request,
+                result_counts=result,
+            )
             messages.success(
                 request,
                 f"Title/author extraction completed for needs-review papers: {result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped.",
@@ -306,6 +331,12 @@ def title_author_extraction(request):
             confirm_reextract_all = True
         elif action == "confirm_reextract_all":
             result = extract_active_title_authors(mode="all")
+            audit_success(
+                "title_author_reextract_all",
+                "All active PDFs re-extracted.",
+                request=request,
+                result_counts=result,
+            )
             messages.warning(
                 request,
                 f"All active PDFs re-extracted: {result['extracted']} extracted, {result['errors']} errors.",
@@ -395,8 +426,14 @@ def formatting(request):
                 messages.success(request, _formatting_success_message(submission, mode))
                 return _formatting_redirect_after_save(request, current_filter, q, mode)
             except Exception as exc:
+                audit_failure("formatting_upload_confirm", exc, "Formatting upload confirmation failed.", request=request)
                 messages.error(request, str(exc))
         elif action == "cancel_formatting_upload":
+            audit_success(
+                "formatting_upload_cancel",
+                "Corrected file upload canceled.",
+                request=request,
+            )
             messages.info(request, "Corrected file upload canceled. No formatting files were changed.")
             return _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=True)
         else:
@@ -426,6 +463,7 @@ def formatting(request):
                         messages.success(request, _formatting_success_message(submission, mode))
                         return _formatting_redirect_after_save(request, current_filter, q, mode)
                 except Exception as exc:
+                    audit_failure("formatting_update", exc, "Formatting update failed.", request=request, submission=submission)
                     messages.error(request, f"Formatting update failed: {exc}")
             else:
                 messages.error(request, "Formatting update failed. Check the uploaded files and status.")

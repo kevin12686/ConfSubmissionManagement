@@ -21,6 +21,7 @@ from submissions.services.file_manager import (
     source_pdf_path,
     title_short_name,
 )
+from submissions.services.audit import audit_failure, audit_preview, audit_success
 
 
 CLEANUP_CONFIRMATION_TEXT = "CLEAN STORAGE"
@@ -344,6 +345,15 @@ def preview_storage_cleanup(policy="generated_cache_or_orphan_output"):
     }
     path = cleanup_preview_root() / f"{payload['token']}.json"
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    audit_preview(
+        "storage_cleanup_preview",
+        f"{payload['policy_label']} preview created.",
+        result_counts={
+            "file_count": payload["file_count"],
+            "total_size": payload["total_size"],
+        },
+        extra={"policy": payload["policy"], "token": payload["token"]},
+    )
     return payload
 
 
@@ -398,38 +408,53 @@ def _deletable_path(path, category=None):
 
 
 def apply_storage_cleanup(token, confirmation):
-    if confirmation != CLEANUP_CONFIRMATION_TEXT:
-        raise ValueError(f'Type "{CLEANUP_CONFIRMATION_TEXT}" to confirm cleanup.')
-    payload = load_storage_cleanup_preview(token)
-    current_refs, _missing = _collect_referenced_paths()
-    deleted = []
-    skipped = []
-    for row in payload["files"]:
-        path = Path(row["path"])
-        if not _deletable_path(path, row.get("category")):
-            skipped.append({**row, "message": "Path is outside cleanup-approved folders."})
-            continue
-        if _safe_path(path) in current_refs:
-            skipped.append({**row, "message": "Path is now referenced by a database record."})
-            continue
-        if not path.exists():
-            skipped.append({**row, "message": "File no longer exists."})
-            continue
-        size = _path_size(path)
-        path.unlink()
-        deleted.append({**row, "size": size, "size_label": _format_size(size)})
-    preview_path = cleanup_preview_root() / f"{payload['token']}.json"
-    preview_path.unlink(missing_ok=True)
-    _remove_empty_generated_cache_dirs()
-    _remove_empty_managed_output_dirs()
-    return {
-        "deleted": deleted,
-        "skipped": skipped,
-        "deleted_count": len(deleted),
-        "skipped_count": len(skipped),
-        "deleted_size": sum(row["size"] for row in deleted),
-        "deleted_size_label": _format_size(sum(row["size"] for row in deleted)),
-    }
+    try:
+        if confirmation != CLEANUP_CONFIRMATION_TEXT:
+            raise ValueError(f'Type "{CLEANUP_CONFIRMATION_TEXT}" to confirm cleanup.')
+        payload = load_storage_cleanup_preview(token)
+        current_refs, _missing = _collect_referenced_paths()
+        deleted = []
+        skipped = []
+        for row in payload["files"]:
+            path = Path(row["path"])
+            if not _deletable_path(path, row.get("category")):
+                skipped.append({**row, "message": "Path is outside cleanup-approved folders."})
+                continue
+            if _safe_path(path) in current_refs:
+                skipped.append({**row, "message": "Path is now referenced by a database record."})
+                continue
+            if not path.exists():
+                skipped.append({**row, "message": "File no longer exists."})
+                continue
+            size = _path_size(path)
+            path.unlink()
+            deleted.append({**row, "size": size, "size_label": _format_size(size)})
+        preview_path = cleanup_preview_root() / f"{payload['token']}.json"
+        preview_path.unlink(missing_ok=True)
+        _remove_empty_generated_cache_dirs()
+        _remove_empty_managed_output_dirs()
+        result = {
+            "deleted": deleted,
+            "skipped": skipped,
+            "deleted_count": len(deleted),
+            "skipped_count": len(skipped),
+            "deleted_size": sum(row["size"] for row in deleted),
+            "deleted_size_label": _format_size(sum(row["size"] for row in deleted)),
+        }
+        audit_success(
+            "storage_cleanup_apply",
+            "Storage cleanup applied.",
+            result_counts={
+                "deleted_count": result["deleted_count"],
+                "skipped_count": result["skipped_count"],
+                "deleted_size": result["deleted_size"],
+            },
+            file_changes={"deleted": deleted[:20], "skipped": skipped[:20]},
+        )
+        return result
+    except Exception as exc:
+        audit_failure("storage_cleanup_apply", exc, "Storage cleanup failed.", extra={"token": token})
+        raise
 
 
 def _remove_empty_generated_cache_dirs():
@@ -508,82 +533,97 @@ def _assert_safe_debug_folder(folder, settings_obj):
 
 
 def sync_publication_pdf_debug_folder():
-    settings_obj = AppSetting.load()
-    debug_folder = resolve_folder(
-        getattr(settings_obj, "publication_pdf_debug_folder", "data/publication_pdf_debug")
-    )
-    _assert_safe_debug_folder(debug_folder, settings_obj)
-    _clear_debug_folder(debug_folder)
-    manifest_path = debug_folder / "publication_pdf_debug_manifest.csv"
-    synced = []
-    skipped = []
-    active_by_paper = {
-        submission.paper_id_filled: submission
-        for submission in FinalSubmission.objects.filter(
-            active_version=True,
-            discarded=False,
-            excluded_from_publication=False,
+    try:
+        settings_obj = AppSetting.load()
+        debug_folder = resolve_folder(
+            getattr(settings_obj, "publication_pdf_debug_folder", "data/publication_pdf_debug")
         )
-    }
-    with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
-        writer = csv.DictWriter(
-            manifest_file,
-            fieldnames=[
-                "paper_id",
-                "final_submission_id",
-                "publication_pdf_source",
-                "source_path",
-                "debug_filename",
-                "sha256",
-            ],
-        )
-        writer.writeheader()
-        for paper in InitialPaper.objects.all().order_by("paper_id"):
-            submission = active_by_paper.get(paper.paper_id)
-            if not submission:
-                skipped.append(
-                    {
-                        "paper_id": paper.paper_id,
-                        "final_submission_id": "",
-                        "message": "No active final submission.",
-                    }
-                )
-                continue
-            pdf_info = publication_pdf_info(submission)
-            if not pdf_info["exists"]:
-                skipped.append(
-                    {
-                        "paper_id": paper.paper_id,
-                        "final_submission_id": submission.final_submission_id,
-                        "message": "No publication PDF source.",
-                    }
-                )
-                continue
-            filename = publication_pdf_filename(
-                paper.paper_id,
-                submission.extracted_title,
-                settings_obj.title_words_for_filename,
+        _assert_safe_debug_folder(debug_folder, settings_obj)
+        _clear_debug_folder(debug_folder)
+        manifest_path = debug_folder / "publication_pdf_debug_manifest.csv"
+        synced = []
+        skipped = []
+        active_by_paper = {
+            submission.paper_id_filled: submission
+            for submission in FinalSubmission.objects.filter(
+                active_version=True,
+                discarded=False,
+                excluded_from_publication=False,
             )
-            target = debug_folder / filename
-            shutil.copy2(pdf_info["path"], target)
-            row = {
-                "paper_id": paper.paper_id,
-                "final_submission_id": submission.final_submission_id,
-                "publication_pdf_source": pdf_info["label"],
-                "source_path": pdf_info["path"],
-                "debug_filename": filename,
-                "sha256": _sha256(target),
-            }
-            synced.append(row)
-            writer.writerow(row)
-    return {
-        "folder": str(debug_folder),
-        "manifest_path": str(manifest_path),
-        "synced": synced,
-        "skipped": skipped,
-        "synced_count": len(synced),
-        "skipped_count": len(skipped),
-    }
+        }
+        with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
+            writer = csv.DictWriter(
+                manifest_file,
+                fieldnames=[
+                    "paper_id",
+                    "final_submission_id",
+                    "publication_pdf_source",
+                    "source_path",
+                    "debug_filename",
+                    "sha256",
+                ],
+            )
+            writer.writeheader()
+            for paper in InitialPaper.objects.all().order_by("paper_id"):
+                submission = active_by_paper.get(paper.paper_id)
+                if not submission:
+                    skipped.append(
+                        {
+                            "paper_id": paper.paper_id,
+                            "final_submission_id": "",
+                            "message": "No active final submission.",
+                        }
+                    )
+                    continue
+                pdf_info = publication_pdf_info(submission)
+                if not pdf_info["exists"]:
+                    skipped.append(
+                        {
+                            "paper_id": paper.paper_id,
+                            "final_submission_id": submission.final_submission_id,
+                            "message": "No publication PDF source.",
+                        }
+                    )
+                    continue
+                filename = publication_pdf_filename(
+                    paper.paper_id,
+                    submission.extracted_title,
+                    settings_obj.title_words_for_filename,
+                )
+                target = debug_folder / filename
+                shutil.copy2(pdf_info["path"], target)
+                row = {
+                    "paper_id": paper.paper_id,
+                    "final_submission_id": submission.final_submission_id,
+                    "publication_pdf_source": pdf_info["label"],
+                    "source_path": pdf_info["path"],
+                    "debug_filename": filename,
+                    "sha256": _sha256(target),
+                }
+                synced.append(row)
+                writer.writerow(row)
+        result = {
+            "folder": str(debug_folder),
+            "manifest_path": str(manifest_path),
+            "synced": synced,
+            "skipped": skipped,
+            "synced_count": len(synced),
+            "skipped_count": len(skipped),
+        }
+        audit_success(
+            "sync_publication_pdf_debug",
+            "Publication PDF debug folder synced.",
+            result_counts={
+                "synced_count": len(synced),
+                "skipped_count": len(skipped),
+            },
+            file_changes={"folder": str(debug_folder), "manifest_path": str(manifest_path)},
+            extra={"skipped": skipped[:20]},
+        )
+        return result
+    except Exception as exc:
+        audit_failure("sync_publication_pdf_debug", exc, "Publication PDF debug sync failed.")
+        raise
 
 
 def _current_source_path(submission):

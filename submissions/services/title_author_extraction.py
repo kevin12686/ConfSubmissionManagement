@@ -5,6 +5,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from submissions.models import FinalSubmission
+from submissions.services.audit import audit_failure, audit_success
 from submissions.services.checks import reset_author_number_exception
 from submissions.services.builtin_title_author_extractor import get_title_author
 from submissions.services.file_manager import publication_pdf_info, sanitize_filename_part, source_pdf_path
@@ -119,6 +120,23 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
             from submissions.services.checks import rebuild_paper_authors
 
             rebuild_paper_authors()
+        audit_success(
+            "title_author_extract",
+            "Title/author extraction completed.",
+            submission=submission,
+            reset_flags={
+                "title_author_review": True,
+                "extracted_title_match": True,
+                "duplicate_author_review": True,
+                "author_number_exception": True,
+            },
+            after={
+                "extraction_status": submission.title_author_extraction_status,
+                "extracted_title": submission.extracted_title,
+                "extracted_authors": submission.extracted_authors,
+            },
+            file_changes={"verification_image": submission.title_author_verification_image},
+        )
         return True
     except Exception as exc:
         submission.title_author_extraction_status = "error"
@@ -141,6 +159,13 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
                 "duplicate_author_reviewed_at",
                 "updated_at",
             ]
+        )
+        audit_failure(
+            "title_author_extract",
+            exc,
+            "Title/author extraction failed.",
+            submission=submission,
+            after={"extraction_status": "error", "message": submission.title_author_extraction_message},
         )
         return False
 
@@ -215,6 +240,12 @@ def set_title_author_review_status(submission, status):
             "title_author_verified_at",
             "updated_at",
         ]
+    )
+    audit_success(
+        "title_author_review_status",
+        f"Title/author review status changed to {status}.",
+        submission=submission,
+        after={"title_author_review_status": status},
     )
 
 
@@ -297,6 +328,15 @@ def verify_extracted_title(submission):
             "updated_at",
         ]
     )
+    audit_success(
+        "verify_extracted_title_match",
+        "Extracted title match verified.",
+        submission=submission,
+        after={
+            "extracted_title_match_status": submission.extracted_title_match_status,
+            "extracted_title_match_score": submission.extracted_title_match_score,
+        },
+    )
 
 
 def unverify_extracted_title(submission):
@@ -314,6 +354,12 @@ def unverify_extracted_title(submission):
             "extracted_title_match_message",
             "updated_at",
         ]
+    )
+    audit_success(
+        "unverify_extracted_title_match",
+        "Extracted title match moved back to unverified.",
+        submission=submission,
+        reset_flags={"extracted_title_match": True},
     )
 
 

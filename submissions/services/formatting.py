@@ -13,6 +13,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from submissions.models import FinalSubmission
+from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
 from submissions.services.file_manager import publication_pdf_info, sanitize_filename_part
 from submissions.services.import_export import classify_uploaded_file
@@ -127,6 +128,19 @@ def preview_formatting_upload(submission, cleaned_data):
         "extraction_message": extraction_message,
     }
     (token_root / "payload.json").write_text(json.dumps(payload), encoding="utf-8")
+    audit_preview(
+        "formatting_upload_preview",
+        "Corrected PDF title guard preview created.",
+        submission=submission,
+        result_counts={"requires_confirmation": not title_matches},
+        file_changes={"corrected_pdf": pdf_info, "corrected_source": source_info or {}},
+        after={
+            "title_matches": title_matches,
+            "extraction_status": extraction_status,
+            "dry_run_extracted_title": extracted_title,
+        },
+        extra={"token": token},
+    )
 
     return {
         "requires_confirmation": not title_matches,
@@ -386,6 +400,22 @@ def update_formatting_submission(submission, cleaned_data):
         submission.format_status = "pending"
 
     submission.save()
+    audit_success(
+        "formatting_update",
+        "Formatting review updated.",
+        submission=submission,
+        changed_fields=["format_status", "format_notes"],
+        reset_flags={
+            "pdf_dependent": bool(corrected_pdf),
+            "source_dependent": bool(corrected_source and not corrected_pdf),
+            "format_review_reset_from_review_ok": bool(has_new_corrected_file and previous_status == "review_ok"),
+        },
+        file_changes={
+            "corrected_pdf": getattr(corrected_pdf, "name", "") if corrected_pdf else "",
+            "corrected_source": getattr(corrected_source, "name", "") if corrected_source else "",
+        },
+        after={"format_status": submission.format_status},
+    )
     return submission
 
 

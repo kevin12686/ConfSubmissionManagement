@@ -141,6 +141,7 @@
                         <dt class="col-sm-5">Reports / managed files</dt>
                         <dd class="col-sm-7">
                             reports {{ system_state_preview.artifact_counts.reports_exports|default:0 }},
+                            audit logs {{ system_state_preview.artifact_counts.audit_logs|default:0 }},
                             managed PDF/source/debug files {{ system_state_preview.artifact_counts.original_and_corrected_files|default:0 }}
                         </dd>
                         <dt class="col-sm-5">Records</dt>

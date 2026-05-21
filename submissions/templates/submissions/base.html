@@ -347,7 +347,7 @@
                     </ul>
                 </li>
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'exceptions_center' or current_url == 'author_count' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'exceptions_center' or current_url == 'author_count' or current_url == 'audit_log' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Reports
                     </a>
                     <ul class="dropdown-menu">
@@ -357,6 +357,7 @@
                         <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}">Error Report</a></li>
                         <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}">Exceptions</a></li>
                         <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}">Author Count</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'audit_log' %}active{% endif %}" href="{% url 'submissions:audit_log' %}">Audit Log</a></li>
                     </ul>
                 </li>
                 <li class="nav-item dropdown">

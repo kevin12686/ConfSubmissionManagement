@@ -194,13 +194,29 @@ If the error mentions dates, inspect uploaded `upload_date` values and re-import
 
 ## Storage And Backup
 
+### Need to trace who changed what
+
+Open `/reports/audit-log/`. Search by Paper ID, Final ID, action, status, or message. The raw file is `data/logs/audit.log`, and the page can download it.
+
+Useful actions to search for include `import_apply`, `final_submission_manual_edit`, `process_pdfs`, `formatting_update`, `editor_upload_create`, `discard_submission`, `verify_paper_id`, `crosscheck_result_import`, `publication_package_export`, `system_state_export`, `system_state_restore_apply`, `storage_cleanup_apply`, and `clear_database_applied`.
+
+### Audit log is missing or empty
+
+The log file is created the next time an audited action runs. If Clear Database was run with `Also archive and clear audit log`, check `data/logs/archive/` for the previous log.
+
+If the whole `data/logs/` folder is missing after moving machines, restore from a System State ZIP made with a current app version. Current snapshots include both active and archived logs.
+
+### Audit log is large
+
+The Audit Log page shows the latest events and search results without loading the whole file into the table. Download the raw log if you need a full external review. Do not manually edit `audit.log`; archive it through Clear Database only when starting a fresh environment.
+
 ### Generated reports are taking space
 
 Use Settings > Storage Management > generated reports/exports cleanup. It removes regenerated Excel/ZIP downloads and external upload packages.
 
 It does not remove original uploads, corrected files, plagiarism report PDFs, System State backups, or thumbnails/previews still referenced by the database.
 
-Conservative cleanup can select unreferenced generated cache and orphan active/old output files. Review the preview before Apply. Do not apply cleanup if the candidate list includes publication outputs that you still need for audit or final checks.
+Conservative cleanup selects only unreferenced generated cache. It does not select publication debug, legacy active-final, or old-version output folders. Review the preview before Apply and stop if any candidate looks like a real upload or review artifact.
 
 ### Thumbnails or previews are missing
 
@@ -219,3 +235,5 @@ System State restore should remap managed files into this project's `data/` tree
 ### Need a completely clean conference
 
 Download a System State ZIP first if the current work must be preserved. Then use Settings > Clear Database. This wipes database records and managed files so the app starts a new conference environment.
+
+Clear Database preserves `data/logs/audit.log` by default. Check `Also archive and clear audit log` only if the new environment should start with a fresh log; the old log will be moved to `data/logs/archive/`.

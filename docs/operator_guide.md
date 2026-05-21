@@ -26,6 +26,7 @@ This guide is for editors running the local system to prepare final submissions 
 | Exceptions | `/reviews/exceptions/` | Approve rare page/author limit exceptions |
 | Error Report | `/reports/errors/` | Critical, Medium, and Info readiness issues |
 | Author Count | `/reports/author-count/` | Per-author publication paper counts |
+| Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
 | Export Reports | `/reports/` | Excel exports and publication package ZIPs |
 | CrossCheck / Backup | `/integrations/crosscheck/` | Plagiarism package export/import and System State backup/restore |
 
@@ -169,9 +170,21 @@ Use `/reports/` for exports.
 
 Download a System State ZIP before moving machines, archiving work, or clearing data. The snapshot includes settings, conference name, database workflow state, managed PDFs/source files, plagiarism reports, title/author verification images, page thumbnails, and format previews. Temporary import/restore/upload preview tokens are not included.
 
+System State ZIPs include `data/logs/audit.log` and archived audit logs, so restored systems keep the same action trail.
+
 Use Storage Management in Settings for preview-first cleanup:
 
 - Conservative cleanup keeps referenced thumbnails/previews and publication debug or legacy output folders. It only selects unreferenced generated cache.
 - Generated reports/exports cleanup removes regenerated Excel/ZIP download artifacts.
 
 Clear Database wipes records and managed files so the app can start a new conference. Use it only after downloading a System State ZIP if the current work must be preserved.
+
+Clear Database preserves the current audit log by default. Check `Also archive and clear audit log` only when you intentionally want a fresh log for a new environment. When checked, the app moves the current file into `data/logs/archive/` and starts a new `audit.log`.
+
+## Audit Log
+
+Use `/reports/audit-log/` when you need to trace a mistake or confirm what the system did. Search by Paper ID, Final ID, action name, status, or message.
+
+The log is append-only JSON Lines stored at `data/logs/audit.log`. It records key actions such as import previews/applies, manual edits, uploads, Editor Uploads, discard/undo, Not Publishing, verification, title/author review, formatting, Process PDFs, CrossCheck export/import/report uploads, exception approvals/removals, settings changes, publication export, System State backup/restore, storage cleanup, and Clear Database.
+
+The log records metadata, reset flags, counts, file names, hashes, and portable paths. It does not store PDF/source/report binary content.

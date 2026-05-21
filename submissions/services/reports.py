@@ -23,6 +23,7 @@ from submissions.services.file_manager import (
     resolve_folder,
 )
 from submissions.services.import_export import submissions_to_frame
+from submissions.services.audit import audit_blocked, audit_failure, audit_success
 from submissions.services.version_history import old_version_rows
 
 
@@ -164,6 +165,12 @@ def export_active_versions():
         )
     )
     _excel_safe_frame(frame).to_excel(path, index=False)
+    audit_success(
+        "export_active_versions",
+        "Active publishable versions exported.",
+        result_counts={"rows": len(frame)},
+        file_changes={"path": str(path)},
+    )
     return path
 
 
@@ -171,6 +178,12 @@ def export_old_versions():
     path = _reports_folder() / f"old_versions_{_timestamp()}.xlsx"
     frame = old_versions_frame()
     _excel_safe_frame(frame).to_excel(path, index=False)
+    audit_success(
+        "export_old_versions",
+        "Old versions exported.",
+        result_counts={"rows": len(frame)},
+        file_changes={"path": str(path)},
+    )
     return path
 
 
@@ -201,14 +214,28 @@ def old_versions_frame():
 def export_error_report():
     rebuild_paper_authors()
     path = _reports_folder() / f"readiness_issues_{_timestamp()}.xlsx"
-    _excel_safe_frame(error_report_frame()).to_excel(path, index=False)
+    frame = error_report_frame()
+    _excel_safe_frame(frame).to_excel(path, index=False)
+    audit_success(
+        "export_error_report",
+        "Readiness issues exported.",
+        result_counts={"rows": len(frame)},
+        file_changes={"path": str(path)},
+    )
     return path
 
 
 def export_author_count():
     rebuild_paper_authors()
     path = _reports_folder() / f"author_count_{_timestamp()}.xlsx"
-    _excel_safe_frame(author_count_frame()).to_excel(path, index=False)
+    frame = author_count_frame()
+    _excel_safe_frame(frame).to_excel(path, index=False)
+    audit_success(
+        "export_author_count",
+        "Author count exported.",
+        result_counts={"rows": len(frame)},
+        file_changes={"path": str(path)},
+    )
     return path
 
 
@@ -250,140 +277,181 @@ def _publication_warning_rows(readiness_blockers, skipped_rows):
 
 
 def export_publication_package(force=False):
-    rebuild_paper_authors()
-    settings_obj = AppSetting.load()
-    papers = list(InitialPaper.objects.all().order_by("paper_id"))
-    if not papers:
-        raise PublicationPackageBlocked(
-            "Publication package blocked because the Paper Master List is empty."
-        )
+    try:
+        rebuild_paper_authors()
+        settings_obj = AppSetting.load()
+        papers = list(InitialPaper.objects.all().order_by("paper_id"))
+        if not papers:
+            exc = PublicationPackageBlocked(
+                "Publication package blocked because the Paper Master List is empty."
+            )
+            audit_blocked("publication_package_export", str(exc), result_counts={"force": force})
+            raise exc
 
-    readiness_blockers = publication_readiness_rows()
-    if readiness_blockers and not force:
-        preview = _readiness_blocker_preview(readiness_blockers)
-        raise PublicationPackageBlocked(
-            "Publication package blocked because publication readiness checks failed: "
-            f"{preview}",
-            blockers=readiness_blockers,
-        )
+        readiness_blockers = publication_readiness_rows()
+        if readiness_blockers and not force:
+            preview = _readiness_blocker_preview(readiness_blockers)
+            exc = PublicationPackageBlocked(
+                "Publication package blocked because publication readiness checks failed: "
+                f"{preview}",
+                blockers=readiness_blockers,
+            )
+            audit_blocked(
+                "publication_package_export",
+                str(exc),
+                result_counts={"force": force, "blockers": len(readiness_blockers)},
+                extra={"blockers": readiness_blockers[:20]},
+            )
+            raise exc
 
-    active_by_paper = active_master_submission_map()
-    package_items = []
-    skipped_rows = []
-    for paper in papers:
-        submission = active_by_paper.get(paper.paper_id)
-        if not submission:
-            if force:
+        active_by_paper = active_master_submission_map()
+        package_items = []
+        skipped_rows = []
+        for paper in papers:
+            submission = active_by_paper.get(paper.paper_id)
+            if not submission:
+                if force:
+                    skipped_rows.append(
+                        {
+                            "paper_id": paper.paper_id,
+                            "final_submission_id": "",
+                            "category": "Missing Final Submission",
+                            "message": "Skipped because this Paper Master record has no active final submission.",
+                        }
+                    )
+                continue
+            pdf_info = publication_pdf_info(submission)
+            source_info = publication_source_info(submission)
+            if force and not pdf_info["exists"]:
                 skipped_rows.append(
                     {
                         "paper_id": paper.paper_id,
-                        "final_submission_id": "",
-                        "category": "Missing Final Submission",
-                        "message": "Skipped because this Paper Master record has no active final submission.",
+                        "final_submission_id": submission.final_submission_id,
+                        "category": "Missing PDF",
+                        "message": "Skipped because no publication PDF file is available.",
                     }
                 )
-            continue
-        pdf_info = publication_pdf_info(submission)
-        source_info = publication_source_info(submission)
-        if force and not pdf_info["exists"]:
-            skipped_rows.append(
+                continue
+            if force and not source_info["exists"]:
+                skipped_rows.append(
+                    {
+                        "paper_id": paper.paper_id,
+                        "final_submission_id": submission.final_submission_id,
+                        "category": "Missing Source File",
+                        "message": "Skipped because no publication source file is available.",
+                    }
+                )
+                continue
+            package_items.append((submission, pdf_info, source_info))
+
+        if not package_items:
+            blockers = readiness_blockers + skipped_rows
+            if force:
+                exc = PublicationPackageBlocked(
+                    "Draft publication package could not be created because no papers have both publication PDF and source files.",
+                    blockers=blockers,
+                )
+                audit_blocked(
+                    "publication_package_export",
+                    str(exc),
+                    result_counts={"force": force, "blockers": len(blockers)},
+                    extra={"blockers": blockers[:20]},
+                )
+                raise exc
+            exc = PublicationPackageBlocked(
+                "Publication package blocked because there are no publishable active final submissions."
+            )
+            audit_blocked("publication_package_export", str(exc), result_counts={"force": force})
+            raise exc
+
+        timestamp = _timestamp()
+        reports_folder = _reports_folder()
+        zip_prefix = "publication_package_draft" if force else "publication_package"
+        zip_path = reports_folder / f"{zip_prefix}_{timestamp}.zip"
+        manifest_name = f"publication_manifest_{timestamp}.csv"
+        manifest_path = reports_folder / manifest_name
+        warnings_name = f"publication_package_warnings_{timestamp}.csv"
+        warnings_path = reports_folder / warnings_name
+
+        manifest_rows = []
+        for submission, _pdf_info, _source_info in package_items:
+            authors = split_authors(submission.extracted_authors)
+            manifest_rows.append(
                 {
-                    "paper_id": paper.paper_id,
-                    "final_submission_id": submission.final_submission_id,
-                    "category": "Missing PDF",
-                    "message": "Skipped because no publication PDF file is available.",
+                    "ID": submission.paper_id_filled,
+                    "Extracted Title": submission.extracted_title,
+                    "Extracted Author": submission.extracted_authors,
+                    "Author Number": len(authors) if submission.extracted_authors else "",
+                    "Page Number": submission.page_count,
+                    "Similarity (P)": _whole_percent(submission.similarity_score),
+                    "Similarity (S)": _whole_percent(submission.single_similarity_score),
                 }
             )
-            continue
-        if force and not source_info["exists"]:
-            skipped_rows.append(
-                {
-                    "paper_id": paper.paper_id,
-                    "final_submission_id": submission.final_submission_id,
-                    "category": "Missing Source File",
-                    "message": "Skipped because no publication source file is available.",
-                }
-            )
-            continue
-        package_items.append((submission, pdf_info, source_info))
 
-    if not package_items:
-        blockers = readiness_blockers + skipped_rows
-        if force:
-            raise PublicationPackageBlocked(
-                "Draft publication package could not be created because no papers have both publication PDF and source files.",
-                blockers=blockers,
-            )
-        raise PublicationPackageBlocked(
-            "Publication package blocked because there are no publishable active final submissions."
-        )
-
-    timestamp = _timestamp()
-    reports_folder = _reports_folder()
-    zip_prefix = "publication_package_draft" if force else "publication_package"
-    zip_path = reports_folder / f"{zip_prefix}_{timestamp}.zip"
-    manifest_name = f"publication_manifest_{timestamp}.csv"
-    manifest_path = reports_folder / manifest_name
-    warnings_name = f"publication_package_warnings_{timestamp}.csv"
-    warnings_path = reports_folder / warnings_name
-
-    manifest_rows = []
-    for submission, _pdf_info, _source_info in package_items:
-        authors = split_authors(submission.extracted_authors)
-        manifest_rows.append(
-            {
-                "ID": submission.paper_id_filled,
-                "Extracted Title": submission.extracted_title,
-                "Extracted Author": submission.extracted_authors,
-                "Author Number": len(authors) if submission.extracted_authors else "",
-                "Page Number": submission.page_count,
-                "Similarity (P)": _whole_percent(submission.similarity_score),
-                "Similarity (S)": _whole_percent(submission.single_similarity_score),
-            }
-        )
-
-    with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
-        writer = csv.DictWriter(
-            manifest_file,
-            fieldnames=[
-                "ID",
-                "Extracted Title",
-                "Extracted Author",
-                "Author Number",
-                "Page Number",
-                "Similarity (P)",
-                "Similarity (S)",
-            ],
-        )
-        writer.writeheader()
-        writer.writerows(manifest_rows)
-
-    if force:
-        warning_rows = _publication_warning_rows(readiness_blockers, skipped_rows)
-        with warnings_path.open("w", newline="", encoding="utf-8-sig") as warnings_file:
+        with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
             writer = csv.DictWriter(
-                warnings_file,
-                fieldnames=["Type", "Paper ID", "Final ID", "Category", "Message"],
+                manifest_file,
+                fieldnames=[
+                    "ID",
+                    "Extracted Title",
+                    "Extracted Author",
+                    "Author Number",
+                    "Page Number",
+                    "Similarity (P)",
+                    "Similarity (S)",
+                ],
             )
             writer.writeheader()
-            writer.writerows(warning_rows)
+            writer.writerows(manifest_rows)
 
-    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as package:
-        package.write(manifest_path, arcname=manifest_name)
         if force:
-            package.write(warnings_path, arcname=warnings_name)
-        for submission, pdf_info, source_info in package_items:
-            base_name = publication_file_base_name(
-                submission.paper_id_filled,
-                submission.extracted_title,
-                settings_obj.title_words_for_filename,
-            )
-            package.write(pdf_info["path"], arcname=f"PDF/{base_name}.pdf")
-            source_path = Path(source_info["path"])
-            source_extension = source_path.suffix or ".source"
-            package.write(source_path, arcname=f"Source/{base_name}{source_extension}")
+            warning_rows = _publication_warning_rows(readiness_blockers, skipped_rows)
+            with warnings_path.open("w", newline="", encoding="utf-8-sig") as warnings_file:
+                writer = csv.DictWriter(
+                    warnings_file,
+                    fieldnames=["Type", "Paper ID", "Final ID", "Category", "Message"],
+                )
+                writer.writeheader()
+                writer.writerows(warning_rows)
 
-    return zip_path
+        with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as package:
+            package.write(manifest_path, arcname=manifest_name)
+            if force:
+                package.write(warnings_path, arcname=warnings_name)
+            for submission, pdf_info, source_info in package_items:
+                base_name = publication_file_base_name(
+                    submission.paper_id_filled,
+                    submission.extracted_title,
+                    settings_obj.title_words_for_filename,
+                )
+                package.write(pdf_info["path"], arcname=f"PDF/{base_name}.pdf")
+                source_path = Path(source_info["path"])
+                source_extension = source_path.suffix or ".source"
+                package.write(source_path, arcname=f"Source/{base_name}{source_extension}")
+
+        audit_success(
+            "publication_package_export",
+            "Publication package exported.",
+            result_counts={
+                "force": force,
+                "paper_count": len(package_items),
+                "skipped_count": len(skipped_rows),
+                "readiness_blockers": len(readiness_blockers),
+            },
+            file_changes={"zip_path": str(zip_path), "manifest_path": str(manifest_path)},
+            extra={"skipped": skipped_rows[:20]},
+        )
+        return zip_path
+    except PublicationPackageBlocked:
+        raise
+    except Exception as exc:
+        audit_failure(
+            "publication_package_export",
+            exc,
+            "Publication package export failed.",
+            result_counts={"force": force},
+        )
+        raise
 
 
 def export_all_reports():
@@ -412,4 +480,9 @@ def export_all_reports():
             writer, sheet_name="Author Count", index=False
         )
         _excel_safe_frame(old_frame).to_excel(writer, sheet_name="Old Versions", index=False)
+    audit_success(
+        "export_editorial_review_workbook",
+        "Editorial review workbook exported.",
+        file_changes={"path": str(path)},
+    )
     return Path(path)

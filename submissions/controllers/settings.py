@@ -118,6 +118,13 @@ from submissions.services.title_author_extraction import (
     verify_title_author,
 )
 from submissions.services import reports
+from submissions.services.audit import (
+    archive_and_clear_audit_log,
+    audit_failure,
+    audit_preview,
+    audit_requested,
+    audit_success,
+)
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -194,6 +201,12 @@ def app_settings(request):
         for field_name, default_value in DEFAULT_FOLDER_SETTINGS.items():
             setattr(settings_obj, field_name, default_value)
         settings_obj.save(update_fields=list(DEFAULT_FOLDER_SETTINGS))
+        audit_success(
+            "settings_reset_folders",
+            "Folder paths reset to defaults.",
+            request=request,
+            changed_fields=list(DEFAULT_FOLDER_SETTINGS),
+        )
         messages.success(request, "Folder paths reset to data/... defaults.")
         return redirect("submissions:settings")
 
@@ -240,6 +253,11 @@ def app_settings(request):
 
     if request.method == "POST" and request.POST.get("action") == "cancel_active_rule_preview":
         request.session.pop("active_version_rule_preview", None)
+        audit_success(
+            "settings_active_version_rule_cancel",
+            "Active version rule change preview cancelled.",
+            request=request,
+        )
         messages.info(request, "Active version rule change was cancelled. Settings were not changed.")
         return redirect("submissions:settings")
 
@@ -267,6 +285,16 @@ def app_settings(request):
             }
             request.session["active_version_change_report"] = result_report
             request.session.pop("active_version_rule_preview", None)
+            audit_success(
+                "settings_active_version_rule_apply",
+                "Active final version rule change applied.",
+                request=request,
+                changed_fields=["active_version_rule"],
+                before={"active_version_rule": preview["report"]["old_rule"]},
+                after={"active_version_rule": preview["report"]["new_rule"]},
+                result_counts={"changed_count": result_report["changed_count"]},
+                extra={"changes": result_report["changes"][:50]},
+            )
             messages.warning(
                 request,
                 (
@@ -303,6 +331,16 @@ def app_settings(request):
                 "before_snapshot": before_active_versions,
                 "report": report,
             }
+            audit_preview(
+                "settings_active_version_rule_preview",
+                "Active final version rule change preview created.",
+                request=request,
+                changed_fields=["active_version_rule"],
+                before={"active_version_rule": old_active_version_rule},
+                after={"active_version_rule": form.cleaned_data["active_version_rule"]},
+                result_counts={"changed_count": len(changed_active_versions)},
+                extra={"changes": changed_active_versions[:50]},
+            )
             messages.warning(
                 request,
                 (
@@ -312,6 +350,12 @@ def app_settings(request):
             )
             return redirect("submissions:settings")
         form.save()
+        audit_success(
+            "settings_save",
+            "Settings saved.",
+            request=request,
+            changed_fields=form.changed_data,
+        )
         messages.success(request, "Settings saved.")
         return redirect("submissions:settings")
     active_version_rule_preview = request.session.get("active_version_rule_preview")
@@ -439,7 +483,20 @@ def clear_database(request):
         return redirect("submissions:settings")
 
     confirmation = request.POST.get("confirmation", "").strip()
+    clear_audit_log = request.POST.get("clear_audit_log") == "on"
+    audit_requested(
+        "clear_database_requested",
+        "Clear Database requested.",
+        request=request,
+        result_counts={"clear_audit_log": clear_audit_log},
+    )
     if confirmation != "CLEAR DATABASE":
+        audit_failure(
+            "clear_database_requested",
+            "Confirmation text did not match.",
+            "Clear Database was not applied.",
+            request=request,
+        )
         messages.error(request, 'Database was not cleared. Type "CLEAR DATABASE" to confirm.')
         return redirect("submissions:settings")
 
@@ -456,6 +513,9 @@ def clear_database(request):
         "papers": InitialPaper.objects.count(),
     }
     settings_obj = AppSetting.load()
+    archived_audit_path = None
+    if clear_audit_log:
+        archived_audit_path = archive_and_clear_audit_log("clear_database")
     cleared_folders = _clear_data_files(settings_obj)
     removed_items = sum(row["removed"] for row in cleared_folders)
     with transaction.atomic():
@@ -481,5 +541,15 @@ def clear_database(request):
         f"{counts['settings']} settings row, "
         f"{removed_items} file/folder items removed. "
         "Settings and conference name were reset to defaults.",
+    )
+    audit_success(
+        "clear_database_applied",
+        "System wiped clean.",
+        request=request,
+        result_counts={**counts, "removed_file_items": removed_items},
+        file_changes={
+            "audit_log_archived": bool(archived_audit_path),
+            "audit_archive_path": str(archived_audit_path) if archived_audit_path else "",
+        },
     )
     return redirect("submissions:dashboard")

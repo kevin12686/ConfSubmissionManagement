@@ -99,6 +99,7 @@ from submissions.services.title_author_extraction import (
     verify_title_author,
 )
 from submissions.services import reports
+from submissions.services.audit import audit_failure, audit_success
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -140,7 +141,15 @@ def initial_paper_form(request, pk=None):
     paper = get_object_or_404(InitialPaper, pk=pk) if pk else None
     form = InitialPaperForm(request.POST or None, instance=paper)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        paper = form.save()
+        audit_success(
+            "paper_master_save",
+            "Paper master record saved.",
+            request=request,
+            object_type="InitialPaper",
+            paper_id=paper.paper_id,
+            changed_fields=form.changed_data,
+        )
         messages.success(request, "Paper master record saved.")
         return redirect("submissions:initial_paper_list")
     return render(request, "submissions/initial_paper_form.html", {"form": form, "paper": paper})
@@ -149,7 +158,15 @@ def initial_paper_form(request, pk=None):
 def initial_paper_delete(request, pk):
     paper = get_object_or_404(InitialPaper, pk=pk)
     if request.method == "POST":
+        paper_id = paper.paper_id
         paper.delete()
+        audit_success(
+            "paper_master_delete",
+            "Paper master record deleted.",
+            request=request,
+            object_type="InitialPaper",
+            paper_id=paper_id,
+        )
         messages.success(request, "Paper master record deleted.")
         return redirect("submissions:initial_paper_list")
     return render(request, "submissions/confirm_delete.html", {"object": paper, "type": "paper master record"})
@@ -165,6 +182,7 @@ def import_initial_papers_view(request):
             messages.success(request, result.message)
         except Exception as exc:
             logger.exception("Paper master apply failed")
+            audit_failure("paper_master_import_apply", exc, "Paper master import apply failed.", request=request)
             messages.error(request, f"Apply failed: {exc}")
         return redirect("submissions:initial_paper_list")
 
@@ -184,5 +202,6 @@ def import_initial_papers_view(request):
             )
         except Exception as exc:
             logger.exception("Paper master import failed")
+            audit_failure("paper_master_import_preview", exc, "Paper master import preview failed.", request=request)
             messages.error(request, f"Preview failed: {exc}")
     return redirect("submissions:initial_paper_list")

@@ -114,6 +114,7 @@ from submissions.services.title_author_extraction import (
     verify_title_author,
 )
 from submissions.services import reports
+from submissions.services.audit import audit_failure, audit_success
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -215,6 +216,14 @@ def final_submission_list(request):
             else:
                 messages.error(request, "Unknown final submission action.")
         except Exception as exc:
+            audit_failure(
+                "final_submission_list_action",
+                exc,
+                "Final submission list action failed.",
+                request=request,
+                submission=submission,
+                extra={"action": action},
+            )
             messages.error(request, str(exc))
         return redirect("submissions:final_submission_list")
     q = _search_query(request)
@@ -241,6 +250,14 @@ def final_submission_form(request, pk=None):
                 undo_discard_submission(submission)
                 messages.success(request, f"Final submission {submission.final_submission_id} restored.")
         except Exception as exc:
+            audit_failure(
+                "final_submission_discard_action",
+                exc,
+                "Final submission discard action failed.",
+                request=request,
+                submission=submission,
+                extra={"action": request.POST.get("action")},
+            )
             messages.error(request, str(exc))
         edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
         if return_url:
@@ -310,6 +327,7 @@ def editor_upload_form(request):
             )
             return redirect("submissions:final_submission_list")
         except Exception as exc:
+            audit_failure("editor_upload_confirm", exc, "Editor upload confirmation failed.", request=request)
             messages.error(request, str(exc))
             return render(
                 request,
@@ -342,6 +360,7 @@ def editor_upload_form(request):
             )
             return redirect("submissions:final_submission_list")
         except Exception as exc:
+            audit_failure("editor_upload_preview", exc, "Editor upload preview failed.", request=request)
             messages.error(request, str(exc))
     return render(
         request,
@@ -353,7 +372,17 @@ def editor_upload_form(request):
 def final_submission_delete(request, pk):
     submission = get_object_or_404(FinalSubmission, pk=pk)
     if request.method == "POST":
+        final_id = submission.final_submission_id
+        paper_id = submission.paper_id_filled
         submission.delete()
+        audit_success(
+            "final_submission_delete",
+            "Final submission deleted.",
+            request=request,
+            object_type="FinalSubmission",
+            paper_id=paper_id,
+            final_submission_id=final_id,
+        )
         messages.success(request, "Final submission deleted.")
         return redirect("submissions:final_submission_list")
     return render(
@@ -368,6 +397,7 @@ def import_final_submissions_view(request):
             messages.success(request, result.message)
         except Exception as exc:
             logger.exception("Final submission apply failed")
+            audit_failure("final_submission_import_apply", exc, "Final submission import apply failed.", request=request)
             messages.error(request, f"Apply failed: {exc}")
         return redirect("submissions:final_submission_list")
 
@@ -389,5 +419,6 @@ def import_final_submissions_view(request):
             )
         except Exception as exc:
             logger.exception("Final submission import failed")
+            audit_failure("final_submission_import_preview", exc, "Final submission import preview failed.", request=request)
             messages.error(request, f"Preview failed: {exc}")
     return redirect("submissions:final_submission_list")

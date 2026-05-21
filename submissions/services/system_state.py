@@ -21,6 +21,13 @@ from submissions.models import (
     PaperAuthor,
     sync_final_submission_state_records,
 )
+from submissions.services.audit import (
+    audit_failure,
+    audit_log_root,
+    audit_preview,
+    audit_requested,
+    audit_success,
+)
 from submissions.services.file_manager import resolve_folder
 
 
@@ -157,6 +164,7 @@ def _managed_roots(settings_obj):
         roots.append((kind, path, label))
 
     add("media", django_settings.MEDIA_ROOT, "media")
+    add("project", audit_log_root(), "audit_logs")
     add("project", django_settings.BASE_DIR / "data" / "crosscheck_upload", "crosscheck_upload")
     for field_name in DEFAULT_FOLDER_SETTINGS:
         add("project", resolve_folder(getattr(settings_obj, field_name)), field_name)
@@ -209,6 +217,9 @@ def _collect_file_entries(settings_obj):
         if kind == "media":
             root_restore_kind = "media"
             root_restore_rel = ""
+        elif label == "audit_logs":
+            root_restore_kind = "project"
+            root_restore_rel = "data/logs"
         elif _is_relative_to(resolved_root, django_settings.BASE_DIR):
             root_restore_kind = "project"
             root_restore_rel = resolved_root.relative_to(django_settings.BASE_DIR).as_posix()
@@ -241,6 +252,10 @@ def _collect_file_entries(settings_obj):
                 rel = path.relative_to(Path(django_settings.MEDIA_ROOT).resolve()).as_posix()
                 zip_path = f"files/media/{rel}"
                 restore_rel = rel
+            elif label == "audit_logs":
+                rel = path.relative_to(root.resolve()).as_posix()
+                zip_path = f"files/project/data/logs/{rel}"
+                restore_rel = f"data/logs/{rel}"
             elif _is_relative_to(path, django_settings.BASE_DIR):
                 rel = path.relative_to(django_settings.BASE_DIR).as_posix()
                 zip_path = f"files/project/{rel}"
@@ -279,53 +294,69 @@ def _is_relative_to(path, root):
 
 
 def export_system_state(reason="manual"):
-    settings_obj = AppSetting.load()
-    file_entries, root_maps, path_aliases, root_aliases = _collect_file_entries(settings_obj)
-    exported_at = timezone.now()
-    snapshot_name = f"system_state_{_now_stamp()}.zip"
-    target = system_state_reports_root() / snapshot_name
-    state = {
-        "snapshot_version": STATE_ARCHIVE_VERSION,
-        "state_archive_version": STATE_ARCHIVE_VERSION,
-        "app_name": django_settings.APP_NAME,
-        "app_version": django_settings.APP_VERSION,
-        "exported_at": exported_at.isoformat(),
-        "conference_name": settings_obj.conference_name,
-        "database_signature": database_signature(),
-        "models": {
-            key: _serialize_queryset(model, path_aliases, root_aliases)
-            for key, model in MODEL_SPECS
-        },
-    }
-    manifest_files = [
-        {key: value for key, value in entry.items() if key != "source_path"}
-        for entry in file_entries
-    ]
-    manifest = {
-        "snapshot_version": STATE_ARCHIVE_VERSION,
-        "state_archive_version": STATE_ARCHIVE_VERSION,
-        "app_name": django_settings.APP_NAME,
-        "app_version": django_settings.APP_VERSION,
-        "reason": reason,
-        "exported_at": exported_at.isoformat(),
-        "conference_name": settings_obj.conference_name,
-        "record_counts": _model_counts(),
-        "database_signature": state["database_signature"],
-        "file_count": len(file_entries),
-        "artifact_counts": _artifact_counts(manifest_files),
-        "files": manifest_files,
-        "root_maps": root_maps,
-    }
-    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
-        archive.writestr("state.json", json.dumps(state, indent=2, sort_keys=True))
-        for entry in file_entries:
-            archive.write(entry["source_path"], entry["zip_path"])
-    return {
-        "path": target,
-        "filename": target.name,
-        "manifest": manifest,
-    }
+    try:
+        audit_requested(
+            "system_state_export_requested",
+            "System state ZIP export requested.",
+            extra={"reason": reason},
+        )
+        settings_obj = AppSetting.load()
+        file_entries, root_maps, path_aliases, root_aliases = _collect_file_entries(settings_obj)
+        exported_at = timezone.now()
+        snapshot_name = f"system_state_{_now_stamp()}.zip"
+        target = system_state_reports_root() / snapshot_name
+        state = {
+            "snapshot_version": STATE_ARCHIVE_VERSION,
+            "state_archive_version": STATE_ARCHIVE_VERSION,
+            "app_name": django_settings.APP_NAME,
+            "app_version": django_settings.APP_VERSION,
+            "exported_at": exported_at.isoformat(),
+            "conference_name": settings_obj.conference_name,
+            "database_signature": database_signature(),
+            "models": {
+                key: _serialize_queryset(model, path_aliases, root_aliases)
+                for key, model in MODEL_SPECS
+            },
+        }
+        manifest_files = [
+            {key: value for key, value in entry.items() if key != "source_path"}
+            for entry in file_entries
+        ]
+        manifest = {
+            "snapshot_version": STATE_ARCHIVE_VERSION,
+            "state_archive_version": STATE_ARCHIVE_VERSION,
+            "app_name": django_settings.APP_NAME,
+            "app_version": django_settings.APP_VERSION,
+            "reason": reason,
+            "exported_at": exported_at.isoformat(),
+            "conference_name": settings_obj.conference_name,
+            "record_counts": _model_counts(),
+            "database_signature": state["database_signature"],
+            "file_count": len(file_entries),
+            "artifact_counts": _artifact_counts(manifest_files),
+            "files": manifest_files,
+            "root_maps": root_maps,
+        }
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+            archive.writestr("state.json", json.dumps(state, indent=2, sort_keys=True))
+            for entry in file_entries:
+                archive.write(entry["source_path"], entry["zip_path"])
+        audit_success(
+            "system_state_export",
+            "System state ZIP exported.",
+            result_counts={"file_count": len(file_entries), **_model_counts()},
+            file_changes={"path": str(target)},
+            extra={"reason": reason},
+        )
+        return {
+            "path": target,
+            "filename": target.name,
+            "manifest": manifest,
+        }
+    except Exception as exc:
+        audit_failure("system_state_export", exc, "System state ZIP export failed.", extra={"reason": reason})
+        raise
 
 
 def preview_system_state_restore(uploaded_file):
@@ -358,6 +389,16 @@ def preview_system_state_restore(uploaded_file):
         "settings_summary": _settings_summary(state),
     }
     (target_dir / "preview.json").write_text(json.dumps(preview, indent=2), encoding="utf-8")
+    audit_preview(
+        "system_state_restore_preview",
+        "System state restore preview created.",
+        result_counts={
+            "file_count": preview["file_count"],
+            "missing_files": len(preview["missing_files"]),
+            "corrupt_files": len(preview["corrupt_files"]),
+        },
+        extra={"token": token, "conference_name": preview["conference_name"]},
+    )
     return preview
 
 
@@ -369,33 +410,45 @@ def load_restore_preview(token):
 
 
 def apply_system_state_restore(token, confirmation):
-    if confirmation.strip() != CONFIRMATION_TEXT:
-        raise SystemStateError(f'Type "{CONFIRMATION_TEXT}" to apply this restore.')
-    preview = load_restore_preview(token)
-    created_at = parse_datetime(preview["created_at"])
-    if created_at and timezone.now() - created_at > timedelta(seconds=RESTORE_PREVIEW_TTL_SECONDS):
-        raise SystemStateError("Restore preview expired. Upload the snapshot again.")
-    if preview["database_signature"] != database_signature():
-        raise SystemStateError("Database changed after preview. Upload the snapshot again before restoring.")
-    if preview["missing_files"] or preview["corrupt_files"]:
-        raise SystemStateError("Snapshot files did not pass validation. Restore was not applied.")
+    try:
+        if confirmation.strip() != CONFIRMATION_TEXT:
+            raise SystemStateError(f'Type "{CONFIRMATION_TEXT}" to apply this restore.')
+        preview = load_restore_preview(token)
+        created_at = parse_datetime(preview["created_at"])
+        if created_at and timezone.now() - created_at > timedelta(seconds=RESTORE_PREVIEW_TTL_SECONDS):
+            raise SystemStateError("Restore preview expired. Upload the snapshot again.")
+        if preview["database_signature"] != database_signature():
+            raise SystemStateError("Database changed after preview. Upload the snapshot again before restoring.")
+        if preview["missing_files"] or preview["corrupt_files"]:
+            raise SystemStateError("Snapshot files did not pass validation. Restore was not applied.")
 
-    preview_dir = restore_preview_root() / token
-    zip_path = preview_dir / "snapshot.zip"
-    manifest, state = _read_snapshot(zip_path)
-    pre_restore = export_system_state(reason="pre_restore_backup")
-    settings_before_restore = AppSetting.load()
-    with transaction.atomic():
-        _clear_database_rows()
-        _clear_managed_files_for_restore(settings_before_restore, state)
-        path_map, root_map = _extract_snapshot_files(zip_path, manifest)
-        _restore_models(state, path_map, root_map)
-    shutil.rmtree(preview_dir, ignore_errors=True)
-    return {
-        "pre_restore_backup": pre_restore["path"],
-        "restored_counts": manifest.get("record_counts", {}),
-        "conference_name": manifest.get("conference_name") or "",
-    }
+        preview_dir = restore_preview_root() / token
+        zip_path = preview_dir / "snapshot.zip"
+        manifest, state = _read_snapshot(zip_path)
+        pre_restore = export_system_state(reason="pre_restore_backup")
+        settings_before_restore = AppSetting.load()
+        with transaction.atomic():
+            _clear_database_rows()
+            _clear_managed_files_for_restore(settings_before_restore, state)
+            path_map, root_map = _extract_snapshot_files(zip_path, manifest)
+            _restore_models(state, path_map, root_map)
+        shutil.rmtree(preview_dir, ignore_errors=True)
+        result = {
+            "pre_restore_backup": pre_restore["path"],
+            "restored_counts": manifest.get("record_counts", {}),
+            "conference_name": manifest.get("conference_name") or "",
+        }
+        audit_success(
+            "system_state_restore_apply",
+            "System state restore applied.",
+            result_counts=result["restored_counts"],
+            file_changes={"pre_restore_backup": str(pre_restore["path"])},
+            extra={"conference_name": result["conference_name"]},
+        )
+        return result
+    except Exception as exc:
+        audit_failure("system_state_restore_apply", exc, "System state restore failed.", extra={"token": token})
+        raise
 
 
 def _read_snapshot(zip_path):
@@ -456,6 +509,7 @@ def _clear_database_rows():
 def _clear_managed_files_for_restore(settings_obj, state):
     folders = {
         Path(django_settings.MEDIA_ROOT),
+        django_settings.BASE_DIR / "data" / "logs",
         django_settings.BASE_DIR / "data" / "crosscheck_upload",
         django_settings.BASE_DIR / "data" / "restored_external",
     }
@@ -526,6 +580,7 @@ def _artifact_counts(files):
         "pdf_thumbnails": 0,
         "format_previews": 0,
         "reports_exports": 0,
+        "audit_logs": 0,
         "other_files": 0,
     }
     for entry in files:
@@ -543,6 +598,8 @@ def _artifact_counts(files):
             or "/plagiarism_upload/" in zip_path
         ):
             counts["reports_exports"] += 1
+        elif "/logs/" in zip_path:
+            counts["audit_logs"] += 1
         elif (
             "/final_submissions/" in zip_path
             or "/source_submissions/" in zip_path

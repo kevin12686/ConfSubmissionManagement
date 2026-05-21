@@ -71,7 +71,8 @@ System State ZIP files are portable. They restore settings, conference name, dat
 9. Review author counts, duplicate authors, page exceptions, and author-limit exceptions.
 10. Use Organized List and Error Report as the publication readiness checklist.
 11. Export the final publication package, or download a clearly marked draft package if blockers still exist.
-12. Download a System State ZIP before moving machines or archiving a conference.
+12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.
+13. Download a System State ZIP before moving machines or archiving a conference.
 
 ## Current Final Publication Version Rules
 
@@ -114,6 +115,7 @@ Legacy fields such as `current_file_path`, `source_current_file_path`, `active_f
 - `/reviews/exceptions/` Exceptions
 - `/reports/errors/` Error Report
 - `/reports/author-count/` Author Count
+- `/reports/audit-log/` Audit Log
 - `/reports/` Export Reports
 - `/integrations/crosscheck/` CrossCheck / Plagiarism and System Backup
 - `/settings/` Settings and Storage Management
@@ -149,11 +151,21 @@ The app stores local data under `data/` by default:
 - `data/media/formatted_pdfs/`: corrected PDFs.
 - `data/media/formatted_sources/`: corrected source files.
 - `data/publication_pdf_debug/`: generated inspection copies of current publication PDFs. These copies should match the bytes used by the publication ZIP, but they are never used as export input.
+- `data/logs/audit.log`: append-only JSON Lines audit trail for key user and system actions.
+- `data/logs/archive/`: archived audit logs created when Clear Database is run with the audit-clear option.
 - `data/reports/`: generated Excel/ZIP exports.
 - `data/plagiarism_reports/`: uploaded plagiarism report PDFs.
 - `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: generated UI/review artifacts used by Process PDFs, Formatting Review, and Title/Author Review.
 
 Folder paths can be changed in Settings. System State ZIPs include referenced review artifacts such as title/author verification images, page thumbnails, and format previews, while excluding temporary preview tokens. System State restore remaps managed paths into the current computer's local project folder instead of preserving old absolute paths.
+
+## Audit Log
+
+The app writes key actions to `data/logs/audit.log` as JSON Lines. Events include imports, applies, manual edits, uploads, editor uploads, discard/undo, Not Publishing, verification, extraction, formatting, Process PDFs, CrossCheck export/import, exceptions, settings changes, publication export, backup/restore, storage cleanup, and Clear Database.
+
+Open `/reports/audit-log/` to search by Paper ID, Final ID, action, status, or message. The page shows the latest events and can download the raw log.
+
+Clear Database preserves `audit.log` by default. If you check `Also archive and clear audit log`, the current log is moved to `data/logs/archive/` and a new `audit.log` is created with an event recording that archive action.
 
 ## Manual Commands
 

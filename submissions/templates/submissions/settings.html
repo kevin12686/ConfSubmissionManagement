@@ -417,6 +417,15 @@
             <div class="col-md-8">
                 <label class="form-label" for="clear-confirmation">Type CLEAR DATABASE to confirm</label>
                 <input id="clear-confirmation" class="form-control" name="confirmation" autocomplete="off">
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="clear-audit-log" name="clear_audit_log">
+                    <label class="form-check-label" for="clear-audit-log">
+                        Also archive and clear audit log
+                    </label>
+                    <div class="form-text">
+                        Leave unchecked to keep the audit trail. If checked, the current log is archived under data/logs/archive before a new audit.log is started.
+                    </div>
+                </div>
             </div>
             <div class="col-md-4">
                 <button class="btn btn-danger w-100">Clear Database and Files</button>

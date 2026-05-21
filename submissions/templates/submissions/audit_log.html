@@ -1,0 +1,76 @@
+{% extends "submissions/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Audit Log</h1>
+        <div class="cfm-page-subtitle">Append-only JSONL history of key system and editorial actions.</div>
+    </div>
+    <div class="text-end">
+        {% if audit_info.exists %}
+            <a class="btn btn-outline-primary" href="{% url 'submissions:download_audit_log' %}">Download audit.log</a>
+            <div class="small text-muted mt-1">{{ audit_info.size_label }}</div>
+        {% else %}
+            <span class="badge text-bg-secondary">No audit log yet</span>
+        {% endif %}
+    </div>
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-md-8">
+        <label class="form-label" for="audit-search">Search</label>
+        <input id="audit-search" class="form-control" name="q" value="{{ q }}" placeholder="Paper ID, Final ID, action, status, message">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="audit-limit">Rows</label>
+        <input id="audit-limit" class="form-control" name="limit" value="{{ limit }}" type="number" min="50" max="2000">
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-primary w-100">Search</button>
+    </div>
+</form>
+
+<div class="table-responsive">
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Paper ID</th>
+                <th>Final ID</th>
+                <th>Message</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+                <tr>
+                    <td class="small text-nowrap">{{ event.timestamp }}</td>
+                    <td><code>{{ event.action }}</code></td>
+                    <td>
+                        <span class="badge text-bg-{% if event.status == 'success' %}success{% elif event.status == 'failed' %}danger{% elif event.status == 'blocked' %}warning{% elif event.status == 'previewed' %}info{% else %}secondary{% endif %}">
+                            {{ event.status }}
+                        </span>
+                    </td>
+                    <td>{{ event.paper_id|default:"--" }}</td>
+                    <td>{{ event.final_submission_id|default:"--" }}</td>
+                    <td class="small">{{ event.message|default:"--" }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#audit-{{ forloop.counter }}">JSON</button>
+                    </td>
+                </tr>
+                <tr class="collapse" id="audit-{{ forloop.counter }}">
+                    <td colspan="7">
+                        <pre class="small bg-light border p-2 mb-0"><code>{{ event.raw_json }}</code></pre>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="7" class="text-muted">No audit events found.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

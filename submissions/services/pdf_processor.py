@@ -14,6 +14,7 @@ from submissions.services.file_manager import (
     sanitize_filename_part,
     source_pdf_path,
 )
+from submissions.services.audit import audit_failure, audit_success
 
 
 def calculate_pdf_hash(path):
@@ -206,37 +207,55 @@ def sync_debug_publication_files():
 
 
 def process_all_pdfs(force=False):
-    determine_active_versions()
-    processed = 0
-    skipped = 0
-    errors = 0
-    error_rows = []
-    for submission in FinalSubmission.objects.all():
-        result = process_submission_pdf(submission, force=force)
-        if result is True:
-            processed += 1
-        elif result is None:
-            skipped += 1
-        else:
-            errors += 1
-            error_rows.append(
-                {
-                    "final_submission_id": submission.final_submission_id,
-                    "paper_id": submission.paper_id_filled,
-                    "author_entered_id": submission.start2_paper_id_raw,
-                    "message": submission.processing_message or "Unknown processing error.",
-                }
-            )
-    debug_result = sync_debug_publication_files()
-    return {
-        "processed": processed,
-        "skipped": skipped,
-        "errors": errors,
-        "error_rows": error_rows,
-        "debug_synced": debug_result["synced_count"],
-        "debug_skipped": debug_result["skipped_count"],
-        "debug_manifest": debug_result["manifest_path"],
-    }
+    try:
+        determine_active_versions()
+        processed = 0
+        skipped = 0
+        errors = 0
+        error_rows = []
+        for submission in FinalSubmission.objects.all():
+            result = process_submission_pdf(submission, force=force)
+            if result is True:
+                processed += 1
+            elif result is None:
+                skipped += 1
+            else:
+                errors += 1
+                error_rows.append(
+                    {
+                        "final_submission_id": submission.final_submission_id,
+                        "paper_id": submission.paper_id_filled,
+                        "author_entered_id": submission.start2_paper_id_raw,
+                        "message": submission.processing_message or "Unknown processing error.",
+                    }
+                )
+        debug_result = sync_debug_publication_files()
+        result = {
+            "processed": processed,
+            "skipped": skipped,
+            "errors": errors,
+            "error_rows": error_rows,
+            "debug_synced": debug_result["synced_count"],
+            "debug_skipped": debug_result["skipped_count"],
+            "debug_manifest": debug_result["manifest_path"],
+        }
+        audit_success(
+            "process_pdfs",
+            "PDF processing completed.",
+            result_counts={
+                "processed": processed,
+                "skipped": skipped,
+                "errors": errors,
+                "debug_synced": debug_result["synced_count"],
+                "debug_skipped": debug_result["skipped_count"],
+                "force": force,
+            },
+            extra={"error_rows": error_rows[:20], "debug_manifest": debug_result["manifest_path"]},
+        )
+        return result
+    except Exception as exc:
+        audit_failure("process_pdfs", exc, "PDF processing failed.", result_counts={"force": force})
+        raise
 
 
 def processed_pdf_rows(limit=100):

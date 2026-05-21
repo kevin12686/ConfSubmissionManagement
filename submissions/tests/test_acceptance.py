@@ -67,7 +67,7 @@ from submissions.services.editor_uploads import (
     undo_discard_submission,
 )
 from submissions.services.organized_list import organized_list_rows
-from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions
+from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions, process_all_pdfs
 from submissions.services.reports import (
     author_count_frame,
     export_active_versions,
@@ -108,6 +108,7 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
+from submissions.services.audit import audit_log_path, read_audit_log, write_audit_event
 
 
 class EditorialAcceptanceTestCase(TestCase):
@@ -131,9 +132,11 @@ class EditorialAcceptanceTestCase(TestCase):
         self.system_state_reports_root = self.root / "system_state_backups"
         self.system_state_restore_root = self.root / "system_state_restore_previews"
         self.storage_cleanup_root = self.root / "storage_cleanup_previews"
+        self.audit_root = self.root / "logs"
         self.system_state_reports_root.mkdir()
         self.system_state_restore_root.mkdir()
         self.storage_cleanup_root.mkdir()
+        self.audit_root.mkdir()
         self.addCleanup(
             shutil.rmtree,
             django_settings.BASE_DIR / "data" / "restored_external_folders",
@@ -151,12 +154,24 @@ class EditorialAcceptanceTestCase(TestCase):
             "submissions.services.storage_inventory.cleanup_preview_root",
             lambda: self.storage_cleanup_root,
         )
+        self.audit_root_patcher = patch(
+            "submissions.services.audit.audit_log_root",
+            lambda: self.audit_root,
+        )
+        self.system_state_audit_root_patcher = patch(
+            "submissions.services.system_state.audit_log_root",
+            lambda: self.audit_root,
+        )
         self.system_state_reports_patcher.start()
         self.system_state_restore_patcher.start()
         self.storage_cleanup_patcher.start()
+        self.audit_root_patcher.start()
+        self.system_state_audit_root_patcher.start()
         self.addCleanup(self.system_state_reports_patcher.stop)
         self.addCleanup(self.system_state_restore_patcher.stop)
         self.addCleanup(self.storage_cleanup_patcher.stop)
+        self.addCleanup(self.audit_root_patcher.stop)
+        self.addCleanup(self.system_state_audit_root_patcher.stop)
 
         settings_obj = AppSetting.load()
         settings_obj.reports_folder = str(self.root / "reports")
@@ -332,6 +347,11 @@ class EditorialAcceptanceTestCase(TestCase):
         with self.assertRaisesMessage(ValueError, expected_text):
             export_publication_package()
 
+    def latest_audit_event(self, action):
+        events = read_audit_log(query=action, limit=50)
+        self.assertTrue(events, f"Expected audit event for {action}.")
+        return events[0]
+
     def assert_zip_contains_manifest_pdf_source(self, zip_path, expected_rows):
         with zipfile.ZipFile(zip_path) as archive:
             names = archive.namelist()
@@ -352,6 +372,60 @@ class EditorialAcceptanceTestCase(TestCase):
 
 
 class StorageManagementTests(EditorialAcceptanceTestCase):
+    def test_audit_log_jsonl_view_and_download_are_available(self):
+        write_audit_event(
+            action="unit_test_event",
+            status="success",
+            message="Audit trail smoke test.",
+            paper_id="P001",
+            final_submission_id="F001",
+            file_changes={"temp_path": "/private/var/folders/example/upload.pdf"},
+        )
+
+        line = audit_log_path().read_text(encoding="utf-8").splitlines()[0]
+        event = json.loads(line)
+        self.assertEqual(event["action"], "unit_test_event")
+        self.assertEqual(event["paper_id"], "P001")
+        self.assertNotIn("/private/var", json.dumps(event))
+        self.assertEqual(read_audit_log(query="P001", limit=10)[0]["action"], "unit_test_event")
+
+        response = self.client.get(reverse("submissions:audit_log"), {"q": "P001"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "unit_test_event")
+        response = self.client.get(reverse("submissions:download_audit_log"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"unit_test_event", b"".join(response.streaming_content))
+
+    def test_audit_log_sanitizes_paths_and_survives_unparseable_lines(self):
+        project_file = self.root / "reports" / "publication.zip"
+        media_file = self.media_root / "uploads" / "paper.pdf"
+        project_file.parent.mkdir(parents=True, exist_ok=True)
+        media_file.parent.mkdir(parents=True, exist_ok=True)
+        project_file.write_bytes(b"zip")
+        media_file.write_bytes(b"pdf")
+
+        with override_settings(BASE_DIR=self.root, MEDIA_ROOT=self.media_root):
+            write_audit_event(
+                action="portable_path_event",
+                status="success",
+                file_changes={
+                    "project_file": project_file,
+                    "media_file": media_file,
+                    "scratch_file": "/private/var/folders/session/upload.pdf",
+                },
+            )
+        with audit_log_path().open("a", encoding="utf-8") as handle:
+            handle.write("{broken json\n")
+
+        events = read_audit_log(limit=10)
+        self.assertEqual(events[0]["action"], "unparseable_log_line")
+        event = next(row for row in events if row["action"] == "portable_path_event")
+        event_text = json.dumps(event, ensure_ascii=False)
+        self.assertIn("project:reports/publication.zip", event_text)
+        self.assertIn("media/uploads/paper.pdf", event_text)
+        self.assertNotIn(str(self.root), event_text)
+        self.assertNotIn("/private/var", event_text)
+
     def test_clear_database_wipes_app_state_settings_and_managed_files(self):
         settings_obj = AppSetting.load()
         settings_obj.conference_name = "Conference To Wipe"
@@ -406,6 +480,57 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertEqual(AppSetting.load().reports_folder, "data/reports")
         for path in managed_files:
             self.assertFalse(path.exists(), f"{path} should be removed by full wipe")
+
+    def test_clear_database_preserves_audit_log_by_default(self):
+        write_audit_event(
+            action="before_clear_marker",
+            status="success",
+            message="Should survive default clear.",
+        )
+
+        with override_settings(BASE_DIR=self.root, MEDIA_ROOT=self.media_root):
+            response = self.client.post(
+                reverse("submissions:clear_database"),
+                {"confirmation": "CLEAR DATABASE"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        text = audit_log_path().read_text(encoding="utf-8")
+        self.assertIn("before_clear_marker", text)
+        self.assertIn("clear_database_requested", text)
+        self.assertIn("clear_database_applied", text)
+        self.assertFalse((self.audit_root / "archive").exists())
+
+    def test_clear_database_can_archive_and_clear_audit_log(self):
+        write_audit_event(
+            action="before_archive_marker",
+            status="success",
+            message="Should move into archive.",
+        )
+
+        with override_settings(BASE_DIR=self.root, MEDIA_ROOT=self.media_root):
+            response = self.client.post(
+                reverse("submissions:clear_database"),
+                {"confirmation": "CLEAR DATABASE", "clear_audit_log": "on"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        archived = list((self.audit_root / "archive").glob("audit_before_clear_database_*.log"))
+        self.assertEqual(len(archived), 1)
+        self.assertIn("before_archive_marker", archived[0].read_text(encoding="utf-8"))
+        new_log = audit_log_path().read_text(encoding="utf-8")
+        self.assertNotIn("before_archive_marker", new_log)
+        self.assertIn("audit_log_archived_and_cleared", new_log)
+        self.assertIn("clear_database_applied", new_log)
+
+    def test_process_pdfs_writes_audit_event(self):
+        self.make_master_paper(paper_id="LOG1")
+        self.make_final_submission(final_submission_id="7001", paper_id_filled="LOG1")
+
+        process_all_pdfs()
+
+        text = audit_log_path().read_text(encoding="utf-8")
+        self.assertIn("process_pdfs", text)
 
     def test_storage_inventory_detects_missing_current_path_and_orphan_cache(self):
         submission = self.make_final_submission(final_submission_id="8101", paper_id_filled="S001")
@@ -721,13 +846,21 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         self.assertTrue(Path(result["pre_restore_backup"]).exists())
 
     def test_system_state_manifest_contains_app_and_archive_versions(self):
+        write_audit_event(
+            action="snapshot_marker",
+            status="success",
+            message="Audit trail should be included in system state.",
+        )
         snapshot = export_system_state()
         with zipfile.ZipFile(snapshot["path"]) as archive:
             manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
             state = json.loads(archive.read("state.json").decode("utf-8"))
             archive_text = json.dumps({"manifest": manifest, "state": state})
+            self.assertIn("files/project/data/logs/audit.log", archive.namelist())
+            self.assertIn(b"snapshot_marker", archive.read("files/project/data/logs/audit.log"))
         self.assertEqual(manifest["app_name"], "Conference Final Manager")
         self.assertEqual(manifest["app_version"], django_settings.APP_VERSION)
+        self.assertGreaterEqual(manifest["artifact_counts"]["audit_logs"], 1)
         self.assertEqual(manifest["state_archive_version"], 2)
         self.assertNotIn(str(self.root), archive_text)
         self.assertNotIn("/var/", archive_text)
@@ -1620,6 +1753,26 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
     def test_missing_final_submission_blocks_publication(self):
         self.make_master_paper("P001")
         self.assert_publication_blocked("Missing Final Submission")
+
+    def test_blocked_publication_export_writes_audit_event_with_blocker_context(self):
+        self.make_master_paper("P001", "Needs Editorial Review", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Needs Editorial Review",
+            extracted_title="Needs Editorial Review",
+            title_author_verified=False,
+        )
+
+        self.assert_publication_blocked("Unverified Title/Author Extraction")
+
+        event = self.latest_audit_event("publication_package_export")
+        self.assertEqual(event["status"], "blocked")
+        self.assertEqual(event["result_counts"]["blockers"], 1)
+        self.assertEqual(event["extra"]["blockers"][0]["category"], "Unverified Title/Author Extraction")
+        self.assertEqual(event["extra"]["blockers"][0]["paper_id"], "P001")
+        self.assertEqual(event["extra"]["blockers"][0]["final_submission_id"], "10")
+        self.assertNotIn(str(self.root), json.dumps(event, ensure_ascii=False))
 
     def test_force_publication_package_creates_draft_with_warning_csv(self):
         self.make_master_paper("P001", "Needs Review Paper", "Ada")
@@ -2659,6 +2812,14 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
                 },
             ],
         )
+        event = self.latest_audit_event("publication_package_export")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(event["result_counts"]["paper_count"], 2)
+        self.assertEqual(event["result_counts"]["skipped_count"], 0)
+        self.assertEqual(event["result_counts"]["readiness_blockers"], 0)
+        self.assertIn("publication_package_", event["file_changes"]["zip_path"])
+        self.assertIn("publication_manifest_", event["file_changes"]["manifest_path"])
+        self.assertNotIn(str(self.root), json.dumps(event, ensure_ascii=False))
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
@@ -3472,6 +3633,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertFalse(submission.paper_id_verified)
         self.assertEqual(submission.verification_status, "title_mismatch")
         self.assertEqual(submission.title_author_review_status, "pending")
+        event = self.latest_audit_event("final_submission_manual_edit")
+        self.assertEqual(event["status"], "success")
+        self.assertIn("final_submission_title", event["changed_fields"])
+        self.assertEqual(event["before"]["final_submission_title"], "Original Accepted Title")
+        self.assertEqual(event["after"]["final_submission_title"], "Final Revised Title For Publication")
+        self.assertTrue(event["reset_flags"]["identity_recalculated"])
         self.assert_publication_blocked("Unverified Paper ID")
 
         verify_submission(submission, "P001")
@@ -3563,6 +3730,21 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIsNone(submission.single_similarity_score)
         self.assertEqual(submission.plagiarism_report_path, "")
         self.assertIn("replacement", submission.current_file_path)
+        event = self.latest_audit_event("final_submission_manual_edit")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(event["paper_id"], "P001")
+        self.assertEqual(event["final_submission_id"], "20")
+        self.assertIn("pdf_file", event["changed_fields"])
+        self.assertIn("original.pdf", event["before"]["pdf_file"])
+        self.assertIn("replacement", event["after"]["pdf_file"])
+        self.assertIsNone(event["after"]["page_count"])
+        self.assertEqual(event["after"]["pdf_hash"], "")
+        self.assertTrue(event["reset_flags"]["pdf_reset"])
+        self.assertTrue(event["reset_flags"]["corrected_files_archived"])
+        self.assertTrue(event["file_changes"]["pdf_changed"])
+        self.assertFalse(event["file_changes"]["source_changed"])
+        self.assertRegex(event["file_hashes"]["pdf_file_sha256"], r"^[0-9a-f]{64}$")
+        self.assertNotIn(str(self.root), json.dumps(event, ensure_ascii=False))
         self.assert_publication_blocked("PDF Not Processed")
 
     def test_manual_edit_source_change_keeps_pdf_processing_but_resets_reviews(self):

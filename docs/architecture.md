@@ -17,6 +17,7 @@ Core route groups:
 - `/reviews/`: Paper ID, title/author, formatting, exceptions, and Not Publishing workflows.
 - `/processing/pdfs/`: page count, hashes, thumbnails, publication debug copies, and active-version recalculation.
 - `/reports/`: readiness reports, author count, version history, and publication exports.
+- `/reports/audit-log/`: searchable audit trail and raw audit log download.
 - `/integrations/crosscheck/`: CrossCheck/plagiarism package export/import and System State Backup/Restore.
 - `/settings/`: app settings, active-version rule preview, storage management, and clear database.
 
@@ -88,6 +89,18 @@ Storage cleanup is split by risk:
 - Conservative cleanup removes only unreferenced regenerated cache. It does not delete publication debug, legacy active-final, or old-version output folders.
 - Generated reports/exports cleanup removes regenerated Excel/ZIP downloads and external upload packages.
 - Original uploads, corrected uploads, plagiarism report PDFs, system state backups, and referenced thumbnails/previews are retained.
+
+## Audit Log
+
+Audit logging is file-based, not database-backed. The active log is `data/logs/audit.log`, written as JSON Lines. Keeping it outside the database lets Clear Database preserve the trail by default.
+
+Each event includes timestamp, event ID, app version, state archive version, actor (`local_user`), action, status, request path, Paper ID, Final Submission ID, changed fields, before/after snapshots, reset flags, file changes, hashes, result counts, and error text when applicable.
+
+Use `submissions/services/audit.py` for all audit writes. Do not open-write the log directly from controllers or other services. File paths in events must be portable: use project/media-relative paths, hashes, sizes, and filenames instead of machine-specific temp paths or binary content.
+
+System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens are still excluded.
+
+Clear Database writes `clear_database_requested` first. If the audit-clear checkbox is selected, it archives the current log, creates a new log with `audit_log_archived_and_cleared`, and then writes `clear_database_applied` after the wipe succeeds.
 
 ## Versioning
 

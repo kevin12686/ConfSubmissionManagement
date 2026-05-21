@@ -1,6 +1,7 @@
 from django.utils import timezone
 
 from submissions.models import AppSetting, AuthorLimitWaiver, FinalSubmission
+from submissions.services.audit import audit_success
 from submissions.services.checks import (
     author_count_rows,
     author_number_count,
@@ -187,6 +188,13 @@ def approve_exception(row, reason):
                 "updated_at",
             ]
         )
+        audit_success(
+            "exception_allow",
+            "Page count exception allowed.",
+            submission=submission,
+            reset_flags={"exception_type": "page"},
+            after={"approved_value": submission.page_limit_exception_page_count, "reason": reason},
+        )
         return
 
     if row["type"] == "author_number":
@@ -207,6 +215,13 @@ def approve_exception(row, reason):
                 "updated_at",
             ]
         )
+        audit_success(
+            "exception_allow",
+            "Author number exception allowed.",
+            submission=submission,
+            reset_flags={"exception_type": "author_number"},
+            after={"approved_value": submission.author_number_exception_author_count, "reason": reason},
+        )
         return
 
     if row["type"] == "author_limit":
@@ -220,6 +235,17 @@ def approve_exception(row, reason):
         waiver.approved_publication_paper_count = row["current_value"]
         waiver.approved_at = timezone.now()
         waiver.save()
+        audit_success(
+            "exception_allow",
+            "Author paper-count exception allowed.",
+            object_type="AuthorLimitWaiver",
+            paper_id=row.get("paper_ids", ""),
+            after={
+                "normalized_author_name": waiver.normalized_author_name,
+                "approved_publication_paper_count": waiver.approved_publication_paper_count,
+                "reason": reason,
+            },
+        )
         return
 
     raise ValueError("Unknown exception type.")
@@ -238,6 +264,12 @@ def remove_exception(row):
                 "updated_at",
             ]
         )
+        audit_success(
+            "exception_remove",
+            "Page count exception removed.",
+            submission=submission,
+            reset_flags={"exception_type": "page"},
+        )
         return
 
     if row["type"] == "author_number":
@@ -252,6 +284,12 @@ def remove_exception(row):
                 "updated_at",
             ]
         )
+        audit_success(
+            "exception_remove",
+            "Author number exception removed.",
+            submission=submission,
+            reset_flags={"exception_type": "author_number"},
+        )
         return
 
     if row["type"] == "author_limit":
@@ -264,6 +302,13 @@ def remove_exception(row):
         waiver.approved_publication_paper_count = None
         waiver.approved_at = None
         waiver.save()
+        audit_success(
+            "exception_remove",
+            "Author paper-count exception removed.",
+            object_type="AuthorLimitWaiver",
+            paper_id=row.get("paper_ids", ""),
+            before={"normalized_author_name": waiver.normalized_author_name},
+        )
         return
 
     raise ValueError("Unknown exception type.")

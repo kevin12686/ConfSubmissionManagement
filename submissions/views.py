@@ -35,6 +35,7 @@ from .controllers.exports import (
     export_reports,
     old_versions,
 )
+from .controllers.audit import audit_log, download_audit_log
 from .controllers.integrations import (
     download_crosscheck_zip,
     download_crosscheck_zip_scoped,

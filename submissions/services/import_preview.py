@@ -25,6 +25,7 @@ from submissions.services.import_export import (
     read_table,
 )
 from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.audit import audit_failure, audit_preview, audit_success
 from submissions.services.text_utils import clean_note_text
 
 
@@ -344,7 +345,14 @@ def _make_payload(kind, rows, token=None, blocking_errors=None):
         "blocking_errors": blocking_errors or [],
     }
     payload["stats"] = _stats(rows)
-    return _write_payload(payload)
+    payload = _write_payload(payload)
+    audit_preview(
+        f"{kind}_import_preview",
+        f"{kind.title()} import preview created.",
+        result_counts={**payload["stats"], "blocking_errors": len(payload["blocking_errors"])},
+        extra={"token": payload["token"]},
+    )
+    return payload
 
 
 def _new_final_row(final_id, new_values, files):
@@ -531,18 +539,35 @@ def _file_hash(path):
 
 
 def apply_import_preview(token, **options):
-    payload = load_preview(token)
-    _assert_fresh(payload)
-    if payload.get("blocking_errors"):
-        raise ValueError("Preview has blocking errors. Fix the uploaded file and preview again.")
-    if payload["kind"] == "initial":
-        result = _apply_initial(payload, **options)
-    elif payload["kind"] == "final":
-        result = _apply_final(payload)
-    else:
-        raise ValueError("Unknown preview type.")
-    shutil.rmtree(preview_root() / payload["token"], ignore_errors=True)
-    return result
+    payload = None
+    try:
+        payload = load_preview(token)
+        _assert_fresh(payload)
+        if payload.get("blocking_errors"):
+            raise ValueError("Preview has blocking errors. Fix the uploaded file and preview again.")
+        if payload["kind"] == "initial":
+            result = _apply_initial(payload, **options)
+        elif payload["kind"] == "final":
+            result = _apply_final(payload)
+        else:
+            raise ValueError("Unknown preview type.")
+        shutil.rmtree(preview_root() / payload["token"], ignore_errors=True)
+        audit_success(
+            f"{payload['kind']}_import_apply",
+            f"{payload['kind'].title()} import preview applied.",
+            result_counts=result,
+            extra={"token": payload["token"], "options": options},
+        )
+        return result
+    except Exception as exc:
+        audit_failure(
+            "import_apply",
+            exc,
+            "Import preview apply failed.",
+            result_counts=payload.get("stats", {}) if payload else {},
+            extra={"token": token, "kind": payload.get("kind") if payload else ""},
+        )
+        raise
 
 
 @transaction.atomic

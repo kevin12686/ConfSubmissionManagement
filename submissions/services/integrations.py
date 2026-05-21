@@ -1,6 +1,7 @@
 from django.utils import timezone
 
 from submissions.models import FinalSubmission
+from submissions.services.audit import audit_success
 from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
 from submissions.services.import_export import clean_value, normalize_columns, parse_decimal, read_table
 
@@ -99,8 +100,19 @@ def import_external_results(uploaded_file):
     if updated_title_author:
         rebuild_paper_authors()
 
-    return {
+    result = {
         "updated_title_author": updated_title_author,
         "updated_plagiarism": updated_plagiarism,
         "unmatched": unmatched,
     }
+    audit_success(
+        "external_results_import",
+        "External results imported.",
+        result_counts=result,
+        reset_flags={
+            "title_author_review": bool(updated_title_author),
+            "extracted_title_match": bool(updated_title_author),
+            "duplicate_author_review": bool(updated_title_author),
+        },
+    )
+    return result

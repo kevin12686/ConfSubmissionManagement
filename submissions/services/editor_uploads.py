@@ -11,6 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
+from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
 from submissions.services.import_export import _mark_duplicate_submissions, classify_uploaded_file
 from submissions.services.import_preview import _reset_pdf_dependent_state, _reset_source_dependent_state
@@ -175,6 +176,20 @@ def preview_editor_upload(cleaned_data):
         "requires_confirmation": requires_confirmation,
     }
     (token_root / "payload.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    audit_preview(
+        "editor_upload_preview",
+        "Editor upload title guard preview created.",
+        object_type="InitialPaper",
+        paper_id=paper.paper_id,
+        result_counts={"requires_confirmation": requires_confirmation},
+        file_changes={"pdf": pdf_info, "source": source_info or {}},
+        after={
+            "master_matches": master_matches,
+            "final_matches": final_matches,
+            "extraction_status": extraction_status,
+        },
+        extra={"token": token},
+    )
     return _editor_upload_confirmation_context(payload)
 
 
@@ -319,6 +334,25 @@ def create_editor_submission(
     determine_active_versions()
     _mark_duplicate_submissions()
     submission.refresh_from_db()
+    audit_success(
+        "editor_upload_create",
+        "Editor upload final submission created.",
+        submission=submission,
+        file_changes={
+            "pdf": getattr(submission.pdf_file, "name", ""),
+            "source": getattr(submission.source_file, "name", ""),
+        },
+        reset_flags={
+            "processing": True,
+            "title_author_review": True,
+            "format_review": True,
+            "plagiarism": True,
+        },
+        after={
+            "paper_id_verified": submission.paper_id_verified,
+            "verification_status": submission.verification_status,
+        },
+    )
     return submission
 
 
@@ -342,6 +376,12 @@ def discard_submission(submission, notes):
     )
     determine_active_versions()
     _mark_duplicate_submissions()
+    audit_success(
+        "discard_submission",
+        "Final submission version discarded.",
+        submission=submission,
+        after={"discarded": True, "discard_notes": notes},
+    )
     return submission
 
 
@@ -353,4 +393,10 @@ def undo_discard_submission(submission):
     submission.save(update_fields=["discarded", "discard_notes", "discarded_at", "updated_at"])
     determine_active_versions()
     _mark_duplicate_submissions()
+    audit_success(
+        "undo_discard_submission",
+        "Final submission discard undone.",
+        submission=submission,
+        after={"discarded": False},
+    )
     return submission

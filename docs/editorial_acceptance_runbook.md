@@ -53,7 +53,8 @@ Create Final Submission records and files:
 15. Open Organized List and Error Report. Confirm remaining blockers are understandable and grouped by severity.
 16. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
 17. Resolve all blockers and export the final publication package.
-18. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files return.
+18. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
+19. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return.
 
 ## Acceptance Checks
 
@@ -73,6 +74,9 @@ Create Final Submission records and files:
 - Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
 - Final publication manifest contains publication fields only; editorial notes are not included.
 - System State ZIP restore remaps managed files into local `data/` folders and does not leave old absolute paths.
+- Audit Log records critical user/system actions as JSON Lines in `data/logs/audit.log`.
+- Clear Database preserves Audit Log by default, and the optional audit-clear checkbox archives the old log before starting a new one.
+- System State ZIP includes active and archived audit logs.
 
 ## Automated Command Checklist
 
