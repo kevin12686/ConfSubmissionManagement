@@ -83,7 +83,7 @@ from submissions.services.storage_inventory import (
     apply_storage_cleanup,
     build_storage_inventory,
     preview_storage_cleanup,
-    repair_publication_paths,
+    sync_publication_pdf_debug_folder,
 )
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
@@ -104,7 +104,7 @@ from submissions.services.organized_list import (
     ORGANIZED_LIST_SORT_OPTIONS,
     organized_list_rows,
 )
-from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs, scan_incoming_folder
+from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.title_author_extraction import (
     extract_active_title_authors,
@@ -133,6 +133,7 @@ logger = logging.getLogger("submissions.views")
 DEFAULT_FOLDER_SETTINGS = {
     "incoming_folder": "data/incoming",
     "active_final_folder": "data/active_final",
+    "publication_pdf_debug_folder": "data/publication_pdf_debug",
     "old_versions_folder": "data/old_versions",
     "reports_folder": "data/reports",
     "extraction_results_folder": "data/extraction_results",
@@ -156,6 +157,7 @@ def _clear_data_files(settings_obj):
         Path(django_settings.MEDIA_ROOT),
         Path("data") / "media",
         Path("data") / "crosscheck_upload",
+        Path("data") / "publication_pdf_debug",
         Path("data") / "import_previews",
         Path("data") / "storage_cleanup_previews",
         Path("data") / "system_state_backups",
@@ -164,6 +166,7 @@ def _clear_data_files(settings_obj):
         Path("data") / "restored_external_folders",
         resolve_folder(settings_obj.incoming_folder),
         resolve_folder(settings_obj.active_final_folder),
+        resolve_folder(settings_obj.publication_pdf_debug_folder),
         resolve_folder(settings_obj.old_versions_folder),
         resolve_folder(settings_obj.reports_folder),
         resolve_folder(settings_obj.extraction_results_folder),
@@ -222,17 +225,18 @@ def app_settings(request):
         except ValueError as exc:
             messages.error(request, str(exc))
 
-    if request.method == "POST" and request.POST.get("action") == "repair_storage_paths":
-        storage_repair_result = repair_publication_paths(
-            force=bool(request.POST.get("force_repair"))
-        )
-        messages.success(
-            request,
-            (
-                f"Storage path repair completed: {storage_repair_result['pdf_repaired_count']} PDF paths "
-                f"and {storage_repair_result['source_repaired_count']} source paths refreshed."
-            ),
-        )
+    if request.method == "POST" and request.POST.get("action") == "sync_publication_debug":
+        try:
+            storage_repair_result = sync_publication_pdf_debug_folder()
+            messages.success(
+                request,
+                (
+                    f"Publication PDF debug folder synced: {storage_repair_result['synced_count']} PDFs "
+                    f"written, {storage_repair_result['skipped_count']} skipped."
+                ),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
 
     if request.method == "POST" and request.POST.get("action") == "cancel_active_rule_preview":
         request.session.pop("active_version_rule_preview", None)

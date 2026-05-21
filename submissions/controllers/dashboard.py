@@ -85,7 +85,7 @@ from submissions.services.organized_list import (
     ORGANIZED_LIST_SORT_OPTIONS,
     organized_list_rows,
 )
-from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs, scan_incoming_folder
+from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.title_author_extraction import (
     extract_active_title_authors,
@@ -115,6 +115,7 @@ logger = logging.getLogger("submissions.views")
 DEFAULT_FOLDER_SETTINGS = {
     "incoming_folder": "data/incoming",
     "active_final_folder": "data/active_final",
+    "publication_pdf_debug_folder": "data/publication_pdf_debug",
     "old_versions_folder": "data/old_versions",
     "reports_folder": "data/reports",
     "extraction_results_folder": "data/extraction_results",

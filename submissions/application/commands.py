@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from submissions.services.import_preview import apply_import_preview
-from submissions.services.pdf_processor import process_all_pdfs, scan_incoming_folder
+from submissions.services.pdf_processor import process_all_pdfs
 
 
 @dataclass(frozen=True)
@@ -40,10 +40,8 @@ def apply_final_submission_preview(token):
 
 
 def run_pdf_processing_action(action):
-    if action == "scan":
-        return {"scan_result": scan_incoming_folder(), "process_result": None}
     if action == "process":
-        return {"scan_result": None, "process_result": process_all_pdfs()}
+        return {"process_result": process_all_pdfs()}
     if action == "reprocess":
-        return {"scan_result": None, "process_result": process_all_pdfs(force=True)}
-    return {"scan_result": None, "process_result": None}
+        return {"process_result": process_all_pdfs(force=True)}
+    return {"process_result": None}

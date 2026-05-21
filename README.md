@@ -64,7 +64,7 @@ System State ZIP files are portable. They restore settings, conference name, dat
 2. Import the Paper Master List from CSV/XLSX.
 3. Import Final Submission metadata plus PDF/source files from CSV/XLSX and uploaded files.
 4. Resolve Paper ID mapping, Not Publishing decisions, and Start2/Editor Upload conflicts.
-5. Run Process PDFs to refresh page count, hash, thumbnails, and active-final copies.
+5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies.
 6. Run and review Title/Author Extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
 8. Export PDFs for CrossCheck/plagiarism, import Plagiarism % and Single %, and upload optional report PDFs.
@@ -72,6 +72,32 @@ System State ZIP files are portable. They restore settings, conference name, dat
 10. Use Organized List and Error Report as the publication readiness checklist.
 11. Export the final publication package, or download a clearly marked draft package if blockers still exist.
 12. Download a System State ZIP before moving machines or archiving a conference.
+
+## Current Final Publication Version Rules
+
+The Paper Master List is the publication scope. A paper is considered for final publication only when its Paper ID exists in Paper Master List and the selected Final Submission is not discarded and not marked Not Publishing.
+
+For each Paper ID, active version selection currently works this way:
+
+1. Discarded submissions are excluded.
+2. If any undiscarded Editor Upload exists for the Paper ID, the newest Editor Upload is active.
+3. If no undiscarded Editor Upload exists, the newest Start2/imported submission is active.
+4. "Newest" follows the Settings active-version rule: Final ID order or upload date with Final ID as tie-breaker.
+5. If Start2 and Editor Upload both remain undiscarded, the Editor Upload is temporarily active, but final publication export is blocked until one side is discarded with a note.
+
+Publication-facing PDF resolution uses this priority:
+
+1. Corrected PDF, if uploaded and present.
+2. Original PDF for the active submission, if present.
+
+Publication-facing source resolution uses this priority:
+
+1. Corrected source, if uploaded and present.
+2. Original source for the active submission, if present.
+
+`data/publication_pdf_debug/` is a generated inspection folder created by Process PDFs or Settings > Sync Debug PDFs. It is not the source of truth. Publication ZIPs, CrossCheck ZIPs, duplicate checks, and publication links read the active submission's Corrected PDF or Original PDF directly, not the debug copy.
+
+Legacy fields such as `current_file_path`, `source_current_file_path`, `active_final_folder`, and `old_versions_folder` may exist in older restored data for traceability/debugging, but they are not used to choose the final publication PDF/source.
 
 ## Important Pages
 
@@ -101,6 +127,8 @@ CSV templates can be downloaded inside the app. Static examples are also in `sam
 
 The CrossCheck/plagiarism result template is downloaded from the CrossCheck / Plagiarism page.
 
+CrossCheck export ZIPs use the same publication PDF source rule as final publication exports: Corrected PDF, then Original PDF from the active publishable submission in Paper Master List scope.
+
 Paper Master imports include `paper_id`, `acceptance_status`, `title`, `authors`, and `notes`.
 
 Final Submission imports include `final_submission_id`, `author_entered_paper_id`, `final_submission_title`, `final_submission_authors`, `upload_date`, and `uploaded_fields`.
@@ -120,8 +148,7 @@ The app stores local data under `data/` by default:
 - `data/media/source_submissions/`: original uploaded source files.
 - `data/media/formatted_pdfs/`: corrected PDFs.
 - `data/media/formatted_sources/`: corrected source files.
-- `data/active_final/`: processed active-final PDFs.
-- `data/old_versions/`: retained inactive outputs.
+- `data/publication_pdf_debug/`: generated inspection copies of current publication PDFs. These copies should match the bytes used by the publication ZIP, but they are never used as export input.
 - `data/reports/`: generated Excel/ZIP exports.
 - `data/plagiarism_reports/`: uploaded plagiarism report PDFs.
 - `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: generated UI/review artifacts used by Process PDFs, Formatting Review, and Title/Author Review.

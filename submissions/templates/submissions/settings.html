@@ -180,16 +180,8 @@
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-lg-6">
-                            {% include "submissions/includes/form_field.html" with field=form.incoming_folder %}
-                            {% if folder_warnings.incoming_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.incoming_folder }}</div>{% endif %}
-                        </div>
-                        <div class="col-lg-6">
-                            {% include "submissions/includes/form_field.html" with field=form.active_final_folder %}
-                            {% if folder_warnings.active_final_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.active_final_folder }}</div>{% endif %}
-                        </div>
-                        <div class="col-lg-6">
-                            {% include "submissions/includes/form_field.html" with field=form.old_versions_folder %}
-                            {% if folder_warnings.old_versions_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.old_versions_folder }}</div>{% endif %}
+                            {% include "submissions/includes/form_field.html" with field=form.publication_pdf_debug_folder %}
+                            {% if folder_warnings.publication_pdf_debug_folder %}<div class="alert alert-warning py-2 small">{{ folder_warnings.publication_pdf_debug_folder }}</div>{% endif %}
                         </div>
                         <div class="col-lg-6">
                             {% include "submissions/includes/form_field.html" with field=form.reports_folder %}
@@ -296,14 +288,10 @@
             <div class="col-lg-6">
                 <form method="post" class="border rounded p-3 h-100">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="repair_storage_paths">
-                    <div class="fw-semibold">Repair publication paths</div>
-                    <p class="small text-muted mb-3">Rebuild missing active/old publication PDF copies and refresh source paths from canonical uploads when possible.</p>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="force_repair" id="force-repair">
-                        <label class="form-check-label" for="force-repair">Re-copy even when target files already exist</label>
-                    </div>
-                    <button class="btn btn-outline-primary">Repair Paths</button>
+                    <input type="hidden" name="action" value="sync_publication_debug">
+                    <div class="fw-semibold">Sync publication PDF debug folder</div>
+                    <p class="small text-muted mb-3">Rebuild inspection-only PDF copies from the same corrected/original files used by publication exports. This does not decide the final publication version.</p>
+                    <button class="btn btn-outline-primary">Sync Debug PDFs</button>
                 </form>
             </div>
             <div class="col-lg-6">
@@ -312,7 +300,7 @@
                     <input type="hidden" name="action" value="preview_storage_cleanup">
                     <input type="hidden" name="cleanup_policy" value="generated_cache_or_orphan_output">
                     <div class="fw-semibold">Preview conservative cleanup</div>
-                    <p class="small text-muted mb-3">Default cleanup only selects unreferenced generated cache and orphaned active/old outputs. Referenced thumbnails and previews are kept because the UI uses them.</p>
+                    <p class="small text-muted mb-3">Default cleanup only selects unreferenced generated cache. Publication debug/output folders, referenced thumbnails, and previews are kept.</p>
                     <button class="btn btn-outline-secondary">Create Cleanup Preview</button>
                 </form>
             </div>
@@ -330,8 +318,9 @@
 
         {% if storage_repair_result %}
             <div class="alert alert-info mt-3 mb-0">
-                Repaired {{ storage_repair_result.pdf_repaired_count }} PDF paths and {{ storage_repair_result.source_repaired_count }} source paths.
-                {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} records that lacked source files or could not be copied.{% endif %}
+                Synced {{ storage_repair_result.synced_count }} publication debug PDFs.
+                {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} Paper Master records without an active publication PDF.{% endif %}
+                {% if storage_repair_result.manifest_path %}<div class="small mt-1">Manifest: <code>{{ storage_repair_result.manifest_path }}</code></div>{% endif %}
             </div>
         {% endif %}
 

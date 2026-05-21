@@ -95,7 +95,7 @@
             <div class="cfm-status-line">
                 {% if row.publication_pdf.exists %}
                     <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
-                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                 {% endif %}
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
             </div>

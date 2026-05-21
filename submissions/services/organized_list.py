@@ -15,6 +15,7 @@ from submissions.services.exceptions import (
 )
 from submissions.services.file_manager import (
     active_pdf_needs_processing,
+    publication_debug_pdf_info,
     publication_pdf_info,
     publication_source_info,
 )
@@ -141,8 +142,6 @@ def _source_status(submission):
     source_info = publication_source_info(submission)
     if source_info["source"] == "corrected":
         return "Corrected", "success" if submission.format_status == "review_ok" else "warning"
-    if source_info["source"] == "current":
-        return "Current", "success"
     if source_info["source"] == "original":
         return "Original", "success"
     return "No source", "danger"
@@ -606,6 +605,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
         author_status = _author_count_status(submission, settings_obj)
         publication_pdf = publication_pdf_info(submission) if submission else None
         publication_source = publication_source_info(submission) if submission else None
+        debug_pdf = publication_debug_pdf_info(submission, paper) if submission else None
         rows.append(
             {
                 "row_type": "master",
@@ -613,6 +613,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "submission": submission,
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
+                "debug_pdf": debug_pdf,
                 "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
                 "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
                 "needs_processing_after_formatting": active_pdf_needs_processing(submission)
@@ -657,6 +658,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
         author_status = _author_count_status(submission, settings_obj)
         publication_pdf = publication_pdf_info(submission)
         publication_source = publication_source_info(submission)
+        debug_pdf = publication_debug_pdf_info(submission)
         rows.append(
             {
                 "row_type": "unmatched",
@@ -664,6 +666,7 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "submission": submission,
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source,
+                "debug_pdf": debug_pdf,
                 "duplicate_badges": duplicate_map.get(submission.pk, []),
                 "version_conflict": submission.paper_id_filled in conflict_paper_ids,
                 "needs_processing_after_formatting": active_pdf_needs_processing(submission),

@@ -32,6 +32,7 @@ DEFAULT_FOLDER_SETTINGS = {
     "incoming_folder": "data/incoming",
     "active_final_folder": "data/active_final",
     "old_versions_folder": "data/old_versions",
+    "publication_pdf_debug_folder": "data/publication_pdf_debug",
     "reports_folder": "data/reports",
     "extraction_results_folder": "data/extraction_results",
     "plagiarism_reports_folder": "data/plagiarism_reports",
@@ -547,6 +548,7 @@ def _artifact_counts(files):
             or "/source_submissions/" in zip_path
             or "/formatted_pdfs/" in zip_path
             or "/formatted_sources/" in zip_path
+            or "/publication_pdf_debug/" in zip_path
             or "/active_final/" in zip_path
             or "/old_versions/" in zip_path
         ):

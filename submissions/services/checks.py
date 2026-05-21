@@ -357,7 +357,6 @@ def _submission_label(submission):
 def _has_any_pdf_file(submission):
     return bool(
         (submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists())
-        or (submission.current_file_path and Path(submission.current_file_path).exists())
         or (submission.pdf_file and Path(submission.pdf_file.path).exists())
     )
 
@@ -576,12 +575,7 @@ def publication_readiness_rows(include_allowed=False):
                     "message": f"No PDF file is attached for {label}.",
                 }
             )
-        elif (
-            not publication_pdf["exists"]
-            or submission.processing_status != "processed"
-            or not submission.pdf_hash
-            or submission.page_count is None
-        ):
+        elif active_pdf_needs_processing(submission):
             rows.append(
                 {
                     "category": "PDF Not Processed",
@@ -590,13 +584,17 @@ def publication_readiness_rows(include_allowed=False):
                     "message": "PDF page count/hash are not ready. Run Process PDFs before publishing.",
                 }
             )
-        if corrected_pdf_needs_processing(submission):
+        if (
+            submission.formatted_pdf_file
+            and Path(submission.formatted_pdf_file.path).exists()
+            and corrected_pdf_needs_processing(submission)
+        ):
             rows.append(
                 {
                     "category": "Corrected PDF Not Processed",
                     "paper_id": submission.paper_id_filled,
                     "final_submission_id": submission.final_submission_id,
-                    "message": "A corrected PDF exists but page count/hash/active-final copy need to be refreshed by running Process PDFs.",
+                    "message": "A corrected PDF exists but page count/hash need to be refreshed by running Process PDFs.",
                 }
             )
         if not publication_source["exists"]:

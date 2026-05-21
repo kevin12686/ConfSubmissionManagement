@@ -1,4 +1,7 @@
+import csv
+import hashlib
 import json
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -8,9 +11,11 @@ from django.conf import settings as django_settings
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission
+from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.file_manager import (
     copy_pdf_to_folder,
+    publication_pdf_filename,
+    publication_pdf_info,
     resolve_folder,
     sanitize_filename_part,
     source_pdf_path,
@@ -115,6 +120,7 @@ def _managed_roots(settings_obj):
             Path(django_settings.MEDIA_ROOT) / key for key in GENERATED_CACHE_DIRS
         ],
         "managed_output": [
+            _configured_folder(getattr(settings_obj, "publication_pdf_debug_folder", "data/publication_pdf_debug")),
             _configured_folder(settings_obj.active_final_folder),
             _configured_folder(settings_obj.old_versions_folder),
             django_settings.BASE_DIR / "data" / "crosscheck_upload",
@@ -128,10 +134,7 @@ def _managed_roots(settings_obj):
 
 
 def _cleanup_managed_output_roots(settings_obj):
-    return [
-        _configured_folder(settings_obj.active_final_folder),
-        _configured_folder(settings_obj.old_versions_folder),
-    ]
+    return []
 
 
 def _cleanup_report_export_roots(settings_obj):
@@ -166,8 +169,8 @@ def _collect_referenced_paths():
             ("canonical_original", "Original source", _filefield_path(submission.source_file)),
             ("corrected", "Corrected PDF", _filefield_path(submission.formatted_pdf_file)),
             ("corrected", "Corrected source", _filefield_path(submission.formatted_source_file)),
-            ("managed_output", "Current publication PDF", _text_path(submission.current_file_path)),
-            ("managed_output", "Current source", _text_path(submission.source_current_file_path)),
+            ("managed_output", "Legacy processed PDF path", _text_path(submission.current_file_path)),
+            ("managed_output", "Legacy current source path", _text_path(submission.source_current_file_path)),
             ("generated_cache", "PDF thumbnails", _text_path(submission.thumbnail_folder)),
             (
                 "generated_cache",
@@ -453,6 +456,134 @@ def _remove_empty_managed_output_dirs():
                     path.rmdir()
                 except OSError:
                     pass
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _clear_debug_folder(folder):
+    folder.mkdir(parents=True, exist_ok=True)
+    for child in folder.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def _assert_safe_debug_folder(folder, settings_obj):
+    resolved = folder.resolve()
+    protected_roots = [
+        django_settings.BASE_DIR,
+        django_settings.BASE_DIR / "data",
+        Path(django_settings.MEDIA_ROOT),
+        _configured_folder(settings_obj.reports_folder),
+        _configured_folder(settings_obj.plagiarism_reports_folder),
+        _configured_folder(settings_obj.extraction_results_folder),
+        _configured_folder(settings_obj.active_final_folder),
+        _configured_folder(settings_obj.old_versions_folder),
+        _configured_folder(settings_obj.incoming_folder),
+        django_settings.BASE_DIR / "data" / "crosscheck_upload",
+        django_settings.BASE_DIR / "data" / "system_state_backups",
+    ]
+    unsafe_names = {"", "/", "data", "media", "reports", "crosscheck_upload"}
+    if folder.name in unsafe_names:
+        raise ValueError("Publication PDF debug folder must be a dedicated folder.")
+    for protected in protected_roots:
+        protected = protected.resolve()
+        if resolved == protected:
+            raise ValueError("Publication PDF debug folder must not be a protected app folder.")
+        try:
+            protected.relative_to(resolved)
+            raise ValueError(
+                "Publication PDF debug folder must not contain other managed app folders."
+            )
+        except ValueError as exc:
+            if "must not" in str(exc):
+                raise
+
+
+def sync_publication_pdf_debug_folder():
+    settings_obj = AppSetting.load()
+    debug_folder = resolve_folder(
+        getattr(settings_obj, "publication_pdf_debug_folder", "data/publication_pdf_debug")
+    )
+    _assert_safe_debug_folder(debug_folder, settings_obj)
+    _clear_debug_folder(debug_folder)
+    manifest_path = debug_folder / "publication_pdf_debug_manifest.csv"
+    synced = []
+    skipped = []
+    active_by_paper = {
+        submission.paper_id_filled: submission
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+        )
+    }
+    with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
+        writer = csv.DictWriter(
+            manifest_file,
+            fieldnames=[
+                "paper_id",
+                "final_submission_id",
+                "publication_pdf_source",
+                "source_path",
+                "debug_filename",
+                "sha256",
+            ],
+        )
+        writer.writeheader()
+        for paper in InitialPaper.objects.all().order_by("paper_id"):
+            submission = active_by_paper.get(paper.paper_id)
+            if not submission:
+                skipped.append(
+                    {
+                        "paper_id": paper.paper_id,
+                        "final_submission_id": "",
+                        "message": "No active final submission.",
+                    }
+                )
+                continue
+            pdf_info = publication_pdf_info(submission)
+            if not pdf_info["exists"]:
+                skipped.append(
+                    {
+                        "paper_id": paper.paper_id,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": "No publication PDF source.",
+                    }
+                )
+                continue
+            filename = publication_pdf_filename(
+                paper.paper_id,
+                submission.extracted_title,
+                settings_obj.title_words_for_filename,
+            )
+            target = debug_folder / filename
+            shutil.copy2(pdf_info["path"], target)
+            row = {
+                "paper_id": paper.paper_id,
+                "final_submission_id": submission.final_submission_id,
+                "publication_pdf_source": pdf_info["label"],
+                "source_path": pdf_info["path"],
+                "debug_filename": filename,
+                "sha256": _sha256(target),
+            }
+            synced.append(row)
+            writer.writerow(row)
+    return {
+        "folder": str(debug_folder),
+        "manifest_path": str(manifest_path),
+        "synced": synced,
+        "skipped": skipped,
+        "synced_count": len(synced),
+        "skipped_count": len(skipped),
+    }
 
 
 def _current_source_path(submission):

@@ -14,6 +14,7 @@ from .controllers.final_submissions import (
     final_submission_display_pdf,
     final_submission_display_source,
     plagiarism_report,
+    publication_debug_pdf,
     publication_pdf,
     publication_source,
 )

@@ -618,6 +618,9 @@ class AppSetting(models.Model):
     incoming_folder = models.CharField(max_length=500, default="data/incoming")
     active_final_folder = models.CharField(max_length=500, default="data/active_final")
     old_versions_folder = models.CharField(max_length=500, default="data/old_versions")
+    publication_pdf_debug_folder = models.CharField(
+        max_length=500, default="data/publication_pdf_debug"
+    )
     reports_folder = models.CharField(max_length=500, default="data/reports")
     extraction_results_folder = models.CharField(
         max_length=500, default="data/extraction_results"

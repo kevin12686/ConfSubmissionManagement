@@ -272,9 +272,7 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "title_words_for_filename",
             "active_version_rule",
             "time_zone",
-            "incoming_folder",
-            "active_final_folder",
-            "old_versions_folder",
+            "publication_pdf_debug_folder",
             "reports_folder",
             "extraction_results_folder",
             "plagiarism_reports_folder",
@@ -299,10 +297,11 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
         self.fields["time_zone"].label = "Time zone"
         self.fields["time_zone"].help_text = "Default is Dallas / Central Time."
         folder_help = "Use relative paths like data/reports unless you intentionally need an absolute folder."
+        self.fields["publication_pdf_debug_folder"].label = "Publication PDF debug folder"
+        self.fields["publication_pdf_debug_folder"].help_text = (
+            "Generated inspection copies only. Final ZIP and CrossCheck exports use corrected/original files directly."
+        )
         for field_name in [
-            "incoming_folder",
-            "active_final_folder",
-            "old_versions_folder",
             "reports_folder",
             "extraction_results_folder",
             "plagiarism_reports_folder",

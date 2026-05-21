@@ -88,12 +88,18 @@ Prefer preview-before-apply for imports, re-uploads, restore, and any setting ch
 
 Use app-managed file helpers instead of ad hoc path logic.
 
-- Publication PDF must resolve through corrected, active-final, then original priority.
-- Publication source must resolve through corrected, then current/original priority.
+- `source_pdf_path()` is processing/extraction input: corrected PDF, then original PDF.
+- `publication_pdf_info()` is publication-facing output: corrected PDF, then original PDF.
+- `publication_source_info()` is publication-facing output: corrected source, then original source.
+- `publication_debug_pdf_info()` describes generated inspection copies. It is never the source for publication package export or CrossCheck export.
+- Publication package export, CrossCheck export, duplicate checks, Organized List publication links, and Active Versions use publication-facing helpers.
+- Final Submissions list file links are row-scoped display links and intentionally show only Original/Corrected files for that row, not another active submission's publication files.
 - Do not delete old uploads for traceability.
 - Do not expose editable path text fields for user-managed files when upload/link UI is safer.
 - System State backup must include referenced review artifacts, including title/author verification images, PDF thumbnails, and format previews.
 - System State restore must remap files into the current project `data/` tree and must not preserve old machine-specific absolute paths.
+
+Process PDFs is not a read-only page-count operation. It calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, recalculates active versions, rebuilds author cache, and syncs the publication PDF debug folder. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
 
 ## Tests
 

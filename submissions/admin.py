@@ -170,9 +170,7 @@ class AppSettingAdmin(admin.ModelAdmin):
             "Folders",
             {
                 "fields": (
-                    "incoming_folder",
-                    "active_final_folder",
-                    "old_versions_folder",
+                    "publication_pdf_debug_folder",
                     "reports_folder",
                     "extraction_results_folder",
                     "plagiarism_reports_folder",

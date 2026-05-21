@@ -93,6 +93,7 @@ from submissions.services.storage_inventory import (
     build_storage_inventory,
     preview_storage_cleanup,
     repair_publication_paths,
+    sync_publication_pdf_debug_folder,
 )
 from submissions.services.title_author_extraction import (
     unverify_extracted_title,
@@ -161,6 +162,7 @@ class EditorialAcceptanceTestCase(TestCase):
         settings_obj.reports_folder = str(self.root / "reports")
         settings_obj.active_final_folder = str(self.root / "active")
         settings_obj.old_versions_folder = str(self.root / "old")
+        settings_obj.publication_pdf_debug_folder = str(self.root / "publication_debug")
         settings_obj.incoming_folder = str(self.root / "incoming")
         settings_obj.title_words_for_filename = 4
         settings_obj.page_minimum = 6
@@ -199,6 +201,11 @@ class EditorialAcceptanceTestCase(TestCase):
         paper_id = overrides.get("paper_id_filled", "P001")
         final_id = overrides.get("final_submission_id", "100")
         title = overrides.get("extracted_title", overrides.get("final_submission_title", "Ready Paper"))
+        default_pdf_path = self.make_pdf_file(f"{final_id}.pdf")
+        default_source_path = self.make_source_file(f"{final_id}.docx")
+        thumbnail_folder = self.root / "thumbnails" / str(final_id)
+        thumbnail_folder.mkdir(parents=True, exist_ok=True)
+        (thumbnail_folder / "page-1.png").write_bytes(b"thumbnail")
         values = {
             "final_submission_id": final_id,
             "start2_paper_id_raw": paper_id,
@@ -206,14 +213,16 @@ class EditorialAcceptanceTestCase(TestCase):
             "final_submission_title": title,
             "final_submission_authors": "Ada Lovelace; Alan Turing",
             "upload_date": timezone.now(),
-            "current_file_path": str(self.make_pdf_file(f"{final_id}.pdf")),
-            "source_current_file_path": str(self.make_source_file(f"{final_id}.docx")),
+            "current_file_path": str(default_pdf_path),
+            "source_current_file_path": str(default_source_path),
             "extracted_title": title,
             "extracted_authors": "Ada Lovelace; Alan Turing",
             "page_count": 8,
             "processing_status": "processed",
             "processing_message": "Ready.",
-            "pdf_hash": f"hash-{final_id}",
+            "pdf_hash": calculate_pdf_hash(default_pdf_path),
+            "thumbnail_folder": str(thumbnail_folder),
+            "thumbnail_status": "processed",
             "active_version": True,
             "paper_id_verified": True,
             "verification_status": "verified",
@@ -224,6 +233,26 @@ class EditorialAcceptanceTestCase(TestCase):
             "single_similarity_score": 1,
         }
         values.update(overrides)
+        if "pdf_file" not in overrides:
+            current_path_value = values.get("current_file_path") or ""
+            current_path = Path(current_path_value) if current_path_value else None
+            if current_path and current_path.exists():
+                media_pdf = self.media_root / "final_submissions" / f"{final_id}_{current_path.name}"
+                media_pdf.parent.mkdir(parents=True, exist_ok=True)
+                media_pdf.write_bytes(current_path.read_bytes())
+                values["pdf_file"] = f"final_submissions/{media_pdf.name}"
+                values.setdefault("original_file_name", current_path.name)
+                if "pdf_hash" not in overrides:
+                    values["pdf_hash"] = calculate_pdf_hash(media_pdf)
+        if "source_file" not in overrides:
+            current_source_path_value = values.get("source_current_file_path") or ""
+            current_source_path = Path(current_source_path_value) if current_source_path_value else None
+            if current_source_path and current_source_path.exists():
+                media_source = self.media_root / "source_submissions" / f"{final_id}_{current_source_path.name}"
+                media_source.parent.mkdir(parents=True, exist_ok=True)
+                media_source.write_bytes(current_source_path.read_bytes())
+                values["source_file"] = f"source_submissions/{media_source.name}"
+                values.setdefault("source_original_file_name", current_source_path.name)
         if "title_author_review_status" not in overrides:
             values["title_author_review_status"] = (
                 "review_ok" if values.get("title_author_verified") else "pending"
@@ -233,6 +262,9 @@ class EditorialAcceptanceTestCase(TestCase):
     def mark_submission_publication_ready(self, submission, title=None, authors="Ada Lovelace; Alan Turing"):
         title = title or submission.final_submission_title or "Ready Paper"
         pdf_info = publication_pdf_info(submission)
+        thumbnail_folder = self.root / "thumbnails" / str(submission.final_submission_id)
+        thumbnail_folder.mkdir(parents=True, exist_ok=True)
+        (thumbnail_folder / "page-1.png").write_bytes(b"thumbnail")
         submission.extracted_title = title
         submission.extracted_authors = authors
         submission.title_author_source = "manual"
@@ -244,6 +276,8 @@ class EditorialAcceptanceTestCase(TestCase):
         submission.processing_status = "processed"
         submission.processing_message = "Ready."
         submission.pdf_hash = calculate_pdf_hash(pdf_info["path"]) if pdf_info["exists"] else "ready-hash"
+        submission.thumbnail_folder = str(thumbnail_folder)
+        submission.thumbnail_status = "processed"
         submission.paper_id_verified = True
         submission.verification_status = "verified"
         submission.format_status = "review_ok"
@@ -385,7 +419,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertTrue(
             any(
                 row["final_submission_id"] == "8101"
-                and row["role"] == "Current publication PDF"
+                and row["role"] == "Legacy processed PDF path"
                 for row in inventory["missing_references"]
             )
         )
@@ -403,7 +437,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:settings"))
         self.assertContains(response, "Preview conservative cleanup")
         self.assertContains(response, "Preview generated reports/exports cleanup")
-        self.assertContains(response, "Referenced thumbnails and previews are kept")
+        self.assertContains(response, "referenced thumbnails, and previews are kept")
         submission = self.make_final_submission(final_submission_id="8102", paper_id_filled="S002")
         submission.pdf_file.save("protected-original.pdf", ContentFile(b"original"), save=True)
         submission.formatted_pdf_file.save("protected-corrected.pdf", ContentFile(b"corrected"), save=True)
@@ -427,7 +461,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertTrue(orphan_output.exists())
         selected_paths = {Path(row["path"]).resolve() for row in preview["files"]}
         self.assertIn(cache_file.resolve(), selected_paths)
-        self.assertIn(orphan_output.resolve(), selected_paths)
+        self.assertNotIn(orphan_output.resolve(), selected_paths)
         self.assertNotIn(original_path.resolve(), selected_paths)
         self.assertNotIn(corrected_path.resolve(), selected_paths)
         self.assertNotIn(referenced_thumbnail.resolve(), selected_paths)
@@ -437,9 +471,9 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
 
         result = apply_storage_cleanup(preview["token"], CLEANUP_CONFIRMATION_TEXT)
 
-        self.assertGreaterEqual(result["deleted_count"], 2)
+        self.assertGreaterEqual(result["deleted_count"], 1)
         self.assertFalse(cache_file.exists())
-        self.assertFalse(orphan_output.exists())
+        self.assertTrue(orphan_output.exists())
         self.assertTrue(original_path.exists())
         self.assertTrue(corrected_path.exists())
         self.assertTrue(referenced_thumbnail.exists())
@@ -532,6 +566,30 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertTrue(Path(active.source_current_file_path).exists())
         self.assertTrue(Path(inactive.source_current_file_path).exists())
         self.assertEqual(no_pdf.current_file_path, str(self.root / "missing" / "no-source.pdf"))
+
+    def test_publication_debug_sync_uses_same_pdf_bytes_as_publication_package(self):
+        self.make_master_paper("P001", "Debug Sync Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="8301",
+            paper_id_filled="P001",
+            final_submission_title="Debug Sync Paper",
+            extracted_title="Debug Sync Paper",
+            current_file_path=str(self.make_pdf_file("debug-original.pdf", b"original pdf")),
+            source_current_file_path=str(self.make_source_file("debug-source.docx", b"source")),
+        )
+        submission.formatted_pdf_file.save("debug-corrected.pdf", ContentFile(b"corrected pdf"), save=True)
+        submission.pdf_hash = calculate_pdf_hash(submission.formatted_pdf_file.path)
+        submission.save(update_fields=["pdf_hash", "updated_at"])
+
+        debug_result = sync_publication_pdf_debug_folder()
+        zip_path = export_publication_package()
+
+        self.assertEqual(debug_result["synced_count"], 1)
+        debug_file = Path(debug_result["folder"]) / "P001-Debug Sync Paper.pdf"
+        self.assertTrue(debug_file.exists())
+        with zipfile.ZipFile(zip_path) as archive:
+            self.assertEqual(archive.read("PDF/P001-Debug Sync Paper.pdf"), debug_file.read_bytes())
+        self.assertEqual(debug_file.read_bytes(), b"corrected pdf")
 
 
 class SystemStateTests(EditorialAcceptanceTestCase):
@@ -669,7 +727,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             state = json.loads(archive.read("state.json").decode("utf-8"))
             archive_text = json.dumps({"manifest": manifest, "state": state})
         self.assertEqual(manifest["app_name"], "Conference Final Manager")
-        self.assertEqual(manifest["app_version"], "1.0.3")
+        self.assertEqual(manifest["app_version"], django_settings.APP_VERSION)
         self.assertEqual(manifest["state_archive_version"], 2)
         self.assertNotIn(str(self.root), archive_text)
         self.assertNotIn("/var/", archive_text)
@@ -1067,13 +1125,15 @@ class VersionAndFileSelectionTests(EditorialAcceptanceTestCase):
 
         submission.formatted_pdf_file.delete(save=True)
         submission.refresh_from_db()
-        self.assertEqual(publication_pdf_info(submission)["source"], "processed")
+        pdf_info = publication_pdf_info(submission)
+        self.assertEqual(pdf_info["source"], "original")
+        self.assertEqual(Path(pdf_info["path"]).read_bytes(), b"original pdf")
 
         submission.formatted_source_file.delete(save=True)
         submission.refresh_from_db()
         source_info = publication_source_info(submission)
-        self.assertEqual(source_info["source"], "current")
-        self.assertEqual(Path(source_info["path"]), current_source)
+        self.assertEqual(source_info["source"], "original")
+        self.assertEqual(Path(source_info["path"]).read_bytes(), b"original source")
 
     def test_three_round_resubmission_invalidates_old_corrections_and_uses_latest_active_only(self):
         self.make_master_paper("P001", "Complex Replacement", "Ada")
@@ -1112,7 +1172,10 @@ class VersionAndFileSelectionTests(EditorialAcceptanceTestCase):
         self.assertTrue(newest.active_version)
         self.assertTrue(old.duplicate_submission)
         self.assertTrue(middle.duplicate_submission)
-        self.assertEqual(publication_pdf_info(newest)["path"], newest.current_file_path)
+        newest_pdf_info = publication_pdf_info(newest)
+        self.assertEqual(newest_pdf_info["source"], "original")
+        self.assertEqual(Path(newest_pdf_info["path"]).read_bytes(), b"round3 pdf")
+        self.assertNotEqual(newest_pdf_info["path"], newest.current_file_path)
 
         zip_path = export_publication_package()
         with zipfile.ZipFile(zip_path) as archive:
@@ -1602,6 +1665,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             extracted_title="Missing Source Paper",
         )
         Path(missing_source.source_current_file_path).unlink()
+        missing_source.source_file.delete(save=True)
 
         zip_path = export_publication_package(force=True)
 
@@ -2289,7 +2353,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         link_by_paper_id = {link["paper_id"]: link for link in author_row["paper_links"]}
 
         self.assertEqual(link_by_paper_id["P010"]["source"], "corrected")
-        self.assertEqual(link_by_paper_id["P011"]["source"], "processed")
+        self.assertEqual(link_by_paper_id["P011"]["source"], "original")
         self.assertEqual(link_by_paper_id["P012"]["source"], "original")
         self.assertFalse(link_by_paper_id["P013"]["exists"])
         self.assertNotEqual(link_by_paper_id["P010"]["url"], reverse("submissions:publication_pdf", args=[inactive_old.pk]))
@@ -2714,10 +2778,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         page = self.client.get(reverse("submissions:final_submission_list"))
         self.assertContains(page, reverse("submissions:final_submission_display_pdf", args=[replaced.pk]))
-        self.assertNotContains(page, reverse("submissions:final_submission_display_pdf", args=[active.pk]))
+        self.assertContains(page, reverse("submissions:final_submission_display_pdf", args=[active.pk]))
         self.assertContains(page, "replaced-original.pdf")
         self.assertNotContains(page, "replaced-current.pdf")
-        self.assertNotContains(page, "active-current.pdf")
+        self.assertContains(page, "active-current.pdf")
         self.assertEqual(
             b"".join(
                 self.client.get(
@@ -3859,9 +3923,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "title_words_for_filename": settings_obj.title_words_for_filename,
             "active_version_rule": "upload_date",
             "time_zone": settings_obj.time_zone,
-            "incoming_folder": settings_obj.incoming_folder,
-            "active_final_folder": settings_obj.active_final_folder,
-            "old_versions_folder": settings_obj.old_versions_folder,
+            "publication_pdf_debug_folder": settings_obj.publication_pdf_debug_folder,
             "reports_folder": settings_obj.reports_folder,
             "extraction_results_folder": settings_obj.extraction_results_folder,
             "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,
@@ -3940,9 +4002,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "title_words_for_filename": settings_obj.title_words_for_filename,
             "active_version_rule": "upload_date",
             "time_zone": settings_obj.time_zone,
-            "incoming_folder": settings_obj.incoming_folder,
-            "active_final_folder": settings_obj.active_final_folder,
-            "old_versions_folder": settings_obj.old_versions_folder,
+            "publication_pdf_debug_folder": settings_obj.publication_pdf_debug_folder,
             "reports_folder": settings_obj.reports_folder,
             "extraction_results_folder": settings_obj.extraction_results_folder,
             "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,

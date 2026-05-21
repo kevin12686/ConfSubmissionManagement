@@ -69,13 +69,41 @@ The app uses file extension to identify PDFs and source files, so misplaced uplo
 
 ### Dashboard shows Process PDFs needed
 
-Run `/processing/pdfs/`. This alert means an active publication PDF exists but page count, hash, thumbnails, or active-final output is missing or stale.
+Run `/processing/pdfs/`. This alert means an active publication PDF source exists but page count, hash, thumbnails, or debug-copy refresh is missing or stale.
 
 Missing PDFs are separate issues and do not count as process-needed.
 
+### What does Process PDFs change?
+
+Process PDFs is not only a page-count button. It:
+
+- Calculates page count and PDF hash.
+- Generates page thumbnails.
+- Clears page-limit exceptions if page count changed.
+- Recalculates active versions.
+- Rebuilds author cache.
+- Syncs `data/publication_pdf_debug/` from the same Corrected/Original PDF source used by publication export.
+
+It does not scan folders, create submissions, modify original uploads, modify corrected uploads, change source files, change extracted title/authors, change plagiarism scores, or change review statuses. Publication ZIP and CrossCheck ZIP do not read the debug folder.
+
 ### Corrected PDF was uploaded but pages look old
 
-Run Process PDFs again. Corrected PDFs are the publication source, but active-final copies, thumbnails, page count, and hash must be refreshed.
+Run Process PDFs again. Corrected PDFs are the first publication PDF priority, but thumbnails, page count, hash, and debug copies must be refreshed.
+
+### Why did Settings show a missing legacy processed PDF path?
+
+Settings Storage checks DB file references against files on disk. `Legacy processed PDF path` means the old `current_file_path` field. It is retained for older restored data and debug traces, but it is no longer used to choose publication files.
+
+If a real publication source is missing, Error Report shows Missing PDF based on the active submission's Corrected PDF or Original PDF.
+
+### Could publication debug or active-final affect the Publication ZIP?
+
+No. Current publication ZIP generation uses the publication-facing PDF helper:
+
+1. Corrected PDF.
+2. Original active-submission PDF.
+
+`data/publication_pdf_debug/`, legacy `data/active_final/`, and `current_file_path` are not read when building the final or draft publication package.
 
 ### Editor Upload asks for confirmation
 
@@ -171,6 +199,8 @@ If the error mentions dates, inspect uploaded `upload_date` values and re-import
 Use Settings > Storage Management > generated reports/exports cleanup. It removes regenerated Excel/ZIP downloads and external upload packages.
 
 It does not remove original uploads, corrected files, plagiarism report PDFs, System State backups, or thumbnails/previews still referenced by the database.
+
+Conservative cleanup can select unreferenced generated cache and orphan active/old output files. Review the preview before Apply. Do not apply cleanup if the candidate list includes publication outputs that you still need for audit or final checks.
 
 ### Thumbnails or previews are missing
 

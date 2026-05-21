@@ -1,8 +1,17 @@
 from pathlib import Path
+import hashlib
 
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
+
+
+def _file_hash(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def create_master_paper(
@@ -32,6 +41,9 @@ def create_final_submission(root, **overrides):
     source_path = files_dir / f"{final_id}.docx"
     pdf_path.write_bytes(overrides.pop("pdf_bytes", f"PDF {final_id}".encode()))
     source_path.write_bytes(overrides.pop("source_bytes", f"SOURCE {final_id}".encode()))
+    thumbnail_folder = root / "thumbnails" / str(final_id)
+    thumbnail_folder.mkdir(parents=True, exist_ok=True)
+    (thumbnail_folder / "page-1.png").write_bytes(b"thumbnail")
     values = {
         "final_submission_id": final_id,
         "start2_paper_id_raw": paper_id,
@@ -46,7 +58,9 @@ def create_final_submission(root, **overrides):
         "page_count": 8,
         "processing_status": "processed",
         "processing_message": "Ready.",
-        "pdf_hash": f"hash-{final_id}",
+        "pdf_hash": _file_hash(pdf_path),
+        "thumbnail_folder": str(thumbnail_folder),
+        "thumbnail_status": "processed",
         "active_version": True,
         "paper_id_verified": True,
         "verification_status": "verified",
@@ -57,6 +71,26 @@ def create_final_submission(root, **overrides):
         "single_similarity_score": 1,
     }
     values.update(overrides)
+    if "pdf_file" not in overrides:
+        current_path_value = values.get("current_file_path") or ""
+        current_path = Path(current_path_value) if current_path_value else None
+        if current_path and current_path.exists():
+            media_pdf = root / "media" / "final_submissions" / f"{final_id}_{current_path.name}"
+            media_pdf.parent.mkdir(parents=True, exist_ok=True)
+            media_pdf.write_bytes(current_path.read_bytes())
+            values["pdf_file"] = f"final_submissions/{media_pdf.name}"
+            values.setdefault("original_file_name", current_path.name)
+            if "pdf_hash" not in overrides:
+                values["pdf_hash"] = _file_hash(media_pdf)
+    if "source_file" not in overrides:
+        current_source_value = values.get("source_current_file_path") or ""
+        current_source = Path(current_source_value) if current_source_value else None
+        if current_source and current_source.exists():
+            media_source = root / "media" / "source_submissions" / f"{final_id}_{current_source.name}"
+            media_source.parent.mkdir(parents=True, exist_ok=True)
+            media_source.write_bytes(current_source.read_bytes())
+            values["source_file"] = f"source_submissions/{media_source.name}"
+            values.setdefault("source_original_file_name", current_source.name)
     values.setdefault(
         "title_author_review_status",
         "review_ok" if values.get("title_author_verified") else "pending",

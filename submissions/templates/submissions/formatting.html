@@ -150,7 +150,7 @@
                 </span>
                 {% if item.has_corrected_files %}<span class="badge text-bg-primary">Edited</span>{% endif %}
                 {% if row.publication_pdf.exists %}
-                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                 {% else %}
                     <span class="badge text-bg-danger">No PDF</span>
                 {% endif %}

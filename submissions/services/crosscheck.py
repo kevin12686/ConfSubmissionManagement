@@ -8,7 +8,7 @@ from pathlib import Path
 from django.db import models
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission
+from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.file_manager import publication_pdf_info, resolve_folder
 from submissions.services.import_export import clean_value, normalize_columns, read_table, round_percent
 
@@ -142,10 +142,12 @@ def crosscheck_zip_path(token, scope=CROSSCHECK_EXPORT_ALL):
 
 
 def _crosscheck_export_queryset(scope):
+    valid_paper_ids = InitialPaper.objects.values_list("paper_id", flat=True)
     queryset = FinalSubmission.objects.filter(
         active_version=True,
         discarded=False,
         excluded_from_publication=False,
+        paper_id_filled__in=valid_paper_ids,
     )
     if scope == CROSSCHECK_EXPORT_MISSING_RESULTS:
         queryset = queryset.filter(

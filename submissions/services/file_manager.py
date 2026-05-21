@@ -27,13 +27,27 @@ def title_short_name(title, word_limit):
     return sanitize_filename_part("_".join(words[:word_limit]))
 
 
+def publication_title_filename(title, word_limit):
+    words = re.findall(r"[A-Za-z0-9]+", title or "")
+    if not words:
+        return "UNTITLED"
+    cleaned = " ".join(words[:word_limit]).strip()
+    return cleaned or "UNTITLED"
+
+
+def publication_file_base_name(paper_id, title, word_limit):
+    return f"{sanitize_filename_part(paper_id)}-{publication_title_filename(title, word_limit)}"
+
+
+def publication_pdf_filename(paper_id, title, word_limit):
+    return f"{publication_file_base_name(paper_id, title, word_limit)}.pdf"
+
+
 def source_pdf_path(submission):
     if submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists():
         return Path(submission.formatted_pdf_file.path)
     if submission.pdf_file and Path(submission.pdf_file.path).exists():
         return Path(submission.pdf_file.path)
-    if submission.current_file_path and Path(submission.current_file_path).exists():
-        return Path(submission.current_file_path)
     return None
 
 
@@ -44,18 +58,6 @@ def publication_pdf_info(submission):
             path=path,
             label="Corrected",
             source="corrected",
-            url=reverse("submissions:publication_pdf", args=[submission.pk]),
-        )
-    if (
-        submission.processing_status == "processed"
-        and submission.current_file_path
-        and Path(submission.current_file_path).exists()
-    ):
-        path = Path(submission.current_file_path)
-        return _publication_file_info(
-            path=path,
-            label="Active-final",
-            source="processed",
             url=reverse("submissions:publication_pdf", args=[submission.pk]),
         )
     if submission.pdf_file and Path(submission.pdf_file.path).exists():
@@ -77,13 +79,6 @@ def publication_source_info(submission):
             source="corrected",
             url=getattr(submission.formatted_source_file, "url", ""),
         )
-    if submission.source_current_file_path and Path(submission.source_current_file_path).exists():
-        return _publication_file_info(
-            path=Path(submission.source_current_file_path),
-            label="Current",
-            source="current",
-            url="",
-        )
     if submission.source_file and Path(submission.source_file.path).exists():
         return _publication_file_info(
             path=Path(submission.source_file.path),
@@ -92,6 +87,29 @@ def publication_source_info(submission):
             url=getattr(submission.source_file, "url", ""),
         )
     return _publication_file_info(path=None, label="No source", source="missing", url="")
+
+
+def publication_debug_pdf_info(submission, paper=None):
+    from submissions.models import AppSetting
+
+    settings_obj = AppSetting.load()
+    folder = Path(settings_obj.publication_pdf_debug_folder).expanduser()
+    if not folder.is_absolute():
+        folder = django_settings.BASE_DIR / folder
+    paper_id = paper.paper_id if paper else submission.paper_id_filled
+    path = folder / publication_pdf_filename(
+        paper_id,
+        submission.extracted_title,
+        settings_obj.title_words_for_filename,
+    )
+    return _publication_file_info(
+        path=path,
+        label="Debug copy",
+        source="debug",
+        url=reverse("submissions:publication_debug_pdf", args=[submission.pk])
+        if path.exists()
+        else "",
+    )
 
 
 def final_submission_display_pdf_info(submission):
@@ -133,25 +151,21 @@ def final_submission_display_source_info(submission):
 
 
 def corrected_pdf_needs_processing(submission):
-    if not submission.formatted_pdf_file or not Path(submission.formatted_pdf_file.path).exists():
+    path = source_pdf_path(submission)
+    if not path:
         return False
     if submission.processing_status != "processed":
         return True
     try:
         from submissions.services.pdf_processor import calculate_pdf_hash
 
-        return calculate_pdf_hash(submission.formatted_pdf_file.path) != submission.pdf_hash
+        return calculate_pdf_hash(path) != submission.pdf_hash
     except Exception:
         return True
 
 
 def pdf_available_for_processing(submission):
-    candidates = [
-        getattr(submission.formatted_pdf_file, "path", "") if submission.formatted_pdf_file else "",
-        submission.current_file_path,
-        getattr(submission.pdf_file, "path", "") if submission.pdf_file else "",
-    ]
-    return any(candidate and Path(candidate).exists() for candidate in candidates)
+    return bool(source_pdf_path(submission))
 
 
 def active_pdf_needs_processing(submission):
@@ -161,6 +175,7 @@ def active_pdf_needs_processing(submission):
         submission.processing_status != "processed"
         or submission.page_count is None
         or not submission.pdf_hash
+        or not (submission.thumbnail_folder and Path(submission.thumbnail_folder).exists())
         or corrected_pdf_needs_processing(submission)
     )
 

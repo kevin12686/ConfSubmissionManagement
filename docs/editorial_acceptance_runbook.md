@@ -44,7 +44,7 @@ Create Final Submission records and files:
 6. Mark P004 as Not Publishing and confirm it moves out of publication blockers while remaining visible in the Not Publishing List.
 7. Create the Editor Upload for P007. Confirm the title guard compares PDF title against Paper Master title and Final Title, then verify the Start2/Editor conflict warning appears.
 8. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
-9. Run Process PDFs. Confirm page counts, hashes, thumbnails, active-final files, and old-version copies are generated.
+9. Run Process PDFs. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated.
 10. Run Title/Author Extraction for needs-review records. Review extracted title/authors, title-match status, red flags, and verification images.
 11. Open Formatting Review. Use list mode and single-paper mode, upload a corrected PDF/source for one paper, confirm the corrected PDF title guard, then re-run Process PDFs.
 12. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
@@ -59,7 +59,9 @@ Create Final Submission records and files:
 
 - Import preview never mutates records or files before Apply.
 - Re-uploaded PDFs/sources reset only dependent review/check flags.
-- Corrected PDFs are used by publication-facing links and Process PDFs.
+- Corrected PDFs are first priority for publication-facing links, CrossCheck export, duplicate checks, and publication packages.
+- If no corrected PDF exists, the original active-submission PDF is the publication-facing PDF source.
+- Process PDFs recalculates active versions, page counts, hashes, thumbnails, author cache, and debug copies, but it must not rewrite original uploads, corrected uploads, extracted data, plagiarism scores, or review flags.
 - Editor Uploads are active over Start2 until the conflict is resolved, but unresolved conflicts block final publication export.
 - Discarded versions remain traceable and appear as old versions, not current publication candidates.
 - Not Publishing records remain traceable but are excluded from publication readiness and final packages.
@@ -68,6 +70,7 @@ Create Final Submission records and files:
 - Allowed exceptions do not block final export while their approved value still matches the current value.
 - Draft publication package is clearly marked and contains a warnings CSV.
 - Final publication package contains one PDF/source pair per publishable Paper Master record and no replaced, discarded, or Not Publishing records.
+- Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
 - Final publication manifest contains publication fields only; editorial notes are not included.
 - System State ZIP restore remaps managed files into local `data/` folders and does not leave old absolute paths.
 

@@ -1,5 +1,4 @@
 import csv
-import re
 from datetime import datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -18,10 +17,10 @@ from submissions.services.checks import (
     split_authors,
 )
 from submissions.services.file_manager import (
+    publication_file_base_name,
     publication_pdf_info,
     publication_source_info,
     resolve_folder,
-    sanitize_filename_part,
 )
 from submissions.services.import_export import submissions_to_frame
 from submissions.services.version_history import old_version_rows
@@ -213,14 +212,6 @@ def export_author_count():
     return path
 
 
-def _publication_title_filename(title, word_limit):
-    words = re.findall(r"[A-Za-z0-9]+", title or "")
-    if not words:
-        return "UNTITLED"
-    cleaned = " ".join(words[:word_limit]).strip()
-    return cleaned or "UNTITLED"
-
-
 def _readiness_blocker_preview(readiness_blockers):
     preview = "; ".join(
         f"{row['paper_id'] or 'No Paper ID'}"
@@ -382,11 +373,11 @@ def export_publication_package(force=False):
         if force:
             package.write(warnings_path, arcname=warnings_name)
         for submission, pdf_info, source_info in package_items:
-            short_title = _publication_title_filename(
+            base_name = publication_file_base_name(
+                submission.paper_id_filled,
                 submission.extracted_title,
                 settings_obj.title_words_for_filename,
             )
-            base_name = f"{sanitize_filename_part(submission.paper_id_filled)}-{short_title}"
             package.write(pdf_info["path"], arcname=f"PDF/{base_name}.pdf")
             source_path = Path(source_info["path"])
             source_extension = source_path.suffix or ".source"

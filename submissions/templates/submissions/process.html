@@ -4,7 +4,7 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Process PDFs</h1>
-        <div class="cfm-page-subtitle">Refresh page counts, hashes, thumbnails, active PDFs, and old-version copies after uploads or corrected PDFs.</div>
+        <div class="cfm-page-subtitle">Refresh page counts, hashes, thumbnails, and publication PDF debug copies after uploads or corrected PDFs.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">View PDF Issues</a>
@@ -72,25 +72,8 @@
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <h2 class="h5">Scan Incoming Folder</h2>
-                <p class="text-muted">Creates or updates final submission records for PDFs found in the configured incoming folder.</p>
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="scan">
-                    <button class="btn btn-outline-primary">Scan Incoming Folder</button>
-                </form>
-                {% if scan_result %}
-                    <hr>
-                    <p class="mb-0">Created {{ scan_result.created }} and updated {{ scan_result.updated }} records.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
                 <h2 class="h5">Process All PDFs</h2>
-                <p class="text-muted">Calculates page count and hash, generates per-page thumbnails, updates active versions, and copies PDFs into active or old-version folders.</p>
+                <p class="text-muted">Calculates page count and hash from corrected/original PDFs, generates per-page thumbnails, updates active versions, and syncs publication PDF debug copies.</p>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="process">
@@ -99,12 +82,12 @@
                 {% if process_result %}
                     <hr>
                     <ul class="mb-0">
-                        <li>Scanned created: {{ process_result.scanned_created }}</li>
-                        <li>Scanned updated: {{ process_result.scanned_updated }}</li>
                         <li>Processed: {{ process_result.processed }}</li>
                         <li>Skipped unchanged: {{ process_result.skipped }}</li>
                         <li>Errors: {{ process_result.errors }}</li>
-                        <li>Files placed: {{ process_result.files_placed }}</li>
+                        <li>Debug PDFs synced: {{ process_result.debug_synced }}</li>
+                        <li>Debug skipped: {{ process_result.debug_skipped }}</li>
+                        {% if process_result.debug_manifest %}<li>Debug manifest: <code>{{ process_result.debug_manifest }}</code></li>{% endif %}
                     </ul>
                     {% if process_result.error_rows %}
                         <div class="alert alert-danger border cfm-attention mt-3 mb-0">

@@ -209,7 +209,7 @@
                     {% if row.publication_pdf.exists %}
                         <div class="cfm-status-line">
                             <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
-                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% elif submission %}
                         <span class="badge text-bg-danger">No PDF</span>
@@ -279,7 +279,7 @@
                         <div class="col-md-4">
                             <div class="text-muted">Publication PDF</div>
                             {% if row.publication_pdf.exists %}
-                                <div><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% elif row.publication_pdf.source == 'processed' %}primary{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span></div>
+                                <div><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span></div>
                                 <div class="text-break">{{ row.publication_pdf.path }}</div>
                             {% else %}
                                 <span class="text-muted">--</span>
@@ -301,6 +301,15 @@
                             </div>
                             {% if row.publication_source.exists %}
                                 <div class="small text-muted text-break mt-1">{{ row.publication_source.path }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-muted">Debug PDF copy</div>
+                            {% if row.debug_pdf.exists %}
+                                <a class="btn btn-sm btn-outline-secondary" href="{{ row.debug_pdf.url }}" target="_blank" rel="noopener">Open debug PDF</a>
+                                <div class="small text-muted text-break mt-1">{{ row.debug_pdf.path }}</div>
+                            {% else %}
+                                <div class="text-muted">Not synced. Use Settings &gt; Sync Debug PDFs if needed.</div>
                             {% endif %}
                         </div>
                         {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}

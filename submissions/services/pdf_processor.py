@@ -6,17 +6,13 @@ from pathlib import Path
 import fitz
 from django.conf import settings as django_settings
 from django.db import transaction
-from django.utils import timezone
 from pypdf import PdfReader
 
 from submissions.models import AppSetting, FinalSubmission, sync_final_submission_state_records
 from submissions.services.checks import reset_page_limit_exception
 from submissions.services.file_manager import (
-    copy_pdf_to_folder,
-    resolve_folder,
     sanitize_filename_part,
     source_pdf_path,
-    title_short_name,
 )
 
 
@@ -89,33 +85,6 @@ def final_submission_sort_key(submission):
     numeric_chunks = re.findall(r"\d+", value)
     numeric_value = int(numeric_chunks[-1]) if numeric_chunks else -1
     return numeric_value, natural_parts, submission.created_at
-
-
-def scan_incoming_folder():
-    setting = AppSetting.load()
-    incoming = resolve_folder(setting.incoming_folder)
-    created = 0
-    updated = 0
-    for path in incoming.glob("*.pdf"):
-        final_submission_id = path.stem
-        submission, was_created = FinalSubmission.objects.get_or_create(
-            final_submission_id=final_submission_id,
-            defaults={
-                "paper_id_filled": "",
-                "upload_date": timezone.now(),
-                "original_file_name": path.name,
-                "current_file_path": str(path),
-            },
-        )
-        if was_created:
-            created += 1
-        else:
-            if not submission.current_file_path:
-                submission.current_file_path = str(path)
-                submission.original_file_name = submission.original_file_name or path.name
-                submission.save(update_fields=["current_file_path", "original_file_name", "updated_at"])
-                updated += 1
-    return {"created": created, "updated": updated}
 
 
 def determine_active_versions():
@@ -196,8 +165,6 @@ def process_submission_pdf(submission, force=False):
         submission.thumbnail_folder = str(thumbnail_dir)
         submission.thumbnail_status = "processed"
         submission.thumbnail_message = "PDF thumbnails generated."
-        if not submission.current_file_path:
-            submission.current_file_path = str(path)
         submission.save(
             update_fields=[
                 "page_count",
@@ -211,7 +178,6 @@ def process_submission_pdf(submission, force=False):
                 "thumbnail_folder",
                 "thumbnail_status",
                 "thumbnail_message",
-                "current_file_path",
                 "updated_at",
             ]
         )
@@ -233,15 +199,14 @@ def process_submission_pdf(submission, force=False):
         return False
 
 
-def place_processed_files():
-    from submissions.services.storage_inventory import repair_publication_paths
+def sync_debug_publication_files():
+    from submissions.services.storage_inventory import sync_publication_pdf_debug_folder
 
-    result = repair_publication_paths(force=True)
-    return result["pdf_repaired_count"]
+    return sync_publication_pdf_debug_folder()
 
 
 def process_all_pdfs(force=False):
-    scan_result = scan_incoming_folder()
+    determine_active_versions()
     processed = 0
     skipped = 0
     errors = 0
@@ -262,16 +227,15 @@ def process_all_pdfs(force=False):
                     "message": submission.processing_message or "Unknown processing error.",
                 }
             )
-    determine_active_versions()
-    placed = place_processed_files()
+    debug_result = sync_debug_publication_files()
     return {
-        "scanned_created": scan_result["created"],
-        "scanned_updated": scan_result["updated"],
         "processed": processed,
         "skipped": skipped,
         "errors": errors,
         "error_rows": error_rows,
-        "files_placed": placed,
+        "debug_synced": debug_result["synced_count"],
+        "debug_skipped": debug_result["skipped_count"],
+        "debug_manifest": debug_result["manifest_path"],
     }
 
 

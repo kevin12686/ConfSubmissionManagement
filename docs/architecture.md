@@ -15,7 +15,7 @@ Core route groups:
 - `/papers/`: Paper Master List.
 - `/submissions/`: Final Submissions and Editor Upload.
 - `/reviews/`: Paper ID, title/author, formatting, exceptions, and Not Publishing workflows.
-- `/processing/pdfs/`: page count, hashes, thumbnails, active-final copies, and old-version copies.
+- `/processing/pdfs/`: page count, hashes, thumbnails, publication debug copies, and active-version recalculation.
 - `/reports/`: readiness reports, author count, version history, and publication exports.
 - `/integrations/crosscheck/`: CrossCheck/plagiarism package export/import and System State Backup/Restore.
 - `/settings/`: app settings, active-version rule preview, storage management, and clear database.
@@ -39,11 +39,43 @@ The split supports gradual refactoring. Reads can move to state models one workf
 - Editor Uploads are prioritized over Start2 records, but unresolved Start2/Editor conflicts block final publication export until one side is discarded.
 - Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
 - Not Publishing is paper/publication-decision-level: it keeps records for traceability but excludes the paper from publication readiness and package output.
-- Publication PDF priority is corrected PDF, then active-final processed PDF, then original author PDF.
-- Publication source priority is corrected source, then original source/current source.
+- Publication PDF priority is corrected PDF, then original author PDF.
+- Publication source priority is corrected source, then original source.
 - Active version selection is previewed before changing the active-version rule in Settings.
 - Import/re-upload workflows are preview-before-apply when they may change existing records or files.
 - Review flags are reset only when dependent data changes.
+
+## Current Publication Resolution
+
+Current active-version selection is implemented in `submissions/services/pdf_processor.py`.
+
+1. All `active_version` flags are cleared.
+2. Discarded submissions are excluded.
+3. Submissions are grouped by `paper_id_filled`.
+4. If a group has undiscarded Editor Uploads, only Editor Uploads are candidates.
+5. Otherwise all undiscarded submissions for that Paper ID are candidates.
+6. The selected candidate is determined by Settings:
+   - `final_id`: numeric/natural Final ID sort.
+   - `upload_date`: upload date, with Final ID sort as tie-breaker.
+7. State mirror tables and `PaperAuthor` cache are refreshed after active selection.
+
+Publication file resolution is implemented in `submissions/services/file_manager.py`.
+
+`source_pdf_path()` is used for processing/extraction input and resolves:
+
+1. Corrected PDF.
+2. Original uploaded PDF.
+
+`publication_pdf_info()` is used for publication-facing links, CrossCheck export, duplicate checks, and publication package export. It currently resolves:
+
+1. Corrected PDF.
+2. Original uploaded PDF.
+
+`publication_source_info()` resolves corrected source, then original uploaded source.
+
+This distinction matters. Process PDFs calculates page/hash/thumbnails from the same Corrected/Original PDF source and may sync `data/publication_pdf_debug/` for inspection, but that debug folder is not read by publication package export, CrossCheck export, duplicate checks, or publication-facing links.
+
+Legacy `current_file_path`, `source_current_file_path`, `active_final_folder`, and `old_versions_folder` values are retained for compatibility with older restored data and debug traces. They are not publication source-of-truth fields.
 
 ## File And Path Safety
 
@@ -53,7 +85,7 @@ Do not preserve machine-specific absolute paths in restored state. Snapshot mani
 
 Storage cleanup is split by risk:
 
-- Conservative cleanup removes unreferenced regenerated cache and orphaned active/old output.
+- Conservative cleanup removes only unreferenced regenerated cache. It does not delete publication debug, legacy active-final, or old-version output folders.
 - Generated reports/exports cleanup removes regenerated Excel/ZIP downloads and external upload packages.
 - Original uploads, corrected uploads, plagiarism report PDFs, system state backups, and referenced thumbnails/previews are retained.
 
