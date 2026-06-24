@@ -2847,6 +2847,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 
+    def test_final_submission_batch_upload_limit_is_documented(self):
+        self.assertEqual(django_settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5000)
+
+        page = self.client.get(reverse("submissions:final_submission_list"))
+
+        self.assertContains(page, "Large batches are supported up to 5000 files per request")
+
     def test_final_submission_list_files_show_corrected_then_original(self):
         self.make_master_paper("P001", "Display Files", "Ada")
         submission = self.make_final_submission(

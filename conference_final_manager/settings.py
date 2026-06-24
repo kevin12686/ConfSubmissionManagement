@@ -71,3 +71,6 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "data" / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# Local editorial workflow may upload many Final Submission PDFs/source files at once.
+# Keep this finite instead of None so accidental massive uploads are still bounded.
+DATA_UPLOAD_MAX_NUMBER_FILES = 5000

@@ -40,6 +40,8 @@ This guide is for editors running the local system to prepare final submissions 
 6. Review the Final Submission Import Preview. Mapping, reset, file, and new-row issues are sorted above unchanged rows.
 7. Apply only after the preview matches the intended import.
 
+Final Submission file upload supports large PDF/source batches up to 5000 files per request. This is a Django request-parsing limit, not a CSV row limit. If a conference upload set exceeds that number of files, split the file upload into multiple batches.
+
 Paper Master notes are internal editorial notes. They appear in review workbooks and Note Summary, but they do not go into the final publication package manifest.
 
 ## Version Decisions

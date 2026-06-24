@@ -142,6 +142,8 @@ PDF/source files are matched by Final Submission ID with names such as:
 
 The app checks file extensions, so a PDF uploaded in the source slot can still be recognized as the PDF.
 
+Large Final Submission file batches can be selected at once. The app allows up to 5000 uploaded files per request, which is a Django request-parsing limit rather than a CSV row limit. Split larger PDF/source uploads into multiple batches.
+
 ## Data Folders
 
 The app stores local data under `data/` by default:
