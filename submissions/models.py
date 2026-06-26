@@ -7,6 +7,8 @@ from submissions.services.text_utils import clean_note_text
 TITLE_AUTHOR_SOURCE_CHOICES = [
     ("unknown", "Unknown"),
     ("built_in_extractor", "Built-in extractor"),
+    ("grobid", "GROBID"),
+    ("manual_override", "Manual override"),
     ("manual", "Manual"),
     ("external_import", "External import"),
     ("external_script", "External script"),
@@ -143,6 +145,8 @@ class FinalSubmission(models.Model):
     )
     title_author_extraction_message = models.TextField(blank=True)
     title_author_verification_image = models.TextField(blank=True)
+    title_author_manual_override_reason = models.TextField(blank=True)
+    title_author_manual_override_at = models.DateTimeField(blank=True, null=True)
     title_author_verified = models.BooleanField(default=False, db_index=True)
     title_author_verified_at = models.DateTimeField(blank=True, null=True)
     title_author_review_status = models.CharField(
@@ -348,6 +352,8 @@ class FinalSubmission(models.Model):
                 "title_author_extraction_status": self.title_author_extraction_status,
                 "title_author_extraction_message": self.title_author_extraction_message,
                 "title_author_verification_image": self.title_author_verification_image,
+                "title_author_manual_override_reason": self.title_author_manual_override_reason,
+                "title_author_manual_override_at": self.title_author_manual_override_at,
                 "title_author_verified": self.title_author_verified,
                 "title_author_verified_at": self.title_author_verified_at,
                 "title_author_review_status": self.title_author_review_status,
@@ -478,6 +484,8 @@ class FinalSubmissionReviewState(models.Model):
     )
     title_author_extraction_message = models.TextField(blank=True)
     title_author_verification_image = models.TextField(blank=True)
+    title_author_manual_override_reason = models.TextField(blank=True)
+    title_author_manual_override_at = models.DateTimeField(blank=True, null=True)
     title_author_verified = models.BooleanField(default=False, db_index=True)
     title_author_verified_at = models.DateTimeField(blank=True, null=True)
     title_author_review_status = models.CharField(
@@ -628,6 +636,9 @@ class AppSetting(models.Model):
     plagiarism_reports_folder = models.CharField(
         max_length=500, default="data/plagiarism_reports"
     )
+    grobid_enabled = models.BooleanField(default=False)
+    grobid_api_url = models.CharField(max_length=500, default="http://localhost:8070")
+    grobid_timeout_seconds = models.PositiveIntegerField(default=20)
     plagiarism_percent_threshold = models.DecimalField(
         max_digits=5, decimal_places=2, default=35
     )

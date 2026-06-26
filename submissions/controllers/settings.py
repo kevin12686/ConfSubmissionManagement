@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.conf import settings as django_settings
 from django.db import transaction
 from django.db.models import Q
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -125,6 +125,7 @@ from submissions.services.audit import (
     audit_requested,
     audit_success,
 )
+from submissions.services.grobid_extractor import check_grobid_api
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -361,6 +362,10 @@ def app_settings(request):
     active_version_rule_preview = request.session.get("active_version_rule_preview")
     folder_warnings = _folder_path_warnings(settings_obj)
     storage_inventory = build_storage_inventory()
+    grobid_status = check_grobid_api(
+        settings_obj.grobid_api_url,
+        min(settings_obj.grobid_timeout_seconds or 2, 2),
+    )
     return render(
         request,
         "submissions/settings.html",
@@ -375,8 +380,19 @@ def app_settings(request):
             "storage_repair_result": storage_repair_result,
             "active_version_change_report": active_version_change_report,
             "active_version_rule_preview": active_version_rule_preview,
+            "grobid_status": grobid_status,
         },
     )
+
+
+def grobid_health_check(request):
+    api_url = request.GET.get("api_url", "").strip()
+    try:
+        timeout_seconds = int(request.GET.get("timeout", "2"))
+    except (TypeError, ValueError):
+        timeout_seconds = 2
+    status = check_grobid_api(api_url, min(timeout_seconds or 2, 2))
+    return JsonResponse(status)
 
 
 def _active_version_snapshot():

@@ -96,10 +96,24 @@ from submissions.services.storage_inventory import (
     sync_publication_pdf_debug_folder,
 )
 from submissions.services.title_author_extraction import (
+    ManualOverrideError,
+    apply_title_author_manual_override,
+    extract_grobid_for_suspicious_rows,
+    extract_title_author_for_submission,
+    extract_title_author_with_grobid,
+    generate_text_verification_image,
+    is_grobid_suspicious,
     unverify_extracted_title,
     unverify_title_author,
+    verification_image_url,
     verify_extracted_title,
     verify_title_author,
+)
+from submissions.services.grobid_extractor import (
+    GrobidExtractionError,
+    GrobidExtractionResult,
+    check_grobid_api,
+    parse_grobid_tei,
 )
 from submissions.services.verification import (
     mark_not_publishing,
@@ -602,6 +616,75 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertTrue(original_path.exists())
         self.assertTrue(corrected_path.exists())
         self.assertTrue(referenced_thumbnail.exists())
+
+    def test_settings_shows_integrated_grobid_health_indicator(self):
+        with patch(
+            "submissions.controllers.settings.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ) as mocked_check:
+            response = self.client.get(reverse("submissions:settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Title/Author extraction fallback")
+        self.assertContains(response, "GROBID API URL")
+        self.assertContains(response, reverse("submissions:grobid_health_check"))
+        self.assertContains(response, "data-grobid-health-message")
+        self.assertContains(response, "Available")
+        self.assertContains(response, "GROBID API is reachable.")
+        mocked_check.assert_called_once()
+
+    def test_grobid_health_check_endpoint_uses_unsaved_form_url(self):
+        with patch(
+            "submissions.controllers.settings.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ) as mocked_check:
+            response = self.client.get(
+                reverse("submissions:grobid_health_check"),
+                {"api_url": "http://example.test:8070", "timeout": "9"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["label"], "Available")
+        mocked_check.assert_called_once_with("http://example.test:8070", 2)
+
+    def test_grobid_health_check_reports_missing_url_without_network(self):
+        status = check_grobid_api("")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["label"], "No URL")
+
+    def test_grobid_health_check_normalizes_raw_true_response(self):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self, _size):
+                return b"true"
+
+            def getcode(self):
+                return 200
+
+        with patch("submissions.services.grobid_extractor.request.urlopen", return_value=FakeResponse()):
+            status = check_grobid_api("http://localhost:8070")
+
+        self.assertTrue(status["available"])
+        self.assertEqual(status["label"], "Available")
+        self.assertEqual(status["message"], "GROBID API is reachable.")
 
     def test_storage_cleanup_reports_exports_policy_preserves_reference_files(self):
         settings_obj = AppSetting.load()
@@ -3631,7 +3714,6 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             self.final_submission_form_data(
                 submission,
                 final_submission_title="Final Revised Title For Publication",
-                extracted_title="Final Revised Title For Publication",
             ),
         )
 
@@ -3639,7 +3721,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.refresh_from_db()
         self.assertFalse(submission.paper_id_verified)
         self.assertEqual(submission.verification_status, "title_mismatch")
-        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertEqual(submission.extracted_title, "Original Accepted Title")
+        self.assertFalse(submission.extracted_title_verified)
+        self.assertEqual(submission.extracted_title_match_status, "title_mismatch")
         event = self.latest_audit_event("final_submission_manual_edit")
         self.assertEqual(event["status"], "success")
         self.assertIn("final_submission_title", event["changed_fields"])
@@ -3649,8 +3733,17 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assert_publication_blocked("Unverified Paper ID")
 
         verify_submission(submission, "P001")
+        apply_title_author_manual_override(
+            submission,
+            "Final Revised Title For Publication",
+            submission.extracted_authors,
+            "PDF extraction title needed editorial correction.",
+        )
+        submission.refresh_from_db()
+        self.assertEqual(submission.title_author_source, "manual_override")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertTrue(submission.extracted_title_verified)
         verify_title_author(submission)
-        verify_extracted_title(submission)
 
         submission.refresh_from_db()
         self.assertTrue(submission.paper_id_verified)
@@ -3910,9 +4003,600 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         form = FinalSubmissionForm(instance=submission)
-        source_choices = dict(form.fields["title_author_source"].choices)
+        source_choices = dict(FinalSubmission._meta.get_field("title_author_source").choices)
 
         self.assertEqual(source_choices["built_in_extractor"], "Built-in extractor")
+        self.assertNotIn("title_author_source", form.fields)
+
+    def test_grobid_title_author_source_is_valid_in_edit_form(self):
+        submission = self.make_final_submission(
+            title_author_source="grobid",
+            title_author_extraction_status="extracted",
+        )
+
+        form = FinalSubmissionForm(instance=submission)
+        source_choices = dict(FinalSubmission._meta.get_field("title_author_source").choices)
+
+        self.assertEqual(source_choices["grobid"], "GROBID")
+        self.assertNotIn("extracted_title", form.fields)
+        self.assertNotIn("extracted_authors", form.fields)
+
+    def test_manual_override_source_choice_exists(self):
+        source_choices = dict(FinalSubmission._meta.get_field("title_author_source").choices)
+
+        self.assertEqual(source_choices["manual_override"], "Manual override")
+
+    def test_title_author_manual_override_requires_reason(self):
+        submission = self.make_final_submission(final_submission_id="MO001")
+
+        with self.assertRaises(ManualOverrideError):
+            apply_title_author_manual_override(
+                submission,
+                "Manual Title",
+                "Ada Lovelace",
+                "",
+            )
+
+    def test_title_author_manual_override_resets_review_and_auto_matches_title(self):
+        submission = self.make_final_submission(
+            final_submission_id="MO002",
+            final_submission_title="Manual Corrected Title",
+            extracted_title="Wrong Title",
+            extracted_authors="Wrong Author",
+            title_author_source="built_in_extractor",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            extracted_title_verified=False,
+            duplicate_author_review_status="review_ok",
+            author_number_exception_approved=True,
+            author_number_exception_reason="Allowed old count",
+            author_number_exception_author_count=8,
+            author_number_exception_approved_at=timezone.now(),
+        )
+
+        def fake_image(_pdf_path, _title, _authors, _source_label, target_dir):
+            image_path = Path(target_dir) / "manual_override.png"
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b"image")
+            return image_path, []
+
+        with patch(
+            "submissions.services.title_author_extraction.generate_text_verification_image",
+            side_effect=fake_image,
+        ):
+            apply_title_author_manual_override(
+                submission,
+                "Manual Corrected Title",
+                "Ada Lovelace and Alan Turing",
+                "Extractor failed on author formatting.",
+            )
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.extracted_title, "Manual Corrected Title")
+        self.assertEqual(submission.extracted_authors, "Ada Lovelace and Alan Turing")
+        self.assertEqual(submission.title_author_source, "manual_override")
+        self.assertEqual(submission.title_author_manual_override_reason, "Extractor failed on author formatting.")
+        self.assertIsNotNone(submission.title_author_manual_override_at)
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+        self.assertTrue(submission.extracted_title_verified)
+        self.assertEqual(submission.extracted_title_match_status, "verified")
+        self.assertEqual(submission.duplicate_author_review_status, "pending")
+        self.assertFalse(submission.author_number_exception_approved)
+        self.assertTrue(Path(submission.title_author_verification_image).exists())
+        self.assertIn("manual_override", Path(submission.title_author_verification_image).name)
+        event = self.latest_audit_event("title_author_manual_override")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(event["after"]["reason"], "Extractor failed on author formatting.")
+
+    def test_manual_override_is_info_report_and_not_publication_blocker_after_review(self):
+        self.make_master_paper("MO003", title="Manual Info Title")
+        submission = self.make_final_submission(
+            final_submission_id="MO003-F",
+            paper_id_filled="MO003",
+            start2_paper_id_raw="MO003",
+            final_submission_title="Manual Info Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        apply_title_author_manual_override(
+            submission,
+            "Manual Info Title",
+            "Ada Lovelace and Alan Turing",
+            "Allowed manual correction.",
+        )
+        verify_title_author(submission)
+
+        categories = {row["category"] for row in error_report_rows()}
+        self.assertIn("Manual Title/Author Override", categories)
+        self.assertEqual(publication_readiness_rows(), [])
+        self.assertTrue(Path(export_publication_package()).exists())
+
+    def test_title_author_page_shows_manual_override_form_and_badge(self):
+        submission = self.make_final_submission(
+            final_submission_id="MO004",
+            title_author_source="manual_override",
+            title_author_manual_override_reason="Existing override.",
+        )
+
+        response = self.client.get(
+            reverse("submissions:title_author_extraction") + f"?filter=all&q={submission.final_submission_id}"
+        )
+
+        self.assertContains(response, "Manual override")
+        self.assertContains(response, "Exception workflow")
+        self.assertContains(response, "Reason required")
+
+    def test_title_author_page_filters_manual_override_rows(self):
+        self.make_final_submission(
+            final_submission_id="MOFILTER1",
+            title_author_source="manual_override",
+            title_author_manual_override_reason="Existing override.",
+        )
+        self.make_final_submission(
+            final_submission_id="MOFILTER2",
+            title_author_source="built_in_extractor",
+        )
+
+        response = self.client.get(
+            reverse("submissions:title_author_extraction") + "?filter=manual_override"
+        )
+
+        self.assertContains(response, "Exception source")
+        self.assertContains(response, "Manual override")
+        self.assertContains(response, "MOFILTER1")
+        self.assertNotContains(response, "MOFILTER2")
+
+    def test_title_author_verification_image_url_includes_cache_buster(self):
+        submission = self.make_final_submission(final_submission_id="G000")
+        image_path = self.media_root / "title_author_verification" / "G000" / "G000-grobid.png"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_bytes(b"image")
+        submission.title_author_verification_image = str(image_path)
+
+        url = verification_image_url(submission)
+
+        self.assertIn("/media/title_author_verification/G000/G000-grobid.png", url)
+        self.assertIn("?v=", url)
+
+    def test_grobid_tei_parser_extracts_title_and_multiline_authors(self):
+        tei = """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0">
+          <teiHeader>
+            <fileDesc>
+              <titleStmt><title>Bridging Disciplines</title></titleStmt>
+              <sourceDesc>
+                <biblStruct>
+                  <analytic>
+                    <author><persName><forename>Jaejoon</forename><surname>Lee</surname></persName></author>
+                    <author><persName><forename>Stuart</forename><surname>Nicholson</surname></persName></author>
+                    <author><persName><forename>Srilatha</forename><surname>Narayanagari</surname></persName></author>
+                    <author><persName><forename>Kay</forename><surname>Bond</surname></persName></author>
+                  </analytic>
+                </biblStruct>
+              </sourceDesc>
+            </fileDesc>
+          </teiHeader>
+        </TEI>
+        """
+
+        result = parse_grobid_tei(tei)
+
+        self.assertEqual(result.title, "Bridging Disciplines")
+        self.assertEqual(
+            result.authors,
+            "Jaejoon Lee, Stuart Nicholson, Srilatha Narayanagari, and Kay Bond",
+        )
+        self.assertEqual(result.author_count, 4)
+
+    def test_grobid_tei_parser_rejects_missing_authors(self):
+        tei = """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0">
+          <teiHeader><fileDesc><titleStmt><title>Only Title</title></titleStmt></fileDesc></teiHeader>
+        </TEI>
+        """
+
+        with self.assertRaises(GrobidExtractionError):
+            parse_grobid_tei(tei)
+
+    def test_grobid_verification_image_uses_source_labeled_filename(self):
+        import fitz
+
+        pdf_path = self.root / "grobid_visual.pdf"
+        document = fitz.open()
+        page = document.new_page()
+        page.insert_text((120, 100), "GROBID Visual Paper", fontsize=18)
+        page.insert_text((120, 140), "Ada Lovelace and Alan Turing", fontsize=12)
+        document.save(pdf_path)
+        document.close()
+
+        output_path, missing_authors = generate_text_verification_image(
+            pdf_path,
+            "GROBID Visual Paper",
+            "Ada Lovelace and Alan Turing",
+            "GROBID",
+            self.media_root / "title_author_verification" / "GROBIDVIS",
+        )
+
+        self.assertEqual(output_path.name, "grobid_visual-grobid.png")
+        self.assertTrue(output_path.exists())
+        self.assertEqual(missing_authors, [])
+
+    def test_grobid_success_resets_review_flags_and_creates_verification_image(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.grobid_api_url = "http://192.168.111.10:8070"
+        settings_obj.save()
+        submission = self.make_final_submission(
+            final_submission_id="G001",
+            final_submission_title="GROBID Paper",
+            extracted_title="Old Title",
+            extracted_authors="Old Author",
+            title_author_source="manual_override",
+            title_author_manual_override_reason="Old override",
+            title_author_manual_override_at=timezone.now(),
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            extracted_title_verified=True,
+            duplicate_author_review_status="review_ok",
+            author_number_exception_approved=True,
+            author_number_exception_reason="Allowed old count",
+            author_number_exception_author_count=9,
+            author_number_exception_approved_at=timezone.now(),
+        )
+
+        def fake_image(_pdf_path, _title, _authors, _source_label, target_dir):
+            image_path = Path(target_dir) / "grobid.png"
+            image_path.write_bytes(b"image")
+            return image_path, []
+
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_header_with_grobid",
+            return_value=GrobidExtractionResult(
+                title="GROBID Paper",
+                authors="Ada Lovelace and Alan Turing",
+                author_count=2,
+                raw_tei="<TEI/>",
+            ),
+        ), patch(
+            "submissions.services.title_author_extraction.generate_text_verification_image",
+            side_effect=fake_image,
+        ):
+            self.assertTrue(extract_title_author_with_grobid(submission))
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.extracted_title, "GROBID Paper")
+        self.assertEqual(submission.extracted_authors, "Ada Lovelace and Alan Turing")
+        self.assertEqual(submission.title_author_source, "grobid")
+        self.assertEqual(submission.title_author_manual_override_reason, "")
+        self.assertIsNone(submission.title_author_manual_override_at)
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+        self.assertTrue(submission.extracted_title_verified)
+        self.assertEqual(submission.extracted_title_match_status, "verified")
+        self.assertEqual(submission.duplicate_author_review_status, "pending")
+        self.assertFalse(submission.author_number_exception_approved)
+        self.assertTrue(Path(submission.title_author_verification_image).exists())
+
+    def test_built_in_reextract_clears_manual_override_metadata(self):
+        submission = self.make_final_submission(
+            final_submission_id="MO005",
+            final_submission_title="Built In Title",
+            title_author_source="manual_override",
+            title_author_manual_override_reason="Old override",
+            title_author_manual_override_at=timezone.now(),
+        )
+
+        def fake_get_title_author(pdf_path, verify=False, verify_folder=""):
+            image_path = Path(verify_folder) / f"{Path(pdf_path).name}.png"
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b"image")
+            return "Built In Title", "Ada Lovelace and Alan Turing", 2
+
+        with patch(
+            "submissions.services.title_author_extraction.get_title_author",
+            side_effect=fake_get_title_author,
+        ):
+            self.assertTrue(extract_title_author_for_submission(submission))
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.title_author_source, "built_in_extractor")
+        self.assertEqual(submission.title_author_manual_override_reason, "")
+        self.assertIsNone(submission.title_author_manual_override_at)
+
+    def test_grobid_failure_does_not_modify_existing_extraction(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        submission = self.make_final_submission(
+            final_submission_id="G002",
+            extracted_title="Existing Title",
+            extracted_authors="Existing Author",
+            title_author_source="manual",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_header_with_grobid",
+            side_effect=GrobidExtractionError("connection failed"),
+        ):
+            self.assertFalse(extract_title_author_with_grobid(submission))
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.extracted_title, "Existing Title")
+        self.assertEqual(submission.extracted_authors, "Existing Author")
+        self.assertEqual(submission.title_author_source, "manual")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertTrue(submission.title_author_verified)
+
+    def test_grobid_unavailable_does_not_modify_submission_or_call_extractor(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        submission = self.make_final_submission(
+            final_submission_id="G002A",
+            extracted_title="Existing Title",
+            extracted_authors="Existing Author",
+            title_author_source="built_in_extractor",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": False,
+                "level": "danger",
+                "label": "Unavailable",
+                "message": "GROBID API is not reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_header_with_grobid"
+        ) as mocked_extract:
+            self.assertFalse(extract_title_author_with_grobid(submission))
+
+        mocked_extract.assert_not_called()
+        submission.refresh_from_db()
+        self.assertEqual(submission.extracted_title, "Existing Title")
+        self.assertEqual(submission.extracted_authors, "Existing Author")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertTrue(submission.title_author_verified)
+        self.assertIn("GROBID API is unavailable", submission._last_grobid_error)
+
+    def test_grobid_batch_only_processes_suspicious_rows(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        suspicious = self.make_final_submission(
+            final_submission_id="G003",
+            title_author_extraction_status="error",
+            title_author_review_status="pending",
+        )
+        clean = self.make_final_submission(
+            final_submission_id="G004",
+            paper_id_filled="P001",
+            extracted_authors="Ada Lovelace and Alan Turing",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        self.assertTrue(is_grobid_suspicious(suspicious))
+        self.assertFalse(is_grobid_suspicious(clean))
+        clean.extracted_authors = "Jaejoon Lee, and Kay"
+        clean.title_author_review_status = "pending"
+        clean.title_author_verified = False
+        clean.save(
+            update_fields=[
+                "extracted_authors",
+                "title_author_review_status",
+                "title_author_verified",
+                "updated_at",
+            ]
+        )
+        self.assertFalse(is_grobid_suspicious(clean))
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_title_author_with_grobid",
+            return_value=True,
+        ) as mocked_extract:
+            result = extract_grobid_for_suspicious_rows()
+
+        self.assertEqual(result["extracted"], 1)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(mocked_extract.call_args.args[0].pk, suspicious.pk)
+
+    def test_grobid_batch_unavailable_aborts_without_processing_rows(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        self.make_final_submission(
+            final_submission_id="G003A",
+            title_author_extraction_status="error",
+            title_author_review_status="pending",
+        )
+
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": False,
+                "level": "danger",
+                "label": "Unavailable",
+                "message": "GROBID API is not reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_title_author_with_grobid"
+        ) as mocked_extract:
+            result = extract_grobid_for_suspicious_rows()
+
+        mocked_extract.assert_not_called()
+        self.assertTrue(result["aborted"])
+        self.assertEqual(result["extracted"], 0)
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertIn("GROBID API is unavailable", result["message"])
+
+    def test_grobid_batch_stops_when_service_drops_mid_run(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        first = self.make_final_submission(
+            final_submission_id="GSTOP1",
+            title_author_extraction_status="error",
+            title_author_review_status="pending",
+        )
+        second = self.make_final_submission(
+            final_submission_id="GSTOP2",
+            title_author_extraction_status="error",
+            title_author_review_status="pending",
+        )
+        third = self.make_final_submission(
+            final_submission_id="GSTOP3",
+            title_author_extraction_status="error",
+            title_author_review_status="pending",
+        )
+
+        def fake_extract(submission, refresh_author_cache=True, skip_health_check=False):
+            if submission.pk == first.pk:
+                return True
+            if submission.pk == second.pk:
+                submission._last_grobid_error = "GROBID request timed out."
+                submission._last_grobid_service_unavailable = True
+                return False
+            raise AssertionError("Batch should stop before processing the third row.")
+
+        with patch(
+            "submissions.services.title_author_extraction.check_grobid_api",
+            return_value={
+                "available": True,
+                "level": "success",
+                "label": "Available",
+                "message": "GROBID API is reachable.",
+            },
+        ), patch(
+            "submissions.services.title_author_extraction.extract_title_author_with_grobid",
+            side_effect=fake_extract,
+        ) as mocked_extract:
+            result = extract_grobid_for_suspicious_rows()
+
+        self.assertEqual(mocked_extract.call_count, 2)
+        self.assertTrue(result["stopped"])
+        self.assertEqual(result["extracted"], 1)
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["skipped"], 2)
+        self.assertIn("timed out", result["message"])
+
+    def test_title_author_page_shows_grobid_controls_only_when_enabled(self):
+        self.make_final_submission(final_submission_id="G005", title_author_review_status="pending")
+
+        response = self.client.get(reverse("submissions:title_author_extraction"))
+        self.assertNotContains(response, "Try GROBID")
+
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+
+        response = self.client.get(reverse("submissions:title_author_extraction"))
+        self.assertContains(response, "GROBID fallback")
+        self.assertContains(response, "Try suspicious rows")
+        self.assertContains(response, "Try GROBID")
+
+    def test_title_author_page_warns_review_ok_grobid_resets_review(self):
+        settings_obj = AppSetting.load()
+        settings_obj.grobid_enabled = True
+        settings_obj.save()
+        self.make_final_submission(
+            final_submission_id="G006",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        response = self.client.get(reverse("submissions:title_author_extraction") + "?filter=review_ok")
+
+        self.assertContains(response, "GROBID re-extract")
+        self.assertContains(response, "GROBID re-extract resets review status.")
+
+    def test_title_author_page_emphasizes_title_match_check(self):
+        submission = self.make_final_submission(
+            final_submission_id="TMVIS1",
+            final_submission_title="Bridging Disciplines",
+            extracted_title="Bridging Disciplines",
+            extracted_title_verified=False,
+            extracted_title_auto_verify_blocked=True,
+        )
+        submission.title_author_review_status = "pending"
+        submission.save(
+            update_fields=[
+                "title_author_review_status",
+                "extracted_title_verified",
+                "extracted_title_auto_verify_blocked",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.get(
+            reverse("submissions:title_author_extraction") + "?filter=all&q=TMVIS1"
+        )
+
+        self.assertContains(response, "Title Match Check")
+        self.assertContains(response, "Needs match review")
+        self.assertContains(response, "Score 100%")
+        self.assertContains(response, "Confirm match")
+        self.assertContains(response, "Confirm if this 100% match is still correct.")
+        self.assertNotContains(response, "Extracted Title Diff Against Final Title")
+
+    def test_title_author_page_filters_title_match_and_needs_match(self):
+        self.make_final_submission(
+            final_submission_id="TM001",
+            paper_id_filled="TM001",
+            final_submission_title="Matched Title",
+            extracted_title="Matched Title",
+            extracted_title_verified=True,
+        )
+        self.make_final_submission(
+            final_submission_id="TM002",
+            paper_id_filled="TM002",
+            final_submission_title="Needs Match Title",
+            extracted_title="Needs Match Title",
+            extracted_title_verified=False,
+        )
+
+        matched = self.client.get(reverse("submissions:title_author_extraction") + "?filter=title_match")
+        self.assertContains(matched, "Title Match")
+        self.assertContains(matched, "TM001")
+        self.assertNotContains(matched, "TM002")
+
+        needs_match = self.client.get(
+            reverse("submissions:title_author_extraction") + "?filter=title_needs_match"
+        )
+        self.assertContains(needs_match, "Title Needs Match")
+        self.assertContains(needs_match, "Title match")
+        self.assertContains(needs_match, "Needs Match")
+        self.assertContains(needs_match, "TM002")
+        self.assertNotContains(needs_match, "TM001")
 
     def test_organized_list_needs_attention_uses_editorial_priority(self):
         self.make_master_paper("P001", "Missing Final", "Ada")
@@ -4116,6 +4800,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "reports_folder": settings_obj.reports_folder,
             "extraction_results_folder": settings_obj.extraction_results_folder,
             "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,
+            "grobid_api_url": settings_obj.grobid_api_url,
+            "grobid_timeout_seconds": settings_obj.grobid_timeout_seconds,
             "plagiarism_percent_threshold": settings_obj.plagiarism_percent_threshold,
             "single_similarity_threshold": settings_obj.single_similarity_threshold,
         }
@@ -4195,6 +4881,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "reports_folder": settings_obj.reports_folder,
             "extraction_results_folder": settings_obj.extraction_results_folder,
             "plagiarism_reports_folder": settings_obj.plagiarism_reports_folder,
+            "grobid_api_url": settings_obj.grobid_api_url,
+            "grobid_timeout_seconds": settings_obj.grobid_timeout_seconds,
             "plagiarism_percent_threshold": settings_obj.plagiarism_percent_threshold,
             "single_similarity_threshold": settings_obj.single_similarity_threshold,
         }

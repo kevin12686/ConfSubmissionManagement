@@ -4,17 +4,35 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Title/Author Extraction</h1>
-        <div class="cfm-page-subtitle">Uses the built-in title/author extractor. Verify both the marked extraction image and extracted title match.</div>
+        <div class="cfm-page-subtitle">
+            Uses the built-in title/author extractor. {% if settings_obj.grobid_enabled %}GROBID fallback is available for extraction error and Red Flag rows.{% endif %}
+            Verify both the marked extraction image and extracted title match.
+        </div>
     </div>
     <div class="cfm-page-actions">
-        <form method="post">
-            {% csrf_token %}
-            <button class="btn btn-primary" name="action" value="extract_needs_review">Extract Needs Review</button>
-        </form>
-        <form method="post">
-            {% csrf_token %}
-            <button class="btn btn-outline-danger" name="action" value="reextract_all_prompt">Re-extract All Active PDFs</button>
-        </form>
+        <div class="cfm-tool-group">
+            <div class="cfm-tool-label">Built-in extractor</div>
+            <form method="post">
+                {% csrf_token %}
+                <button class="btn btn-primary" name="action" value="extract_needs_review">Extract Needs Review</button>
+            </form>
+        </div>
+        {% if settings_obj.grobid_enabled %}
+        <div class="cfm-tool-group">
+            <div class="cfm-tool-label">GROBID fallback</div>
+            <form method="post">
+                {% csrf_token %}
+                <button class="btn btn-outline-primary" name="action" value="grobid_suspicious" {% if not grobid_status.available %}disabled{% endif %}>Try suspicious rows</button>
+            </form>
+        </div>
+        {% endif %}
+        <div class="cfm-tool-group">
+            <div class="cfm-tool-label">Full reset</div>
+            <form method="post">
+                {% csrf_token %}
+                <button class="btn btn-outline-danger" name="action" value="reextract_all_prompt">Re-extract All</button>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -36,16 +54,36 @@
     </div>
 {% endif %}
 
-<ul class="nav nav-tabs cfm-tabs">
-    {% for option in filter_options %}
-    <li class="nav-item">
-        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
-            {{ option.label }}
-            <span class="badge cfm-tab-count text-bg-{% if option.value == 'red_flag' %}danger{% elif option.value == 'review_ok' %}success{% elif option.value == 'errors' %}danger{% else %}warning{% endif %}">{{ option.count }}</span>
-        </a>
-    </li>
+{% if settings_obj.grobid_enabled %}
+    {% if grobid_status.available %}
+        <div class="alert alert-success border py-2 small">
+            <strong>GROBID available.</strong> API health check passed. GROBID actions will still reset Title/Author Review when they overwrite extracted metadata.
+        </div>
+    {% else %}
+        <div class="alert alert-warning border cfm-attention py-2 small">
+            <strong>GROBID unavailable.</strong> {{ grobid_unavailable_message }}
+            GROBID actions are disabled so rows are not incorrectly marked as extraction failures.
+        </div>
+    {% endif %}
+{% endif %}
+
+<div class="cfm-tab-groups">
+    {% for group in filter_groups %}
+    <div class="cfm-tab-group">
+        <div class="cfm-tab-group-label">{{ group.label }}</div>
+        <ul class="nav nav-tabs cfm-tabs">
+            {% for option in group.options %}
+            <li class="nav-item">
+                <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                    {{ option.tab_label|default:option.label }}
+                    <span class="badge cfm-tab-count text-bg-{{ option.badge_level|default:'secondary' }}">{{ option.count }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
     {% endfor %}
-</ul>
+</div>
 
 <form method="get" class="row g-2 align-items-end cfm-filter-panel">
     <div class="col-md-5">
@@ -56,7 +94,7 @@
         <label class="form-label" for="extract-filter">Filter</label>
         <select id="extract-filter" class="form-select" name="filter">
             {% for option in filter_options %}
-                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>{{ option.label }}</option>
+                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>{{ option.label }} ({{ option.count }})</option>
             {% endfor %}
         </select>
     </div>
@@ -90,7 +128,15 @@
                 {% elif item.extracted_title %}
                     <span class="badge text-bg-warning">Check title</span>
                 {% endif %}
-                <span class="badge text-bg-light text-dark">Extraction script: {{ item.get_title_author_extraction_status_display }}</span>
+                {% if settings_obj.grobid_enabled and row.grobid_suspicious %}
+                    <span class="badge text-bg-info">GROBID candidate</span>
+                {% endif %}
+                {% if item.title_author_source == "manual_override" %}
+                    <span class="badge text-bg-warning">Manual override</span>
+                {% elif item.title_author_source == "manual" %}
+                    <span class="badge text-bg-warning">Legacy manual</span>
+                {% endif %}
+                <span class="badge text-bg-light text-dark">Extraction: {{ item.get_title_author_source_display }} / {{ item.get_title_author_extraction_status_display }}</span>
             </div>
             <div class="cfm-status-line">
                 {% if row.publication_pdf.exists %}
@@ -117,13 +163,48 @@
                         <div class="border rounded p-2 bg-light">{{ item.extracted_title|default:"Missing" }}</div>
                     </div>
                     {% if item.extracted_title %}
-                        <div class="mb-2">
-                            <div class="small text-muted">Extracted Title Diff Against Final Title</div>
-                            <div class="border rounded p-2 bg-light diff-box">{{ row.title_match.diff_html }}</div>
-                            <div class="small text-muted">
-                                {{ row.title_match.message }}
-                                {% if row.title_match.score != None %} Score: {{ row.title_match.score }}%{% endif %}
+                        <div class="cfm-title-match-panel cfm-title-match-{% if item.extracted_title_verified %}ok{% elif row.title_match.status == 'title_mismatch' %}danger{% else %}warning{% endif %}">
+                            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+                                <div>
+                                    <div class="small text-uppercase fw-semibold text-muted">Title Match Check</div>
+                                    <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+                                        {% if item.extracted_title_verified %}
+                                            <span class="badge text-bg-success">Title matched</span>
+                                        {% elif row.title_match.status == "title_mismatch" %}
+                                            <span class="badge text-bg-danger">Title mismatch</span>
+                                        {% else %}
+                                            <span class="badge text-bg-warning">Needs match review</span>
+                                        {% endif %}
+                                        {% if row.title_match.score != None %}
+                                            <span class="badge text-bg-light text-dark">Score {{ row.title_match.score|floatformat:0 }}%</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if row.has_extraction %}
+                                    {% if item.extracted_title_verified %}
+                                        <form method="post">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                                            <button class="btn btn-sm btn-outline-secondary" name="action" value="unverify_extracted_title">Undo match</button>
+                                        </form>
+                                    {% else %}
+                                        <form method="post">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                                            <button class="btn btn-sm btn-success" name="action" value="verify_extracted_title">Confirm match</button>
+                                        </form>
+                                    {% endif %}
+                                {% endif %}
                             </div>
+                            <div class="mt-2 cfm-title-match-message">
+                                {{ row.title_match.message }}
+                                {% if row.title_match.needs_verification and row.title_match.is_identical %}
+                                    Confirm if this 100% match is still correct.
+                                {% endif %}
+                            </div>
+                            {% if not row.title_match.is_identical %}
+                                <div class="border rounded p-2 bg-white diff-box mt-2">{{ row.title_match.diff_html }}</div>
+                            {% endif %}
                         </div>
                     {% endif %}
                     <div class="mb-2">
@@ -163,6 +244,21 @@
                     {% if item.title_author_review_status != 'pending' or item.extracted_title_verified %}
                         <div class="small text-warning-emphasis mt-1">Re-extract resets review status.</div>
                     {% endif %}
+                    {% if settings_obj.grobid_enabled %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                            <button class="btn btn-sm {% if item.title_author_review_status == 'review_ok' %}btn-outline-danger{% else %}btn-outline-primary{% endif %}" name="action" value="grobid_one" {% if not grobid_status.available %}disabled{% endif %}>
+                                {% if item.title_author_review_status == 'review_ok' %}GROBID re-extract{% else %}Try GROBID{% endif %}
+                            </button>
+                        </form>
+                        {% if item.title_author_review_status == 'review_ok' %}
+                            <div class="small text-warning-emphasis mt-1">GROBID re-extract resets review status.</div>
+                        {% endif %}
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#manual-override-{{ item.pk }}" aria-expanded="false" aria-controls="manual-override-{{ item.pk }}">
+                        Manual override
+                    </button>
                 </div>
                 <div class="action-group text-lg-end">
                     <div class="small text-muted mb-1">Review status</div>
@@ -187,22 +283,39 @@
                                 <button class="btn btn-sm {% if item.title_author_review_status == 'review_ok' %}btn-success{% else %}btn-outline-success{% endif %}" name="action" value="set_review_status">Review OK</button>
                             </form>
                         </div>
-            {% if row.has_extraction %}
-                {% if item.extracted_title_verified %}
-                    <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
-                        <button class="btn btn-sm btn-outline-secondary" name="action" value="unverify_extracted_title">Undo title match</button>
-                    </form>
-                {% else %}
-                    <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
-                        <button class="btn btn-sm btn-outline-success" name="action" value="verify_extracted_title">Title match OK</button>
-                    </form>
-                {% endif %}
-            {% endif %}
                     </div>
+                </div>
+            </div>
+            <div class="collapse mt-3" id="manual-override-{{ item.pk }}">
+                <div class="border rounded bg-light p-3 cfm-manual-override-panel">
+                    <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+                        <span class="badge text-bg-warning">Manual override</span>
+                        <span class="fw-semibold">Exception workflow</span>
+                    </div>
+                    <div class="form-text mb-3">
+                        Use this only when formatting fixes and extraction retries cannot produce acceptable title/authors.
+                        Saving here resets Title/Author Review and records the reason in the audit log.
+                    </div>
+                    <form method="post" class="row g-3">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                        <div class="col-lg-6">
+                            <label class="form-label" for="manual-title-{{ item.pk }}">Extracted Title</label>
+                            <textarea id="manual-title-{{ item.pk }}" class="form-control" name="manual_extracted_title" rows="3">{{ item.extracted_title }}</textarea>
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label" for="manual-authors-{{ item.pk }}">Extracted Authors</label>
+                            <textarea id="manual-authors-{{ item.pk }}" class="form-control" name="manual_extracted_authors" rows="3">{{ item.extracted_authors }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="manual-reason-{{ item.pk }}">Reason required</label>
+                            <textarea id="manual-reason-{{ item.pk }}" class="form-control" name="manual_override_reason" rows="3" required>{{ item.title_author_manual_override_reason }}</textarea>
+                        </div>
+                        <div class="col-12 d-flex flex-wrap gap-2">
+                            <button class="btn btn-warning" name="action" value="manual_override">Save manual override</button>
+                            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#manual-override-{{ item.pk }}">Cancel</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -212,8 +325,60 @@
     <div class="cfm-empty">No records match this filter.</div>
 {% endfor %}
 <style>
+    .cfm-tool-group {
+        display: grid;
+        gap: 0.25rem;
+        justify-items: end;
+    }
+    .cfm-tool-label,
+    .cfm-tab-group-label {
+        color: var(--cfm-muted);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+    .cfm-tab-groups {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        align-items: end;
+        margin-bottom: 1rem;
+    }
+    .cfm-tab-group {
+        min-width: min(100%, 20rem);
+    }
+    .cfm-tab-group .cfm-tabs {
+        margin-bottom: 0;
+    }
+    .cfm-manual-override-panel {
+        border-color: var(--cfm-warning-border) !important;
+        box-shadow: inset 4px 0 0 var(--cfm-warning-strong);
+    }
     .action-group {
         min-width: 220px;
+    }
+    .cfm-title-match-panel {
+        border: 1px solid var(--cfm-border);
+        border-left-width: 5px;
+        border-radius: 0.5rem;
+        margin: 0.75rem 0 1rem;
+        padding: 0.85rem;
+    }
+    .cfm-title-match-ok {
+        background: #f0f8f3;
+        border-left-color: #198754;
+    }
+    .cfm-title-match-warning {
+        background: #fff8e1;
+        border-left-color: #f0ad00;
+    }
+    .cfm-title-match-danger {
+        background: #fff1f1;
+        border-left-color: #dc3545;
+    }
+    .cfm-title-match-message {
+        font-weight: 600;
     }
     .diff-box { font-size: 0.95rem; line-height: 1.6; }
     .diff-insert { background: #d1e7dd; padding: 0 2px; }

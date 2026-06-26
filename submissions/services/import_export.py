@@ -508,6 +508,8 @@ def submissions_to_frame(queryset):
                 "title_author_extraction_status": item.title_author_extraction_status,
                 "title_author_extraction_message": item.title_author_extraction_message,
                 "title_author_verification_image": item.title_author_verification_image,
+                "title_author_manual_override_reason": item.title_author_manual_override_reason,
+                "title_author_manual_override_at": item.title_author_manual_override_at,
                 "title_author_review_status": item.title_author_review_status,
                 "title_author_verified": item.title_author_verified,
                 "title_author_verified_at": item.title_author_verified_at,

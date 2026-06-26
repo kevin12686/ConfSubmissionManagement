@@ -11,6 +11,7 @@ from submissions.services.file_manager import resolve_folder, sanitize_filename_
 from submissions.services.import_export import _mark_duplicate_submissions
 from submissions.services.import_preview import (
     _archive_and_unlink_corrected_files,
+    _clear_title_author_manual_override,
     _reset_extracted_title_match,
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
@@ -210,6 +211,7 @@ def _reset_extracted_metadata_review(submission, authors_changed):
     submission.title_author_imported_at = timezone.now()
     submission.title_author_extraction_status = "extracted"
     submission.title_author_extraction_message = "Manually edited."
+    _clear_title_author_manual_override(submission)
     submission.title_author_review_status = "pending"
     submission.title_author_verified = False
     submission.title_author_verified_at = None

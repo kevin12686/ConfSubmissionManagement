@@ -11,7 +11,7 @@ It is designed for editorial use on one local machine. It manages Paper Master r
 - No plagiarism checking execution inside Django.
 - No manual copying from `data/` for normal exports; use the app download buttons.
 
-Plagiarism scores and reports are imported from CrossCheck/plagiarism outputs. Title/author extraction is built in and runs from the app.
+Plagiarism scores and reports are imported from CrossCheck/plagiarism outputs. Title/author extraction is built in and runs from the app. Optional GROBID fallback extraction can be enabled in Settings for difficult PDF formats, but its results still require the same manual review workflow.
 
 ## Quick Start
 
@@ -65,7 +65,7 @@ System State ZIP files are portable. They restore settings, conference name, dat
 3. Import Final Submission metadata plus PDF/source files from CSV/XLSX and uploaded files.
 4. Resolve Paper ID mapping, Not Publishing decisions, and Start2/Editor Upload conflicts.
 5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies.
-6. Run and review Title/Author Extraction.
+6. Run and review Title/Author Extraction. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
 8. Export PDFs for CrossCheck/plagiarism, import Plagiarism % and Single %, and upload optional report PDFs.
 9. Review author counts, duplicate authors, page exceptions, and author-limit exceptions.

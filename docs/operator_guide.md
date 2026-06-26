@@ -122,6 +122,10 @@ Review statuses:
 
 The page also tracks extracted title vs Final Submission title. Missing or unverified matches can block final export. Soft title differences are shown for attention but do not block by themselves.
 
+The built-in extractor is the default path. Settings can enable an optional GROBID fallback for local/internal GROBID services; the Settings page shows a green/red API health indicator beside the GROBID API URL and refreshes it while you edit the URL. The Title/Author page checks GROBID health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction is not started, so rows are not incorrectly turned into extraction errors. During a suspicious-row batch, rows are processed one at a time; if the GROBID service becomes unavailable mid-run, the batch stops, successful rows remain saved, and unprocessed rows are skipped rather than marked as paper-level errors. Use `Try GROBID` on individual rows, or `Try GROBID for suspicious rows` for rows with extraction errors or Red Flag status. If a row has missing/truncated authors but is not an extraction error, mark it Red Flag first or use the single-row button. A successful GROBID extraction overwrites extracted title/authors, creates a verification image, resets Title/Author Review back to Pending, and recalculates Extracted Title Match the same way the built-in extractor does. A failed GROBID attempt does not overwrite the current extraction.
+
+Manual override is an exception path for cases where extracted title/authors must be corrected without editing the PDF/source. Use the row-level `Manual override` action on the Title/Author page, enter the corrected extracted title/authors, and record a required reason. Manual override resets Title/Author Review to Pending, recalculates extracted-title match, writes an audit event, and appears as an Info item in Error Report. Final Submission edit does not silently edit extracted title/authors; use the Title/Author workflow so the reason and review reset are recorded.
+
 ## Formatting Review
 
 Use `/reviews/formatting/` to review title/author formatting visually.

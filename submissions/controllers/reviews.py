@@ -96,10 +96,16 @@ from submissions.services.organized_list import (
 from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.title_author_extraction import (
+    ManualOverrideError,
+    apply_title_author_manual_override,
     extract_active_title_authors,
+    extract_grobid_for_suspicious_rows,
     extract_title_author_for_submission,
+    extract_title_author_with_grobid,
     extraction_overwrite_summary,
     filter_title_author_extraction_rows,
+    grobid_availability_status,
+    grobid_unavailable_message,
     set_title_author_review_status,
     title_author_extraction_rows,
     unverify_title_author,
@@ -308,7 +314,17 @@ def title_author_extraction(request):
     q = _search_query(request)
     current_filter = request.GET.get("filter", "pending")
     confirm_reextract_all = False
-    allowed_filters = {"pending", "red_flag", "review_ok", "missing", "errors", "all"}
+    allowed_filters = {
+        "pending",
+        "red_flag",
+        "review_ok",
+        "missing",
+        "title_match",
+        "title_needs_match",
+        "manual_override",
+        "errors",
+        "all",
+    }
     if current_filter not in allowed_filters:
         current_filter = "pending"
 
@@ -325,6 +341,28 @@ def title_author_extraction(request):
             messages.success(
                 request,
                 f"Title/author extraction completed for needs-review papers: {result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped.",
+            )
+            return redirect("submissions:title_author_extraction")
+        if action == "grobid_suspicious":
+            if not AppSetting.load().grobid_enabled:
+                messages.error(request, "GROBID fallback is disabled in Settings.")
+                return redirect("submissions:title_author_extraction")
+            result = extract_grobid_for_suspicious_rows()
+            if result.get("aborted"):
+                messages.error(request, result["message"] + " No rows were processed.")
+                return redirect("submissions:title_author_extraction")
+            if result.get("stopped"):
+                messages.warning(
+                    request,
+                    (
+                        "GROBID suspicious-row extraction stopped because the API became unavailable: "
+                        f"{result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped."
+                    ),
+                )
+                return redirect("submissions:title_author_extraction")
+            messages.success(
+                request,
+                f"GROBID suspicious-row extraction completed: {result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped.",
             )
             return redirect("submissions:title_author_extraction")
         if action == "reextract_all_prompt":
@@ -352,6 +390,32 @@ def title_author_extraction(request):
                         request,
                         f"Extraction failed for {submission.final_submission_id}. Check the row message.",
                     )
+            elif action == "grobid_one":
+                if not AppSetting.load().grobid_enabled:
+                    messages.error(request, "GROBID fallback is disabled in Settings.")
+                elif extract_title_author_with_grobid(submission):
+                    messages.success(request, f"GROBID extracted title/authors for {submission.final_submission_id}.")
+                else:
+                    error_detail = getattr(submission, "_last_grobid_error", "")
+                    messages.error(
+                        request,
+                        f"GROBID extraction failed for {submission.final_submission_id}. Existing extraction was not changed."
+                        + (f" Reason: {error_detail}" if error_detail else ""),
+                    )
+            elif action == "manual_override":
+                try:
+                    apply_title_author_manual_override(
+                        submission,
+                        request.POST.get("manual_extracted_title", ""),
+                        request.POST.get("manual_extracted_authors", ""),
+                        request.POST.get("manual_override_reason", ""),
+                    )
+                    messages.warning(
+                        request,
+                        f"Manual title/author override saved for {submission.final_submission_id}. Review OK is required again.",
+                    )
+                except ManualOverrideError as exc:
+                    messages.error(request, str(exc))
             elif action == "verify":
                 verify_title_author(submission)
                 messages.success(request, f"Title/authors marked Review OK for {submission.final_submission_id}.")
@@ -374,15 +438,29 @@ def title_author_extraction(request):
             return redirect("submissions:title_author_extraction")
 
     filter_options = [
-        {"value": "pending", "label": "Pending"},
-        {"value": "red_flag", "label": "Red Flag"},
-        {"value": "review_ok", "label": "Review OK"},
-        {"value": "missing", "label": "Missing"},
-        {"value": "errors", "label": "Errors"},
-        {"value": "all", "label": "All"},
+        {"value": "pending", "label": "Pending", "tab_label": "Pending", "badge_level": "warning", "group": "review"},
+        {"value": "red_flag", "label": "Red Flag", "tab_label": "Red Flag", "badge_level": "danger", "group": "review"},
+        {"value": "review_ok", "label": "Review OK", "tab_label": "Review OK", "badge_level": "success", "group": "review"},
+        {"value": "missing", "label": "Missing Extraction", "tab_label": "Missing", "badge_level": "warning", "group": "review"},
+        {"value": "errors", "label": "Extraction Errors", "tab_label": "Errors", "badge_level": "danger", "group": "review"},
+        {"value": "title_needs_match", "label": "Title Needs Match", "tab_label": "Needs Match", "badge_level": "warning", "group": "title"},
+        {"value": "title_match", "label": "Title Match", "tab_label": "Matched", "badge_level": "success", "group": "title"},
+        {"value": "manual_override", "label": "Manual Override", "tab_label": "Manual override", "badge_level": "warning", "group": "source"},
+        {"value": "all", "label": "All", "tab_label": "All", "badge_level": "secondary", "group": "review"},
     ]
     all_title_author_rows = title_author_extraction_rows(q, "all")
     rows = filter_title_author_extraction_rows(all_title_author_rows, current_filter)
+    settings_obj = AppSetting.load()
+    grobid_status = (
+        grobid_availability_status(settings_obj)
+        if settings_obj.grobid_enabled
+        else {
+            "available": False,
+            "level": "secondary",
+            "label": "Disabled",
+            "message": "GROBID fallback is disabled in Settings.",
+        }
+    )
     tab_counts = {
         option["value"]: len(
             filter_title_author_extraction_rows(all_title_author_rows, option["value"])
@@ -391,6 +469,20 @@ def title_author_extraction(request):
     }
     for option in filter_options:
         option["count"] = tab_counts[option["value"]]
+    filter_groups = [
+        {
+            "label": "Review workflow",
+            "options": [option for option in filter_options if option["group"] == "review"],
+        },
+        {
+            "label": "Title match",
+            "options": [option for option in filter_options if option["group"] == "title"],
+        },
+        {
+            "label": "Exception source",
+            "options": [option for option in filter_options if option["group"] == "source"],
+        },
+    ]
     return render(
         request,
         "submissions/title_author_extraction.html",
@@ -399,10 +491,17 @@ def title_author_extraction(request):
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,
+            "filter_groups": filter_groups,
             "tab_counts": tab_counts,
             "confirm_reextract_all": confirm_reextract_all,
             "overwrite_summary": extraction_overwrite_summary(),
-            "settings_obj": AppSetting.load(),
+            "settings_obj": settings_obj,
+            "grobid_status": grobid_status,
+            "grobid_unavailable_message": (
+                grobid_unavailable_message(grobid_status)
+                if settings_obj.grobid_enabled and not grobid_status["available"]
+                else ""
+            ),
         },
     )
 

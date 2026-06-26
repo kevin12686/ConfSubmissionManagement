@@ -43,6 +43,7 @@ urlpatterns = [
     path("integrations/crosscheck/zip/<str:token>/<str:scope>/", views.download_crosscheck_zip_scoped, name="download_crosscheck_zip_scoped"),
     path("integrations/system-state/download/", views.download_system_state, name="download_system_state"),
     path("settings/", views.app_settings, name="settings"),
+    path("settings/grobid-health/", views.grobid_health_check, name="grobid_health_check"),
     path("settings/clear-database/", views.clear_database, name="clear_database"),
     path("reports/", views.export_reports, name="export_reports"),
     path("templates/<str:template_type>/", views.download_template, name="download_template"),

@@ -120,7 +120,15 @@ Use the Title/Author page:
 - Mark Red Flag if the PDF formatting likely needs correction.
 - Correct formatting and upload a corrected PDF/source if needed.
 - Re-extract only the needed records when possible.
+- If GROBID fallback is enabled in Settings, use single-row `Try GROBID` for rows where the built-in extractor misses authors or produces suspicious truncated output. The batch GROBID action only processes extraction errors and Red Flag rows. GROBID failures leave the existing extracted title/authors unchanged.
+- If extraction remains wrong and the PDF/source should not be changed, use row-level `Manual override`. A reason is required, the override is audited, and Title/Author Review returns to Pending. Do not try to edit extracted title/authors from Final Submission edit.
 - Review OK only after extracted title/authors and verification image are acceptable.
+
+Verification image URLs include a file-modification cache buster so a newly generated built-in or GROBID image should replace the previous browser image immediately.
+
+### GROBID fallback cannot connect
+
+GROBID is optional and disabled by default. If enabled, confirm the API URL in Settings points to a trusted local/internal service such as `http://localhost:8070` or your lab server. Settings shows a green/red health indicator using the GROBID `/api/isalive` endpoint; the indicator refreshes as you edit the URL or timeout, before the settings are saved. The Title/Author page also checks API health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction aborts before processing rows, so unavailable service does not create extraction errors for every paper. If the service drops during a batch, the batch stops at that point; completed rows remain saved and the current/unprocessed rows are counted as skipped. The app calls `/api/processHeaderDocument` for extraction and does not send PDFs to a cloud service unless you configure a cloud URL yourself. Connection, timeout, HTTP, or TEI parsing failures are logged and shown as messages, but they do not overwrite existing extracted title/authors.
 
 ### A paper disappeared from a filtered page
 

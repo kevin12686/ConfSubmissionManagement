@@ -674,6 +674,11 @@ def _reset_extracted_title_match(submission, message):
     submission.extracted_title_match_message = message
 
 
+def _clear_title_author_manual_override(submission):
+    submission.title_author_manual_override_reason = ""
+    submission.title_author_manual_override_at = None
+
+
 def _reset_pdf_dependent_state(submission, processing_message="PDF changed; needs Process PDFs."):
     submission.page_count = None
     reset_page_limit_exception(submission)
@@ -690,6 +695,7 @@ def _reset_pdf_dependent_state(submission, processing_message="PDF changed; need
     submission.title_author_extraction_status = "pending"
     submission.title_author_extraction_message = ""
     submission.title_author_verification_image = ""
+    _clear_title_author_manual_override(submission)
     submission.title_author_review_status = "pending"
     submission.title_author_verified = False
     submission.title_author_verified_at = None
@@ -709,6 +715,7 @@ def _reset_pdf_dependent_state(submission, processing_message="PDF changed; need
 
 def _reset_source_dependent_state(submission):
     submission.format_status = "pending"
+    _clear_title_author_manual_override(submission)
     submission.title_author_review_status = "pending"
     submission.title_author_verified = False
     submission.title_author_verified_at = None

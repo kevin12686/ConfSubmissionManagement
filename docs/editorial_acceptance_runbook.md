@@ -45,7 +45,7 @@ Create Final Submission records and files:
 7. Create the Editor Upload for P007. Confirm the title guard compares PDF title against Paper Master title and Final Title, then verify the Start2/Editor conflict warning appears.
 8. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
 9. Run Process PDFs. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated.
-10. Run Title/Author Extraction for needs-review records. Review extracted title/authors, title-match status, red flags, and verification images.
+10. Run Title/Author Extraction for needs-review records. Review extracted title/authors, title-match status, red flags, and verification images. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
 11. Open Formatting Review. Use list mode and single-paper mode, upload a corrected PDF/source for one paper, confirm the corrected PDF title guard, then re-run Process PDFs.
 12. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
 13. Open Author Count. Confirm publication paper count is per normalized author and duplicate-author warnings are reviewable.

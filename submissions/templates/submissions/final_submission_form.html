@@ -189,12 +189,44 @@
             <div class="card h-100">
                 <div class="card-header fw-semibold">Extracted Title / Authors</div>
                 <div class="card-body">
-                    {% include "submissions/includes/form_field.html" with field=form.extracted_title %}
-                    {% include "submissions/includes/form_field.html" with field=form.extracted_authors %}
+                    {% if submission %}
                     <div class="row g-3">
-                        <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.title_author_source %}</div>
+                        <div class="col-md-6">
+                            <div class="small text-muted">Source</div>
+                            {% if submission.title_author_source == "manual_override" %}
+                                <span class="badge text-bg-warning">Manual override</span>
+                            {% elif submission.title_author_source == "manual" %}
+                                <span class="badge text-bg-warning">Legacy manual</span>
+                            {% else %}
+                                <span class="badge text-bg-secondary">{{ submission.get_title_author_source_display }}</span>
+                            {% endif %}
+                        </div>
                         <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.title_author_review_status %}</div>
                     </div>
+                    <div class="mt-3">
+                        <div class="small text-muted">Extracted Title</div>
+                        <div class="border rounded bg-light p-2">{{ submission.extracted_title|default:"Missing" }}</div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="small text-muted">Extracted Authors</div>
+                        <div class="border rounded bg-light p-2">{{ submission.extracted_authors|default:"Missing" }}</div>
+                    </div>
+                    {% if submission.title_author_source == "manual_override" %}
+                        <div class="alert alert-warning border mt-3 mb-0">
+                            <div class="fw-semibold">Manual override reason</div>
+                            <div class="small">{{ submission.title_author_manual_override_reason|linebreaksbr }}</div>
+                            {% if submission.title_author_manual_override_at %}
+                                <div class="small text-muted mt-1">{{ submission.title_author_manual_override_at }}</div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    <div class="mt-3">
+                        <a class="btn btn-outline-warning" href="{% url 'submissions:title_author_extraction' %}?filter=all&q={{ submission.final_submission_id|urlencode }}">Edit through Title/Author Manual Override</a>
+                        <div class="form-text">Extracted title/authors are special review data. Use the Title/Author workflow so the reason, audit log, and review reset are recorded.</div>
+                    </div>
+                    {% else %}
+                        <div class="text-muted">Extraction data is available after the submission is created and processed through Title/Author Extraction.</div>
+                    {% endif %}
                     {% include "submissions/includes/form_field.html" with field=form.title_author_extraction_message %}
                     <div class="row g-3">
                         <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.extracted_title_verified %}</div>

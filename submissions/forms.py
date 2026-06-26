@@ -57,9 +57,6 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
             "upload_date",
             "pdf_file",
             "source_file",
-            "extracted_title",
-            "extracted_authors",
-            "title_author_source",
             "title_author_extraction_message",
             "title_author_review_status",
             "duplicate_author_review_status",
@@ -76,7 +73,6 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
         widgets = {
             "upload_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "final_submission_authors": forms.Textarea(attrs={"rows": 3}),
-            "extracted_authors": forms.Textarea(attrs={"rows": 3}),
             "title_author_extraction_message": forms.Textarea(attrs={"rows": 2}),
             "duplicate_author_review_notes": forms.Textarea(attrs={"rows": 2}),
             "extracted_title_match_message": forms.Textarea(attrs={"rows": 2}),
@@ -276,9 +272,15 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "reports_folder",
             "extraction_results_folder",
             "plagiarism_reports_folder",
+            "grobid_enabled",
+            "grobid_api_url",
+            "grobid_timeout_seconds",
             "plagiarism_percent_threshold",
             "single_similarity_threshold",
         ]
+        widgets = {
+            "grobid_api_url": forms.URLInput(),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -307,6 +309,15 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "plagiarism_reports_folder",
         ]:
             self.fields[field_name].help_text = folder_help
+        self.fields["grobid_enabled"].label = "Enable GROBID fallback"
+        self.fields["grobid_enabled"].help_text = (
+            "Optional local GROBID service for manual fallback title/author extraction."
+        )
+        self.fields["grobid_api_url"].label = "GROBID API URL"
+        self.fields["grobid_api_url"].help_text = (
+            "Base URL for the trusted local GROBID service, for example http://localhost:8070."
+        )
+        self.fields["grobid_timeout_seconds"].label = "GROBID timeout seconds"
         self.fields["plagiarism_percent_threshold"].label = "Plagiarism % threshold"
         self.fields["single_similarity_threshold"].label = "Single % threshold"
         self._apply_bootstrap()

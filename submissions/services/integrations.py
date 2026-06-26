@@ -4,6 +4,7 @@ from submissions.models import FinalSubmission
 from submissions.services.audit import audit_success
 from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
 from submissions.services.import_export import clean_value, normalize_columns, parse_decimal, read_table
+from submissions.services.import_preview import _clear_title_author_manual_override
 
 
 def find_submission(row):
@@ -55,6 +56,7 @@ def import_external_results(uploaded_file):
             submission.title_author_imported_at = timezone.now()
             submission.title_author_extraction_status = "extracted"
             submission.title_author_extraction_message = "Imported from external results file."
+            _clear_title_author_manual_override(submission)
             submission.title_author_review_status = "pending"
             submission.title_author_verified = False
             submission.title_author_verified_at = None

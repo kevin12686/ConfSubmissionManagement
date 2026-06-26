@@ -58,7 +58,7 @@ Put reusable workflow behavior in services:
 - PDF processing: `pdf_processor.py`.
 - Publication file resolution: `file_manager.py`.
 - Paper ID verification: `verification.py`.
-- Title/author extraction: `title_author_extraction.py` and `builtin_title_author_extractor.py`.
+- Title/author extraction and manual override: `title_author_extraction.py`, `builtin_title_author_extractor.py`, and optional `grobid_extractor.py`.
 - Formatting workflow: `formatting.py`.
 - CrossCheck/plagiarism: `crosscheck.py`.
 - Readiness and author checks: `checks.py`.

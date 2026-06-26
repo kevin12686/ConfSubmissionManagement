@@ -58,6 +58,7 @@ ERROR_GROUPS = {
             "Title/Author Red Flag",
             "Unverified Title/Author Extraction",
             "Unverified Extracted Title Match",
+            "Manual Title/Author Override",
             "Duplicate Author In Paper",
             "Author Over Limit",
             "Allowed Author Number Exception",
@@ -138,6 +139,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Title/Author Red Flag": "medium",
     "Unverified Title/Author Extraction": "medium",
     "Unverified Extracted Title Match": "medium",
+    "Manual Title/Author Override": "info",
     "Formatting Not Review OK": "medium",
     "Missing Plagiarism Result": "medium",
     "Replaced Final Submission": "info",
@@ -1196,6 +1198,21 @@ def dashboard_counts():
 
 def error_report_rows():
     rows = publication_readiness_rows(include_allowed=True)
+    for submission in FinalSubmission.objects.filter(
+        title_author_source="manual_override",
+        discarded=False,
+    ):
+        rows.append(
+            {
+                "category": "Manual Title/Author Override",
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "message": (
+                    "Extracted title/authors were manually overridden. Reason: "
+                    f"{submission.title_author_manual_override_reason or 'No reason recorded.'}"
+                ),
+            }
+        )
     for submission in FinalSubmission.objects.filter(duplicate_submission=True, discarded=False):
         rows.append(
             {

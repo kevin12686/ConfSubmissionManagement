@@ -381,7 +381,11 @@ def update_formatting_submission(submission, cleaned_data):
         _reset_pdf_dependent_state(submission)
         submission.extracted_title = previous_extraction["extracted_title"]
         submission.extracted_authors = previous_extraction["extracted_authors"]
-        submission.title_author_source = previous_extraction["title_author_source"]
+        submission.title_author_source = (
+            "unknown"
+            if previous_extraction["title_author_source"] == "manual_override"
+            else previous_extraction["title_author_source"]
+        )
         submission.title_author_imported_at = previous_extraction["title_author_imported_at"]
         if submission.extracted_title or submission.extracted_authors:
             submission.title_author_extraction_message = (

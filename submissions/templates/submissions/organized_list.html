@@ -221,7 +221,14 @@
                         <div><span class="badge text-bg-warning">Not OK yet</span></div>
                     {% endif %}
                 </td>
-                <td><span class="badge text-bg-{{ row.extraction_level }}">{{ row.extraction_label }}</span></td>
+                <td>
+                    <span class="badge text-bg-{{ row.extraction_level }}">{{ row.extraction_label }}</span>
+                    {% if submission.title_author_source == "manual_override" %}
+                        <div><span class="badge text-bg-warning">Manual override</span></div>
+                    {% elif submission.title_author_source == "manual" %}
+                        <div><span class="badge text-bg-warning">Legacy manual</span></div>
+                    {% endif %}
+                </td>
                 <td>
                     {% if submission %}
                         {% if submission.similarity_score != None and submission.single_similarity_score != None %}

@@ -42,4 +42,4 @@ from .controllers.integrations import (
     download_system_state,
     integration,
 )
-from .controllers.settings import app_settings, clear_database
+from .controllers.settings import app_settings, clear_database, grobid_health_check

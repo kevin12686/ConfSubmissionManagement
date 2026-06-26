@@ -147,6 +147,37 @@
                 <div class="card-body">
                     {% include "submissions/includes/form_field.html" with field=form.active_version_rule %}
                     {% include "submissions/includes/form_field.html" with field=form.time_zone %}
+                    <hr>
+                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2" id="grobid-health-widget" data-health-url="{% url 'submissions:grobid_health_check' %}">
+                        <div>
+                            <div class="fw-semibold">Title/Author extraction fallback</div>
+                            <div class="small text-muted">Optional local GROBID service for difficult PDF formats.</div>
+                        </div>
+                        <span class="cfm-health-badge text-{{ grobid_status.level }}" data-grobid-health-container>
+                            <span class="cfm-health-dot bg-{{ grobid_status.level }}" data-grobid-health-dot></span>
+                            <span data-grobid-health-label>{{ grobid_status.label }}</span>
+                        </span>
+                    </div>
+                    {% include "submissions/includes/form_field.html" with field=form.grobid_enabled %}
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label" for="{{ form.grobid_api_url.id_for_label }}">{{ form.grobid_api_url.label }}</label>
+                            <div class="input-group">
+                                {{ form.grobid_api_url }}
+                                <span class="input-group-text text-{{ grobid_status.level }}" data-grobid-health-container>
+                                    <span class="cfm-health-dot bg-{{ grobid_status.level }}" aria-hidden="true" data-grobid-health-dot></span>
+                                    <span class="ms-1" data-grobid-health-label>{{ grobid_status.label }}</span>
+                                </span>
+                            </div>
+                            {% if form.grobid_api_url.help_text %}<div class="form-text">{{ form.grobid_api_url.help_text }}</div>{% endif %}
+                            <div class="form-text text-{{ grobid_status.level }}" data-grobid-health-message>{{ grobid_status.message }}</div>
+                            {% for error in form.grobid_api_url.errors %}
+                                <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        <div class="col-md-4">{% include "submissions/includes/form_field.html" with field=form.grobid_timeout_seconds %}</div>
+                    </div>
+                    <div class="small text-muted">GROBID is used only when manually triggered from Title/Author Extraction. Results still require the same review workflow.</div>
                 </div>
             </div>
         </div>
@@ -433,4 +464,120 @@
         </form>
     </div>
 </div>
+<script>
+    (function () {
+        const widget = document.getElementById("grobid-health-widget");
+        if (!widget) {
+            return;
+        }
+        const apiUrlInput = document.getElementById("id_grobid_api_url");
+        const timeoutInput = document.getElementById("id_grobid_timeout_seconds");
+        if (!apiUrlInput) {
+            return;
+        }
+        const endpoint = widget.dataset.healthUrl;
+        const containers = document.querySelectorAll("[data-grobid-health-container]");
+        const dots = document.querySelectorAll("[data-grobid-health-dot]");
+        const labels = document.querySelectorAll("[data-grobid-health-label]");
+        const message = document.querySelector("[data-grobid-health-message]");
+        let debounceTimer = null;
+        let activeRequest = null;
+
+        function setStatus(status) {
+            const level = status.level || "secondary";
+            containers.forEach(function (container) {
+                container.classList.remove("text-success", "text-danger", "text-secondary", "text-warning", "text-info");
+                container.classList.add("text-" + level);
+            });
+            dots.forEach(function (dot) {
+                dot.classList.remove("bg-success", "bg-danger", "bg-secondary", "bg-warning", "bg-info");
+                dot.classList.add("bg-" + level);
+            });
+            labels.forEach(function (label) {
+                label.textContent = status.label || "Unknown";
+            });
+            if (message) {
+                message.classList.remove("text-success", "text-danger", "text-secondary", "text-warning", "text-info");
+                message.classList.add("text-" + level);
+                message.textContent = status.message || "";
+            }
+        }
+
+        function runHealthCheck() {
+            const apiUrl = (apiUrlInput.value || "").trim();
+            if (!apiUrl) {
+                setStatus({
+                    level: "secondary",
+                    label: "No URL",
+                    message: "GROBID API URL is empty."
+                });
+                return;
+            }
+            if (activeRequest) {
+                activeRequest.abort();
+            }
+            activeRequest = new AbortController();
+            setStatus({
+                level: "secondary",
+                label: "Checking",
+                message: "Checking GROBID API..."
+            });
+            const params = new URLSearchParams({
+                api_url: apiUrl,
+                timeout: timeoutInput ? timeoutInput.value || "2" : "2"
+            });
+            fetch(endpoint + "?" + params.toString(), {
+                headers: {"Accept": "application/json"},
+                signal: activeRequest.signal
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("Health check returned HTTP " + response.status + ".");
+                    }
+                    return response.json();
+                })
+                .then(function (status) {
+                    setStatus(status);
+                })
+                .catch(function (error) {
+                    if (error.name === "AbortError") {
+                        return;
+                    }
+                    setStatus({
+                        level: "danger",
+                        label: "Unavailable",
+                        message: error.message || "GROBID health check failed."
+                    });
+                });
+        }
+
+        function scheduleHealthCheck() {
+            window.clearTimeout(debounceTimer);
+            debounceTimer = window.setTimeout(runHealthCheck, 600);
+        }
+
+        apiUrlInput.addEventListener("input", scheduleHealthCheck);
+        apiUrlInput.addEventListener("change", scheduleHealthCheck);
+        if (timeoutInput) {
+            timeoutInput.addEventListener("input", scheduleHealthCheck);
+            timeoutInput.addEventListener("change", scheduleHealthCheck);
+        }
+    })();
+</script>
+<style>
+    .cfm-health-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .cfm-health-dot {
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 0 3px var(--cfm-border);
+    }
+</style>
 {% endblock %}

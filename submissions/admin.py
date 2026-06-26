@@ -74,6 +74,7 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
         "discarded",
         "excluded_from_publication",
         "verification_status",
+        "title_author_source",
         "title_author_extraction_status",
         "title_author_review_status",
         "title_author_verified",
@@ -99,6 +100,7 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
         "paper_id_verified",
         "verification_status",
         "processing_status",
+        "title_author_source",
         "title_author_extraction_status",
         "title_author_review_status",
         "title_author_verified",
@@ -174,6 +176,16 @@ class AppSettingAdmin(admin.ModelAdmin):
                     "reports_folder",
                     "extraction_results_folder",
                     "plagiarism_reports_folder",
+                )
+            },
+        ),
+        (
+            "GROBID fallback",
+            {
+                "fields": (
+                    "grobid_enabled",
+                    "grobid_api_url",
+                    "grobid_timeout_seconds",
                 )
             },
         ),
