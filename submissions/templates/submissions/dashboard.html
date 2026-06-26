@@ -102,6 +102,12 @@
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <span class="badge text-bg-{% if counts.missing_plagiarism_result %}warning{% else %}success{% endif %}">{{ counts.missing_plagiarism_result }} missing</span>
                     <span class="badge text-bg-{% if counts.plagiarism_over_threshold or counts.single_over_threshold %}danger{% else %}success{% endif %}">{{ counts.plagiarism_over_threshold|add:counts.single_over_threshold }} over threshold</span>
+                    {% if counts.allowed_plagiarism_exceptions %}
+                        <span class="badge text-bg-info">{{ counts.allowed_plagiarism_exceptions }} allowed</span>
+                    {% endif %}
+                    {% if counts.stale_plagiarism_exceptions %}
+                        <span class="badge text-bg-warning">{{ counts.stale_plagiarism_exceptions }} stale</span>
+                    {% endif %}
                     <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review</a>
                 </div>
             </div>

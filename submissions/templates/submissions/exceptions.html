@@ -61,6 +61,18 @@
                         <div class="small text-muted">Paper IDs</div>
                         <div class="text-break">{{ row.paper_ids|default:"--" }}</div>
                     </div>
+                    {% if row.type == "plagiarism_percent" or row.type == "single_percent" %}
+                        <div class="col-12">
+                            <div class="d-flex flex-wrap gap-2">
+                                {% if row.publication_pdf.exists %}
+                                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open publication PDF</a>
+                                {% endif %}
+                                {% if row.submission.plagiarism_report_path %}
+                                    <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:plagiarism_report' row.submission.pk %}" target="_blank" rel="noopener">Open report</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
                     <div class="col-12">
                         <div class="small text-muted">Reason</div>
                         {% if row.reason %}

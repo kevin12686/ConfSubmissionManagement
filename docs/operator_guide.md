@@ -23,7 +23,7 @@ This guide is for editors running the local system to prepare final submissions 
 | Title/Author Extraction | `/reviews/title-authors/` | Run extraction and review extracted title/authors |
 | Formatting Review | `/reviews/formatting/` | Review first-page title/author formatting and upload corrected files |
 | Not Publishing List | `/reviews/not-publishing/` | Track paid/published scope exclusions |
-| Exceptions | `/reviews/exceptions/` | Approve rare page/author limit exceptions |
+| Exceptions | `/reviews/exceptions/` | Approve rare page/author/plagiarism exceptions |
 | Error Report | `/reports/errors/` | Critical, Medium, and Info readiness issues |
 | Author Count | `/reports/author-count/` | Per-author publication paper counts |
 | Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
@@ -159,8 +159,12 @@ Exceptions are rare approvals for:
 - Page count below/above configured limits.
 - Too many authors on one paper.
 - One author appearing on too many publication papers.
+- Plagiarism % above the configured threshold.
+- Single % above the configured threshold.
 
-Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. If the underlying count changes, the exception becomes stale and must be re-approved.
+Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. Plagiarism % and Single % are approved separately. If the underlying count or score changes, the exception becomes stale and must be re-approved.
+
+For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show a `Manage exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
 
 ## Export Workflow
 

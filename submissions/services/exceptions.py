@@ -6,10 +6,17 @@ from submissions.services.checks import (
     author_count_rows,
     author_number_count,
     has_valid_author_number_exception,
+    has_valid_plagiarism_percent_exception,
+    has_valid_single_percent_exception,
     page_count_out_of_range,
+    plagiarism_percent_over_threshold,
     reset_author_number_exception,
     reset_page_limit_exception,
+    reset_plagiarism_percent_exception,
+    reset_single_percent_exception,
+    single_percent_over_threshold,
 )
+from submissions.services.file_manager import publication_pdf_info
 
 
 EXCEPTION_FILTER_OPTIONS = [
@@ -18,6 +25,12 @@ EXCEPTION_FILTER_OPTIONS = [
     {"value": "stale", "label": "Stale"},
     {"value": "all", "label": "All"},
 ]
+ROW_LEVEL_EXCEPTION_TYPES = {
+    "page",
+    "author_number",
+    "plagiarism_percent",
+    "single_percent",
+}
 
 
 def page_exception_status(submission, setting=None):
@@ -43,6 +56,28 @@ def author_number_exception_status(submission, setting=None):
     return "not_allowed"
 
 
+def plagiarism_percent_exception_status(submission, setting=None):
+    setting = setting or AppSetting.load()
+    if not plagiarism_percent_over_threshold(submission, setting):
+        return ""
+    if has_valid_plagiarism_percent_exception(submission, setting):
+        return "allowed"
+    if submission.plagiarism_percent_exception_approved:
+        return "stale"
+    return "not_allowed"
+
+
+def single_percent_exception_status(submission, setting=None):
+    setting = setting or AppSetting.load()
+    if not single_percent_over_threshold(submission, setting):
+        return ""
+    if has_valid_single_percent_exception(submission, setting):
+        return "allowed"
+    if submission.single_percent_exception_approved:
+        return "stale"
+    return "not_allowed"
+
+
 def exception_status_label(status):
     return {
         "not_allowed": "Not allowed",
@@ -59,6 +94,115 @@ def exception_status_level(status):
     }.get(status, "secondary")
 
 
+def _append_submission_exception_rows(rows, submission, setting):
+    publication_pdf = publication_pdf_info(submission)
+    status = page_exception_status(submission, setting)
+    if status:
+        rows.append(
+            {
+                "key": f"page:{submission.pk}",
+                "type": "page",
+                "type_label": "Page count",
+                "status": status,
+                "status_label": exception_status_label(status),
+                "status_level": exception_status_level(status),
+                "submission": submission,
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "subject": submission.paper_id_filled,
+                "current_value": submission.page_count,
+                "limit_label": f"{setting.page_minimum}-{setting.page_limit} pages",
+                "approved_value": submission.page_limit_exception_page_count,
+                "reason": submission.page_limit_exception_reason,
+                "approved_at": submission.page_limit_exception_approved_at,
+                "paper_ids": submission.paper_id_filled,
+                "publication_pdf": publication_pdf,
+            }
+        )
+
+    status = author_number_exception_status(submission, setting)
+    if status:
+        count = author_number_count(submission)
+        rows.append(
+            {
+                "key": f"author_number:{submission.pk}",
+                "type": "author_number",
+                "type_label": "Authors in paper",
+                "status": status,
+                "status_label": exception_status_label(status),
+                "status_level": exception_status_level(status),
+                "submission": submission,
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "subject": submission.paper_id_filled,
+                "current_value": count,
+                "limit_label": f"Max {setting.max_authors_per_paper} authors",
+                "approved_value": submission.author_number_exception_author_count,
+                "reason": submission.author_number_exception_reason,
+                "approved_at": submission.author_number_exception_approved_at,
+                "paper_ids": submission.paper_id_filled,
+                "publication_pdf": publication_pdf,
+            }
+        )
+
+    status = plagiarism_percent_exception_status(submission, setting)
+    if status:
+        rows.append(
+            {
+                "key": f"plagiarism_percent:{submission.pk}",
+                "type": "plagiarism_percent",
+                "type_label": "Plagiarism %",
+                "status": status,
+                "status_label": exception_status_label(status),
+                "status_level": exception_status_level(status),
+                "submission": submission,
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "subject": submission.paper_id_filled,
+                "current_value": submission.similarity_score,
+                "limit_label": f"Max {setting.plagiarism_percent_threshold}%",
+                "approved_value": submission.plagiarism_percent_exception_approved_score,
+                "reason": submission.plagiarism_percent_exception_reason,
+                "approved_at": submission.plagiarism_percent_exception_approved_at,
+                "paper_ids": submission.paper_id_filled,
+                "publication_pdf": publication_pdf,
+            }
+        )
+
+    status = single_percent_exception_status(submission, setting)
+    if status:
+        rows.append(
+            {
+                "key": f"single_percent:{submission.pk}",
+                "type": "single_percent",
+                "type_label": "Single %",
+                "status": status,
+                "status_label": exception_status_label(status),
+                "status_level": exception_status_level(status),
+                "submission": submission,
+                "paper_id": submission.paper_id_filled,
+                "final_submission_id": submission.final_submission_id,
+                "subject": submission.paper_id_filled,
+                "current_value": submission.single_similarity_score,
+                "limit_label": f"Max {setting.single_similarity_threshold}%",
+                "approved_value": submission.single_percent_exception_approved_score,
+                "reason": submission.single_percent_exception_reason,
+                "approved_at": submission.single_percent_exception_approved_at,
+                "paper_ids": submission.paper_id_filled,
+                "publication_pdf": publication_pdf,
+            }
+        )
+
+
+def exception_rows_for_submission(submission, setting=None):
+    if not submission:
+        return []
+    setting = setting or AppSetting.load()
+    rows = []
+    _append_submission_exception_rows(rows, submission, setting)
+    return rows
+
+
 def exception_rows(status_filter="not_allowed"):
     setting = AppSetting.load()
     rows = []
@@ -69,52 +213,7 @@ def exception_rows(status_filter="not_allowed"):
     ).order_by("paper_id_filled", "final_submission_id")
 
     for submission in active:
-        status = page_exception_status(submission, setting)
-        if status:
-            rows.append(
-                {
-                    "key": f"page:{submission.pk}",
-                    "type": "page",
-                    "type_label": "Page count",
-                    "status": status,
-                    "status_label": exception_status_label(status),
-                    "status_level": exception_status_level(status),
-                    "submission": submission,
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "subject": submission.paper_id_filled,
-                    "current_value": submission.page_count,
-                    "limit_label": f"{setting.page_minimum}-{setting.page_limit} pages",
-                    "approved_value": submission.page_limit_exception_page_count,
-                    "reason": submission.page_limit_exception_reason,
-                    "approved_at": submission.page_limit_exception_approved_at,
-                    "paper_ids": submission.paper_id_filled,
-                }
-            )
-
-        status = author_number_exception_status(submission, setting)
-        if status:
-            count = author_number_count(submission)
-            rows.append(
-                {
-                    "key": f"author_number:{submission.pk}",
-                    "type": "author_number",
-                    "type_label": "Authors in paper",
-                    "status": status,
-                    "status_label": exception_status_label(status),
-                    "status_level": exception_status_level(status),
-                    "submission": submission,
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "subject": submission.paper_id_filled,
-                    "current_value": count,
-                    "limit_label": f"Max {setting.max_authors_per_paper} authors",
-                    "approved_value": submission.author_number_exception_author_count,
-                    "reason": submission.author_number_exception_reason,
-                    "approved_at": submission.author_number_exception_approved_at,
-                    "paper_ids": submission.paper_id_filled,
-                }
-            )
+        _append_submission_exception_rows(rows, submission, setting)
 
     for author_row in author_count_rows():
         if not author_row["over_limit"]:
@@ -248,6 +347,66 @@ def approve_exception(row, reason):
         )
         return
 
+    if row["type"] == "plagiarism_percent":
+        submission = row["submission"]
+        if submission.similarity_score is None:
+            raise ValueError("Cannot approve a plagiarism exception before Plagiarism % is available.")
+        submission.plagiarism_percent_exception_approved = True
+        submission.plagiarism_percent_exception_reason = reason
+        submission.plagiarism_percent_exception_approved_score = submission.similarity_score
+        submission.plagiarism_percent_exception_approved_at = timezone.now()
+        submission.save(
+            update_fields=[
+                "plagiarism_percent_exception_approved",
+                "plagiarism_percent_exception_reason",
+                "plagiarism_percent_exception_approved_score",
+                "plagiarism_percent_exception_approved_at",
+                "updated_at",
+            ]
+        )
+        audit_success(
+            "exception_allow",
+            "Plagiarism % exception allowed.",
+            submission=submission,
+            reset_flags={"exception_type": "plagiarism_percent"},
+            after={
+                "approved_value": submission.plagiarism_percent_exception_approved_score,
+                "threshold": AppSetting.load().plagiarism_percent_threshold,
+                "reason": reason,
+            },
+        )
+        return
+
+    if row["type"] == "single_percent":
+        submission = row["submission"]
+        if submission.single_similarity_score is None:
+            raise ValueError("Cannot approve a single-percent exception before Single % is available.")
+        submission.single_percent_exception_approved = True
+        submission.single_percent_exception_reason = reason
+        submission.single_percent_exception_approved_score = submission.single_similarity_score
+        submission.single_percent_exception_approved_at = timezone.now()
+        submission.save(
+            update_fields=[
+                "single_percent_exception_approved",
+                "single_percent_exception_reason",
+                "single_percent_exception_approved_score",
+                "single_percent_exception_approved_at",
+                "updated_at",
+            ]
+        )
+        audit_success(
+            "exception_allow",
+            "Single % exception allowed.",
+            submission=submission,
+            reset_flags={"exception_type": "single_percent"},
+            after={
+                "approved_value": submission.single_percent_exception_approved_score,
+                "threshold": AppSetting.load().single_similarity_threshold,
+                "reason": reason,
+            },
+        )
+        return
+
     raise ValueError("Unknown exception type.")
 
 
@@ -289,6 +448,46 @@ def remove_exception(row):
             "Author number exception removed.",
             submission=submission,
             reset_flags={"exception_type": "author_number"},
+        )
+        return
+
+    if row["type"] == "plagiarism_percent":
+        submission = row["submission"]
+        reset_plagiarism_percent_exception(submission)
+        submission.save(
+            update_fields=[
+                "plagiarism_percent_exception_approved",
+                "plagiarism_percent_exception_reason",
+                "plagiarism_percent_exception_approved_score",
+                "plagiarism_percent_exception_approved_at",
+                "updated_at",
+            ]
+        )
+        audit_success(
+            "exception_remove",
+            "Plagiarism % exception removed.",
+            submission=submission,
+            reset_flags={"exception_type": "plagiarism_percent"},
+        )
+        return
+
+    if row["type"] == "single_percent":
+        submission = row["submission"]
+        reset_single_percent_exception(submission)
+        submission.save(
+            update_fields=[
+                "single_percent_exception_approved",
+                "single_percent_exception_reason",
+                "single_percent_exception_approved_score",
+                "single_percent_exception_approved_at",
+                "updated_at",
+            ]
+        )
+        audit_success(
+            "exception_remove",
+            "Single % exception removed.",
+            submission=submission,
+            reset_flags={"exception_type": "single_percent"},
         )
         return
 

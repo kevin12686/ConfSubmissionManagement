@@ -68,7 +68,7 @@ System State ZIP files are portable. They restore settings, conference name, dat
 6. Run and review Title/Author Extraction. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
 8. Export PDFs for CrossCheck/plagiarism, import Plagiarism % and Single %, and upload optional report PDFs.
-9. Review author counts, duplicate authors, page exceptions, and author-limit exceptions.
+9. Review author counts, duplicate authors, page exceptions, author-limit exceptions, and plagiarism score exceptions. Paper-level exceptions can be handled from Organized List; author paper-count exceptions remain in Author Count / Exceptions.
 10. Use Organized List and Error Report as the publication readiness checklist.
 11. Export the final publication package, or download a clearly marked draft package if blockers still exist.
 12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.

@@ -70,13 +70,15 @@ Put reusable workflow behavior in services:
 
 Do not put processing or integration logic directly in views.
 
+Organized List may expose paper-level exception actions, but it must reuse `exceptions.py` row builders and approve/remove services. Do not duplicate page/author/plagiarism exception validity rules in templates or controllers. Author paper-count exceptions remain author-level and belong in Author Count / Exceptions, not a single paper row.
+
 ## Data And Review Reset Rules
 
 When changing data that affects a review, reset only dependent review flags.
 
 Examples:
 
-- Changed PDF resets processing, title/author extraction, title match review, plagiarism scores, formatting review, and related file-derived exceptions.
+- Changed PDF resets processing, title/author extraction, title match review, plagiarism scores, formatting review, and related file-derived exceptions, including plagiarism score exceptions.
 - Changed source resets formatting review.
 - Changed extracted authors resets author-number and duplicate-author review state.
 - Changed Paper ID resets Paper ID verification and active-version grouping.

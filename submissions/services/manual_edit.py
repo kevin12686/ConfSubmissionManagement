@@ -6,7 +6,11 @@ from django.utils import timezone
 
 from submissions.models import AppSetting
 from submissions.services.audit import audit_success
-from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
+from submissions.services.checks import (
+    rebuild_paper_authors,
+    reset_author_number_exception,
+    reset_plagiarism_exceptions,
+)
 from submissions.services.file_manager import resolve_folder, sanitize_filename_part
 from submissions.services.import_export import _mark_duplicate_submissions
 from submissions.services.import_preview import (
@@ -106,6 +110,14 @@ def _audit_fields_for_change(changed_fields, pdf_changed, source_changed, report
                 "single_similarity_score",
                 "plagiarism_report_path",
                 "plagiarism_report_stale",
+                "plagiarism_percent_exception_approved",
+                "plagiarism_percent_exception_reason",
+                "plagiarism_percent_exception_approved_score",
+                "plagiarism_percent_exception_approved_at",
+                "single_percent_exception_approved",
+                "single_percent_exception_reason",
+                "single_percent_exception_approved_score",
+                "single_percent_exception_approved_at",
                 "formatted_pdf_file",
                 "formatted_source_file",
             }
@@ -367,6 +379,7 @@ def apply_final_submission_manual_edit(_submission, form, report_file=None):
             obj,
             "Original PDF changed manually; run Process PDFs before publication.",
         )
+        reset_plagiarism_exceptions(obj)
         summary["pdf_reset"] = True
         summary["source_reset"] = source_changed
     elif source_changed:

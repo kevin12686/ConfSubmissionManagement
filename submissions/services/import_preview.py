@@ -12,7 +12,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
-from submissions.services.checks import reset_author_number_exception, reset_page_limit_exception
+from submissions.services.checks import (
+    reset_author_number_exception,
+    reset_page_limit_exception,
+    reset_plagiarism_exceptions,
+)
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.import_export import (
     MASTER_SHEET_NAME,
@@ -707,6 +711,7 @@ def _reset_pdf_dependent_state(submission, processing_message="PDF changed; need
     submission.plagiarism_status = ""
     submission.similarity_score = None
     submission.single_similarity_score = None
+    reset_plagiarism_exceptions(submission)
     submission.plagiarism_report_path = ""
     submission.plagiarism_report_stale = False
     submission.plagiarism_imported_at = None

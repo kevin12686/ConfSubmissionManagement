@@ -49,7 +49,7 @@ Create Final Submission records and files:
 11. Open Formatting Review. Use list mode and single-paper mode, upload a corrected PDF/source for one paper, confirm the corrected PDF title guard, then re-run Process PDFs.
 12. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
 13. Open Author Count. Confirm publication paper count is per normalized author and duplicate-author warnings are reviewable.
-14. Open Exceptions. Approve P008 only with a note; confirm allowed exceptions move to Info and do not block final export.
+14. Open Exceptions. Approve P008 only with a note; confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again.
 15. Open Organized List and Error Report. Confirm remaining blockers are understandable and grouped by severity.
 16. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
 17. Resolve all blockers and export the final publication package.

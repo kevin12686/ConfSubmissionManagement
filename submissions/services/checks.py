@@ -76,6 +76,10 @@ ERROR_GROUPS = {
             "Stale Plagiarism Report",
             "Plagiarism % Over Threshold",
             "Single % Over Threshold",
+            "Stale Plagiarism % Exception",
+            "Stale Single % Exception",
+            "Allowed Plagiarism % Exception",
+            "Allowed Single % Exception",
         },
     },
     "Publication Duplicates": {
@@ -130,6 +134,8 @@ ERROR_CATEGORY_SEVERITY = {
     "Duplicate Author In Paper": "critical",
     "Plagiarism % Over Threshold": "critical",
     "Single % Over Threshold": "critical",
+    "Stale Plagiarism % Exception": "critical",
+    "Stale Single % Exception": "critical",
     "Duplicate Publication Title": "critical",
     "Duplicate Publication PDF": "critical",
     "Duplicate Publication Source": "critical",
@@ -142,6 +148,8 @@ ERROR_CATEGORY_SEVERITY = {
     "Manual Title/Author Override": "info",
     "Formatting Not Review OK": "medium",
     "Missing Plagiarism Result": "medium",
+    "Allowed Plagiarism % Exception": "info",
+    "Allowed Single % Exception": "info",
     "Replaced Final Submission": "info",
     "Discarded Final Submission": "info",
     "Not Publishing Final Submission": "info",
@@ -246,6 +254,59 @@ def reset_author_number_exception(submission):
     submission.author_number_exception_reason = ""
     submission.author_number_exception_author_count = None
     submission.author_number_exception_approved_at = None
+
+
+def plagiarism_percent_over_threshold(submission, setting=None):
+    if not submission or submission.similarity_score is None:
+        return False
+    setting = setting or AppSetting.load()
+    return submission.similarity_score > setting.plagiarism_percent_threshold
+
+
+def single_percent_over_threshold(submission, setting=None):
+    if not submission or submission.single_similarity_score is None:
+        return False
+    setting = setting or AppSetting.load()
+    return submission.single_similarity_score > setting.single_similarity_threshold
+
+
+def has_valid_plagiarism_percent_exception(submission, setting=None):
+    return bool(
+        submission
+        and plagiarism_percent_over_threshold(submission, setting)
+        and submission.plagiarism_percent_exception_approved
+        and submission.plagiarism_percent_exception_reason.strip()
+        and submission.plagiarism_percent_exception_approved_score == submission.similarity_score
+    )
+
+
+def has_valid_single_percent_exception(submission, setting=None):
+    return bool(
+        submission
+        and single_percent_over_threshold(submission, setting)
+        and submission.single_percent_exception_approved
+        and submission.single_percent_exception_reason.strip()
+        and submission.single_percent_exception_approved_score == submission.single_similarity_score
+    )
+
+
+def reset_plagiarism_percent_exception(submission):
+    submission.plagiarism_percent_exception_approved = False
+    submission.plagiarism_percent_exception_reason = ""
+    submission.plagiarism_percent_exception_approved_score = None
+    submission.plagiarism_percent_exception_approved_at = None
+
+
+def reset_single_percent_exception(submission):
+    submission.single_percent_exception_approved = False
+    submission.single_percent_exception_reason = ""
+    submission.single_percent_exception_approved_score = None
+    submission.single_percent_exception_approved_at = None
+
+
+def reset_plagiarism_exceptions(submission):
+    reset_plagiarism_percent_exception(submission)
+    reset_single_percent_exception(submission)
 
 
 def _error_severity_for_category(category):
@@ -787,35 +848,89 @@ def publication_readiness_rows(include_allowed=False):
                 }
             )
         if (
-            submission.similarity_score is not None
-            and submission.similarity_score > setting.plagiarism_percent_threshold
+            plagiarism_percent_over_threshold(submission, setting)
         ):
-            rows.append(
-                {
-                    "category": "Plagiarism % Over Threshold",
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "message": (
-                        f"{_whole_percent_label(submission.similarity_score)}% is over "
-                        f"the threshold of {_whole_percent_label(setting.plagiarism_percent_threshold)}%."
-                    ),
-                }
-            )
+            if has_valid_plagiarism_percent_exception(submission, setting):
+                if include_allowed:
+                    rows.append(
+                        {
+                            "category": "Allowed Plagiarism % Exception",
+                            "paper_id": submission.paper_id_filled,
+                            "final_submission_id": submission.final_submission_id,
+                            "message": (
+                                f"{_whole_percent_label(submission.similarity_score)}% is over "
+                                f"the threshold of {_whole_percent_label(setting.plagiarism_percent_threshold)}%. "
+                                f"Allowed: {submission.plagiarism_percent_exception_reason}"
+                            ),
+                        }
+                    )
+            elif submission.plagiarism_percent_exception_approved:
+                rows.append(
+                    {
+                        "category": "Stale Plagiarism % Exception",
+                        "paper_id": submission.paper_id_filled,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": (
+                            f"Current Plagiarism % is {_whole_percent_label(submission.similarity_score)}%, "
+                            f"but the approved exception was for "
+                            f"{_whole_percent_label(submission.plagiarism_percent_exception_approved_score)}%."
+                        ),
+                    }
+                )
+            else:
+                rows.append(
+                    {
+                        "category": "Plagiarism % Over Threshold",
+                        "paper_id": submission.paper_id_filled,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": (
+                            f"{_whole_percent_label(submission.similarity_score)}% is over "
+                            f"the threshold of {_whole_percent_label(setting.plagiarism_percent_threshold)}%."
+                        ),
+                    }
+                )
         if (
-            submission.single_similarity_score is not None
-            and submission.single_similarity_score > setting.single_similarity_threshold
+            single_percent_over_threshold(submission, setting)
         ):
-            rows.append(
-                {
-                    "category": "Single % Over Threshold",
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "message": (
-                        f"{_whole_percent_label(submission.single_similarity_score)}% is over "
-                        f"the threshold of {_whole_percent_label(setting.single_similarity_threshold)}%."
-                    ),
-                }
-            )
+            if has_valid_single_percent_exception(submission, setting):
+                if include_allowed:
+                    rows.append(
+                        {
+                            "category": "Allowed Single % Exception",
+                            "paper_id": submission.paper_id_filled,
+                            "final_submission_id": submission.final_submission_id,
+                            "message": (
+                                f"{_whole_percent_label(submission.single_similarity_score)}% is over "
+                                f"the threshold of {_whole_percent_label(setting.single_similarity_threshold)}%. "
+                                f"Allowed: {submission.single_percent_exception_reason}"
+                            ),
+                        }
+                    )
+            elif submission.single_percent_exception_approved:
+                rows.append(
+                    {
+                        "category": "Stale Single % Exception",
+                        "paper_id": submission.paper_id_filled,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": (
+                            f"Current Single % is {_whole_percent_label(submission.single_similarity_score)}%, "
+                            f"but the approved exception was for "
+                            f"{_whole_percent_label(submission.single_percent_exception_approved_score)}%."
+                        ),
+                    }
+                )
+            else:
+                rows.append(
+                    {
+                        "category": "Single % Over Threshold",
+                        "paper_id": submission.paper_id_filled,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": (
+                            f"{_whole_percent_label(submission.single_similarity_score)}% is over "
+                            f"the threshold of {_whole_percent_label(setting.single_similarity_threshold)}%."
+                        ),
+                    }
+                )
 
     rows.extend(publication_duplicate_rows())
     for row in author_count_rows():
@@ -1096,12 +1211,38 @@ def dashboard_counts():
     )
     valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
     unclassified_not_in_master = active.exclude(paper_id_filled__in=valid_ids).count()
-    plagiarism_over_threshold = active.filter(
-        similarity_score__gt=setting.plagiarism_percent_threshold
-    ).count()
-    single_over_threshold = active.filter(
-        single_similarity_score__gt=setting.single_similarity_threshold
-    ).count()
+    plagiarism_over_threshold = sum(
+        1
+        for submission in active
+        if plagiarism_percent_over_threshold(submission, setting)
+        and not has_valid_plagiarism_percent_exception(submission, setting)
+    )
+    single_over_threshold = sum(
+        1
+        for submission in active
+        if single_percent_over_threshold(submission, setting)
+        and not has_valid_single_percent_exception(submission, setting)
+    )
+    allowed_plagiarism_exceptions = sum(
+        1
+        for submission in active
+        if has_valid_plagiarism_percent_exception(submission, setting)
+        or has_valid_single_percent_exception(submission, setting)
+    )
+    stale_plagiarism_exceptions = sum(
+        1
+        for submission in active
+        if (
+            plagiarism_percent_over_threshold(submission, setting)
+            and submission.plagiarism_percent_exception_approved
+            and not has_valid_plagiarism_percent_exception(submission, setting)
+        )
+        or (
+            single_percent_over_threshold(submission, setting)
+            and submission.single_percent_exception_approved
+            and not has_valid_single_percent_exception(submission, setting)
+        )
+    )
     format_pending = active.filter(format_status="pending").count()
     format_needs_edit = active.filter(format_status="needs_edit").count()
     corrected_pdf_processing_needed = sum(
@@ -1187,6 +1328,8 @@ def dashboard_counts():
         ).count(),
         "plagiarism_over_threshold": plagiarism_over_threshold,
         "single_over_threshold": single_over_threshold,
+        "allowed_plagiarism_exceptions": allowed_plagiarism_exceptions,
+        "stale_plagiarism_exceptions": stale_plagiarism_exceptions,
         "format_pending": format_pending,
         "format_needs_edit": format_needs_edit,
         "format_not_ok": format_pending + format_needs_edit,

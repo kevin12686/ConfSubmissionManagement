@@ -194,6 +194,18 @@ class FinalSubmission(models.Model):
     single_similarity_score = models.DecimalField(
         max_digits=5, decimal_places=2, blank=True, null=True
     )
+    plagiarism_percent_exception_approved = models.BooleanField(default=False, db_index=True)
+    plagiarism_percent_exception_reason = models.TextField(blank=True)
+    plagiarism_percent_exception_approved_score = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
+    plagiarism_percent_exception_approved_at = models.DateTimeField(blank=True, null=True)
+    single_percent_exception_approved = models.BooleanField(default=False, db_index=True)
+    single_percent_exception_reason = models.TextField(blank=True)
+    single_percent_exception_approved_score = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
+    single_percent_exception_approved_at = models.DateTimeField(blank=True, null=True)
     plagiarism_report_path = models.TextField(blank=True)
     plagiarism_report_stale = models.BooleanField(default=False, db_index=True)
     plagiarism_imported_at = models.DateTimeField(blank=True, null=True)
@@ -400,6 +412,22 @@ class FinalSubmission(models.Model):
                 "plagiarism_status": self.plagiarism_status,
                 "similarity_score": self.similarity_score,
                 "single_similarity_score": self.single_similarity_score,
+                "plagiarism_percent_exception_approved": self.plagiarism_percent_exception_approved,
+                "plagiarism_percent_exception_reason": self.plagiarism_percent_exception_reason,
+                "plagiarism_percent_exception_approved_score": (
+                    self.plagiarism_percent_exception_approved_score
+                ),
+                "plagiarism_percent_exception_approved_at": (
+                    self.plagiarism_percent_exception_approved_at
+                ),
+                "single_percent_exception_approved": self.single_percent_exception_approved,
+                "single_percent_exception_reason": self.single_percent_exception_reason,
+                "single_percent_exception_approved_score": (
+                    self.single_percent_exception_approved_score
+                ),
+                "single_percent_exception_approved_at": (
+                    self.single_percent_exception_approved_at
+                ),
                 "plagiarism_report_path": self.plagiarism_report_path,
                 "plagiarism_report_stale": self.plagiarism_report_stale,
                 "plagiarism_imported_at": self.plagiarism_imported_at,
@@ -557,6 +585,18 @@ class FinalSubmissionPlagiarismState(models.Model):
     single_similarity_score = models.DecimalField(
         max_digits=5, decimal_places=2, blank=True, null=True
     )
+    plagiarism_percent_exception_approved = models.BooleanField(default=False, db_index=True)
+    plagiarism_percent_exception_reason = models.TextField(blank=True)
+    plagiarism_percent_exception_approved_score = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
+    plagiarism_percent_exception_approved_at = models.DateTimeField(blank=True, null=True)
+    single_percent_exception_approved = models.BooleanField(default=False, db_index=True)
+    single_percent_exception_reason = models.TextField(blank=True)
+    single_percent_exception_approved_score = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
+    single_percent_exception_approved_at = models.DateTimeField(blank=True, null=True)
     plagiarism_report_path = models.TextField(blank=True)
     plagiarism_report_stale = models.BooleanField(default=False, db_index=True)
     plagiarism_imported_at = models.DateTimeField(blank=True, null=True)

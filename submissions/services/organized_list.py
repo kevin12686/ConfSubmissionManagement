@@ -11,7 +11,10 @@ from submissions.services.editor_uploads import editor_conflict_paper_ids
 from submissions.services.exceptions import (
     author_number_exception_status,
     exception_status_label,
+    exception_rows_for_submission,
     page_exception_status,
+    plagiarism_percent_exception_status,
+    single_percent_exception_status,
 )
 from submissions.services.file_manager import (
     active_pdf_needs_processing,
@@ -107,21 +110,62 @@ def _plagiarism_status(submission, settings_obj):
 def _is_plagiarism_over_threshold(submission, settings_obj):
     if not submission:
         return False
-    plagiarism_over = (
-        submission.similarity_score is not None
-        and submission.similarity_score > settings_obj.plagiarism_percent_threshold
+    plagiarism_status = plagiarism_percent_exception_status(submission, settings_obj)
+    single_status = single_percent_exception_status(submission, settings_obj)
+    return bool(
+        plagiarism_status in {"not_allowed", "stale"}
+        or single_status in {"not_allowed", "stale"}
     )
-    single_over = (
-        submission.single_similarity_score is not None
-        and submission.single_similarity_score > settings_obj.single_similarity_threshold
-    )
-    return bool(plagiarism_over or single_over)
 
 
 def _score_level(value, threshold):
     if value is None:
         return "secondary"
     return "danger" if value > threshold else "light"
+
+
+def _plagiarism_exception_summary(submission, settings_obj):
+    plagiarism_status = plagiarism_percent_exception_status(submission, settings_obj)
+    single_status = single_percent_exception_status(submission, settings_obj)
+    return {
+        "plagiarism_percent_exception_status": plagiarism_status,
+        "plagiarism_percent_exception_label": exception_status_label(plagiarism_status),
+        "single_percent_exception_status": single_status,
+        "single_percent_exception_label": exception_status_label(single_status),
+    }
+
+
+def _exception_panel_sections(submission, settings_obj):
+    if not submission:
+        return []
+    sections = []
+    for exception_row in exception_rows_for_submission(submission, settings_obj):
+        sections.append(
+            {
+                "kind": "exception",
+                "title": f"{exception_row['type_label']} exception",
+                "status": exception_row["status"],
+                "status_label": exception_row["status_label"],
+                "status_level": exception_row["status_level"],
+                "exception": exception_row,
+                "is_plagiarism": exception_row["type"] in {"plagiarism_percent", "single_percent"},
+            }
+        )
+    duplicate_authors = duplicate_authors_in_paper(submission.extracted_authors)
+    if duplicate_authors:
+        unresolved = has_unresolved_duplicate_authors(submission)
+        sections.append(
+            {
+                "kind": "duplicate_author",
+                "title": "Duplicate author review",
+                "status": "not_allowed" if unresolved else "allowed",
+                "status_label": "Not reviewed" if unresolved else "Reviewed",
+                "status_level": "danger" if unresolved else "secondary",
+                "duplicate_authors": duplicate_authors,
+                "reason": submission.duplicate_author_review_notes,
+            }
+        )
+    return sections
 
 
 def _legacy_plagiarism_status(submission):
@@ -637,6 +681,10 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "plagiarism_over_threshold": _is_plagiarism_over_threshold(
                     submission, settings_obj
                 ),
+                **_plagiarism_exception_summary(submission, settings_obj),
+                "exception_panel_sections": _exception_panel_sections(
+                    submission, settings_obj
+                ),
                 "source_label": source_label,
                 "source_level": source_level,
                 "extraction_label": extraction_label,
@@ -686,6 +734,10 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                     settings_obj.single_similarity_threshold,
                 ),
                 "plagiarism_over_threshold": _is_plagiarism_over_threshold(
+                    submission, settings_obj
+                ),
+                **_plagiarism_exception_summary(submission, settings_obj),
+                "exception_panel_sections": _exception_panel_sections(
                     submission, settings_obj
                 ),
                 "source_label": source_label,

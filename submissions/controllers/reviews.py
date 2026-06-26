@@ -144,7 +144,24 @@ def organized_list(request):
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
         action = request.POST.get("action")
-        if action == "mark_duplicate_author_reviewed":
+        if action in {"approve_exception", "reapprove_exception", "remove_exception"}:
+            rebuild_paper_authors()
+            all_exception_rows, _ = exception_rows("all")
+            exception_key = request.POST.get("exception_key", "")
+            row = next((item for item in all_exception_rows if item["key"] == exception_key), None)
+            if not row:
+                messages.error(request, "Exception row was not found. Refresh and try again.")
+            else:
+                try:
+                    if action in {"approve_exception", "reapprove_exception"}:
+                        approve_exception(row, request.POST.get("reason", ""))
+                        messages.success(request, f"{row['type_label']} exception allowed.")
+                    else:
+                        remove_exception(row)
+                        messages.warning(request, f"{row['type_label']} exception removed.")
+                except ValueError as exc:
+                    messages.error(request, str(exc))
+        elif action == "mark_duplicate_author_reviewed":
             submission.duplicate_author_review_status = "review_ok"
             submission.duplicate_author_review_notes = request.POST.get(
                 "duplicate_author_review_notes", ""

@@ -164,7 +164,6 @@
                         {% else %}
                             <div class="mt-1"><span class="badge text-bg-danger">Not allowed</span></div>
                         {% endif %}
-                        <div class="small"><a href="{% url 'submissions:exceptions_center' %}">Manage exception</a></div>
                     {% endif %}
                     {% if row.unresolved_duplicate_authors %}
                         <div class="mt-1"><span class="badge text-bg-danger">Duplicate author</span></div>
@@ -173,22 +172,11 @@
                                 {{ duplicate.display_names|join:", " }}{% if not forloop.last %}; {% endif %}
                             {% endfor %}
                         </div>
-                        <form method="post" class="mt-2">
-                            {% csrf_token %}
-                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
-                            <input class="form-control form-control-sm mb-1" name="duplicate_author_review_notes" placeholder="Reason, e.g. confirmed different people">
-                            <button class="btn btn-sm btn-outline-success" name="action" value="mark_duplicate_author_reviewed">Mark reviewed</button>
-                        </form>
                     {% elif row.has_duplicate_authors %}
                         <div class="mt-1"><span class="badge text-bg-secondary">Duplicate author reviewed</span></div>
                         {% if submission.duplicate_author_review_notes %}
                             <div class="small text-muted">{{ submission.duplicate_author_review_notes }}</div>
                         {% endif %}
-                        <form method="post" class="mt-1">
-                            {% csrf_token %}
-                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
-                            <button class="btn btn-sm btn-outline-danger" name="action" value="reset_duplicate_author_review">Back to pending</button>
-                        </form>
                     {% endif %}
                 </td>
                 <td>
@@ -202,7 +190,6 @@
                         {% else %}
                             <div><span class="badge text-bg-danger">Not allowed</span></div>
                         {% endif %}
-                        <div class="small"><a href="{% url 'submissions:exceptions_center' %}">Manage exception</a></div>
                     {% endif %}
                 </td>
                 <td>
@@ -236,6 +223,16 @@
                                 <span class="badge text-bg-{{ row.plagiarism_percent_level }} {% if row.plagiarism_percent_level == 'light' %}text-dark{% endif %}">P {{ submission.similarity_score|floatformat:"0" }}%</span>
                                 <span class="badge text-bg-{{ row.single_percent_level }} {% if row.single_percent_level == 'light' %}text-dark{% endif %}">S {{ submission.single_similarity_score|floatformat:"0" }}%</span>
                             </div>
+                            {% if row.plagiarism_percent_exception_status == "allowed" %}
+                                <div class="mt-1"><span class="badge text-bg-info">P allowed</span></div>
+                            {% elif row.plagiarism_percent_exception_status == "stale" %}
+                                <div class="mt-1"><span class="badge text-bg-warning">P stale</span></div>
+                            {% endif %}
+                            {% if row.single_percent_exception_status == "allowed" %}
+                                <div class="mt-1"><span class="badge text-bg-info">S allowed</span></div>
+                            {% elif row.single_percent_exception_status == "stale" %}
+                                <div class="mt-1"><span class="badge text-bg-warning">S stale</span></div>
+                            {% endif %}
                         {% else %}
                             <span class="badge text-bg-danger">Missing P/S</span>
                         {% endif %}
@@ -259,11 +256,149 @@
                 </td>
                 <td>
                     <div class="cfm-table-actions">
+                        {% if row.exception_panel_sections %}
+                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#exceptions-{{ forloop.counter }}" aria-expanded="false" aria-controls="exceptions-{{ forloop.counter }}">Manage exceptions</button>
+                        {% endif %}
                         <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ forloop.counter }}" aria-expanded="false" aria-controls="details-{{ forloop.counter }}">Details</button>
                         {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}
                     </div>
                 </td>
             </tr>
+            {% if row.exception_panel_sections %}
+                <tr class="collapse" id="exceptions-{{ forloop.counter }}">
+                    <td colspan="10">
+                        <div class="cfm-exception-panel">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                <div>
+                                    <div class="fw-semibold">Manage row-level exceptions</div>
+                                    <div class="small text-muted">
+                                        {% if paper %}{{ paper.paper_id }}{% else %}{{ submission.paper_id_filled|default:"No Paper ID" }}{% endif %}
+                                        {% if submission %}/ Final {{ submission.final_submission_id }}{% endif %}
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% if row.publication_pdf.exists %}
+                                        <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open publication PDF</a>
+                                    {% endif %}
+                                    {% if submission.plagiarism_report_path %}
+                                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a>
+                                    {% endif %}
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:exceptions_center' %}">Exceptions Center</a>
+                                </div>
+                            </div>
+                            <div class="row g-3">
+                                {% for section in row.exception_panel_sections %}
+                                    <div class="col-12 col-xl-6">
+                                        <div class="card h-100 border-{{ section.status_level }}">
+                                            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                                <div class="fw-semibold">{{ section.title }}</div>
+                                                {% if section.kind == "exception" %}
+                                                    <span class="badge text-bg-{{ section.exception.status_level }}">{{ section.exception.status_label }}</span>
+                                                {% else %}
+                                                    <span class="badge text-bg-{{ section.status_level }}">{{ section.status_label }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="card-body">
+                                                {% if section.kind == "exception" %}
+                                                    <div class="row g-2 small mb-3">
+                                                        <div class="col-sm-4">
+                                                            <div class="text-muted">Current value</div>
+                                                            <div class="fs-6">{{ section.exception.current_value|default:"--" }}</div>
+                                                        </div>
+                                                        <div class="col-sm-4">
+                                                            <div class="text-muted">Limit</div>
+                                                            <div>{{ section.exception.limit_label }}</div>
+                                                        </div>
+                                                        <div class="col-sm-4">
+                                                            <div class="text-muted">Approved value</div>
+                                                            <div>{{ section.exception.approved_value|default:"--" }}</div>
+                                                        </div>
+                                                        <div class="col-sm-6">
+                                                            <div class="text-muted">Approved time</div>
+                                                            <div>{{ section.exception.approved_at|default:"--" }}</div>
+                                                        </div>
+                                                        {% if section.exception.type == "author_number" %}
+                                                            <div class="col-sm-6">
+                                                                <div class="text-muted">Extracted authors</div>
+                                                                <div class="text-break">{{ submission.extracted_authors|default:"--" }}</div>
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="small text-muted">Reason</div>
+                                                    {% if section.exception.reason %}
+                                                        <div class="border rounded bg-light p-2 mb-3 text-break">{{ section.exception.reason|linebreaksbr }}</div>
+                                                    {% else %}
+                                                        <div class="text-muted mb-3">No exception reason recorded.</div>
+                                                    {% endif %}
+                                                    {% if section.exception.status == "allowed" %}
+                                                        <form method="post" class="d-flex justify-content-end">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
+                                                            <button class="btn btn-outline-danger btn-sm" name="action" value="remove_exception">Remove exception</button>
+                                                        </form>
+                                                    {% else %}
+                                                        <form method="post" class="row g-2 align-items-end">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
+                                                            <div class="col-lg-8">
+                                                                <label class="form-label small" for="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}">Required reason</label>
+                                                                <textarea id="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="form-control" name="reason" rows="2">{% if section.exception.status == "stale" %}{{ section.exception.reason }}{% endif %}</textarea>
+                                                            </div>
+                                                            <div class="col-lg-4 d-grid gap-2">
+                                                                <button class="btn btn-success btn-sm" name="action" value="{% if section.exception.status == 'stale' %}reapprove_exception{% else %}approve_exception{% endif %}">
+                                                                    {% if section.exception.status == 'stale' %}Re-approve{% else %}Allow exception{% endif %}
+                                                                </button>
+                                                                {% if section.exception.status == "stale" %}
+                                                                    <button class="btn btn-outline-danger btn-sm" name="action" value="remove_exception">Remove</button>
+                                                                {% endif %}
+                                                            </div>
+                                                        </form>
+                                                    {% endif %}
+                                                {% else %}
+                                                    <div class="small text-muted mb-1">Duplicate normalized author names in this paper</div>
+                                                    <div class="small mb-3">
+                                                        {% for duplicate in section.duplicate_authors %}
+                                                            <div>
+                                                                <span class="badge text-bg-light text-dark border">{{ duplicate.count }}x</span>
+                                                                {{ duplicate.display_names|join:", " }}
+                                                            </div>
+                                                        {% endfor %}
+                                                    </div>
+                                                    {% if section.reason %}
+                                                        <div class="small text-muted">Review note</div>
+                                                        <div class="border rounded bg-light p-2 mb-3 text-break">{{ section.reason|linebreaksbr }}</div>
+                                                    {% endif %}
+                                                    {% if section.status == "not_allowed" %}
+                                                        <form method="post" class="row g-2 align-items-end">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <div class="col-lg-8">
+                                                                <label class="form-label small" for="duplicate-note-{{ forloop.parentloop.counter }}">Review note</label>
+                                                                <textarea id="duplicate-note-{{ forloop.parentloop.counter }}" class="form-control" name="duplicate_author_review_notes" rows="2" placeholder="Reason, e.g. confirmed different people"></textarea>
+                                                            </div>
+                                                            <div class="col-lg-4 d-grid">
+                                                                <button class="btn btn-outline-success btn-sm" name="action" value="mark_duplicate_author_reviewed">Mark reviewed</button>
+                                                            </div>
+                                                        </form>
+                                                    {% else %}
+                                                        <form method="post" class="d-flex justify-content-end">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <button class="btn btn-outline-danger btn-sm" name="action" value="reset_duplicate_author_review">Back to pending</button>
+                                                        </form>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            {% endif %}
             <tr class="collapse" id="details-{{ forloop.counter }}">
                 <td colspan="10">
                     <div class="row g-2 small">
@@ -336,6 +471,19 @@
     </table>
 </div>
 <style>
+    .cfm-exception-panel {
+        background: #f8fafc;
+        border: 1px solid #7f8a99;
+        border-radius: 0.5rem;
+        padding: 0.85rem;
+    }
+    .cfm-exception-panel .card {
+        border-width: 1px;
+    }
+    .cfm-exception-panel .card-header {
+        background: #f1f5f9;
+        border-bottom-color: #7f8a99;
+    }
     .title-diff {
         border-left: 4px solid #6c757d;
         margin-top: 0.35rem;

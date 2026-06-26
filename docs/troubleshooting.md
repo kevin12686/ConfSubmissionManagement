@@ -166,6 +166,10 @@ The app treats `<1%` as 1 for score storage/display.
 
 Upload report PDFs through the report upload workflow. The app matches reports by filename and then shows an open-report link.
 
+### Plagiarism score is over threshold but allowed
+
+Open Exceptions and approve `Plagiarism %` or `Single %` separately with a reason. A valid allowed exception moves the issue to Info and does not block final export. If the imported score changes later, the exception becomes stale and blocks export until it is re-approved or removed.
+
 ## Exports
 
 ### Final publication package is blocked
@@ -181,7 +185,7 @@ Common blockers:
 - Page count outside limits without allowed exception.
 - Title/author review not OK.
 - Formatting not Review OK.
-- Missing or over-threshold plagiarism scores.
+- Missing plagiarism scores, or over-threshold plagiarism scores without valid allowed exceptions.
 - Duplicate publication title/PDF/source.
 - Unresolved duplicate author.
 - Start2/Editor conflict.

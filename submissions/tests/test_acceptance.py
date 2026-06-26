@@ -2368,6 +2368,92 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         submission.save(update_fields=["extracted_authors", "updated_at"])
         self.assert_publication_blocked("Author Over Limit")
 
+    def test_plagiarism_percent_exception_allows_publication_until_score_changes(self):
+        self.make_master_paper("P001")
+        submission = self.make_final_submission(similarity_score=42, single_similarity_score=4)
+        self.assert_publication_blocked("Plagiarism % Over Threshold")
+
+        rows, _ = exception_rows("all")
+        row = next(item for item in rows if item["type"] == "plagiarism_percent")
+        approve_exception(row, "Chair approved similarity caused by required template text.")
+
+        submission.refresh_from_db()
+        self.assertTrue(submission.plagiarism_percent_exception_approved)
+        self.assertEqual(submission.plagiarism_percent_exception_approved_score, 42)
+        blocking_categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertNotIn("Plagiarism % Over Threshold", blocking_categories)
+        self.assertIn("Allowed Plagiarism % Exception", {row["category"] for row in error_report_rows()})
+        self.assertTrue(Path(export_publication_package()).exists())
+
+        submission.similarity_score = 43
+        submission.save(update_fields=["similarity_score", "updated_at"])
+        self.assert_publication_blocked("Stale Plagiarism % Exception")
+
+        rows, _ = exception_rows("all")
+        stale_row = next(item for item in rows if item["type"] == "plagiarism_percent")
+        self.assertEqual(stale_row["status"], "stale")
+        approve_exception(stale_row, "Chair re-approved updated similarity score.")
+        submission.refresh_from_db()
+        self.assertEqual(submission.plagiarism_percent_exception_approved_score, 43)
+        self.assertTrue(Path(export_publication_package()).exists())
+
+    def test_single_percent_exception_allows_publication_until_score_changes(self):
+        self.make_master_paper("P001")
+        submission = self.make_final_submission(similarity_score=4, single_similarity_score=12)
+        self.assert_publication_blocked("Single % Over Threshold")
+
+        rows, _ = exception_rows("all")
+        row = next(item for item in rows if item["type"] == "single_percent")
+        approve_exception(row, "Chair approved single-source overlap with prior proceedings.")
+
+        submission.refresh_from_db()
+        self.assertTrue(submission.single_percent_exception_approved)
+        self.assertEqual(submission.single_percent_exception_approved_score, 12)
+        blocking_categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertNotIn("Single % Over Threshold", blocking_categories)
+        self.assertIn("Allowed Single % Exception", {row["category"] for row in error_report_rows()})
+        self.assertTrue(Path(export_publication_package()).exists())
+
+        submission.single_similarity_score = 13
+        submission.save(update_fields=["single_similarity_score", "updated_at"])
+        self.assert_publication_blocked("Stale Single % Exception")
+
+    def test_new_pdf_resets_plagiarism_exceptions_when_scores_are_cleared(self):
+        self.make_master_paper("P001")
+        submission = self.make_final_submission(similarity_score=42, single_similarity_score=12)
+        rows, _ = exception_rows("all")
+        approve_exception(
+            next(row for row in rows if row["type"] == "plagiarism_percent"),
+            "Chair approved P score.",
+        )
+        rows, _ = exception_rows("all")
+        approve_exception(
+            next(row for row in rows if row["type"] == "single_percent"),
+            "Chair approved S score.",
+        )
+        submission.refresh_from_db()
+        self.assertTrue(submission.plagiarism_percent_exception_approved)
+        self.assertTrue(submission.single_percent_exception_approved)
+
+        token_payload = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,final_submission_title,final_submission_authors,upload_date\n"
+                "100,P001,Ready Paper,Ada,2026-05-07 09:00:00\n",
+            ),
+            [self.uploaded_file("100_file_Submit_PDF.pdf", b"new pdf bytes")],
+        )
+        apply_import_preview(token_payload["token"])
+
+        submission.refresh_from_db()
+        self.assertIsNone(submission.similarity_score)
+        self.assertIsNone(submission.single_similarity_score)
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertFalse(submission.single_percent_exception_approved)
+        self.assertEqual(submission.plagiarism_percent_exception_reason, "")
+        self.assertEqual(submission.single_percent_exception_reason, "")
+        self.assert_publication_blocked("PDF Not Processed")
+
     def test_same_author_over_paper_limit_blocks_publication(self):
         for index in range(1, 5):
             paper_id = f"P{index:03}"
@@ -3197,6 +3283,42 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
         self.assertEqual(submission.author_number_exception_author_count, 6)
+
+        submission.similarity_score = 42
+        submission.single_similarity_score = 12
+        submission.save(update_fields=["similarity_score", "single_similarity_score", "updated_at"])
+        response = self.client.get(reverse("submissions:exceptions_center"), {"filter": "not_allowed"})
+        self.assertContains(response, "Plagiarism %")
+        self.assertContains(response, "Single %")
+
+        response = self.client.post(
+            reverse("submissions:exceptions_center"),
+            {"exception_key": f"plagiarism_percent:{submission.pk}", "action": "approve_exception"},
+        )
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+
+        response = self.client.post(
+            reverse("submissions:exceptions_center"),
+            {
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "approve_exception",
+                "reason": "chair approved high overlap",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertTrue(submission.plagiarism_percent_exception_approved)
+
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(response, "P allowed")
+        self.assertContains(response, "Manage exceptions")
+
+        submission.similarity_score = 43
+        submission.save(update_fields=["similarity_score", "updated_at"])
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(response, "P stale")
 
         for index in range(2, 5):
             paper_id = f"P{index:03}"
@@ -4757,6 +4879,135 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(source_response.status_code, 200)
         self.assertIn("attachment", source_response["Content-Disposition"])
         self.assertEqual(b"".join(source_response.streaming_content), b"active source")
+
+    def test_organized_list_exception_panel_sections_are_relevant_and_actionable(self):
+        self.make_master_paper("P001", "Clean", "Ada")
+        clean = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Clean",
+            extracted_title="Clean",
+        )
+        self.make_master_paper("P002", "Page Issue", "Ada")
+        page_issue = self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Page Issue",
+            extracted_title="Page Issue",
+            page_count=13,
+        )
+        self.make_master_paper("P003", "Author Issue", "Ada")
+        author_issue = self.make_final_submission(
+            final_submission_id="3",
+            paper_id_filled="P003",
+            final_submission_title="Author Issue",
+            extracted_title="Author Issue",
+            extracted_authors="A; B; C; D; E; F",
+            final_submission_authors="A; B; C; D; E; F",
+        )
+        self.make_master_paper("P004", "Plagiarism Issue", "Ada")
+        plagiarism_issue = self.make_final_submission(
+            final_submission_id="4",
+            paper_id_filled="P004",
+            final_submission_title="Plagiarism Issue",
+            extracted_title="Plagiarism Issue",
+            similarity_score=42,
+            single_similarity_score=4,
+        )
+        self.make_master_paper("P005", "Duplicate Author", "Ada")
+        duplicate_author = self.make_final_submission(
+            final_submission_id="5",
+            paper_id_filled="P005",
+            final_submission_title="Duplicate Author",
+            extracted_title="Duplicate Author",
+            extracted_authors="Ada Lovelace, Alan Turing, Ada Lovelace",
+        )
+
+        rows, _summary, _settings_obj, _current_filter, _current_sort = organized_list_rows(
+            current_filter="all"
+        )
+        by_id = {
+            row["paper"].paper_id if row["paper"] else row["submission"].paper_id_filled: row
+            for row in rows
+        }
+        self.assertEqual(by_id["P001"]["exception_panel_sections"], [])
+        self.assertEqual(
+            [section["title"] for section in by_id["P002"]["exception_panel_sections"]],
+            ["Page count exception"],
+        )
+        self.assertEqual(
+            [section["title"] for section in by_id["P003"]["exception_panel_sections"]],
+            ["Authors in paper exception"],
+        )
+        self.assertEqual(
+            [section["title"] for section in by_id["P004"]["exception_panel_sections"]],
+            ["Plagiarism % exception"],
+        )
+        self.assertEqual(
+            [section["title"] for section in by_id["P005"]["exception_panel_sections"]],
+            ["Duplicate author review"],
+        )
+
+        response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+        self.assertContains(response, "Manage exceptions")
+        self.assertContains(response, "Page count exception")
+        self.assertContains(response, "Authors in paper exception")
+        self.assertContains(response, "Plagiarism % exception")
+        self.assertContains(response, "Duplicate author review")
+        self.assertContains(response, "Open publication PDF")
+
+        url = reverse("submissions:organized_list") + "?filter=page_issues&sort=page_count_desc&q=P002"
+        response = self.client.post(
+            url,
+            {
+                "submission_id": page_issue.pk,
+                "exception_key": f"page:{page_issue.pk}",
+                "action": "approve_exception",
+                "reason": "Chair approved page count.",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, url)
+        page_issue.refresh_from_db()
+        self.assertTrue(page_issue.has_valid_page_limit_exception)
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": plagiarism_issue.pk,
+                "exception_key": f"plagiarism_percent:{plagiarism_issue.pk}",
+                "action": "approve_exception",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        plagiarism_issue.refresh_from_db()
+        self.assertFalse(plagiarism_issue.plagiarism_percent_exception_approved)
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": author_issue.pk,
+                "exception_key": f"author_number:{author_issue.pk}",
+                "action": "approve_exception",
+                "reason": "Panel paper approved.",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        author_issue.refresh_from_db()
+        self.assertTrue(author_issue.author_number_exception_approved)
+        self.assertEqual(author_issue.author_number_exception_author_count, 6)
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": duplicate_author.pk,
+                "action": "mark_duplicate_author_reviewed",
+                "duplicate_author_review_notes": "Confirmed different people.",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        duplicate_author.refresh_from_db()
+        self.assertEqual(duplicate_author.duplicate_author_review_status, "review_ok")
 
     def test_settings_active_version_rule_change_reports_changed_papers_without_resetting_flags(self):
         self.make_master_paper("P001", "Rule Change", "Ada")

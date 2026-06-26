@@ -534,6 +534,20 @@ def submissions_to_frame(queryset):
                 "plagiarism_status": item.plagiarism_status,
                 "similarity_score": item.similarity_score,
                 "single_similarity_score": item.single_similarity_score,
+                "plagiarism_percent_exception_approved": item.plagiarism_percent_exception_approved,
+                "plagiarism_percent_exception_reason": item.plagiarism_percent_exception_reason,
+                "plagiarism_percent_exception_approved_score": (
+                    item.plagiarism_percent_exception_approved_score
+                ),
+                "plagiarism_percent_exception_approved_at": (
+                    item.plagiarism_percent_exception_approved_at
+                ),
+                "single_percent_exception_approved": item.single_percent_exception_approved,
+                "single_percent_exception_reason": item.single_percent_exception_reason,
+                "single_percent_exception_approved_score": (
+                    item.single_percent_exception_approved_score
+                ),
+                "single_percent_exception_approved_at": item.single_percent_exception_approved_at,
                 "plagiarism_report_path": item.plagiarism_report_path,
                 "plagiarism_report_stale": item.plagiarism_report_stale,
                 "processing_status": item.processing_status,
