@@ -403,6 +403,17 @@ def _has_missing_plagiarism(row):
     )
 
 
+def _has_non_missing_plagiarism_issue(row):
+    submission = row["submission"]
+    return bool(
+        submission
+        and (
+            row.get("plagiarism_over_threshold")
+            or submission.plagiarism_report_stale
+        )
+    )
+
+
 def _has_format_issue(row):
     return bool(row["submission"] and row["submission"].format_status != "review_ok")
 
@@ -783,6 +794,11 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 row["submission"].similarity_score is None
                 or row["submission"].single_similarity_score is None
             )
+        ),
+        "plagiarism_issues": sum(
+            1
+            for row in filtered_rows
+            if _has_non_missing_plagiarism_issue(row)
         ),
         "publication_duplicates": sum(
             1 for row in filtered_rows if row["submission"] and row.get("duplicate_badges")

@@ -1223,6 +1223,18 @@ def dashboard_counts():
         if single_percent_over_threshold(submission, setting)
         and not has_valid_single_percent_exception(submission, setting)
     )
+    plagiarism_threshold_issue_papers = sum(
+        1
+        for submission in active
+        if (
+            plagiarism_percent_over_threshold(submission, setting)
+            and not has_valid_plagiarism_percent_exception(submission, setting)
+        )
+        or (
+            single_percent_over_threshold(submission, setting)
+            and not has_valid_single_percent_exception(submission, setting)
+        )
+    )
     allowed_plagiarism_exceptions = sum(
         1
         for submission in active
@@ -1328,6 +1340,7 @@ def dashboard_counts():
         ).count(),
         "plagiarism_over_threshold": plagiarism_over_threshold,
         "single_over_threshold": single_over_threshold,
+        "plagiarism_threshold_issue_papers": plagiarism_threshold_issue_papers,
         "allowed_plagiarism_exceptions": allowed_plagiarism_exceptions,
         "stale_plagiarism_exceptions": stale_plagiarism_exceptions,
         "format_pending": format_pending,

@@ -4814,6 +4814,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(summary["unverified"], 2)
         self.assertEqual(summary["page_errors"], 1)
         self.assertEqual(summary["missing_plagiarism"], 0)
+        self.assertEqual(summary["plagiarism_issues"], 1)
 
         needs_attention_rows, _summary, _settings_obj, current_filter, current_sort = organized_list_rows(
             current_filter="needs_attention"
@@ -4845,6 +4846,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:organized_list"))
         self.assertContains(response, "Clean Paper")
         self.assertContains(response, "Verified Different Title")
+        self.assertContains(response, "P/S Issues")
 
     def test_organized_list_details_download_current_publication_files(self):
         self.make_master_paper("P001", "Download Files", "Ada")
@@ -4879,6 +4881,35 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(source_response.status_code, 200)
         self.assertIn("attachment", source_response["Content-Disposition"])
         self.assertEqual(b"".join(source_response.streaming_content), b"active source")
+
+    def test_dashboard_plagiarism_threshold_count_is_paper_count_not_score_count(self):
+        self.make_master_paper("P001", "Both Scores High", "Ada")
+        self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Both Scores High",
+            extracted_title="Both Scores High",
+            similarity_score=42,
+            single_similarity_score=12,
+        )
+        self.make_master_paper("P002", "Single Score High", "Ada")
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Single Score High",
+            extracted_title="Single Score High",
+            similarity_score=4,
+            single_similarity_score=12,
+        )
+
+        counts = dashboard_counts()
+        self.assertEqual(counts["plagiarism_over_threshold"], 1)
+        self.assertEqual(counts["single_over_threshold"], 2)
+        self.assertEqual(counts["plagiarism_threshold_issue_papers"], 2)
+
+        response = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(response, "2 papers over threshold")
+        self.assertNotContains(response, "3 papers over threshold")
 
     def test_organized_list_exception_panel_sections_are_relevant_and_actionable(self):
         self.make_master_paper("P001", "Clean", "Ada")
@@ -5551,7 +5582,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(dashboard, "3")
         self.assertContains(dashboard, "1 current not publishing")
         self.assertContains(dashboard, "0 missing")
-        self.assertContains(dashboard, "0 over threshold")
+        self.assertContains(dashboard, "0 papers over threshold")
         clean_organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
         self.assertContains(clean_organized, "Main Ready Paper")
         self.assertContains(clean_organized, "Corrected Source Paper")

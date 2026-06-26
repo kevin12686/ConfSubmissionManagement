@@ -137,11 +137,6 @@ def _dashboard_metric_sections(counts):
         + counts["title_author_red_flag"]
         + counts["unverified_extracted_title_match"]
     )
-    plagiarism_review = (
-        counts["missing_plagiarism_result"]
-        + counts["plagiarism_over_threshold"]
-        + counts["single_over_threshold"]
-    )
     return [
         {
             "title": "Data Loaded",
@@ -305,19 +300,10 @@ def _dashboard_metric_sections(counts):
                 },
                 {
                     "label": "Plagiarism Threshold Issues",
-                    "value": counts["plagiarism_over_threshold"] + counts["single_over_threshold"],
+                    "value": counts["plagiarism_threshold_issue_papers"],
                     "help": "Active papers over the configured Plagiarism % or Single % thresholds.",
-                    "level": _issue_level(counts["plagiarism_over_threshold"] + counts["single_over_threshold"], "danger"),
-                    "status_label": _issue_status(counts["plagiarism_over_threshold"] + counts["single_over_threshold"], "Review"),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:organized_list") + "?filter=plagiarism_issues",
-                },
-                {
-                    "label": "Plagiarism Total Review",
-                    "value": plagiarism_review,
-                    "help": "Missing or over-threshold plagiarism checks that need attention.",
-                    "level": _issue_level(plagiarism_review),
-                    "status_label": _issue_status(plagiarism_review),
+                    "level": _issue_level(counts["plagiarism_threshold_issue_papers"], "danger"),
+                    "status_label": _issue_status(counts["plagiarism_threshold_issue_papers"], "Review"),
                     "action_label": "Review",
                     "action_url": reverse("submissions:organized_list") + "?filter=plagiarism_issues",
                 },
