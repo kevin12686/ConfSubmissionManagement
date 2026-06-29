@@ -1,0 +1,19 @@
+services:
+  web:
+    build:
+      context: .
+    image: conference-final-manager:local
+    restart: unless-stopped
+    ports:
+      - "${SMS_BIND_HOST:-127.0.0.1}:${SMS_PORT:-8000}:8000"
+    environment:
+      DJANGO_HOST: 0.0.0.0
+      DJANGO_PORT: 8000
+      SMS_DATABASE_PATH: /app/data/db.sqlite3
+      SMS_MEDIA_ROOT: /app/data/media
+      SMS_SECRET_KEY: ${SMS_SECRET_KEY:-local-dev-only-change-if-exposed}
+      SMS_DEBUG: ${SMS_DEBUG:-1}
+      SMS_ALLOWED_HOSTS: ${SMS_ALLOWED_HOSTS:-127.0.0.1,localhost,testserver}
+    volumes:
+      - .:/app
+      - ${SMS_DATA_DIR:-./data}:/app/data

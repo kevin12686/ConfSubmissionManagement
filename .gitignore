@@ -1,7 +1,11 @@
 .venv/
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
 db.sqlite3
+runtime/
 data/media/
 data/storage_cleanup_previews/
 data/system_state_backups/

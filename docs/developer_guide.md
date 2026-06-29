@@ -17,6 +17,38 @@ python manage.py runserver 127.0.0.1:8000
 
 macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windows operators run `start_windows.bat`.
 
+## Docker Environment
+
+Docker support is intended for local/operator deployments, not as a hardened
+internet-facing service. The container provides the Python/Django runtime while
+the repository checkout and conference data stay bind-mounted on the host.
+
+Use one env file and one compose project name per conference:
+
+```bash
+cp .env.example .env.conference-a
+docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
+```
+
+Important settings:
+
+- `SMS_PORT`: host port for the instance.
+- `SMS_DATA_DIR`: host folder mounted to `/app/data`; it contains
+  `db.sqlite3`, media uploads, reports, audit logs, previews, and exports.
+- `SMS_BIND_HOST`: defaults to `127.0.0.1`; set `0.0.0.0` only for trusted LAN
+  access.
+- `SMS_ALLOWED_HOSTS`: add the LAN hostname or IP when exposing beyond
+  localhost.
+
+The image installs dependencies from `requirements.txt`, but compose also
+bind-mounts the working tree into `/app`. After `git pull`, restart or run
+`up -d --build`; prefer rebuilding when dependencies or Docker files may have
+changed.
+
+The Docker entrypoint creates the standard `data/...` folders, runs migrations
+unless `SMS_RUN_MIGRATIONS=0`, and starts Django on `0.0.0.0:8000` inside the
+container. It does not change publication file selection rules.
+
 ## Regression Commands
 
 Run these before finishing code changes:

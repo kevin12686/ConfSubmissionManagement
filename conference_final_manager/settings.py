@@ -1,15 +1,41 @@
+import os
 from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.0.16"
+APP_VERSION = "1.0.17"
 STATE_ARCHIVE_VERSION = 2
 
-SECRET_KEY = "local-dev-only-change-if-exposed"
-DEBUG = True
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+
+def _env_bool(name, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_list(name, default):
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    return [value.strip() for value in raw.split(",") if value.strip()]
+
+
+def _env_path(name, default):
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+SECRET_KEY = os.environ.get("SMS_SECRET_KEY", "local-dev-only-change-if-exposed")
+DEBUG = _env_bool("SMS_DEBUG", True)
+ALLOWED_HOSTS = _env_list(
+    "SMS_ALLOWED_HOSTS", ["127.0.0.1", "localhost", "testserver"]
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -55,7 +81,7 @@ WSGI_APPLICATION = "conference_final_manager.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": _env_path("SMS_DATABASE_PATH", BASE_DIR / "db.sqlite3"),
     }
 }
 
@@ -68,7 +94,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "data" / "media"
+MEDIA_ROOT = _env_path("SMS_MEDIA_ROOT", BASE_DIR / "data" / "media")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Local editorial workflow may upload many Final Submission PDFs/source files at once.

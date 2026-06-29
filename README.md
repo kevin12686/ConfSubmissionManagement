@@ -39,6 +39,64 @@ chmod +x start.command scripts/start_local.sh
 
 To stop the app, press `Ctrl+C` in the Terminal or Command Prompt window running the server.
 
+## Docker Quick Start
+
+Docker is optional. It is useful when you want one machine to restart the app
+automatically after reboot, or when you want to run multiple conference
+instances from the same code checkout.
+
+Create one environment file per conference:
+
+```bash
+cp .env.example .env.conference-a
+```
+
+Edit `.env.conference-a` so each conference has a distinct port and data folder:
+
+```env
+SMS_PORT=8001
+SMS_DATA_DIR=./runtime/conference-a
+```
+
+Start the instance:
+
+```bash
+docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
+```
+
+Open <http://127.0.0.1:8001/>. The compose file uses
+`restart: unless-stopped`, so Docker will restart the app after the machine
+reboots as long as Docker itself starts at login/boot.
+
+Run another conference by copying another env file with a different port and
+data folder:
+
+```bash
+cp .env.example .env.conference-b
+docker compose --env-file .env.conference-b -p sms-conf-b up -d --build
+```
+
+In Docker, the SQLite database is stored at
+`SMS_DATA_DIR/db.sqlite3`, and managed article files, reports, audit logs,
+previews, and exports are stored under the same `SMS_DATA_DIR` folder. Back up
+that folder before moving or archiving a conference.
+
+To update after pulling a new version:
+
+```bash
+git pull
+docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
+```
+
+The source checkout is bind-mounted into the container, so a plain restart is
+often enough for code-only changes. Use `up -d --build` for the normal update
+path because it also refreshes the image when `requirements.txt` or Docker
+setup changes.
+
+By default Docker binds the app to `127.0.0.1`. If another computer must access
+the app over a trusted local network, set `SMS_BIND_HOST=0.0.0.0` and add the
+machine hostname or IP address to `SMS_ALLOWED_HOSTS`.
+
 ## New Computer Setup
 
 1. Install Python 3.12 or newer.
@@ -189,3 +247,6 @@ Development sanity checks:
 .venv/bin/python manage.py makemigrations --check --dry-run
 .venv/bin/python manage.py test submissions
 ```
+
+Docker startup uses the same Django application and stores its SQLite database
+and managed files in the bind-mounted `SMS_DATA_DIR` folder.
