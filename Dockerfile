@@ -14,7 +14,8 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install -r /app/requirements.txt
 
 COPY docker/entrypoint.sh /usr/local/bin/sms-entrypoint
-RUN chmod +x /usr/local/bin/sms-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/sms-entrypoint \
+    && chmod +x /usr/local/bin/sms-entrypoint
 
 COPY . /app
 
