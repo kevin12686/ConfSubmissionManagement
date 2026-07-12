@@ -1,30 +1,34 @@
 {% extends "submissions/base.html" %}
-{% block title %}Active Final Versions{% endblock %}
+{% block title %}Publication Candidates{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div>
-        <h1 class="h3 cfm-page-title">Active Final Versions</h1>
-        <div class="cfm-page-subtitle">Current final versions selected for the publication package.</div>
+        <h1 class="h3 cfm-page-title">Publication Candidates</h1>
+        <div class="cfm-page-subtitle">Compact read-only roster of current Paper Master publication candidates. Use Organized List for readiness checks and editorial actions.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
     </div>
 </div>
+<form method="get" class="cfm-filter-panel d-flex gap-2">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
+    <button class="btn btn-outline-secondary">Search</button>
+    {% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:active_versions' %}">Clear</a>{% endif %}
+</form>
 <div class="table-responsive">
-    <table class="table table-striped align-middle cfm-table">
-        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Author-entered ID</th><th>Verify</th><th>Final Title</th><th>Final Authors</th><th>Pages</th><th>Publication PDF</th></tr></thead>
+    <table class="table table-striped align-middle cfm-table cfm-table-sticky">
+        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Final Title</th><th>Final Authors</th><th>Pages</th><th>Publication PDF</th></tr></thead>
         <tbody>
         {% for row in rows %}
             {% with item=row.submission %}
             <tr>
-                <td>{{ item.paper_id_filled }}</td>
-                <td>{{ item.final_submission_id }}</td>
-                <td>{{ item.start2_paper_id_raw }}</td>
                 <td>
+                    <div>{{ item.paper_id_filled }}</div>
                     <span class="badge text-bg-{{ row.verification_badge.level }}">{{ row.verification_badge.label }}</span>
                 </td>
-                <td>{{ item.final_submission_title|default:"Missing" }}</td>
-                <td>{{ item.final_submission_authors|truncatechars:100 }}</td>
+                <td>{{ item.final_submission_id }}</td>
+                <td class="cfm-title-cell">{{ item.final_submission_title|default:"Missing" }}</td>
+                <td>{{ item.final_submission_authors|default:"Missing" }}</td>
                 <td>{{ item.page_count|default:"" }}</td>
                 <td>
                     {% if row.publication_pdf.exists %}
@@ -32,7 +36,6 @@
                             <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
-                        <div class="small text-muted text-break">{{ row.publication_pdf.path }}</div>
                     {% else %}
                         <span class="badge text-bg-danger">No PDF</span>
                     {% endif %}
@@ -40,7 +43,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="8" class="text-muted">No active versions found.</td></tr>
+            <tr><td colspan="6" class="text-muted">No publication candidates found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

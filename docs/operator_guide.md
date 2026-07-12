@@ -6,23 +6,30 @@ This guide is for editors running the local system to prepare final submissions 
 
 1. Start the app with `start.command`, `start_windows.bat`, or `./scripts/start_local.sh`.
 2. Open <http://127.0.0.1:8000/>.
-3. If continuing an existing conference on a new machine, go to `/integrations/crosscheck/` and restore a System State ZIP before importing new files.
+3. If continuing an existing conference on a new machine, go to `/integrations/system-state/` and preview the System State ZIP before applying it.
 4. Set the conference name and limits in `/settings/`.
 
 The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar.
+
+The navigation bar follows the editorial workflow: `Organized List` is a direct
+primary link; `Submissions` contains Paper Master, Final Submission, Editor
+Upload, and Not Publishing records; `Reviews` contains ID, PDF, title/author,
+formatting, and exception work; `Output` contains readiness reports, versions,
+exports, and CrossCheck/plagiarism; `System` contains Audit Log, System State
+backup/restore, and Settings.
 
 ## Page Map
 
 | Page | URL | Main use |
 | --- | --- | --- |
-| Dashboard | `/` | Current status and next warnings |
+| Dashboard | `/` | Final-package readiness and current editorial actions |
 | Paper Master List | `/papers/` | Official publication scope, titles, authors, acceptance status, editorial notes |
 | Final Submissions | `/submissions/` | Imported Start2 submissions, uploaded files, editor uploads, discarded versions |
 | Editor Upload | `/submissions/editor-upload/` | Add email-provided replacement versions |
 | Organized List | `/submissions/organized/` | Publication checklist by Paper Master record |
 | Process PDFs | `/processing/pdfs/` | Page count, hash, thumbnails, and publication PDF debug copies |
 | Verify Paper IDs | `/reviews/paper-ids/` | Correct author-entered IDs and verify mapping |
-| Title/Author Extraction | `/reviews/title-authors/` | Run extraction and review extracted title/authors |
+| Title/Author Review | `/reviews/title-authors/` | Extract and review title, authors, image evidence, and title comparison together |
 | Formatting Review | `/reviews/formatting/` | Review first-page title/author formatting and upload corrected files |
 | Not Publishing List | `/reviews/not-publishing/` | Track paid/published scope exclusions |
 | Exceptions | `/reviews/exceptions/` | Approve rare page/author/plagiarism exceptions |
@@ -30,7 +37,33 @@ The Conference Final Manager icon appears in the browser tab and beside the appl
 | Author Count | `/reports/author-count/` | Per-author publication paper counts |
 | Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
 | Export Reports | `/reports/` | Excel exports and publication package ZIPs |
-| CrossCheck / Backup | `/integrations/crosscheck/` | Plagiarism package export/import and System State backup/restore |
+| Publication Candidates | `/reports/active-versions/` | Compact read-only roster of current active submissions inside Paper Master publication scope |
+| Plagiarism / CrossCheck | `/integrations/crosscheck/` | Prepare publication PDFs and import scores/reports |
+| System Backup / Restore | `/integrations/system-state/` | Download or preview/apply a complete system snapshot |
+
+Organized List keeps the main table compact. Open a paper's `Details` to review
+its publication metadata, the complete extracted author list and extraction
+status, current publication PDF/source files, optional debug copy, and editorial
+notes in one publication-record view. Routine pages show file actions and source
+labels rather than machine-specific absolute paths.
+
+## Dashboard And Readiness
+
+Dashboard uses the same blocking rows as Final Publication Package export. Its top panel therefore answers whether a final package can be created now; it is not a separate approximate status calculation.
+
+- `blocking papers` counts unique affected Paper IDs.
+- `blocking checks` counts individual readiness findings, so one paper can contribute more than one check.
+- `Next actions` lists only workflows that currently have blockers.
+- `No current blockers` lists workflows whose checks are clear instead of repeating zero-value cards.
+- `Tracked information` can include non-blocking editorial reminders, such as a verified Paper ID whose titles still differ.
+
+Uploading a corrected PDF intentionally sends the paper back through PDF processing and Title/Author review. Dashboard should show those actions again until the current Corrected/Original publication PDF has matching page/hash data and reviewed extracted metadata.
+
+`Review OK` completes the Title/Author check, including acceptance of the extracted-title comparison. A reviewed paper whose Final and extracted title wording still differs is tracked for reference, but it is not returned to Next actions and does not require a second Confirm Match action.
+
+Final Submission Edit is intentionally limited to submission metadata, original files, and plagiarism score/report entry. Processing state, Title/Author Review, duplicate-author review, and Not Publishing decisions are shown there for context but must be changed from their dedicated pages.
+
+Batch Upload is collapsed on the Final Submissions page until selected so the version list remains the primary view. Destructive version actions are separated from normal editing: `Discard this version` is in the collapsed `Version actions` section near the bottom of Final Submission Edit and still requires a reason. When Edit is opened from Organized List, Title/Author Review, Formatting Review, or Not Publishing, Save returns to the originating worklist with its search/filter context.
 
 ## Import Workflow
 
@@ -104,6 +137,8 @@ Process PDFs does not scan folders and does not silently create submissions. It 
 
 Run Process PDFs whenever Dashboard or the global alert says it is needed. Corrected PDFs require Process PDFs again so page count, hash, thumbnails, and debug copies match the current publication PDF source.
 
+The page-preview area defaults to `All processed` and keeps the complete thumbnail strip for every matching paper expanded. This is intentional: editors can scan the first, middle, and last pages without opening each record. Use `Page issues`, `Within page range`, or search to narrow the visible papers; these display filters do not alter processing or publication selection.
+
 ## Paper ID Review
 
 Use `/reviews/paper-ids/` to compare author-entered IDs and titles against the Paper Master List.
@@ -122,7 +157,7 @@ Review statuses:
 - Red Flag: extraction looks wrong or formatting likely needs correction.
 - Review OK: title/authors have been checked.
 
-The page also tracks extracted title vs Final Submission title. Missing or unverified matches can block final export. Soft title differences are shown for attention but do not block by themselves.
+The page also shows extracted title vs Final Submission title while you review the card. Missing metadata or a Pending/Red Flag review can block final export. Marking the card Review OK records that the displayed title difference was accepted; the difference remains visible and tracked but does not create a second blocker.
 
 The built-in extractor is the default path. Settings can enable an optional GROBID fallback for local/internal GROBID services; the Settings page shows a green/red API health indicator beside the GROBID API URL and refreshes it while you edit the URL. The Title/Author page checks GROBID health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction is not started, so rows are not incorrectly turned into extraction errors. During a suspicious-row batch, rows are processed one at a time; if the GROBID service becomes unavailable mid-run, the batch stops, successful rows remain saved, and unprocessed rows are skipped rather than marked as paper-level errors. Use `Try GROBID` on individual rows, or `Try GROBID for suspicious rows` for rows with extraction errors or Red Flag status. If a row has missing/truncated authors but is not an extraction error, mark it Red Flag first or use the single-row button. A successful GROBID extraction overwrites extracted title/authors, creates a verification image, resets Title/Author Review back to Pending, and recalculates Extracted Title Match the same way the built-in extractor does. A failed GROBID attempt does not overwrite the current extraction.
 
@@ -132,7 +167,7 @@ Manual override is an exception path for cases where extracted title/authors mus
 
 Use `/reviews/formatting/` to review title/author formatting visually.
 
-- List mode shows many papers.
+- List mode is a compact queue; select `Review paper` to expand one full workspace.
 - Single Paper Mode shows one paper at a time to reduce wrong-file uploads.
 - Corrected PDF upload performs a title guard: the PDF title is extracted in dry-run mode and compared with the Paper Master title and Final Title before the file is saved.
 - Source file buttons show type labels such as Word, ZIP, or TeX.
@@ -140,6 +175,8 @@ Use `/reviews/formatting/` to review title/author formatting visually.
 - Edited means corrected PDF/source files exist.
 
 If corrected files are uploaded, related review flags reset as needed and Process PDFs may be required.
+
+Single Paper Mode remains the sequential review workspace. Save and Go next are separate, and the page warns before leaving with unsaved changes.
 
 ## Plagiarism / CrossCheck Workflow
 
@@ -167,6 +204,8 @@ Exceptions are rare approvals for:
 Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. Plagiarism % and Single % are approved separately. If the underlying count or score changes, the exception becomes stale and must be re-approved.
 
 For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show a `Manage exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
+
+Exceptions also supports Paper/Final ID text search and exception-type filtering. Author Count supports focused views for over-limit authors, duplicate names inside a paper, allowed exceptions, and all authors. These filters are review aids only and do not change exception validity.
 
 ## Export Workflow
 

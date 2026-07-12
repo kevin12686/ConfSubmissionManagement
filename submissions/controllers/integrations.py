@@ -126,12 +126,9 @@ def integration(request):
     crosscheck_export_result = None
     crosscheck_result = None
     report_upload_result = None
-    system_state_preview = None
-    system_state_restore_result = None
     crosscheck_result_form = ImportFileForm()
     crosscheck_export_form = CrossCheckExportForm()
     report_upload_form = CrossCheckReportUploadForm()
-    system_state_restore_form = SystemStateRestoreForm()
     if request.method == "POST":
         action = request.POST.get("action")
         if action in {"prepare_crosscheck", "prepare_crosscheck_missing"}:
@@ -181,12 +178,31 @@ def integration(request):
                 except Exception as exc:
                     logger.exception("CrossCheck report upload failed")
                     messages.error(request, f"CrossCheck report upload failed: {exc}")
-        elif action == "preview_system_restore":
-            system_state_restore_form = SystemStateRestoreForm(request.POST, request.FILES)
-            if system_state_restore_form.is_valid():
+    return render(
+        request,
+        "submissions/integration.html",
+        {
+            "crosscheck_export_form": crosscheck_export_form,
+            "crosscheck_export_result": crosscheck_export_result,
+            "crosscheck_result_form": crosscheck_result_form,
+            "crosscheck_result": crosscheck_result,
+            "report_upload_form": report_upload_form,
+            "report_upload_result": report_upload_result,
+        },
+    )
+
+
+def system_state(request):
+    preview = None
+    restore_form = SystemStateRestoreForm()
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "preview_system_restore":
+            restore_form = SystemStateRestoreForm(request.POST, request.FILES)
+            if restore_form.is_valid():
                 try:
-                    system_state_preview = preview_system_state_restore(
-                        system_state_restore_form.cleaned_data["snapshot"]
+                    preview = preview_system_state_restore(
+                        restore_form.cleaned_data["snapshot"]
                     )
                     messages.warning(
                         request,
@@ -200,7 +216,7 @@ def integration(request):
         elif action == "apply_system_restore":
             token = request.POST.get("token", "")
             try:
-                system_state_restore_result = apply_system_state_restore(
+                apply_system_state_restore(
                     token,
                     request.POST.get("confirmation", ""),
                 )
@@ -212,25 +228,18 @@ def integration(request):
             except SystemStateError as exc:
                 messages.error(request, str(exc))
                 try:
-                    system_state_preview = load_restore_preview(token)
+                    preview = load_restore_preview(token)
                 except SystemStateError:
-                    system_state_preview = None
+                    preview = None
             except Exception as exc:
                 logger.exception("System state restore failed")
                 messages.error(request, f"System state restore failed: {exc}")
     return render(
         request,
-        "submissions/integration.html",
+        "submissions/system_state.html",
         {
-            "crosscheck_export_form": crosscheck_export_form,
-            "crosscheck_export_result": crosscheck_export_result,
-            "crosscheck_result_form": crosscheck_result_form,
-            "crosscheck_result": crosscheck_result,
-            "report_upload_form": report_upload_form,
-            "report_upload_result": report_upload_result,
-            "system_state_restore_form": system_state_restore_form,
-            "system_state_preview": system_state_preview,
-            "system_state_restore_result": system_state_restore_result,
+            "system_state_restore_form": restore_form,
+            "system_state_preview": preview,
             "system_state_confirmation_text": CONFIRMATION_TEXT,
         },
     )
@@ -256,7 +265,7 @@ def download_system_state(request):
     except Exception as exc:
         logger.exception("System state export failed")
         messages.error(request, f"System state export failed: {exc}")
-        return redirect("submissions:integration")
+        return redirect("submissions:system_state")
     return FileResponse(
         result["path"].open("rb"),
         as_attachment=True,

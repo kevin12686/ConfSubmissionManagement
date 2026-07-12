@@ -72,12 +72,12 @@
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <h2 class="h5">Process All PDFs</h2>
-                <p class="text-muted">Calculates page count and hash from corrected/original PDFs, generates per-page thumbnails, updates active versions, and syncs publication PDF debug copies.</p>
+                <h2 class="h5">Process Publication PDFs</h2>
+                <p class="text-muted">Recalculates active versions, then processes only current Paper Master publication candidates. Discarded, Not Publishing, invalid-ID, and historical versions are retained but excluded.</p>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="process">
-                    <button class="btn btn-primary">Process All</button>
+                    <button class="btn btn-primary">Process Publication PDFs</button>
                 </form>
                 {% if process_result %}
                     <hr>
@@ -87,7 +87,7 @@
                         <li>Errors: {{ process_result.errors }}</li>
                         <li>Debug PDFs synced: {{ process_result.debug_synced }}</li>
                         <li>Debug skipped: {{ process_result.debug_skipped }}</li>
-                        {% if process_result.debug_manifest %}<li>Debug manifest: <code>{{ process_result.debug_manifest }}</code></li>{% endif %}
+                        {% if process_result.debug_manifest %}<li>Publication debug manifest updated.</li>{% endif %}
                     </ul>
                     {% if process_result.error_rows %}
                         <div class="alert alert-danger border cfm-attention mt-3 mb-0">
@@ -123,6 +123,22 @@
 </div>
 
 <h2 class="h4 mt-4">Processed PDF Page Preview</h2>
+<div class="small text-muted mb-2">Every matching paper remains fully expanded so blank pages can be spotted by scanning the complete page strip.</div>
+<ul class="nav nav-tabs cfm-tabs">
+    {% for option in filter_options %}
+        <li class="nav-item">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                {{ option.label }} <span class="badge cfm-tab-count text-bg-{% if option.value == 'page_issues' %}warning{% else %}secondary{% endif %}">{{ option.count }}</span>
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+<form method="get" class="cfm-filter-panel d-flex gap-2">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, or title">
+    <button class="btn btn-outline-secondary">Search</button>
+    {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:process' %}">Reset</a>{% endif %}
+</form>
 <div class="vstack gap-3">
     {% for row in processed_rows %}
         <div class="card cfm-review-card">
@@ -133,6 +149,7 @@
                     <span class="badge {% if row.submission.page_count < settings_obj.page_minimum or row.submission.page_count > settings_obj.page_limit %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">
                         Page count: {{ row.submission.page_count }} pages
                     </span>
+                    <div class="small text-muted mt-1">{{ row.submission.final_submission_title|default:"Missing title" }}</div>
                 </div>
                 <div class="small text-muted">{{ row.submission.processing_message }}</div>
             </div>

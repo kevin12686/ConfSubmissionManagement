@@ -1,6 +1,7 @@
 import csv
 import logging
 import shutil
+from collections import Counter
 from pathlib import Path
 
 from django.contrib import messages
@@ -122,217 +123,220 @@ DEFAULT_FOLDER_SETTINGS = {
     "plagiarism_reports_folder": "data/plagiarism_reports",
 }
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
-def _issue_level(value, level="warning"):
-    return level if value else "success"
+DASHBOARD_WORKFLOW_GROUPS = [
+    {
+        "key": "mapping",
+        "title": "Paper mapping and version decisions",
+        "description": "Resolve missing finals, invalid or unverified IDs, Not Publishing decisions, and Start2/Editor conflicts.",
+        "categories": {
+            "Multiple Active Final Submissions",
+            "Start2/Editor Version Conflict",
+            "Unclassified Final Not In Master",
+            "Missing Final Submission",
+            "Unverified Paper ID",
+            "Final Title / Paper Master Title Mismatch",
+        },
+        "action_label": "Review mapping issues",
+        "action_url_name": "submissions:error_report",
+        "action_query": "",
+    },
+    {
+        "key": "files",
+        "title": "PDF, source, and page checks",
+        "description": "Resolve missing files, processing status, and page limits. Corrected PDFs return here after formatting.",
+        "categories": {
+            "Missing PDF",
+            "PDF Not Processed",
+            "Corrected PDF Not Processed",
+            "PDF Processing Error",
+            "Missing Source File",
+            "Page Limit Exceeded",
+            "Below Page Minimum",
+        },
+        "action_label": "Review file issues",
+        "action_url_name": "submissions:error_report",
+        "action_query": "",
+    },
+    {
+        "key": "title_authors",
+        "title": "Title and author review",
+        "description": "Review extracted title, authors, and the title comparison together. Re-extract after a corrected PDF is processed.",
+        "categories": {
+            "Missing Extracted Title",
+            "Missing Extracted Authors",
+            "Title/Author Red Flag",
+            "Unverified Title/Author Extraction",
+        },
+        "action_label": "Open Title/Author Review",
+        "action_url_name": "submissions:title_author_extraction",
+        "action_query": "?filter=all",
+    },
+    {
+        "key": "formatting",
+        "title": "Formatting review",
+        "description": "Review the current publication files. Uploading a corrected PDF resets processing and extraction checks.",
+        "categories": {"Formatting Not Review OK"},
+        "action_label": "Open Formatting Review",
+        "action_url_name": "submissions:formatting",
+        "action_query": "?filter=needs_attention",
+    },
+    {
+        "key": "plagiarism",
+        "title": "Plagiarism results",
+        "description": "Resolve missing P/S scores, stale reports or exceptions, and scores above configured thresholds.",
+        "categories": {
+            "Missing Plagiarism Result",
+            "Stale Plagiarism Report",
+            "Plagiarism % Over Threshold",
+            "Single % Over Threshold",
+            "Stale Plagiarism % Exception",
+            "Stale Single % Exception",
+        },
+        "action_label": "Review plagiarism issues",
+        "action_url_name": "submissions:organized_list",
+        "action_query": "?filter=plagiarism_issues",
+    },
+    {
+        "key": "authors",
+        "title": "Author limits and duplicates",
+        "description": "Resolve per-paper author limits, per-author paper limits, and duplicate author names.",
+        "categories": {"Author Over Limit", "Duplicate Author In Paper"},
+        "action_label": "Review author issues",
+        "action_url_name": "submissions:error_report",
+        "action_query": "",
+    },
+    {
+        "key": "duplicates",
+        "title": "Publication duplicates",
+        "description": "Resolve duplicate publication titles, PDFs, or source files before final export.",
+        "categories": {
+            "Duplicate Publication Title",
+            "Duplicate Publication PDF",
+            "Duplicate Publication Source",
+        },
+        "action_label": "Review duplicates",
+        "action_url_name": "submissions:organized_list",
+        "action_query": "?filter=needs_attention",
+    },
+]
 
 
-def _issue_status(value, label="Review"):
-    return label if value else "OK"
+def _affected_paper_ids(rows):
+    identifiers = set()
+    for row in rows:
+        raw_paper_ids = str(row.get("paper_id") or "").strip()
+        if raw_paper_ids:
+            identifiers.update(
+                part.strip() for part in raw_paper_ids.split(",") if part.strip()
+            )
+        elif row.get("final_submission_id"):
+            identifiers.add(f"Final {row['final_submission_id']}")
+    return identifiers
 
 
-def _dashboard_metric_sections(counts):
-    page_count_issues = counts["page_limit_errors"] + counts["page_minimum_errors"]
-    title_author_review = (
-        counts["title_author_pending"]
-        + counts["title_author_red_flag"]
-        + counts["unverified_extracted_title_match"]
-    )
-    return [
-        {
-            "title": "Data Loaded",
-            "description": "Core records currently available in the system.",
-            "metrics": [
-                {
-                    "label": "Paper Master Records",
-                    "value": counts["total_papers"],
-                    "help": "Accepted paper records used as the source of truth.",
-                    "level": "light",
-                    "status_label": "Count",
-                    "action_label": "Open",
-                    "action_url": reverse("submissions:initial_paper_list"),
-                },
-                {
-                    "label": "Final Submissions",
-                    "value": counts["total_final_submissions"],
-                    "help": "Uploaded final-submission metadata and files.",
-                    "level": "light",
-                    "status_label": "Count",
-                    "action_label": "Open",
-                    "action_url": reverse("submissions:final_submission_list"),
-                },
-                {
-                    "label": "Active Final Versions",
-                    "value": counts["active_final_versions"],
-                    "help": "Current publication versions after duplicate handling.",
-                    "level": "light",
-                    "status_label": "Current",
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:active_versions"),
-                },
+def _dashboard_context(counts, readiness_rows):
+    readiness_categories = Counter(row["category"] for row in readiness_rows)
+    blocking_identifiers = _affected_paper_ids(readiness_rows)
+    no_master_records = counts["total_papers"] == 0
+    blocking_issue_count = len(readiness_rows) + (1 if no_master_records else 0)
+    if no_master_records:
+        readiness_categories["Paper Master List Empty"] += 1
+
+    action_items = []
+    completed_checks = []
+    if no_master_records:
+        action_items.append(
+            {
+                "key": "setup",
+                "title": "Paper Master List setup",
+                "description": "Import the Paper Master List before publication checks or final export.",
+                "paper_count": 0,
+                "count_label": "Setup needed",
+                "action_label": "Open Paper Master List",
+                "action_url": reverse("submissions:initial_paper_list"),
+            }
+        )
+
+    for group in DASHBOARD_WORKFLOW_GROUPS:
+        group_rows = [
+            row for row in readiness_rows if row["category"] in group["categories"]
+        ]
+        if group_rows:
+            paper_count = len(_affected_paper_ids(group_rows)) or len(group_rows)
+            item = {
+                **group,
+                "paper_count": paper_count,
+                "count_label": f"{paper_count} paper{'s' if paper_count != 1 else ''}",
+                "action_url": reverse(group["action_url_name"])
+                + group["action_query"],
+            }
+            action_items.append(
+                item
+            )
+        else:
+            completed_checks.append(group["title"])
+
+    return {
+        "readiness": {
+            "ready": blocking_issue_count == 0,
+            "blocking_paper_count": len(blocking_identifiers),
+            "blocking_issue_count": blocking_issue_count,
+            "top_categories": [
+                {"label": category, "count": count}
+                for category, count in readiness_categories.most_common(5)
             ],
         },
-        {
-            "title": "Needs Review",
-            "description": "Mapping and identity checks that affect paper matching.",
-            "metrics": [
-                {
-                    "label": "Unverified Paper IDs",
-                    "value": counts["unverified_paper_ids"],
-                    "help": "Active submissions still waiting for Paper ID verification.",
-                    "level": _issue_level(counts["unverified_paper_ids"]),
-                    "status_label": _issue_status(counts["unverified_paper_ids"]),
-                    "action_label": "Verify",
-                    "action_url": reverse("submissions:verify_paper_ids"),
-                },
-                {
-                    "label": "Title Mismatches",
-                    "value": counts["title_mismatches"],
-                    "help": "Verified Paper IDs where final and master titles differ.",
-                    "level": _issue_level(counts["title_mismatches"]),
-                    "status_label": _issue_status(counts["title_mismatches"]),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:verify_paper_ids"),
-                },
-                {
-                    "label": "Paper ID Problems",
-                    "value": counts["invalid_paper_ids"],
-                    "help": "Publishable final submissions whose Paper ID is missing or not in the master list.",
-                    "level": _issue_level(counts["invalid_paper_ids"], "danger"),
-                    "status_label": _issue_status(counts["invalid_paper_ids"], "Fix"),
-                    "action_label": "Fix",
-                    "action_url": reverse("submissions:verify_paper_ids"),
-                },
-                {
-                    "label": "Needs Not-Publishing Decision",
-                    "value": counts["unclassified_not_in_master"],
-                    "help": "Final submissions not in the Paper Master List that must be corrected or marked Not Publishing.",
-                    "level": _issue_level(counts["unclassified_not_in_master"], "danger"),
-                    "status_label": _issue_status(counts["unclassified_not_in_master"], "Decide"),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:not_publishing_list"),
-                },
-                {
-                    "label": "Start2/Editor Conflicts",
-                    "value": counts["start2_editor_conflicts"],
-                    "help": "Papers where both Start2 and editor-uploaded versions exist and one side must be discarded.",
-                    "level": _issue_level(counts["start2_editor_conflicts"], "warning"),
-                    "status_label": _issue_status(counts["start2_editor_conflicts"], "Decide"),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:final_submission_list") + "?filter=version_conflicts",
-                },
-                {
-                    "label": "Current Not Publishing",
-                    "value": counts["excluded_from_publication"],
-                    "help": "Current final submissions retained for tracking but excluded from the publication package.",
-                    "level": "secondary" if counts["excluded_from_publication"] else "success",
-                    "status_label": "Tracked" if counts["excluded_from_publication"] else "None",
-                    "action_label": "Open",
-                    "action_url": reverse("submissions:not_publishing_list"),
-                },
-                {
-                    "label": "Missing Final Submissions",
-                    "value": counts["missing_final_submissions"],
-                    "help": "Master-list papers that do not have a matched final submission.",
-                    "level": _issue_level(counts["missing_final_submissions"]),
-                    "status_label": _issue_status(counts["missing_final_submissions"]),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:organized_list"),
-                },
-            ],
-        },
-        {
-            "title": "Production Checks",
-            "description": "File, extraction, plagiarism, and author-count readiness.",
-            "metrics": [
-                {
-                    "label": "Page Count Issues",
-                    "value": page_count_issues,
-                    "help": "Active PDFs below the page minimum or above the page limit.",
-                    "level": _issue_level(page_count_issues),
-                    "status_label": _issue_status(page_count_issues),
-                    "action_label": "Process",
-                    "action_url": reverse("submissions:process"),
-                },
-                {
-                    "label": "Active PDFs Need Process",
-                    "value": counts["active_pdfs_need_processing"],
-                    "help": "Active publication PDFs have not been processed or need page count/hash refresh.",
-                    "level": _issue_level(counts["active_pdfs_need_processing"], "danger"),
-                    "status_label": _issue_status(counts["active_pdfs_need_processing"], "Process"),
-                    "action_label": "Process PDFs",
-                    "action_url": reverse("submissions:process"),
-                },
-                {
-                    "label": "Missing PDFs",
-                    "value": counts["missing_pdfs"],
-                    "help": "Active submissions without an available publication PDF.",
-                    "level": _issue_level(counts["missing_pdfs"], "danger"),
-                    "status_label": _issue_status(counts["missing_pdfs"], "Blocker"),
-                    "action_label": "Process",
-                    "action_url": reverse("submissions:process"),
-                },
-                {
-                    "label": "Title/Author Review",
-                    "value": title_author_review,
-                    "help": "Missing extraction, Pending/Red Flag review states, or unverified title match checks.",
-                    "level": _issue_level(title_author_review),
-                    "status_label": _issue_status(title_author_review),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:title_author_extraction"),
-                },
-                {
-                    "label": "Title/Author Red Flag",
-                    "value": counts["title_author_red_flag"],
-                    "help": "Papers marked because formatting may need fixing before extraction can be trusted.",
-                    "level": _issue_level(counts["title_author_red_flag"], "danger"),
-                    "status_label": _issue_status(counts["title_author_red_flag"], "Fix"),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:title_author_extraction") + "?filter=red_flag",
-                },
-                {
-                    "label": "Missing Plagiarism Results",
-                    "value": counts["missing_plagiarism_result"],
-                    "help": "Active submissions missing plagiarism or single-source percentages.",
-                    "level": _issue_level(counts["missing_plagiarism_result"]),
-                    "status_label": _issue_status(counts["missing_plagiarism_result"]),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:organized_list") + "?filter=missing_plagiarism",
-                },
-                {
-                    "label": "Plagiarism Threshold Issues",
-                    "value": counts["plagiarism_threshold_issue_papers"],
-                    "help": "Active papers over the configured Plagiarism % or Single % thresholds.",
-                    "level": _issue_level(counts["plagiarism_threshold_issue_papers"], "danger"),
-                    "status_label": _issue_status(counts["plagiarism_threshold_issue_papers"], "Review"),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:organized_list") + "?filter=plagiarism_issues",
-                },
-                {
-                    "label": "Format Not OK",
-                    "value": counts["format_not_ok"],
-                    "help": "Active papers with formatting status Pending or Needs edit.",
-                    "level": _issue_level(counts["format_not_ok"]),
-                    "status_label": _issue_status(counts["format_not_ok"]),
-                    "action_label": "Review",
-                    "action_url": reverse("submissions:formatting"),
-                },
-                {
-                    "label": "Authors Over Limit",
-                    "value": counts["authors_over_limit"],
-                    "help": "Authors exceeding the configured paper-count limit.",
-                    "level": _issue_level(counts["authors_over_limit"]),
-                    "status_label": _issue_status(counts["authors_over_limit"]),
-                    "action_label": "Report",
-                    "action_url": reverse("submissions:author_count"),
-                },
-            ],
-        },
-    ]
+        "action_items": action_items,
+        "completed_checks": completed_checks,
+        "conference_totals": [
+            {
+                "label": "Paper Master scope",
+                "value": counts["total_papers"],
+                "url": reverse("submissions:initial_paper_list"),
+            },
+            {
+                "label": "Publication candidates",
+                "value": counts["publication_candidates"],
+                "url": reverse("submissions:organized_list"),
+            },
+            {
+                "label": "All final records",
+                "value": counts["total_final_submissions"],
+                "url": reverse("submissions:final_submission_list"),
+            },
+            {
+                "label": "Current Not Publishing",
+                "value": counts["excluded_from_publication"],
+                "url": reverse("submissions:not_publishing_list"),
+            },
+        ],
+        "tracking_items": [
+            {
+                "label": "Verified title differences",
+                "value": counts["verified_title_differences"],
+                "help": "Paper IDs are verified; title differences remain visible for editorial awareness.",
+                "url": reverse("submissions:organized_list") + "?filter=title_issues",
+            },
+            {
+                "label": "Reviewed extracted-title differences",
+                "value": counts["reviewed_extracted_title_differences"],
+                "help": "Title/Author Review is complete; Final and extracted title wording still differs for reference.",
+                "url": reverse("submissions:title_author_extraction")
+                + "?filter=review_ok",
+            },
+            {
+                "label": "Allowed P/S exceptions",
+                "value": counts["allowed_plagiarism_exceptions"],
+                "help": "Approved plagiarism-score exceptions currently in effect.",
+                "url": reverse("submissions:exceptions_center") + "?filter=allowed",
+            },
+        ],
+    }
 
 
 def dashboard(request):
     return render(
         request,
         "submissions/dashboard.html",
-        dashboard_context(_dashboard_metric_sections),
+        dashboard_context(_dashboard_context),
     )

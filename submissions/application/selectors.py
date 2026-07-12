@@ -6,6 +6,7 @@ from submissions.services.checks import (
     dashboard_counts,
     paper_id_effectively_verified,
     paper_title_matches_master,
+    publication_readiness_rows,
 )
 from submissions.services.file_manager import (
     active_pdfs_needing_processing,
@@ -44,11 +45,11 @@ def search_query(request):
     return request.GET.get("q", "").strip()
 
 
-def dashboard_context(metric_sections_builder):
+def dashboard_context(context_builder):
     counts = dashboard_counts()
     return {
         "counts": counts,
-        "metric_sections": metric_sections_builder(counts),
+        **context_builder(counts, publication_readiness_rows()),
     }
 
 
@@ -161,35 +162,105 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
     }
 
 
-def processed_pdf_context():
+PROCESS_PREVIEW_FILTER_OPTIONS = [
+    {"value": "all", "label": "All processed"},
+    {"value": "page_issues", "label": "Page issues"},
+    {"value": "within_range", "label": "Within page range"},
+]
+
+
+def processed_pdf_context(query="", current_filter="all"):
+    settings_obj = AppSetting.load()
+    valid_ids = InitialPaper.objects.values("paper_id")
     active_missing_pdf_rows = [
         submission
         for submission in FinalSubmission.objects.filter(
             active_version=True,
             discarded=False,
             excluded_from_publication=False,
+            paper_id_filled__in=valid_ids,
         )
         if not pdf_available_for_processing(submission)
     ]
+    all_rows = processed_pdf_rows()
+    if query:
+        lowered_query = query.casefold()
+        all_rows = [
+            row
+            for row in all_rows
+            if lowered_query
+            in " ".join(
+                [
+                    row["submission"].paper_id_filled or "",
+                    row["submission"].final_submission_id or "",
+                    row["submission"].final_submission_title or "",
+                ]
+            ).casefold()
+        ]
+    page_issue = lambda row: (
+        row["submission"].page_count < settings_obj.page_minimum
+        or row["submission"].page_count > settings_obj.page_limit
+    )
+    counts = {
+        "all": len(all_rows),
+        "page_issues": sum(1 for row in all_rows if page_issue(row)),
+        "within_range": sum(1 for row in all_rows if not page_issue(row)),
+    }
+    valid_filters = {option["value"] for option in PROCESS_PREVIEW_FILTER_OPTIONS}
+    if current_filter not in valid_filters:
+        current_filter = "all"
+    if current_filter == "page_issues":
+        display_rows = [row for row in all_rows if page_issue(row)]
+    elif current_filter == "within_range":
+        display_rows = [row for row in all_rows if not page_issue(row)]
+    else:
+        display_rows = all_rows
     return {
-        "processed_rows": processed_pdf_rows(),
-        "settings_obj": AppSetting.load(),
+        "processed_rows": display_rows,
+        "settings_obj": settings_obj,
         "active_needs_processing_rows": active_pdfs_needing_processing(),
         "active_missing_pdf_rows": active_missing_pdf_rows,
+        "q": query,
+        "current_filter": current_filter,
+        "filter_options": [
+            {**option, "count": counts[option["value"]]}
+            for option in PROCESS_PREVIEW_FILTER_OPTIONS
+        ],
     }
 
 
-def active_versions_context():
-    submissions = list(FinalSubmission.objects.filter(active_version=True, discarded=False))
+def active_versions_context(query=""):
+    submissions = list(
+        FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+        )
+    )
     master_by_id = {
         paper.paper_id: paper
         for paper in InitialPaper.objects.filter(
             paper_id__in={item.paper_id_filled for item in submissions}
         )
     }
-    return {
-        "rows": [_active_version_row(submission, master_by_id) for submission in submissions]
-    }
+    rows = [_active_version_row(submission, master_by_id) for submission in submissions]
+    if query:
+        lowered_query = query.casefold()
+        rows = [
+            row
+            for row in rows
+            if lowered_query
+            in " ".join(
+                [
+                    row["submission"].paper_id_filled or "",
+                    row["submission"].final_submission_id or "",
+                    row["submission"].final_submission_title or "",
+                    row["submission"].final_submission_authors or "",
+                ]
+            ).casefold()
+        ]
+    return {"rows": rows, "q": query}
 
 
 def _active_version_row(submission, master_by_id):

@@ -12,7 +12,7 @@ from django.db.models import Case, IntegerField, Value, When
 from django.db.models import Q
 from django.utils import timezone
 
-from submissions.models import FinalSubmission
+from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
 from submissions.services.file_manager import publication_pdf_info, sanitize_filename_part
@@ -262,9 +262,12 @@ def formatting_rows(query="", status_filter="needs_attention"):
         default=Value(3),
         output_field=IntegerField(),
     )
-    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False).annotate(
-        status_order=status_order
-    )
+    submissions = FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+    ).annotate(status_order=status_order)
     if query:
         submissions = submissions.filter(
             Q(final_submission_id__icontains=query)

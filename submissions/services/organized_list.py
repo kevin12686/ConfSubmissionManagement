@@ -6,6 +6,7 @@ from submissions.services.checks import (
     paper_id_effectively_verified,
     paper_title_matches_master,
     publication_duplicate_map,
+    split_authors,
 )
 from submissions.services.editor_uploads import editor_conflict_paper_ids
 from submissions.services.exceptions import (
@@ -218,11 +219,13 @@ def _author_count_status(submission, settings_obj):
             "author_count": None,
             "author_count_label": "No authors",
             "author_count_level": "danger",
+            "author_display_items": [],
             "over_author_limit": False,
             "duplicate_authors": [],
             "has_duplicate_authors": False,
             "unresolved_duplicate_authors": False,
         }
+    author_names = split_authors(submission.extracted_authors)
     author_count = author_number_count(submission)
     over_limit = author_count > settings_obj.max_authors_per_paper
     exception_status = author_number_exception_status(submission, settings_obj)
@@ -232,6 +235,10 @@ def _author_count_status(submission, settings_obj):
     return {
         "author_count": author_count,
         "author_count_label": f"{author_count} author{'s' if author_count != 1 else ''}",
+        "author_display_items": [
+            {"order": index, "name": author_name}
+            for index, author_name in enumerate(author_names, start=1)
+        ],
         "author_count_level": "info"
         if over_limit and waiver_valid
         else ("warning" if exception_status == "stale" else ("danger" if over_limit or unresolved_duplicate_authors else "success")),
@@ -446,7 +453,7 @@ def _has_title_match_unverified_issue(row):
         submission
         and title_check["final_title"]
         and title_check["extracted_title"]
-        and not submission.extracted_title_verified
+        and not submission.title_match_review_complete
     )
 
 
@@ -464,7 +471,7 @@ def _has_verified_hard_title_diff(row):
         and (
             _is_verified_title_diff(row)
             or (
-                submission.extracted_title_verified
+                submission.title_match_review_complete
                 and _has_hard_title_diff(row)
             )
         )

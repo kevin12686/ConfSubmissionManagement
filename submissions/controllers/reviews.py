@@ -11,6 +11,7 @@ from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 
 from submissions.forms import (
@@ -109,8 +110,6 @@ from submissions.services.title_author_extraction import (
     set_title_author_review_status,
     title_author_extraction_rows,
     unverify_title_author,
-    unverify_extracted_title,
-    verify_extracted_title,
     verify_title_author,
 )
 from submissions.services import reports
@@ -140,6 +139,21 @@ DEFAULT_FOLDER_SETTINGS = {
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
 def _search_query(request):
     return request.GET.get("q", "").strip()
+
+
+def _worklist_return_url(request, fallback_name):
+    candidate = request.POST.get("return_to", "").strip()
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    if request.path == reverse(f"submissions:{fallback_name}"):
+        return request.get_full_path()
+    return reverse(f"submissions:{fallback_name}")
+
+
 def organized_list(request):
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
@@ -254,7 +268,7 @@ def verify_paper_ids(request):
         if request.POST.get("action") == "unverify":
             unverify_submission(submission)
             messages.success(request, f"Final submission {submission.final_submission_id} moved back to unverified.")
-            return redirect("submissions:verify_paper_ids")
+            return redirect(_worklist_return_url(request, "verify_paper_ids"))
         if request.POST.get("action") == "mark_not_publishing":
             mark_not_publishing(
                 submission,
@@ -262,11 +276,11 @@ def verify_paper_ids(request):
                 request.POST.get("publication_exclusion_notes", ""),
             )
             messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
-            return redirect("submissions:verify_paper_ids")
+            return redirect(_worklist_return_url(request, "verify_paper_ids"))
         if request.POST.get("action") == "undo_not_publishing":
             undo_not_publishing(submission)
             messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
-            return redirect("submissions:verify_paper_ids")
+            return redirect(_worklist_return_url(request, "verify_paper_ids"))
 
         corrected_paper_id = request.POST.get("corrected_paper_id", "").strip()
         if request.POST.get("action") == "use_suggestion":
@@ -278,7 +292,7 @@ def verify_paper_ids(request):
         except ValueError as exc:
             audit_failure("verify_paper_id", exc, "Paper ID verification failed.", request=request, submission=submission)
             messages.error(request, str(exc))
-        return redirect("submissions:verify_paper_ids")
+        return redirect(_worklist_return_url(request, "verify_paper_ids"))
 
     all_rows = verification_rows(submissions)
     counts = {
@@ -329,21 +343,26 @@ def verify_paper_ids(request):
     )
 def title_author_extraction(request):
     q = _search_query(request)
-    current_filter = request.GET.get("filter", "pending")
+    current_filter = request.GET.get("filter", "needs_verification")
     confirm_reextract_all = False
     allowed_filters = {
+        "needs_verification",
         "pending",
         "red_flag",
         "review_ok",
+        "reviewed_differences",
         "missing",
-        "title_match",
-        "title_needs_match",
         "manual_override",
         "errors",
         "all",
     }
+    legacy_filter_map = {
+        "title_match": "review_ok",
+        "title_needs_match": "needs_verification",
+    }
+    current_filter = legacy_filter_map.get(current_filter, current_filter)
     if current_filter not in allowed_filters:
-        current_filter = "pending"
+        current_filter = "needs_verification"
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -359,15 +378,15 @@ def title_author_extraction(request):
                 request,
                 f"Title/author extraction completed for needs-review papers: {result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped.",
             )
-            return redirect("submissions:title_author_extraction")
+            return redirect(_worklist_return_url(request, "title_author_extraction"))
         if action == "grobid_suspicious":
             if not AppSetting.load().grobid_enabled:
                 messages.error(request, "GROBID fallback is disabled in Settings.")
-                return redirect("submissions:title_author_extraction")
+                return redirect(_worklist_return_url(request, "title_author_extraction"))
             result = extract_grobid_for_suspicious_rows()
             if result.get("aborted"):
                 messages.error(request, result["message"] + " No rows were processed.")
-                return redirect("submissions:title_author_extraction")
+                return redirect(_worklist_return_url(request, "title_author_extraction"))
             if result.get("stopped"):
                 messages.warning(
                     request,
@@ -376,12 +395,12 @@ def title_author_extraction(request):
                         f"{result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped."
                     ),
                 )
-                return redirect("submissions:title_author_extraction")
+                return redirect(_worklist_return_url(request, "title_author_extraction"))
             messages.success(
                 request,
                 f"GROBID suspicious-row extraction completed: {result['extracted']} extracted, {result['errors']} errors, {result['skipped']} skipped.",
             )
-            return redirect("submissions:title_author_extraction")
+            return redirect(_worklist_return_url(request, "title_author_extraction"))
         if action == "reextract_all_prompt":
             confirm_reextract_all = True
         elif action == "confirm_reextract_all":
@@ -396,7 +415,7 @@ def title_author_extraction(request):
                 request,
                 f"All active PDFs re-extracted: {result['extracted']} extracted, {result['errors']} errors.",
             )
-            return redirect("submissions:title_author_extraction")
+            return redirect(_worklist_return_url(request, "title_author_extraction"))
         elif action:
             submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
             if action == "extract_one":
@@ -446,24 +465,18 @@ def title_author_extraction(request):
                     request,
                     f"Title/author review status updated to {submission.get_title_author_review_status_display()} for {submission.final_submission_id}.",
                 )
-            elif action == "verify_extracted_title":
-                verify_extracted_title(submission)
-                messages.success(request, f"Extracted title match verified for {submission.final_submission_id}.")
-            elif action == "unverify_extracted_title":
-                unverify_extracted_title(submission)
-                messages.success(request, f"Extracted title match moved back to unverified for {submission.final_submission_id}.")
-            return redirect("submissions:title_author_extraction")
+            return redirect(_worklist_return_url(request, "title_author_extraction"))
 
     filter_options = [
-        {"value": "pending", "label": "Pending", "tab_label": "Pending", "badge_level": "warning", "group": "review"},
-        {"value": "red_flag", "label": "Red Flag", "tab_label": "Red Flag", "badge_level": "danger", "group": "review"},
-        {"value": "review_ok", "label": "Review OK", "tab_label": "Review OK", "badge_level": "success", "group": "review"},
-        {"value": "missing", "label": "Missing Extraction", "tab_label": "Missing", "badge_level": "warning", "group": "review"},
-        {"value": "errors", "label": "Extraction Errors", "tab_label": "Errors", "badge_level": "danger", "group": "review"},
-        {"value": "title_needs_match", "label": "Title Needs Match", "tab_label": "Needs Match", "badge_level": "warning", "group": "title"},
-        {"value": "title_match", "label": "Title Match", "tab_label": "Matched", "badge_level": "success", "group": "title"},
-        {"value": "manual_override", "label": "Manual Override", "tab_label": "Manual override", "badge_level": "warning", "group": "source"},
-        {"value": "all", "label": "All", "tab_label": "All", "badge_level": "secondary", "group": "review"},
+        {"value": "needs_verification", "label": "Needs Review", "tab_label": "Needs Review", "badge_level": "warning", "group": "workflow"},
+        {"value": "pending", "label": "Pending", "tab_label": "Pending", "badge_level": "warning", "group": "workflow"},
+        {"value": "red_flag", "label": "Red Flag", "tab_label": "Red Flag", "badge_level": "danger", "group": "workflow"},
+        {"value": "review_ok", "label": "Review OK", "tab_label": "Review OK", "badge_level": "success", "group": "workflow"},
+        {"value": "all", "label": "All", "tab_label": "All", "badge_level": "secondary", "group": "workflow"},
+        {"value": "reviewed_differences", "label": "Reviewed Differences", "tab_label": "Reviewed Differences", "badge_level": "info", "group": "tracked"},
+        {"value": "missing", "label": "Missing Extraction", "tab_label": "Missing", "badge_level": "warning", "group": "tracked"},
+        {"value": "errors", "label": "Extraction Errors", "tab_label": "Errors", "badge_level": "danger", "group": "tracked"},
+        {"value": "manual_override", "label": "Manual Override", "tab_label": "Manual Override", "badge_level": "warning", "group": "tracked"},
     ]
     all_title_author_rows = title_author_extraction_rows(q, "all")
     rows = filter_title_author_extraction_rows(all_title_author_rows, current_filter)
@@ -486,20 +499,6 @@ def title_author_extraction(request):
     }
     for option in filter_options:
         option["count"] = tab_counts[option["value"]]
-    filter_groups = [
-        {
-            "label": "Review workflow",
-            "options": [option for option in filter_options if option["group"] == "review"],
-        },
-        {
-            "label": "Title match",
-            "options": [option for option in filter_options if option["group"] == "title"],
-        },
-        {
-            "label": "Exception source",
-            "options": [option for option in filter_options if option["group"] == "source"],
-        },
-    ]
     return render(
         request,
         "submissions/title_author_extraction.html",
@@ -508,7 +507,6 @@ def title_author_extraction(request):
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,
-            "filter_groups": filter_groups,
             "tab_counts": tab_counts,
             "confirm_reextract_all": confirm_reextract_all,
             "overwrite_summary": extraction_overwrite_summary(),
@@ -721,15 +719,47 @@ def not_publishing_list(request):
     )
 def exceptions_center(request):
     current_filter = request.GET.get("filter", "not_allowed")
-    all_rows, resolved_filter = exception_rows("all")
+    q = request.GET.get("q", "").strip()
+    current_type = request.GET.get("type", "all")
+    all_rows, _resolved_filter = exception_rows("all")
     valid_filters = {option["value"] for option in EXCEPTION_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "not_allowed"
-    rows = (
+    status_rows = (
         all_rows
         if current_filter == "all"
         else [row for row in all_rows if row["status"] == current_filter]
     )
+    type_options = [
+        {"value": "all", "label": "All exception types"},
+        {"value": "page", "label": "Page count"},
+        {"value": "author_number", "label": "Authors in paper"},
+        {"value": "author_limit", "label": "Author paper count"},
+        {"value": "plagiarism_percent", "label": "Plagiarism %"},
+        {"value": "single_percent", "label": "Single %"},
+    ]
+    valid_types = {option["value"] for option in type_options}
+    if current_type not in valid_types:
+        current_type = "all"
+    rows = status_rows
+    if current_type != "all":
+        rows = [row for row in rows if row["type"] == current_type]
+    if q:
+        lowered_query = q.casefold()
+        rows = [
+            row
+            for row in rows
+            if lowered_query
+            in " ".join(
+                [
+                    row.get("subject", ""),
+                    row.get("paper_ids", ""),
+                    row.get("final_submission_id", ""),
+                    row.get("type_label", ""),
+                    row.get("reason", ""),
+                ]
+            ).casefold()
+        ]
 
     if request.method == "POST":
         rebuild_paper_authors()
@@ -739,7 +769,7 @@ def exceptions_center(request):
         row = next((item for item in all_rows if item["key"] == exception_key), None)
         if not row:
             messages.error(request, "Exception row was not found. Refresh and try again.")
-            return redirect("submissions:exceptions_center")
+            return redirect(_worklist_return_url(request, "exceptions_center"))
         try:
             if action in {"approve_exception", "reapprove_exception"}:
                 approve_exception(row, request.POST.get("reason", ""))
@@ -749,7 +779,7 @@ def exceptions_center(request):
                 messages.warning(request, f"{row['type_label']} exception removed.")
         except ValueError as exc:
             messages.error(request, str(exc))
-        return redirect(f"{reverse('submissions:exceptions_center')}?filter={current_filter}")
+        return redirect(_worklist_return_url(request, "exceptions_center"))
 
     counts = exception_counts(all_rows)
     filter_options = [
@@ -764,5 +794,8 @@ def exceptions_center(request):
             "current_filter": current_filter,
             "filter_options": filter_options,
             "counts": counts,
+            "q": q,
+            "current_type": current_type,
+            "type_options": type_options,
         },
     )

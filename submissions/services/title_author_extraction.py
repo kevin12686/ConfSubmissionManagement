@@ -4,7 +4,7 @@ from django.conf import settings as django_settings
 from django.db.models import Q
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission
+from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.audit import audit_failure, audit_success
 from submissions.services.checks import reset_author_number_exception, split_authors
 from submissions.services.builtin_title_author_extractor import get_title_author
@@ -18,6 +18,15 @@ from submissions.services.grobid_extractor import (
 from submissions.services.verification import text_diff_html, title_similarity, titles_identical
 
 TITLE_AUTHOR_REVIEW_STATUSES = {"pending", "red_flag", "review_ok"}
+
+
+def publication_review_submissions():
+    return FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+    )
 
 
 class ManualOverrideError(ValueError):
@@ -575,15 +584,12 @@ def apply_title_author_manual_override(submission, title, authors, reason, refre
 
 
 def _needs_title_author_extraction_review(submission):
-    title_match = evaluate_extracted_title_match(submission)
     has_extraction = bool(submission.extracted_title or submission.extracted_authors)
     review_status = submission.title_author_review_status
     return bool(
         not has_extraction
         or review_status in {"pending", "red_flag"}
-        or title_match["needs_verification"]
         or submission.title_author_extraction_status == "error"
-        or title_match["status"] == "title_mismatch"
     )
 
 
@@ -595,7 +601,7 @@ def is_grobid_suspicious(submission):
 
 
 def extraction_overwrite_summary():
-    active = FinalSubmission.objects.filter(active_version=True, discarded=False)
+    active = publication_review_submissions()
     return {
         "active_count": active.count(),
         "with_extraction": active.filter(
@@ -610,7 +616,7 @@ def extract_active_title_authors(mode="needs_review"):
     extracted = 0
     errors = 0
     skipped = 0
-    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False)
+    submissions = publication_review_submissions()
     for submission in submissions:
         if mode != "all" and not _needs_title_author_extraction_review(submission):
             skipped += 1
@@ -629,7 +635,9 @@ def extract_active_title_authors(mode="needs_review"):
 def extract_grobid_for_suspicious_rows():
     extracted = 0
     errors = 0
-    submissions = list(FinalSubmission.objects.filter(active_version=True, discarded=False).order_by("pk"))
+    submissions = list(
+        publication_review_submissions().order_by("pk")
+    )
     candidates = [submission for submission in submissions if is_grobid_suspicious(submission)]
     skipped = len(submissions) - len(candidates)
     health_status = grobid_availability_status()
@@ -713,14 +721,26 @@ def set_title_author_review_status(submission, status):
     if status == "review_ok":
         submission.title_author_verified = True
         submission.title_author_verified_at = timezone.now()
+        if submission.extracted_title and submission.final_submission_title:
+            submission.extracted_title_verified = True
+            submission.extracted_title_auto_verify_blocked = False
+            submission.extracted_title_verified_at = timezone.now()
+            evaluate_extracted_title_match(submission, save=False)
     else:
         submission.title_author_verified = False
         submission.title_author_verified_at = None
+        submission.extracted_title_verified = False
+        submission.extracted_title_auto_verify_blocked = True
+        submission.extracted_title_verified_at = None
+        evaluate_extracted_title_match(submission, save=False)
     submission.save(
         update_fields=[
             "title_author_review_status",
             "title_author_verified",
             "title_author_verified_at",
+            "extracted_title_verified",
+            "extracted_title_auto_verify_blocked",
+            "extracted_title_verified_at",
             "updated_at",
         ]
     )
@@ -782,7 +802,14 @@ def evaluate_extracted_title_match(submission, save=True, apply=True):
         )
 
     is_identical = titles_identical(final_title, extracted_title)
-    is_verified = bool(extracted_title_verified)
+    is_verified = bool(
+        extracted_title_verified
+        or (
+            submission.title_author_review_status == "review_ok"
+            and extracted_title
+            and final_title
+        )
+    )
     return {
         "status": status,
         "score": score,
@@ -846,8 +873,8 @@ def unverify_extracted_title(submission):
     )
 
 
-def title_author_extraction_rows(query="", status_filter="pending"):
-    submissions = FinalSubmission.objects.filter(active_version=True, discarded=False).order_by(
+def title_author_extraction_rows(query="", status_filter="needs_verification"):
+    submissions = publication_review_submissions().order_by(
         "paper_id_filled", "final_submission_id"
     )
     if query:
@@ -866,15 +893,12 @@ def title_author_extraction_rows(query="", status_filter="pending"):
         title_match = evaluate_extracted_title_match(submission, save=False, apply=False)
         has_extraction = bool(submission.extracted_title or submission.extracted_authors)
         review_status = submission.title_author_review_status
-        needs_verification = has_extraction and (
-            review_status in {"pending", "red_flag"} or title_match["needs_verification"]
-        )
+        needs_verification = has_extraction and review_status in {"pending", "red_flag"}
         missing_extraction = not has_extraction
         needs_attention = bool(
             missing_extraction
             or needs_verification
             or submission.title_author_extraction_status == "error"
-            or title_match["status"] == "title_mismatch"
         )
         row = (
             {
@@ -906,20 +930,14 @@ def _title_author_row_matches(row, status_filter):
         return review_status == "red_flag"
     if status_filter == "review_ok":
         return review_status == "review_ok"
+    if status_filter == "reviewed_differences":
+        return bool(review_status == "review_ok" and not title_match["is_identical"])
     if status_filter == "missing":
         return row["missing_extraction"]
     if status_filter == "verified":
         return review_status == "review_ok"
     if status_filter == "errors":
         return submission.title_author_extraction_status == "error"
-    if status_filter == "title_match":
-        return bool(submission.extracted_title_verified)
-    if status_filter == "title_needs_match":
-        return bool(
-            submission.final_submission_title
-            and submission.extracted_title
-            and not submission.extracted_title_verified
-        )
     if status_filter == "manual_override":
         return submission.title_author_source == "manual_override"
     if status_filter == "title_mismatch":

@@ -4,160 +4,176 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Dashboard</h1>
-        <div class="cfm-page-subtitle">Start from the workflow below, then use Organized List as the main publication-prep checklist.</div>
+        <div class="cfm-page-subtitle">Publication readiness and the next editorial actions, using the same blockers as the final package export.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
     </div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 1</div>
-                <h2 class="h5">Data setup/import</h2>
-                <p class="text-muted flex-grow-1">Load the paper master list and final submission metadata/files before review work begins.</p>
-                <div class="d-flex flex-wrap gap-2">
-                    <a class="btn btn-outline-primary" href="{% url 'submissions:initial_paper_list' %}">Paper Master List</a>
-                    <a class="btn btn-outline-primary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
-                </div>
-            </div>
+<section class="cfm-section cfm-dashboard-readiness {% if readiness.ready %}cfm-dashboard-ready{% else %}cfm-dashboard-blocked{% endif %}">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <div class="text-muted small text-uppercase">Final publication readiness</div>
+            <h2 class="h4 mb-1">{% if readiness.ready %}Final package checks are clear{% else %}Final package is blocked{% endif %}</h2>
+            {% if readiness.ready %}
+                <p class="mb-0">The current publication candidates have no blocking readiness issues.</p>
+            {% elif readiness.blocking_paper_count %}
+                <p class="mb-0"><strong>{{ readiness.blocking_paper_count }} paper{{ readiness.blocking_paper_count|pluralize }}</strong> have {{ readiness.blocking_issue_count }} blocking check{{ readiness.blocking_issue_count|pluralize }}.</p>
+            {% else %}
+                <p class="mb-0">Complete the required system setup before creating a final package.</p>
+            {% endif %}
         </div>
+        <span class="badge fs-6 text-bg-{% if readiness.ready %}success{% else %}danger{% endif %}">{% if readiness.ready %}Ready{% else %}Blocked{% endif %}</span>
     </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 2</div>
-                <h2 class="h5">Verify paper IDs</h2>
-                <p class="text-muted flex-grow-1">Match final submissions back to the paper master list and resolve author-entered Paper ID issues.</p>
-                <div>
-                    <span class="badge text-bg-{% if counts.unverified_paper_ids %}warning{% else %}success{% endif %}">{{ counts.unverified_paper_ids }} unverified</span>
-                    <a class="btn btn-primary ms-2" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
-                </div>
-            </div>
+    {% if readiness.top_categories %}
+        <div class="d-flex flex-wrap gap-1 mt-3">
+            {% for category in readiness.top_categories %}
+                <span class="badge text-bg-light text-dark border">{{ category.label }}: {{ category.count }}</span>
+            {% endfor %}
         </div>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-{% if readiness.ready %}outline-success{% else %}danger{% endif %}" href="{% url 'submissions:error_report' %}">Open Error Report</a>
+        <a class="btn btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 3</div>
-                <h2 class="h5">Not publishing decisions</h2>
-                <p class="text-muted flex-grow-1">Classify finals not in the Paper Master List: correct the Paper ID or mark unpaid/withdrawn papers as not publishing.</p>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <span class="badge text-bg-{% if counts.unclassified_not_in_master %}danger{% else %}success{% endif %}">{{ counts.unclassified_not_in_master }} need decision</span>
-                    <span class="badge text-bg-secondary">{{ counts.excluded_from_publication }} current not publishing</span>
-                    <a class="btn btn-primary" href="{% url 'submissions:not_publishing_list' %}">Review</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 4</div>
-                <h2 class="h5">Process PDFs</h2>
-                <p class="text-muted flex-grow-1">Calculate page counts and hashes, generate previews, and refresh active/old publication files.</p>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <span class="badge text-bg-{% if counts.active_pdfs_need_processing %}warning{% else %}success{% endif %}">{{ counts.active_pdfs_need_processing }} need processing</span>
-                    <span class="badge text-bg-{% if counts.missing_pdfs %}danger{% else %}success{% endif %}">{{ counts.missing_pdfs }} missing PDFs</span>
-                    <a class="btn btn-primary ms-2" href="{% url 'submissions:process' %}">Process PDFs</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 5</div>
-                <h2 class="h5">Title/Author Extraction</h2>
-                <p class="text-muted flex-grow-1">Run extraction on active PDFs, then verify extracted title/authors and title matches.</p>
-                <div>
-                    <span class="badge text-bg-{% if counts.title_author_pending %}warning{% else %}success{% endif %}">{{ counts.title_author_pending }} Pending</span>
-                    <span class="badge text-bg-{% if counts.title_author_red_flag %}danger{% else %}success{% endif %}">{{ counts.title_author_red_flag }} Red Flag</span>
-                    <a class="btn btn-primary ms-2" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 6</div>
-                <h2 class="h5">Formatting Review</h2>
-                <p class="text-muted flex-grow-1">Review publication PDFs and corrected files, then mark formatting status for each active paper.</p>
-                <div>
-                    <span class="badge text-bg-{% if counts.format_not_ok %}warning{% else %}success{% endif %}">{{ counts.format_not_ok }} not OK</span>
-                    <a class="btn btn-primary ms-2" href="{% url 'submissions:formatting' %}">Formatting Review</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Step 7</div>
-                <h2 class="h5">Plagiarism results</h2>
-                <p class="text-muted flex-grow-1">Check imported Plagiarism % and Single % values against the configured thresholds.</p>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <span class="badge text-bg-{% if counts.missing_plagiarism_result %}warning{% else %}success{% endif %}">{{ counts.missing_plagiarism_result }} missing</span>
-                    <span class="badge text-bg-{% if counts.plagiarism_threshold_issue_papers %}danger{% else %}success{% endif %}">{{ counts.plagiarism_threshold_issue_papers }} papers over threshold</span>
-                    {% if counts.allowed_plagiarism_exceptions %}
-                        <span class="badge text-bg-info">{{ counts.allowed_plagiarism_exceptions }} allowed</span>
-                    {% endif %}
-                    {% if counts.stale_plagiarism_exceptions %}
-                        <span class="badge text-bg-warning">{{ counts.stale_plagiarism_exceptions }} stale</span>
-                    {% endif %}
-                    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="text-muted small text-uppercase">Final</div>
-                <h2 class="h5">Organized list/reports</h2>
-                <p class="text-muted flex-grow-1">Use the organized checklist to find remaining issues, then export active, old-version, error, and author-count reports.</p>
-                <div class="d-flex flex-wrap gap-2">
-                    <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
-                    <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+</section>
 
-<h2 class="h5 mb-3">System Overview</h2>
-<div class="vstack gap-3">
-    {% for section in metric_sections %}
-        <section class="cfm-section">
-            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
-                <div>
-                    <h3 class="h6 mb-1">{{ section.title }}</h3>
-                    <div class="text-muted small">{{ section.description }}</div>
-                </div>
+<div class="row g-3 align-items-start">
+    <div class="col-xl-8">
+        <section class="cfm-section mb-0">
+            <div class="mb-3">
+                <h2 class="h5 mb-1">Next actions</h2>
+                <div class="text-muted small">Only workflows with current publication blockers are listed.</div>
             </div>
-            <div class="row g-3">
-                {% for metric in section.metrics %}
-                    <div class="col-sm-6 col-xl-4">
-                        <div class="card h-100">
-                            <div class="card-body d-flex flex-column">
-                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                    <div class="text-muted small text-uppercase">{{ metric.label }}</div>
-                                    <span class="badge text-bg-{{ metric.level }}">{{ metric.status_label }}</span>
-                                </div>
-                                <div class="display-6 mb-2">{{ metric.value }}</div>
-                                <p class="text-muted small flex-grow-1 mb-3">{{ metric.help }}</p>
-                                {% if metric.action_url %}
-                                    <a class="btn btn-sm btn-outline-primary align-self-start" href="{{ metric.action_url }}">{{ metric.action_label }}</a>
+            {% if action_items %}
+                <div class="cfm-dashboard-actions">
+                    {% for item in action_items %}
+                        <div class="cfm-dashboard-action">
+                            <div class="cfm-dashboard-action-count">{{ item.count_label }}</div>
+                            <div class="cfm-dashboard-action-content">
+                                <div class="fw-semibold">{{ item.title }}</div>
+                                <div class="small text-muted">{{ item.description }}</div>
+                                {% if item.key == "files" %}
+                                    <div class="small mt-1">{{ counts.active_pdfs_need_processing }} need processing · {{ counts.missing_pdfs }} missing PDFs · {{ counts.page_minimum_errors|add:counts.page_limit_errors }} page issues</div>
+                                {% elif item.key == "title_authors" %}
+                                    <div class="small mt-1">{{ counts.title_author_pending }} Pending · {{ counts.title_author_red_flag }} Red Flag · {{ counts.missing_title_author_extraction }} missing extraction</div>
+                                {% elif item.key == "formatting" %}
+                                    <div class="small mt-1">{{ counts.format_pending }} Pending · {{ counts.format_needs_edit }} Needs edit</div>
+                                {% elif item.key == "plagiarism" %}
+                                    <div class="small mt-1">{{ counts.missing_plagiarism_result }} missing · {{ counts.plagiarism_threshold_issue_papers }} papers over threshold{% if counts.stale_plagiarism_exceptions %} · {{ counts.stale_plagiarism_exceptions }} stale exceptions{% endif %}</div>
+                                {% elif item.key == "mapping" %}
+                                    <div class="small mt-1">{{ counts.unverified_paper_ids }} unverified · {{ counts.unclassified_not_in_master }} need decision · {{ counts.start2_editor_conflicts }} Start2/Editor Conflicts · {{ counts.missing_final_submissions }} missing finals</div>
+                                {% elif item.key == "authors" %}
+                                    <div class="small mt-1">{{ counts.papers_over_author_number_limit }} papers over author limit · {{ counts.authors_over_limit }} authors over paper-count limit · {{ counts.duplicate_author_papers }} duplicate-author reviews</div>
                                 {% endif %}
                             </div>
+                            <div><a class="btn btn-sm btn-outline-primary" href="{{ item.action_url }}">{{ item.action_label }}</a></div>
                         </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-success border mb-0">No publication workflows currently need attention.</div>
+            {% endif %}
+            {% if completed_checks %}
+                <div class="cfm-dashboard-completed mt-3 pt-3 border-top">
+                    <div class="small text-muted mb-1">No current blockers</div>
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for label in completed_checks %}<span class="badge text-bg-success">{{ label }}</span>{% endfor %}
                     </div>
+                </div>
+            {% endif %}
+        </section>
+    </div>
+    <div class="col-xl-4">
+        <section class="cfm-section">
+            <h2 class="h5 mb-3">Conference totals</h2>
+            <div class="cfm-dashboard-totals">
+                {% for item in conference_totals %}
+                    <a class="cfm-dashboard-total" href="{{ item.url }}">
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </a>
                 {% endfor %}
             </div>
         </section>
-    {% endfor %}
+        <section class="cfm-section mb-0">
+            <h2 class="h5 mb-3">Tracked information</h2>
+            {% for item in tracking_items %}
+                <div class="cfm-dashboard-tracking {% if not forloop.last %}mb-3 pb-3 border-bottom{% endif %}">
+                    <div class="d-flex justify-content-between gap-2">
+                        <a href="{{ item.url }}">{{ item.label }}</a>
+                        <strong>{{ item.value }}</strong>
+                    </div>
+                    <div class="small text-muted">{{ item.help }}</div>
+                </div>
+            {% endfor %}
+        </section>
+    </div>
 </div>
+
+<style>
+    .cfm-dashboard-readiness {
+        border-left-width: 5px;
+    }
+    .cfm-dashboard-blocked {
+        border-left-color: #dc3545 !important;
+    }
+    .cfm-dashboard-ready {
+        border-left-color: #198754 !important;
+    }
+    .cfm-dashboard-action {
+        align-items: center;
+        border-top: 1px solid var(--cfm-border);
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto;
+        padding: 0.9rem 0;
+    }
+    .cfm-dashboard-action:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+    .cfm-dashboard-action:last-child {
+        padding-bottom: 0;
+    }
+    .cfm-dashboard-action-count {
+        background: #fff1f2;
+        border: 1px solid #dc3545;
+        border-radius: 0.375rem;
+        color: #842029;
+        font-weight: 600;
+        padding: 0.35rem 0.55rem;
+        text-align: center;
+    }
+    .cfm-dashboard-total {
+        align-items: center;
+        border-top: 1px solid var(--cfm-border);
+        color: inherit;
+        display: flex;
+        justify-content: space-between;
+        padding: 0.65rem 0;
+        text-decoration: none;
+    }
+    .cfm-dashboard-total:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+    .cfm-dashboard-total:last-child {
+        padding-bottom: 0;
+    }
+    .cfm-dashboard-total:hover {
+        color: var(--bs-primary);
+    }
+    @media (max-width: 767.98px) {
+        .cfm-dashboard-action {
+            align-items: start;
+            grid-template-columns: 1fr;
+        }
+        .cfm-dashboard-action-count {
+            justify-self: start;
+        }
+    }
+</style>
 {% endblock %}

@@ -24,6 +24,15 @@
         }
         body {
             background: var(--cfm-bg);
+            display: flex;
+            min-height: 100vh;
+            flex-direction: column;
+        }
+        main {
+            flex: 1 0 auto;
+        }
+        footer {
+            flex-shrink: 0;
         }
         .navbar-brand {
             display: inline-flex;
@@ -201,6 +210,30 @@
             color: #111827;
             font-weight: 600;
         }
+        .cfm-filter-groups {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+        }
+        .cfm-filter-group + .cfm-filter-group {
+            border-top: 1px solid var(--cfm-border);
+            margin-top: 0.65rem;
+            padding-top: 0.65rem;
+        }
+        .cfm-filter-group-label {
+            color: var(--cfm-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+            text-transform: uppercase;
+        }
+        .cfm-filter-group-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
         .cfm-tab-count {
             font-size: 0.72rem;
             line-height: 1;
@@ -286,6 +319,13 @@
         .cfm-table {
             margin-bottom: 0;
         }
+        .cfm-table-sticky thead th {
+            background: #f3f4f6;
+            box-shadow: inset 0 -2px 0 var(--cfm-border-strong);
+            position: sticky;
+            top: 0;
+            z-index: 3;
+        }
         .cfm-empty {
             background: var(--cfm-surface);
             border: 1px dashed var(--cfm-border);
@@ -342,52 +382,55 @@
                 <li class="nav-item">
                     <a class="nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'submissions:dashboard' %}" {% if current_url == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
                 </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'organized_list' or current_url == 'verify_paper_ids' or current_url == 'not_publishing_list' or current_url == 'process' or current_url == 'title_author_extraction' or current_url == 'formatting' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Workflow
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'organized_list' %}active{% endif %}" href="{% url 'submissions:organized_list' %}">Organized List</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'verify_paper_ids' %}active{% endif %}" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'not_publishing_list' %}active{% endif %}" href="{% url 'submissions:not_publishing_list' %}">Not Publishing List</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'process' %}active{% endif %}" href="{% url 'submissions:process' %}">Process PDFs</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'title_author_extraction' %}active{% endif %}" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'formatting' %}active{% endif %}" href="{% url 'submissions:formatting' %}">Formatting Review</a></li>
-                    </ul>
-                </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' or current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Data
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' %}active{% endif %}" href="{% url 'submissions:initial_paper_list' %}">Paper Master List</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' %}active{% endif %}" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a></li>
-                    </ul>
-                </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'exceptions_center' or current_url == 'author_count' or current_url == 'audit_log' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Reports
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'export_reports' %}active{% endif %}" href="{% url 'submissions:export_reports' %}">Export Reports</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'active_versions' %}active{% endif %}" href="{% url 'submissions:active_versions' %}">Active Final Versions</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'old_versions' %}active{% endif %}" href="{% url 'submissions:old_versions' %}">Old Versions</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}">Error Report</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}">Exceptions</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}">Author Count</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'audit_log' %}active{% endif %}" href="{% url 'submissions:audit_log' %}">Audit Log</a></li>
-                    </ul>
-                </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'integration' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Integrations
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}">CrossCheck / System Backup</a></li>
-                    </ul>
-                </li>
                 <li class="nav-item">
-                    <a class="nav-link {% if current_url == 'settings' %}active{% endif %}" href="{% url 'submissions:settings' %}" {% if current_url == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+                    <a class="nav-link {% if current_url == 'organized_list' %}active{% endif %}" href="{% url 'submissions:organized_list' %}" {% if current_url == 'organized_list' %}aria-current="page"{% endif %}>Organized List</a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' or current_url == 'import_initial_papers' or current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' or current_url == 'import_final_submissions' or current_url == 'editor_upload' or current_url == 'not_publishing_list' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Submissions
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' or current_url == 'import_initial_papers' %}active{% endif %}" href="{% url 'submissions:initial_paper_list' %}">Paper Master List</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' or current_url == 'import_final_submissions' %}active{% endif %}" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'editor_upload' %}active{% endif %}" href="{% url 'submissions:editor_upload' %}">Editor Upload</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'not_publishing_list' %}active{% endif %}" href="{% url 'submissions:not_publishing_list' %}">Not Publishing</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'verify_paper_ids' or current_url == 'process' or current_url == 'title_author_extraction' or current_url == 'formatting' or current_url == 'exceptions_center' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Reviews
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item {% if current_url == 'verify_paper_ids' %}active{% endif %}" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'process' %}active{% endif %}" href="{% url 'submissions:process' %}">Process PDFs</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'title_author_extraction' %}active{% endif %}" href="{% url 'submissions:title_author_extraction' %}">Title/Author Review</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'formatting' %}active{% endif %}" href="{% url 'submissions:formatting' %}">Formatting Review</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}">Exceptions</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'author_count' or current_url == 'integration' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Output
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}">Error Report</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}">Author Count</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'active_versions' %}active{% endif %}" href="{% url 'submissions:active_versions' %}">Publication Candidates</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'old_versions' %}active{% endif %}" href="{% url 'submissions:old_versions' %}">Old Versions</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'export_reports' %}active{% endif %}" href="{% url 'submissions:export_reports' %}">Export Reports</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}">Plagiarism / CrossCheck</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if current_url == 'audit_log' or current_url == 'system_state' or current_url == 'settings' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        System
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item {% if current_url == 'audit_log' %}active{% endif %}" href="{% url 'submissions:audit_log' %}">Audit Log</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'system_state' %}active{% endif %}" href="{% url 'submissions:system_state' %}">System Backup / Restore</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'settings' %}active{% endif %}" href="{% url 'submissions:settings' %}">Settings</a></li>
+                    </ul>
                 </li>
             </ul>
             <div class="navbar-text ms-lg-3 text-light fw-semibold">

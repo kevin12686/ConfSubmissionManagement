@@ -39,18 +39,18 @@ Create Final Submission records and files:
 1. Configure Settings, including conference name, page limits, author limits, plagiarism thresholds, timezone, folders, and active-version rule.
 2. Import the Paper Master List and verify preview sorting places changed/new rows above unchanged rows.
 3. Import Final Submission metadata and upload matching PDF/source files. Confirm preview sorting places mapping/file/reset issues above unchanged rows.
-4. Open Dashboard and confirm process-needed, mapping, extraction, formatting, plagiarism, conflict, and Not Publishing metrics are visible when applicable.
+4. Open Dashboard and confirm its blocking check count matches the current final-package readiness rows. Only workflows with blockers should appear under Next actions; clear workflows should appear under No current blockers.
 5. Open Verify Paper IDs. Correct P003 and verify only after it maps to a valid Paper Master record.
 6. Mark P004 as Not Publishing and confirm it moves out of publication blockers while remaining visible in the Not Publishing List.
 7. Create the Editor Upload for P007. Confirm the title guard compares PDF title against Paper Master title and Final Title, then verify the Start2/Editor conflict warning appears.
 8. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
-9. Run Process PDFs. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated.
-10. Run Title/Author Extraction for needs-review records. Review extracted title/authors, title-match status, red flags, and verification images. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
-11. Open Formatting Review. Use list mode and single-paper mode, upload a corrected PDF/source for one paper, confirm the corrected PDF title guard, then re-run Process PDFs.
+9. Run Process PDFs. Confirm only current Paper Master publication candidates are processed; discarded, Not Publishing, invalid-ID, and historical versions must not create processing errors. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated. Confirm all matching thumbnail strips remain expanded and the `Page issues` filter narrows papers without hiding pages inside a paper.
+10. Run Title/Author Review for needs-review records. Review extracted title/authors, title differences, red flags, and verification images together. Confirm that Review OK is the only completion action and no second title-match confirmation appears. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
+11. Open Formatting Review. Confirm list mode is a compact queue and expands the selected paper with `Review paper`. Use single-paper mode, upload a corrected PDF/source for one paper, confirm the corrected PDF title guard, then re-run Process PDFs.
 12. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
-13. Open Author Count. Confirm publication paper count is per normalized author and duplicate-author warnings are reviewable.
-14. Open Exceptions. Approve P008 only with a note; confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again.
-15. Open Organized List and Error Report. Confirm remaining blockers are understandable and grouped by severity.
+13. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
+14. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again.
+15. Open Final Submission Edit from Organized List, Title/Author Review, Formatting Review, and Not Publishing. Confirm Save returns to the same worklist/filter. Confirm version discard is under the collapsed bottom `Version actions` section and still requires a reason. Then open Organized List and Error Report and confirm remaining blockers are understandable and grouped by severity.
 16. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
 17. Resolve all blockers and export the final publication package.
 18. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
@@ -59,6 +59,8 @@ Create Final Submission records and files:
 ## Acceptance Checks
 
 - Import preview never mutates records or files before Apply.
+- Dashboard and Final Publication Package export use the same readiness blockers; Dashboard must never show Ready when strict final export is blocked.
+- Dashboard paper counts use active publication papers and do not count inactive old versions or count one paper twice merely because it has multiple findings.
 - Re-uploaded PDFs/sources reset only dependent review/check flags.
 - Corrected PDFs are first priority for publication-facing links, CrossCheck export, duplicate checks, and publication packages.
 - If no corrected PDF exists, the original active-submission PDF is the publication-facing PDF source.
@@ -66,6 +68,8 @@ Create Final Submission records and files:
 - Editor Uploads are active over Start2 until the conflict is resolved, but unresolved conflicts block final publication export.
 - Discarded versions remain traceable and appear as old versions, not current publication candidates.
 - Not Publishing records remain traceable but are excluded from publication readiness and final packages.
+- Not Publishing and invalid-ID records are excluded from Title/Author and Formatting review queues; invalid-ID records remain visible in mapping/readiness workflows.
+- Final Submission Edit cannot directly change processing, Title/Author Review, duplicate-author review, or Not Publishing state; those states are owned by their dedicated workflows.
 - Old Versions classifies inactive records as Replaced, Discarded, or Other inactive; Not Publishing appears only as a secondary flag.
 - Error Report separates Critical, Medium, and Info items.
 - Allowed exceptions do not block final export while their approved value still matches the current value.

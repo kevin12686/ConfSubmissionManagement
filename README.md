@@ -102,7 +102,7 @@ machine hostname or IP address to `SMS_ALLOWED_HOSTS`.
 1. Install Python 3.12 or newer.
 2. Copy the whole `SubmissionManagementSystem` folder.
 3. Start the app with `start.command`, `start_windows.bat`, or `./scripts/start_local.sh`.
-4. If you have a System State ZIP, open `/integrations/crosscheck/` and use `Restore System State`.
+4. If you have a System State ZIP, open `/integrations/system-state/` and preview the restore before applying it.
 
 The first run needs internet access to install Python packages from `requirements.txt`. After that, normal local use is offline except for Bootstrap CDN assets in the browser UI.
 
@@ -123,14 +123,16 @@ System State ZIP files are portable. They restore settings, conference name, dat
 3. Import Final Submission metadata plus PDF/source files from CSV/XLSX and uploaded files.
 4. Resolve Paper ID mapping, Not Publishing decisions, and Start2/Editor Upload conflicts.
 5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies.
-6. Run and review Title/Author Extraction. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
+6. Run Title/Author Review. Extraction, the verification image, title comparison, and authors are reviewed together; `Review OK` is the single completion state. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
 8. Export PDFs for CrossCheck/plagiarism, import Plagiarism % and Single %, and upload optional report PDFs.
 9. Review author counts, duplicate authors, page exceptions, author-limit exceptions, and plagiarism score exceptions. Paper-level exceptions can be handled from Organized List; author paper-count exceptions remain in Author Count / Exceptions.
-10. Use Organized List and Error Report as the publication readiness checklist.
+10. Use Dashboard, Organized List, and Error Report as the publication readiness checklist. Dashboard uses the same blocking checks as final package export.
 11. Export the final publication package, or download a clearly marked draft package if blockers still exist.
 12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.
 13. Download a System State ZIP before moving machines or archiving a conference.
+
+Large worklists are organized for editorial scanning: Final Submissions keeps Batch Upload collapsed until needed, Formatting Review uses a compact list with per-paper expansion plus Single Paper Mode, and Process PDFs keeps every selected paper's complete thumbnail strip expanded so blank pages remain easy to spot. Process PDFs, Author Count, Exceptions, and Publication Candidates provide focused search or filters without changing publication scope.
 
 ## Current Final Publication Version Rules
 
@@ -160,14 +162,14 @@ Legacy fields such as `current_file_path`, `source_current_file_path`, `active_f
 
 ## Important Pages
 
-- `/` Dashboard
+- `/` Dashboard: final-package readiness and only the editorial workflows that currently need action
 - `/papers/` Paper Master List
 - `/submissions/` Final Submissions
 - `/submissions/editor-upload/` Editor Upload
 - `/submissions/organized/` Organized List
 - `/processing/pdfs/` Process PDFs
 - `/reviews/paper-ids/` Verify Paper IDs
-- `/reviews/title-authors/` Title/Author Extraction
+- `/reviews/title-authors/` Title/Author Review
 - `/reviews/formatting/` Formatting Review
 - `/reviews/not-publishing/` Not Publishing List
 - `/reviews/exceptions/` Exceptions
@@ -175,7 +177,9 @@ Legacy fields such as `current_file_path`, `source_current_file_path`, `active_f
 - `/reports/author-count/` Author Count
 - `/reports/audit-log/` Audit Log
 - `/reports/` Export Reports
-- `/integrations/crosscheck/` CrossCheck / Plagiarism and System Backup
+- `/reports/active-versions/` Publication Candidates
+- `/integrations/crosscheck/` Plagiarism / CrossCheck
+- `/integrations/system-state/` System Backup / Restore
 - `/settings/` Settings and Storage Management
 
 ## Templates

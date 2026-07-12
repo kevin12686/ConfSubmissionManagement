@@ -8,7 +8,12 @@ from django.conf import settings as django_settings
 from django.db import transaction
 from pypdf import PdfReader
 
-from submissions.models import AppSetting, FinalSubmission, sync_final_submission_state_records
+from submissions.models import (
+    AppSetting,
+    FinalSubmission,
+    InitialPaper,
+    sync_final_submission_state_records,
+)
 from submissions.services.checks import reset_page_limit_exception
 from submissions.services.file_manager import (
     sanitize_filename_part,
@@ -213,7 +218,13 @@ def process_all_pdfs(force=False):
         skipped = 0
         errors = 0
         error_rows = []
-        for submission in FinalSubmission.objects.all():
+        publication_submissions = FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+        )
+        for submission in publication_submissions:
             result = process_submission_pdf(submission, force=force)
             if result is True:
                 processed += 1
@@ -249,6 +260,7 @@ def process_all_pdfs(force=False):
                 "debug_synced": debug_result["synced_count"],
                 "debug_skipped": debug_result["skipped_count"],
                 "force": force,
+                "scope": "publication_candidates",
             },
             extra={"error_rows": error_rows[:20], "debug_manifest": debug_result["manifest_path"]},
         )
@@ -260,9 +272,12 @@ def process_all_pdfs(force=False):
 
 def processed_pdf_rows(limit=100):
     rows = []
-    for submission in FinalSubmission.objects.exclude(page_count__isnull=True).order_by(
-        "paper_id_filled", "final_submission_id"
-    )[:limit]:
+    for submission in FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+    ).exclude(page_count__isnull=True).order_by("paper_id_filled", "final_submission_id")[:limit]:
         rows.append(
             {
                 "submission": submission,

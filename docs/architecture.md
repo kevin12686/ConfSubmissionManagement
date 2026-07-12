@@ -18,7 +18,8 @@ Core route groups:
 - `/processing/pdfs/`: page count, hashes, thumbnails, publication debug copies, and active-version recalculation.
 - `/reports/`: readiness reports, author count, version history, and publication exports.
 - `/reports/audit-log/`: searchable audit trail and raw audit log download.
-- `/integrations/crosscheck/`: CrossCheck/plagiarism package export/import and System State Backup/Restore.
+- `/integrations/crosscheck/`: plagiarism/CrossCheck package export, score import, and report upload.
+- `/integrations/system-state/`: complete System State backup and preview-before-apply restore.
 - `/settings/`: app settings, active-version rule preview, storage management, and clear database.
 
 ## FinalSubmission State Split
@@ -41,10 +42,16 @@ The split supports gradual refactoring. Reads can move to state models one workf
 - Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
 - Not Publishing is paper/publication-decision-level: it keeps records for traceability but excludes the paper from publication readiness and package output.
 - Publication PDF priority is corrected PDF, then original author PDF.
+
+Dashboard readiness is derived from `publication_readiness_rows()`, the same service used to block Final Publication Package export. Controllers may group those rows for display, but must not recreate publication-blocking rules with independent counters. Dashboard workflow counts represent unique affected papers; the readiness header separately reports the number of individual blocker rows.
 - Publication source priority is corrected source, then original source.
 - Active version selection is previewed before changing the active-version rule in Settings.
 - Import/re-upload workflows are preview-before-apply when they may change existing records or files.
 - Review flags are reset only when dependent data changes.
+- Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
+- Editorial worklists preserve navigation context when they link into Final Submission Edit. The return URL is restricted to the local host. Destructive version actions are visually and structurally separated from ordinary metadata save operations.
+- Formatting Review exposes a compact list plus a full Single Paper Mode. Process PDFs deliberately keeps complete page-thumbnail strips expanded, with search/page-range filters only narrowing which papers are shown.
+- `Review OK` is the single Title/Author completion decision. The Final-versus-extracted title comparison remains visible evidence; a reviewed difference is tracked but does not create a second blocker.
 
 ## Current Publication Resolution
 
@@ -74,7 +81,7 @@ Publication file resolution is implemented in `submissions/services/file_manager
 
 `publication_source_info()` resolves corrected source, then original uploaded source.
 
-This distinction matters. Process PDFs calculates page/hash/thumbnails from the same Corrected/Original PDF source and may sync `data/publication_pdf_debug/` for inspection, but that debug folder is not read by publication package export, CrossCheck export, duplicate checks, or publication-facing links.
+This distinction matters. Process PDFs recalculates active versions and then calculates page/hash/thumbnails only for current, non-discarded, non-Not-Publishing submissions whose Paper ID is in Paper Master. It may sync `data/publication_pdf_debug/` for inspection, but that debug folder is not read by publication package export, CrossCheck export, duplicate checks, or publication-facing links.
 
 Legacy `current_file_path`, `source_current_file_path`, `active_final_folder`, and `old_versions_folder` values are retained for compatibility with older restored data and debug traces. They are not publication source-of-truth fields.
 

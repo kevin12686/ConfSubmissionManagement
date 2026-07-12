@@ -10,8 +10,23 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:exceptions_center' %}">Exceptions</a>
     </div>
 </div>
+<ul class="nav nav-tabs cfm-tabs">
+    {% for option in filter_options %}
+        <li class="nav-item">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                {{ option.label }} <span class="badge cfm-tab-count text-bg-{% if option.value == 'attention' or option.value == 'over_limit' or option.value == 'duplicates' %}warning{% elif option.value == 'allowed' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+<form method="get" class="cfm-filter-panel d-flex gap-2">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search normalized name, display name, or Paper ID">
+    <button class="btn btn-outline-secondary">Search</button>
+    {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:author_count' %}">Reset</a>{% endif %}
+</form>
 <div class="table-responsive">
-    <table class="table table-striped align-middle cfm-table">
+    <table class="table table-striped align-middle cfm-table cfm-table-sticky">
         <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
         <tbody>
         {% for row in rows %}

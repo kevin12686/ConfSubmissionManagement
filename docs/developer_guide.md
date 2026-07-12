@@ -104,6 +104,25 @@ Do not put processing or integration logic directly in views.
 
 Organized List may expose paper-level exception actions, but it must reuse `exceptions.py` row builders and approve/remove services. Do not duplicate page/author/plagiarism exception validity rules in templates or controllers. Author paper-count exceptions remain author-level and belong in Author Count / Exceptions, not a single paper row.
 
+Organized List `Details` is the publication-record view for the active row. Its
+authors must come from that submission's `extracted_authors`, and its files must
+come from the publication-facing helpers. Do not substitute Paper Master authors,
+another Final Submission version, legacy current paths, or debug copies as the
+publication source.
+
+For display, the Details author list is parsed with the shared `split_authors()`
+helper and numbered in publication order. This is presentation only; never
+rewrite `extracted_authors` while preparing the display list.
+
+## Worklist UI Conventions
+
+- Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
+- Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
+- Formatting list mode is a compact queue with per-paper expansion; Single Paper Mode remains the full sequential workspace.
+- Process PDF thumbnail strips remain expanded by design. Search and page-range filters may narrow rows, but the UI must not hide pages inside a matching paper.
+- Destructive actions such as discard belong in a clearly separated, collapsed action area rather than before normal edit fields.
+- Search/filter logic belongs in selectors/controllers and must not alter publication candidates, active-version rules, review flags, or export scope.
+
 ## Data And Review Reset Rules
 
 When changing data that affects a review, reset only dependent review flags.
@@ -117,7 +136,17 @@ Examples:
 - Changed Paper Master notes must not reset any review/check status.
 - Active-version rule changes must be previewed and applied without resetting review flags.
 
+Workflow ownership is also a reset-safety boundary. `FinalSubmissionForm` must not expose processing messages/status, Title/Author Review status, duplicate-author review, or Not Publishing fields. Use the dedicated services and pages so required resets and audit events cannot be bypassed.
+
 Prefer preview-before-apply for imports, re-uploads, restore, and any setting change that can materially alter current publication candidates.
+
+## Dashboard Readiness Rules
+
+Dashboard must consume `publication_readiness_rows()` through the application selector. Do not build a second list of blockers from `dashboard_counts()`; otherwise Dashboard can appear clear while final export is blocked.
+
+`dashboard_counts()` is for display details, conference totals, and non-blocking tracking information. Counts labeled as papers must deduplicate by active publication paper. Inactive, discarded, and Not Publishing versions must not inflate active issue counts. Keep verified/reviewed title differences separate from unverified title-mapping blockers. Title/Author `Review OK` is the completion decision for both extracted metadata and its title comparison; do not add a second publication blocker for a reviewed title difference.
+
+When adding or renaming a publication readiness category, update the Dashboard workflow category grouping and add an acceptance test proving Dashboard and final package export still agree.
 
 ## File Handling Rules
 
@@ -127,14 +156,14 @@ Use app-managed file helpers instead of ad hoc path logic.
 - `publication_pdf_info()` is publication-facing output: corrected PDF, then original PDF.
 - `publication_source_info()` is publication-facing output: corrected source, then original source.
 - `publication_debug_pdf_info()` describes generated inspection copies. It is never the source for publication package export or CrossCheck export.
-- Publication package export, CrossCheck export, duplicate checks, Organized List publication links, and Active Versions use publication-facing helpers.
+- Publication package export, CrossCheck export, duplicate checks, Organized List publication links, and Publication Candidates use publication-facing helpers.
 - Final Submissions list file links are row-scoped display links and intentionally show only Original/Corrected files for that row, not another active submission's publication files.
 - Do not delete old uploads for traceability.
 - Do not expose editable path text fields for user-managed files when upload/link UI is safer.
 - System State backup must include referenced review artifacts, including title/author verification images, PDF thumbnails, and format previews.
 - System State restore must remap files into the current project `data/` tree and must not preserve old machine-specific absolute paths.
 
-Process PDFs is not a read-only page-count operation. It calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, recalculates active versions, rebuilds author cache, and syncs the publication PDF debug folder. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
+Process PDFs is not a read-only page-count operation. It recalculates active versions, then processes only Paper Master publication candidates that are active, undiscarded, and not Not Publishing. For those candidates it calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, rebuilds author cache, and syncs the publication PDF debug folder. Historical, discarded, Not Publishing, and invalid-ID records must not create processing errors. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
 
 ## Audit Logging Requirements
 

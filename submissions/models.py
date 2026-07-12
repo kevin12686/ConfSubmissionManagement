@@ -284,6 +284,17 @@ class FinalSubmission(models.Model):
             and self.page_limit_exception_page_count == self.page_count
         )
 
+    @property
+    def title_match_review_complete(self):
+        return bool(
+            self.extracted_title
+            and self.final_submission_title
+            and (
+                self.extracted_title_verified
+                or self.title_author_review_status == "review_ok"
+            )
+        )
+
     def save(self, *args, **kwargs):
         if self.pdf_file and not self.original_file_name:
             self.original_file_name = self.pdf_file.name.split("/")[-1]

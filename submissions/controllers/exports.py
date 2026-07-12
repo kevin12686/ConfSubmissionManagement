@@ -150,7 +150,11 @@ def download_template(request, template_type):
         writer.writerow(["9001", "R003", "Extracted Title", "Ada Lovelace; Alan Turing", "clear", "4.25", "1.50", "data/plagiarism_reports/R003.pdf"])
     return response
 def active_versions(request):
-    return render(request, "submissions/active_versions.html", active_versions_context())
+    return render(
+        request,
+        "submissions/active_versions.html",
+        active_versions_context(request.GET.get("q", "").strip()),
+    )
 
 
 def old_versions(request):
@@ -175,7 +179,64 @@ def error_report(request):
 
 
 def author_count(request):
-    return render(request, "submissions/author_count.html", {"rows": author_count_rows()})
+    q = request.GET.get("q", "").strip()
+    current_filter = request.GET.get("filter", "all")
+    valid_filters = {"all", "attention", "over_limit", "duplicates", "allowed"}
+    if current_filter not in valid_filters:
+        current_filter = "all"
+    all_rows = author_count_rows()
+    if q:
+        lowered_query = q.casefold()
+        all_rows = [
+            row
+            for row in all_rows
+            if lowered_query
+            in " ".join(
+                [
+                    row["normalized_author_name"],
+                    row["display_author_name"],
+                    row["paper_ids"],
+                ]
+            ).casefold()
+        ]
+    predicates = {
+        "attention": lambda row: row["over_limit"] or bool(row["duplicate_author_papers"]),
+        "over_limit": lambda row: row["over_limit"],
+        "duplicates": lambda row: bool(row["duplicate_author_papers"]),
+        "allowed": lambda row: row["over_limit"] and row["waiver_valid"],
+    }
+    rows = (
+        [row for row in all_rows if predicates[current_filter](row)]
+        if current_filter in predicates
+        else all_rows
+    )
+    counts = {
+        "all": len(all_rows),
+        **{
+            key: sum(1 for row in all_rows if predicate(row))
+            for key, predicate in predicates.items()
+        },
+    }
+    filter_options = [
+        {"value": "all", "label": "All"},
+        {"value": "attention", "label": "Needs attention"},
+        {"value": "over_limit", "label": "Over limit"},
+        {"value": "duplicates", "label": "Duplicate in paper"},
+        {"value": "allowed", "label": "Allowed exceptions"},
+    ]
+    return render(
+        request,
+        "submissions/author_count.html",
+        {
+            "rows": rows,
+            "q": q,
+            "current_filter": current_filter,
+            "filter_options": [
+                {**option, "count": counts[option["value"]]}
+                for option in filter_options
+            ],
+        },
+    )
 def export_reports(request):
     if request.method == "POST":
         action = request.POST.get("action")

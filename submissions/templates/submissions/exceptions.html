@@ -21,13 +21,33 @@
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
-            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}&type={{ current_type }}{% if q %}&q={{ q|urlencode }}{% endif %}">
                 {{ option.label }}
                 <span class="badge cfm-tab-count text-bg-{% if option.value == 'not_allowed' %}danger{% elif option.value == 'allowed' %}info{% elif option.value == 'stale' %}warning{% else %}secondary{% endif %}">{{ option.count }}</span>
             </a>
         </li>
     {% endfor %}
 </ul>
+
+<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <div class="col-lg-6">
+        <label class="form-label" for="exception-search">Search</label>
+        <input id="exception-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Paper ID, Final ID, author, type, or reason">
+    </div>
+    <div class="col-lg-4">
+        <label class="form-label" for="exception-type">Exception type</label>
+        <select id="exception-type" class="form-select" name="type">
+            {% for option in type_options %}
+                <option value="{{ option.value }}" {% if option.value == current_type %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-lg-2 d-flex gap-2">
+        <button class="btn btn-outline-secondary flex-fill">Apply</button>
+        {% if q or current_type != "all" %}<a class="btn btn-outline-secondary" href="?filter={{ current_filter }}">Reset</a>{% endif %}
+    </div>
+</form>
 
 <div class="vstack gap-3">
     {% for row in rows %}
@@ -87,12 +107,14 @@
                 {% if row.status == "allowed" %}
                     <form method="post" class="d-flex justify-content-end">
                         {% csrf_token %}
+                        <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
                         <input type="hidden" name="exception_key" value="{{ row.key }}">
                         <button class="btn btn-outline-danger" name="action" value="remove_exception">Remove exception</button>
                     </form>
                 {% else %}
                     <form method="post" class="row g-2 align-items-end">
                         {% csrf_token %}
+                        <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
                         <input type="hidden" name="exception_key" value="{{ row.key }}">
                         <div class="col-lg-9">
                             <label class="form-label" for="reason-{{ forloop.counter }}">Required reason</label>

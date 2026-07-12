@@ -225,7 +225,7 @@ def final_submission_list(request):
                 extra={"action": action},
             )
             messages.error(request, str(exc))
-        return redirect("submissions:final_submission_list")
+        return redirect(request.get_full_path())
     q = _search_query(request)
     current_filter = request.GET.get("filter", "all")
     return render(

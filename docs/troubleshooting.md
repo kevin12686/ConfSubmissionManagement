@@ -67,6 +67,12 @@ The app uses file extension to identify PDFs and source files, so misplaced uplo
 
 ## Processing And Review
 
+### Dashboard looks clear but final export is blocked
+
+Dashboard and final package export use the same readiness service. Refresh the page after an import or review action. If they still disagree, do not force the final package; record the categories shown by Export Reports and inspect Audit Log. A disagreement is a system defect, not an editorial condition to work around.
+
+The Dashboard header distinguishes affected papers from blocking checks. One paper can have several checks, so the two numbers do not always match.
+
 ### Dashboard shows Process PDFs needed
 
 Run `/processing/pdfs/`. This alert means an active publication PDF source exists but page count, hash, thumbnails, or debug-copy refresh is missing or stale.
@@ -115,7 +121,7 @@ Corrected PDF upload also runs a title guard. A mismatch does not forbid saving,
 
 ### Title/Author extraction is wrong
 
-Use the Title/Author page:
+Use Title/Author Review:
 
 - Mark Red Flag if the PDF formatting likely needs correction.
 - Correct formatting and upload a corrected PDF/source if needed.
@@ -232,7 +238,7 @@ Conservative cleanup selects only unreferenced generated cache. It does not sele
 
 ### Thumbnails or previews are missing
 
-Run Process PDFs for page thumbnails. Run Title/Author Extraction for verification images. Referenced thumbnails and previews are not removed by conservative cleanup.
+Run Process PDFs for page thumbnails. Run Title/Author Review extraction for verification images. Referenced thumbnails and previews are not removed by conservative cleanup.
 
 If they are missing after a System State restore, the ZIP may have been created by an older app version that did not include all review artifacts. Use a fresh System State ZIP from the original machine when possible; otherwise regenerate the missing artifacts and re-check the affected reviews before final export.
 

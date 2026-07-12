@@ -132,5 +132,10 @@ def process_pdfs_view(request):
             messages.success(request, "PDF processing completed.")
         elif action == "reprocess":
             messages.success(request, "PDF reprocessing completed.")
-    context.update(processed_pdf_context())
+    context.update(
+        processed_pdf_context(
+            request.GET.get("q", "").strip(),
+            request.GET.get("filter", "all"),
+        )
+    )
     return render(request, "submissions/process.html", context)

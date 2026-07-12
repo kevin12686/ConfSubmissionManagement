@@ -92,7 +92,7 @@
                             </div>
                         </form>
                         <div class="mt-1">
-                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit Paper ID</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit Paper ID</a>
                         </div>
                     </td>
                 </tr>
@@ -147,7 +147,7 @@
                                 <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                 <button class="btn btn-sm btn-outline-secondary" name="action" value="undo_not_publishing">Undo</button>
                             </form>
-                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Edit</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>
                         </div>
                     </td>
                 </tr>

@@ -95,7 +95,6 @@
                             <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
-                        <div class="small text-muted text-break">{{ row.publication_pdf.path|truncatechars:80 }}</div>
                     {% else %}
                         <span class="badge text-bg-warning">No PDF</span>
                     {% endif %}

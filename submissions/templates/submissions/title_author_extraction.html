@@ -1,12 +1,12 @@
 {% extends "submissions/base.html" %}
-{% block title %}Title/Author Extraction{% endblock %}
+{% block title %}Title/Author Review{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div>
-        <h1 class="h3 cfm-page-title">Title/Author Extraction</h1>
+        <h1 class="h3 cfm-page-title">Title/Author Review</h1>
         <div class="cfm-page-subtitle">
             Uses the built-in title/author extractor. {% if settings_obj.grobid_enabled %}GROBID fallback is available for extraction error and Red Flag rows.{% endif %}
-            Verify both the marked extraction image and extracted title match.
+            Review the marked extraction image, extracted metadata, and title comparison together. Review OK completes this review.
         </div>
     </div>
     <div class="cfm-page-actions">
@@ -39,12 +39,11 @@
 {% if confirm_reextract_all %}
     <div class="alert alert-danger border cfm-attention">
         <h2 class="h5">Confirm Re-extract All Active PDFs</h2>
-        <p class="mb-2">This will overwrite extracted title/authors and verification images for all active PDFs. It will also reset Title/Author review status and Extracted Title Matched states.</p>
+        <p class="mb-2">This overwrites extracted title/authors and verification images for all publication candidates, then moves each result back to Pending review.</p>
         <div class="d-flex flex-wrap gap-2 mb-3">
             <span class="badge text-bg-light text-dark">{{ overwrite_summary.active_count }} active PDFs</span>
             <span class="badge text-bg-warning">{{ overwrite_summary.with_extraction }} with existing extraction</span>
             <span class="badge text-bg-danger">{{ overwrite_summary.title_author_reviewed }} title/author reviewed</span>
-            <span class="badge text-bg-danger">{{ overwrite_summary.title_matched }} title matched</span>
         </div>
         <form method="post" class="d-flex flex-wrap gap-2">
             {% csrf_token %}
@@ -67,36 +66,40 @@
     {% endif %}
 {% endif %}
 
-<div class="cfm-tab-groups">
-    {% for group in filter_groups %}
-    <div class="cfm-tab-group">
-        <div class="cfm-tab-group-label">{{ group.label }}</div>
-        <ul class="nav nav-tabs cfm-tabs">
-            {% for option in group.options %}
-            <li class="nav-item">
-                <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
-                    {{ option.tab_label|default:option.label }}
-                    <span class="badge cfm-tab-count text-bg-{{ option.badge_level|default:'secondary' }}">{{ option.count }}</span>
-                </a>
-            </li>
+<div class="cfm-filter-groups">
+    <div class="cfm-filter-group">
+        <div class="cfm-filter-group-label">Workflow</div>
+        <div class="cfm-filter-group-links">
+            {% for option in filter_options %}
+                {% if option.group == "workflow" %}
+                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                        {{ option.tab_label|default:option.label }}
+                        <span class="badge text-bg-{{ option.badge_level|default:'secondary' }} ms-1">{{ option.count }}</span>
+                    </a>
+                {% endif %}
             {% endfor %}
-        </ul>
+        </div>
     </div>
-    {% endfor %}
+    <div class="cfm-filter-group">
+        <div class="cfm-filter-group-label">Tracked views</div>
+        <div class="cfm-filter-group-links">
+            {% for option in filter_options %}
+                {% if option.group == "tracked" %}
+                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                        {{ option.tab_label|default:option.label }}
+                        <span class="badge text-bg-{{ option.badge_level|default:'secondary' }} ms-1">{{ option.count }}</span>
+                    </a>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
 </div>
 
 <form method="get" class="row g-2 align-items-end cfm-filter-panel">
-    <div class="col-md-5">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <div class="col-md-8">
         <label class="form-label" for="extract-search">Search</label>
         <input id="extract-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, title, or authors">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label" for="extract-filter">Filter</label>
-        <select id="extract-filter" class="form-select" name="filter">
-            {% for option in filter_options %}
-                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>{{ option.label }} ({{ option.count }})</option>
-            {% endfor %}
-        </select>
     </div>
     <div class="col-md-4 d-flex gap-2">
         <button class="btn btn-outline-secondary">Apply</button>
@@ -121,12 +124,8 @@
                 {% if not row.has_extraction %}
                     <span class="badge text-bg-secondary">Missing extraction</span>
                 {% endif %}
-                {% if item.extracted_title_verified %}
-                    <span class="badge text-bg-success">Title matched</span>
-                {% elif row.title_match.status == "title_mismatch" %}
-                    <span class="badge text-bg-danger">Title mismatch</span>
-                {% elif item.extracted_title %}
-                    <span class="badge text-bg-warning">Check title</span>
+                {% if item.title_author_review_status == 'review_ok' and not row.title_match.is_identical %}
+                    <span class="badge text-bg-info">Reviewed difference</span>
                 {% endif %}
                 {% if settings_obj.grobid_enabled and row.grobid_suspicious %}
                     <span class="badge text-bg-info">GROBID candidate</span>
@@ -143,7 +142,7 @@
                     <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
                     <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                 {% endif %}
-                <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>
             </div>
         </div>
         <div class="card-body">
@@ -163,43 +162,29 @@
                         <div class="border rounded p-2 bg-light">{{ item.extracted_title|default:"Missing" }}</div>
                     </div>
                     {% if item.extracted_title %}
-                        <div class="cfm-title-match-panel cfm-title-match-{% if item.extracted_title_verified %}ok{% elif row.title_match.status == 'title_mismatch' %}danger{% else %}warning{% endif %}">
+                        <div class="cfm-title-match-panel cfm-title-match-{% if item.title_author_review_status == 'review_ok' %}ok{% elif row.title_match.status == 'title_mismatch' %}danger{% else %}warning{% endif %}">
                             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
                                 <div>
-                                    <div class="small text-uppercase fw-semibold text-muted">Title Match Check</div>
+                                    <div class="small text-uppercase fw-semibold text-muted">Title Comparison</div>
                                     <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
-                                        {% if item.extracted_title_verified %}
-                                            <span class="badge text-bg-success">Title matched</span>
+                                        {% if item.title_author_review_status == 'review_ok' %}
+                                            <span class="badge text-bg-success">Reviewed</span>
                                         {% elif row.title_match.status == "title_mismatch" %}
                                             <span class="badge text-bg-danger">Title mismatch</span>
                                         {% else %}
-                                            <span class="badge text-bg-warning">Needs match review</span>
+                                            <span class="badge text-bg-warning">Review with title/authors</span>
                                         {% endif %}
                                         {% if row.title_match.score != None %}
                                             <span class="badge text-bg-light text-dark">Score {{ row.title_match.score|floatformat:0 }}%</span>
                                         {% endif %}
                                     </div>
                                 </div>
-                                {% if row.has_extraction %}
-                                    {% if item.extracted_title_verified %}
-                                        <form method="post">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
-                                            <button class="btn btn-sm btn-outline-secondary" name="action" value="unverify_extracted_title">Undo match</button>
-                                        </form>
-                                    {% else %}
-                                        <form method="post">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
-                                            <button class="btn btn-sm btn-success" name="action" value="verify_extracted_title">Confirm match</button>
-                                        </form>
-                                    {% endif %}
-                                {% endif %}
                             </div>
                             <div class="mt-2 cfm-title-match-message">
-                                {{ row.title_match.message }}
-                                {% if row.title_match.needs_verification and row.title_match.is_identical %}
-                                    Confirm if this 100% match is still correct.
+                                {% if item.title_author_review_status == 'review_ok' %}
+                                    Title comparison was accepted when Title/Author Review was marked Review OK.
+                                {% else %}
+                                    {{ row.title_match.message }}
                                 {% endif %}
                             </div>
                             {% if not row.title_match.is_identical %}
@@ -337,19 +322,6 @@
         font-weight: 600;
         letter-spacing: 0.02em;
         text-transform: uppercase;
-    }
-    .cfm-tab-groups {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem 1rem;
-        align-items: end;
-        margin-bottom: 1rem;
-    }
-    .cfm-tab-group {
-        min-width: min(100%, 20rem);
-    }
-    .cfm-tab-group .cfm-tabs {
-        margin-bottom: 0;
     }
     .cfm-manual-override-panel {
         border-color: var(--cfm-warning-border) !important;

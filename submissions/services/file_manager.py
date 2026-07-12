@@ -181,7 +181,7 @@ def active_pdf_needs_processing(submission):
 
 
 def active_pdfs_needing_processing():
-    from submissions.models import FinalSubmission
+    from submissions.models import FinalSubmission, InitialPaper
 
     return [
         submission
@@ -189,6 +189,7 @@ def active_pdfs_needing_processing():
             active_version=True,
             discarded=False,
             excluded_from_publication=False,
+            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
         )
         if active_pdf_needs_processing(submission)
     ]
@@ -197,6 +198,7 @@ def active_pdfs_needing_processing():
 def _publication_file_info(path, label, source, url):
     return {
         "path": str(path) if path else "",
+        "filename": path.name if path else "",
         "label": label,
         "source": source,
         "url": url,

@@ -47,19 +47,10 @@
 </ul>
 
 <form method="get" class="row g-2 align-items-end cfm-filter-panel">
-    <div class="col-lg-6">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <div class="col-lg-10">
         <label class="form-label" for="verify-search">Search</label>
         <input id="verify-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, or title">
-    </div>
-    <div class="col-lg-4">
-        <label class="form-label" for="verify-filter">Filter</label>
-        <select id="verify-filter" class="form-select" name="filter">
-            {% for option in filter_options %}
-                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>
-                    {{ option.label }} ({{ option.count }})
-                </option>
-            {% endfor %}
-        </select>
     </div>
     <div class="col-lg-2">
         <button class="btn btn-outline-secondary w-100">Apply</button>

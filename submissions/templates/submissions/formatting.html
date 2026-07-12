@@ -28,8 +28,14 @@
         width: 100%;
         height: auto;
     }
+    .format-status-group {
+        display: flex;
+        flex-wrap: wrap;
+        width: 100%;
+    }
     .format-status-group .btn {
-        min-width: 10.5rem;
+        flex: 1 1 8rem;
+        min-width: 0;
     }
 </style>
 
@@ -38,26 +44,17 @@
     <li class="nav-item">
         <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
             {{ option.label }}
-            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' or option.value == 'review_ok_no_edit' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
+            <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'pending' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' or option.value == 'review_ok_no_edit' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
         </a>
     </li>
     {% endfor %}
 </ul>
 
 <form method="get" class="row g-2 align-items-end cfm-filter-panel">
-    <div class="col-lg-6">
+    <input type="hidden" name="filter" value="{{ current_filter }}">
+    <div class="col-lg-9">
         <label class="form-label" for="formatting-search">Search</label>
         <input id="formatting-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
-    </div>
-    <div class="col-lg-3">
-        <label class="form-label" for="formatting-filter">Filter</label>
-        <select id="formatting-filter" class="form-select" name="filter">
-            {% for option in filter_options %}
-                <option value="{{ option.value }}" {% if option.value == current_filter %}selected{% endif %}>
-                    {{ option.label }} ({{ option.count }})
-                </option>
-            {% endfor %}
-        </select>
     </div>
     <div class="col-lg-2">
         <button class="btn btn-outline-secondary w-100">Apply</button>
@@ -145,7 +142,7 @@
             <div class="cfm-status-line">
                 <strong>{{ item.paper_id_filled }}</strong>
                 <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
-                <span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}warning{% else %}secondary{% endif %}">
+                <span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">
                     {% if item.format_status == "review_ok" %}Review OK{% elif item.format_status == "needs_edit" %}Needs edit{% else %}Pending{% endif %}
                 </span>
                 {% if item.has_corrected_files %}<span class="badge text-bg-primary">Edited</span>{% endif %}
@@ -154,9 +151,18 @@
                 {% else %}
                     <span class="badge text-bg-danger">No PDF</span>
                 {% endif %}
+                {% if mode != "single" %}
+                    <span class="small text-muted">{{ item.final_submission_title|default:"Missing title"|truncatechars:72 }}</span>
+                {% endif %}
             </div>
-            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit Metadata</a>
+            <div class="cfm-table-actions">
+                {% if mode != "single" %}
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#format-review-{{ item.pk }}" aria-expanded="false" aria-controls="format-review-{{ item.pk }}">Review paper</button>
+                {% endif %}
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
+            </div>
         </div>
+        <div id="format-review-{{ item.pk }}" class="{% if mode != 'single' %}collapse{% endif %}">
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-xl-4">
@@ -226,11 +232,11 @@
                             {% with current_status=form.format_status.value %}
                             <div class="btn-group format-status-group" role="group" aria-label="Formatting status for {{ item.final_submission_id }}">
                                 <input type="radio" class="btn-check" name="format_status" id="format_status_pending_{{ item.pk }}" value="pending" autocomplete="off" {% if current_status == "pending" %}checked{% endif %}>
-                                <label class="btn btn-outline-secondary" for="format_status_pending_{{ item.pk }}">Format review pending</label>
+                                <label class="btn btn-outline-warning" for="format_status_pending_{{ item.pk }}">Pending</label>
                                 <input type="radio" class="btn-check" name="format_status" id="format_status_needs_edit_{{ item.pk }}" value="needs_edit" autocomplete="off" {% if current_status == "needs_edit" %}checked{% endif %}>
-                                <label class="btn btn-outline-warning" for="format_status_needs_edit_{{ item.pk }}">Format needs edit</label>
+                                <label class="btn btn-outline-danger" for="format_status_needs_edit_{{ item.pk }}">Needs edit</label>
                                 <input type="radio" class="btn-check" name="format_status" id="format_status_review_ok_{{ item.pk }}" value="review_ok" autocomplete="off" {% if current_status == "review_ok" %}checked{% endif %}>
-                                <label class="btn btn-outline-success" for="format_status_review_ok_{{ item.pk }}">Format review OK</label>
+                                <label class="btn btn-outline-success" for="format_status_review_ok_{{ item.pk }}">Review OK</label>
                             </div>
                             {% endwith %}
                         </div>
@@ -251,6 +257,7 @@
                     </form>
                 </div>
             </div>
+        </div>
         </div>
     </div>
     {% endwith %}

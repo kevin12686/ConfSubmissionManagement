@@ -57,27 +57,12 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
             "upload_date",
             "pdf_file",
             "source_file",
-            "title_author_extraction_message",
-            "title_author_review_status",
-            "duplicate_author_review_status",
-            "duplicate_author_review_notes",
-            "extracted_title_match_message",
-            "extracted_title_verified",
             "similarity_score",
             "single_similarity_score",
-            "processing_message",
-            "excluded_from_publication",
-            "publication_exclusion_reason",
-            "publication_exclusion_notes",
         ]
         widgets = {
             "upload_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "final_submission_authors": forms.Textarea(attrs={"rows": 3}),
-            "title_author_extraction_message": forms.Textarea(attrs={"rows": 2}),
-            "duplicate_author_review_notes": forms.Textarea(attrs={"rows": 2}),
-            "extracted_title_match_message": forms.Textarea(attrs={"rows": 2}),
-            "processing_message": forms.Textarea(attrs={"rows": 2}),
-            "publication_exclusion_notes": forms.Textarea(attrs={"rows": 2}),
         }
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -85,12 +70,6 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
         self.fields["start2_paper_id_raw"].label = "Author-entered ID"
         self.fields["final_submission_title"].label = "Final Title"
         self.fields["final_submission_authors"].label = "Final Authors"
-        self.fields["title_author_extraction_message"].label = "Title/Author Extraction Message"
-        self.fields["title_author_review_status"].label = "Title/Author Review Status"
-        self.fields["duplicate_author_review_status"].label = "Duplicate Author Review"
-        self.fields["duplicate_author_review_notes"].label = "Duplicate Author Notes"
-        self.fields["extracted_title_match_message"].label = "Extracted Title Match Message"
-        self.fields["extracted_title_verified"].label = "Extracted Title Matched"
         self.fields["similarity_score"].label = "Plagiarism %"
         self.fields["single_similarity_score"].label = "Single %"
         self.fields["similarity_score"].widget.attrs.update({"step": "1", "min": "0"})
@@ -100,9 +79,6 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
                 self.initial["similarity_score"] = int(self.instance.similarity_score)
             if self.instance.single_similarity_score is not None:
                 self.initial["single_similarity_score"] = int(self.instance.single_similarity_score)
-        self.fields["excluded_from_publication"].label = "Not Publishing"
-        self.fields["publication_exclusion_reason"].label = "Not Publishing Reason"
-        self.fields["publication_exclusion_notes"].label = "Not Publishing Notes"
         self._apply_bootstrap()
 
     def clean_plagiarism_report_file(self):

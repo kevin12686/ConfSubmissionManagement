@@ -41,5 +41,6 @@ from .controllers.integrations import (
     download_crosscheck_zip_scoped,
     download_system_state,
     integration,
+    system_state,
 )
 from .controllers.settings import app_settings, clear_database, grobid_health_check

@@ -1,0 +1,64 @@
+{% extends "submissions/base.html" %}
+{% block title %}System Backup / Restore{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">System Backup / Restore</h1>
+        <div class="cfm-page-subtitle">Preserve or replace the complete local editorial state, including review evidence and managed files.</div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Download Backup</div>
+            <div class="card-body">
+                <p class="text-muted">Includes settings, conference name, workflow state, audit logs, PDFs, source files, reports, verification images, thumbnails, and format previews.</p>
+                <a class="btn btn-success" href="{% url 'submissions:download_system_state' %}">Download System State ZIP</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card border-danger">
+            <div class="card-header fw-semibold text-danger">Restore System State</div>
+            <div class="card-body">
+                <p class="text-muted">Restore replaces the current database, settings, and app-managed files. Upload a snapshot to preview it before anything changes.</p>
+                <form method="post" enctype="multipart/form-data" class="vstack gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview_system_restore">
+                    {% include "submissions/includes/form_field.html" with field=system_state_restore_form.snapshot %}
+                    <div><button class="btn btn-outline-danger">Preview Restore</button></div>
+                </form>
+                {% if system_state_preview %}
+                    <hr>
+                    <div class="alert alert-danger"><strong>Preview only.</strong> Nothing has changed.</div>
+                    <dl class="row small">
+                        <dt class="col-sm-5">Conference</dt><dd class="col-sm-7">{{ system_state_preview.conference_name|default:"Local Conference" }}</dd>
+                        <dt class="col-sm-5">System version</dt><dd class="col-sm-7">{{ system_state_preview.app_name }} v{{ system_state_preview.app_version }}</dd>
+                        <dt class="col-sm-5">State archive</dt><dd class="col-sm-7">v{{ system_state_preview.state_archive_version }}</dd>
+                        <dt class="col-sm-5">Records</dt><dd class="col-sm-7">{{ system_state_preview.record_counts.initial_papers|default:0 }} papers · {{ system_state_preview.record_counts.final_submissions|default:0 }} finals</dd>
+                        <dt class="col-sm-5">Files</dt><dd class="col-sm-7">{{ system_state_preview.file_count }}</dd>
+                        <dt class="col-sm-5">Review evidence</dt><dd class="col-sm-7">{{ system_state_preview.artifact_counts.title_author_verification_images|default:0 }} extraction images · {{ system_state_preview.artifact_counts.pdf_thumbnails|default:0 }} thumbnails · {{ system_state_preview.artifact_counts.format_previews|default:0 }} format previews</dd>
+                        <dt class="col-sm-5">Audit logs</dt><dd class="col-sm-7">{{ system_state_preview.artifact_counts.audit_logs|default:0 }}</dd>
+                    </dl>
+                    {% if system_state_preview.missing_files or system_state_preview.corrupt_files %}
+                        <div class="alert alert-warning">This snapshot has missing or corrupted files and cannot be restored.</div>
+                    {% elif system_state_preview.referenced_artifact_warnings %}
+                        <div class="alert alert-warning"><strong>Referenced artifact warnings</strong><ul class="mb-0">{% for warning in system_state_preview.referenced_artifact_warnings %}<li>{{ warning.final_submission_id }}: {{ warning.message }}</li>{% endfor %}</ul></div>
+                    {% endif %}
+                    {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
+                        <form method="post" class="vstack gap-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="apply_system_restore">
+                            <input type="hidden" name="token" value="{{ system_state_preview.token }}">
+                            <label class="form-label" for="system-restore-confirmation">Type {{ system_state_confirmation_text }} to confirm</label>
+                            <input id="system-restore-confirmation" class="form-control" name="confirmation" autocomplete="off">
+                            <div><button class="btn btn-danger">Apply Restore</button></div>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

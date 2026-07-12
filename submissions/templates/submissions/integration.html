@@ -1,197 +1,71 @@
 {% extends "submissions/base.html" %}
-{% block title %}CrossCheck / System Backup{% endblock %}
+{% block title %}Plagiarism / CrossCheck{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div>
-        <h1 class="h3 cfm-page-title">CrossCheck / System Backup</h1>
-        <div class="cfm-page-subtitle">Prepare plagiarism-check files and back up or restore the complete local system state.</div>
+        <h1 class="h3 cfm-page-title">Plagiarism / CrossCheck</h1>
+        <div class="cfm-page-subtitle">Prepare current publication PDFs, import P/S scores, and attach optional CrossCheck reports.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review Plagiarism Issues</a>
     </div>
 </div>
+
 <div class="row g-3">
-    <div class="col-lg-6">
-        <div class="card mb-3">
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Prepare CrossCheck PDFs</div>
             <div class="card-body">
-                <h2 class="h5">Paper Export for CrossCheck</h2>
-                <p class="text-muted">Creates downloadable ZIP files with active publication PDFs named PaperID_token.pdf. Use the missing-results option when you only need papers without Plagiarism % or Single %.</p>
-                <form method="post" class="vstack gap-2">
+                <p class="text-muted">Creates a ZIP from current publication PDFs, named <code>PaperID_token.pdf</code>.</p>
+                <form method="post" class="vstack gap-3">
                     {% csrf_token %}
-                    <div>
-                        {{ crosscheck_export_form.token.label_tag }}
-                        {{ crosscheck_export_form.token }}
-                        <div class="form-text">{{ crosscheck_export_form.token.help_text }}</div>
-                    </div>
-                    <div class="cfm-action-bar">
-                        <button class="btn btn-primary" name="action" value="prepare_crosscheck">Prepare All Publication PDFs ZIP</button>
-                        <button class="btn btn-outline-primary" name="action" value="prepare_crosscheck_missing">Prepare Missing Results Only ZIP</button>
-                    </div>
+                    {% include "submissions/includes/form_field.html" with field=crosscheck_export_form.token %}
+                    <button class="btn btn-primary" name="action" value="prepare_crosscheck">Prepare All Publication PDFs ZIP</button>
+                    <button class="btn btn-outline-primary" name="action" value="prepare_crosscheck_missing">Prepare Missing Results Only ZIP</button>
                 </form>
                 {% if crosscheck_export_result %}
                     <hr>
-                    <div class="small text-muted mb-2">Export scope: <strong>{{ crosscheck_export_result.scope_label }}</strong></div>
-                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <a class="btn btn-success" href="{{ crosscheck_export_result.download_url }}">
-                            {% if crosscheck_export_result.scope == "missing_results" %}Download Missing Results ZIP{% else %}Download CrossCheck ZIP{% endif %}
-                        </a>
-                        <span class="badge text-bg-success">{{ crosscheck_export_result.exported_count }} exported</span>
-                        <span class="badge text-bg-warning">{{ crosscheck_export_result.skipped_count }} skipped</span>
-                    </div>
-                    <div class="small text-muted mt-2">Manifest: {{ crosscheck_export_result.manifest_path }}</div>
+                    <div class="small text-muted mb-2">{{ crosscheck_export_result.scope_label }}</div>
+                    <a class="btn btn-success" href="{{ crosscheck_export_result.download_url }}">{% if crosscheck_export_result.scope == 'missing_results' %}Download Missing Results ZIP{% else %}Download CrossCheck ZIP{% endif %}</a>
+                    <span class="badge text-bg-success">{{ crosscheck_export_result.exported_count }} exported</span>
+                    <span class="badge text-bg-warning">{{ crosscheck_export_result.skipped_count }} skipped</span>
                     {% if crosscheck_export_result.skipped %}
-                        <div class="mt-2">
-                            <div class="small fw-semibold">Skipped papers</div>
-                            <ul class="small mb-0">
-                                {% for row in crosscheck_export_result.skipped %}
-                                    <li>{{ row.paper_id|default:"No Paper ID" }} / Final {{ row.final_submission_id }}: {{ row.reason }}</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
+                        <details class="mt-3"><summary>Skipped papers</summary><ul class="small mt-2 mb-0">
+                        {% for row in crosscheck_export_result.skipped %}<li>{{ row.paper_id|default:"No Paper ID" }} / {{ row.final_submission_id }}: {{ row.reason }}</li>{% endfor %}
+                        </ul></details>
                     {% endif %}
-                {% endif %}
-            </div>
-        </div>
-        <div class="card mb-3">
-            <div class="card-body">
-                <h2 class="h5">Import CrossCheck Result CSV</h2>
-                <p class="text-muted">Import filename, plagiarism_percent, and single_percent. Report PDFs are uploaded separately and matched by PaperID_token.pdf.</p>
-                <p><a href="{% url 'submissions:download_template' 'plagiarism' %}">Download plagiarism result template</a></p>
-                <form method="post" enctype="multipart/form-data" class="cfm-action-bar">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="import_crosscheck">
-                    {{ crosscheck_result_form.file }}
-                    <button class="btn btn-primary">Import CrossCheck CSV</button>
-                </form>
-                {% if crosscheck_result %}
-                    <hr>
-                    <ul class="mb-0">
-                        <li>Rows updated: {{ crosscheck_result.updated }}</li>
-                        <li>Invalid filenames: {{ crosscheck_result.invalid|length }}</li>
-                        <li>Unmatched rows: {{ crosscheck_result.unmatched|length }}</li>
-                    </ul>
-                {% endif %}
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-body">
-                <h2 class="h5">Upload CrossCheck Reports</h2>
-                <p class="text-muted">Reports are optional. Upload only the report PDFs that CrossCheck generated, named PaperID_token.pdf.</p>
-                <form method="post" enctype="multipart/form-data" class="cfm-action-bar">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="upload_crosscheck_reports">
-                    {{ report_upload_form.report_files }}
-                    <button class="btn btn-primary">Upload Reports</button>
-                </form>
-                {% if report_upload_result %}
-                    <hr>
-                    <ul class="mb-0">
-                        <li>Reports matched: {{ report_upload_result.updated }}</li>
-                        <li>Invalid files: {{ report_upload_result.invalid|length }}</li>
-                        <li>Unmatched files: {{ report_upload_result.unmatched|length }}</li>
-                    </ul>
                 {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-lg-6">
-        <div class="card border-danger">
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Import Plagiarism Results</div>
             <div class="card-body">
-                <h2 class="h5">System State Backup / Restore</h2>
-                <p class="text-muted">
-                    Download a complete ZIP snapshot with settings, conference name, database workflow state, review flags, exceptions, reports, PDFs, source files, and generated files.
-                </p>
-                <div class="cfm-action-bar mb-3">
-                    <a class="btn btn-success" href="{% url 'submissions:download_system_state' %}">Download System State ZIP</a>
-                </div>
-                <hr>
-                <h3 class="h6 text-danger">Restore System State</h3>
-                <p class="text-muted small mb-2">
-                    Restore replaces the current database, settings, conference name, and app-managed files. Upload a ZIP first to preview the restore.
-                </p>
-                <form method="post" enctype="multipart/form-data" class="vstack gap-2">
+                <p class="text-muted">Imports filename, Plagiarism %, and Single %. Reports are uploaded separately.</p>
+                <a href="{% url 'submissions:download_template' 'plagiarism' %}">Download result template</a>
+                <form method="post" enctype="multipart/form-data" class="vstack gap-3 mt-3">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="preview_system_restore">
-                    {% include "submissions/includes/form_field.html" with field=system_state_restore_form.snapshot %}
-                    <div>
-                        <button class="btn btn-outline-danger">Preview Restore</button>
-                    </div>
+                    <input type="hidden" name="action" value="import_crosscheck">
+                    {% include "submissions/includes/form_field.html" with field=crosscheck_result_form.file %}
+                    <button class="btn btn-primary">Import Result CSV</button>
                 </form>
-                {% if system_state_preview %}
-                    <hr>
-                    <div class="alert alert-danger border">
-                        <strong>Restore preview only.</strong>
-                        Nothing has been changed yet. Apply only if this ZIP is the state you want to return to.
-                    </div>
-                    <dl class="row small">
-                        <dt class="col-sm-5">Conference name</dt>
-                        <dd class="col-sm-7">{{ system_state_preview.conference_name|default:"Local Conference" }}</dd>
-                        <dt class="col-sm-5">System version</dt>
-                        <dd class="col-sm-7">{{ system_state_preview.app_name }} v{{ system_state_preview.app_version }}</dd>
-                        <dt class="col-sm-5">State archive version</dt>
-                        <dd class="col-sm-7">v{{ system_state_preview.state_archive_version }}</dd>
-                        <dt class="col-sm-5">Files</dt>
-                        <dd class="col-sm-7">{{ system_state_preview.file_count }}</dd>
-                        <dt class="col-sm-5">Review artifacts</dt>
-                        <dd class="col-sm-7">
-                            title/author images {{ system_state_preview.artifact_counts.title_author_verification_images|default:0 }},
-                            thumbnails {{ system_state_preview.artifact_counts.pdf_thumbnails|default:0 }},
-                            format previews {{ system_state_preview.artifact_counts.format_previews|default:0 }}
-                        </dd>
-                        <dt class="col-sm-5">Reports / managed files</dt>
-                        <dd class="col-sm-7">
-                            reports {{ system_state_preview.artifact_counts.reports_exports|default:0 }},
-                            audit logs {{ system_state_preview.artifact_counts.audit_logs|default:0 }},
-                            managed PDF/source/debug files {{ system_state_preview.artifact_counts.original_and_corrected_files|default:0 }}
-                        </dd>
-                        <dt class="col-sm-5">Records</dt>
-                        <dd class="col-sm-7">
-                            Papers {{ system_state_preview.record_counts.initial_papers|default:0 }},
-                            finals {{ system_state_preview.record_counts.final_submissions|default:0 }},
-                            author rows {{ system_state_preview.record_counts.paper_authors|default:0 }}
-                        </dd>
-                        <dt class="col-sm-5">Settings</dt>
-                        <dd class="col-sm-7">
-                            pages {{ system_state_preview.settings_summary.page_minimum }}-{{ system_state_preview.settings_summary.page_limit }},
-                            max authors {{ system_state_preview.settings_summary.max_authors_per_paper }},
-                            timezone {{ system_state_preview.settings_summary.time_zone }}
-                        </dd>
-                    </dl>
-                    {% if system_state_preview.missing_files or system_state_preview.corrupt_files %}
-                        <div class="alert alert-warning">
-                            This snapshot has missing or corrupted files and cannot be restored.
-                        </div>
-                    {% endif %}
-                    {% if system_state_preview.referenced_artifact_warnings %}
-                        <div class="alert alert-warning">
-                            <div class="fw-semibold">Some referenced review artifacts are not portable in this snapshot.</div>
-                            <ul class="mb-0">
-                                {% for warning in system_state_preview.referenced_artifact_warnings %}
-                                    <li>{{ warning.final_submission_id }}: {{ warning.message }}</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    {% endif %}
-                    {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
-                        {% if system_state_preview.referenced_artifact_warnings %}
-                            <div class="alert alert-info">
-                                You can still restore this ZIP, but the listed review artifacts may need to be regenerated or checked after restore.
-                            </div>
-                        {% endif %}
-                    {% endif %}
-                    {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
-                        <form method="post" class="vstack gap-2">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="apply_system_restore">
-                            <input type="hidden" name="token" value="{{ system_state_preview.token }}">
-                            <label class="form-label" for="system-restore-confirmation">Type {{ system_state_confirmation_text }} to confirm</label>
-                            <input id="system-restore-confirmation" class="form-control" name="confirmation" autocomplete="off">
-                            <div>
-                                <button class="btn btn-danger">Apply Restore</button>
-                            </div>
-                        </form>
-                    {% endif %}
-                {% endif %}
+                {% if crosscheck_result %}<hr><div>{{ crosscheck_result.updated }} rows updated</div><div class="small text-muted">{{ crosscheck_result.invalid|length }} invalid · {{ crosscheck_result.unmatched|length }} unmatched</div>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Upload Plagiarism Reports</div>
+            <div class="card-body">
+                <p class="text-muted">Reports are optional and matched from <code>PaperID_token.pdf</code>.</p>
+                <form method="post" enctype="multipart/form-data" class="vstack gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="upload_crosscheck_reports">
+                    {% include "submissions/includes/form_field.html" with field=report_upload_form.report_files %}
+                    <button class="btn btn-primary">Upload Reports</button>
+                </form>
+                {% if report_upload_result %}<hr><div>{{ report_upload_result.updated }} reports matched</div><div class="small text-muted">{{ report_upload_result.invalid|length }} invalid · {{ report_upload_result.unmatched|length }} unmatched</div>{% endif %}
             </div>
         </div>
     </div>

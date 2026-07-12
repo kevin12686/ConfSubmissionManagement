@@ -2030,7 +2030,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertContains(page, "2 active PDFs")
         self.assertContains(page, "2 need processing")
         self.assertContains(page, "1 missing PDFs")
-        self.assertContains(page, "Active PDFs Need Process")
+        self.assertContains(page, "PDF, source, and page checks")
 
         process_page = self.client.get(reverse("submissions:process"))
         self.assertContains(process_page, "Active PDFs not processed")
@@ -2236,7 +2236,6 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             ("missing extracted title", {"extracted_title": ""}, "Missing Extracted Title"),
             ("missing extracted authors", {"extracted_authors": ""}, "Missing Extracted Authors"),
             ("unverified title author", {"title_author_verified": False}, "Unverified Title/Author Extraction"),
-            ("unverified title match", {"extracted_title_verified": False}, "Unverified Extracted Title Match"),
             ("format", {"format_status": "pending"}, "Formatting Not Review OK"),
             ("missing plagiarism", {"similarity_score": None}, "Missing Plagiarism Result"),
             ("plagiarism p", {"similarity_score": 36}, "Plagiarism % Over Threshold"),
@@ -3039,6 +3038,132 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         page = self.client.get(reverse("submissions:final_submission_list"))
 
         self.assertContains(page, "Large batches are supported up to 5000 files per request")
+
+    def test_long_worklists_use_integrated_compact_navigation(self):
+        self.make_master_paper("P001", "Compact Workflow Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Compact Workflow Paper",
+            extracted_title="Compact Workflow Paper",
+            extracted_authors="Ada Lovelace",
+            page_count=8,
+        )
+
+        final_list = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(final_list, 'data-bs-target="#batch-upload-panel"')
+        self.assertContains(final_list, 'id="batch-upload-panel"')
+        self.assertContains(final_list, "cfm-table-sticky")
+
+        formatting = self.client.get(reverse("submissions:formatting"), {"filter": "all"})
+        self.assertContains(formatting, f'id="format-review-{submission.pk}"')
+        self.assertContains(formatting, "Review paper")
+
+        title_review = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "all"},
+        )
+        self.assertContains(title_review, "Workflow")
+        self.assertContains(title_review, "Tracked views")
+
+    def test_process_preview_keeps_full_rows_and_supports_issue_filtering(self):
+        settings_obj = AppSetting.load()
+        settings_obj.page_minimum = 6
+        settings_obj.page_limit = 12
+        settings_obj.save()
+        self.make_master_paper("P001", "Short Paper", "Ada")
+        self.make_master_paper("P002", "Range Paper", "Grace")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Short Paper",
+            page_count=5,
+            processing_status="processed",
+        )
+        self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Range Paper",
+            page_count=8,
+            processing_status="processed",
+        )
+
+        all_rows = self.client.get(reverse("submissions:process"))
+        self.assertContains(all_rows, "Every matching paper remains fully expanded")
+        self.assertContains(all_rows, "P001")
+        self.assertContains(all_rows, "P002")
+
+        issues = self.client.get(
+            reverse("submissions:process"),
+            {"filter": "page_issues"},
+        )
+        self.assertContains(issues, "P001")
+        self.assertNotContains(issues, "P002")
+
+    def test_author_count_and_exception_center_support_focused_filters(self):
+        settings_obj = AppSetting.load()
+        settings_obj.author_paper_limit = 1
+        settings_obj.page_minimum = 6
+        settings_obj.save()
+        for paper_id, final_id in (("P001", "101"), ("P002", "102")):
+            self.make_master_paper(paper_id, f"Paper {paper_id}", "Ada")
+            self.make_final_submission(
+                final_submission_id=final_id,
+                paper_id_filled=paper_id,
+                final_submission_title=f"Paper {paper_id}",
+                extracted_authors="Ada Lovelace",
+                page_count=5 if paper_id == "P001" else 8,
+            )
+        rebuild_paper_authors()
+
+        authors = self.client.get(
+            reverse("submissions:author_count"),
+            {"filter": "over_limit", "q": "Ada"},
+        )
+        self.assertContains(authors, "Ada Lovelace")
+        self.assertContains(authors, "Needs attention")
+
+        exceptions = self.client.get(
+            reverse("submissions:exceptions_center"),
+            {"filter": "not_allowed", "type": "page", "q": "P001"},
+        )
+        self.assertContains(exceptions, "Page count")
+        self.assertContains(exceptions, "P001")
+        self.assertNotContains(exceptions, "P002")
+
+    def test_contextual_edit_links_return_to_review_worklists(self):
+        self.make_master_paper("P001", "Return Workflow", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Return Workflow",
+            extracted_title="Return Workflow",
+        )
+        for route_name, params in (
+            ("formatting", {"filter": "all", "q": "P001"}),
+            ("title_author_extraction", {"filter": "all", "q": "P001"}),
+        ):
+            response = self.client.get(reverse(f"submissions:{route_name}"), params)
+            expected_return = response.wsgi_request.get_full_path()
+            edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
+            self.assertContains(response, f"{edit_url}?next=")
+            self.assertContains(response, quote(expected_return, safe="/"))
+
+    def test_edit_page_separates_discard_from_normal_fields(self):
+        self.make_master_paper("P001", "Safe Edit", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Safe Edit",
+        )
+
+        response = self.client.get(
+            reverse("submissions:final_submission_edit", args=[submission.pk])
+        )
+        content = response.content.decode()
+        self.assertContains(response, "Version actions")
+        self.assertContains(response, 'id="version-discard-panel" class="collapse"')
+        self.assertLess(content.index("Mapping"), content.index("Version actions"))
 
     def test_final_submission_list_files_show_corrected_then_original(self):
         self.make_master_paper("P001", "Display Files", "Ada")
@@ -4077,10 +4202,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
-        self.assertFalse(submission.excluded_from_publication)
+        self.assertTrue(submission.excluded_from_publication)
         self.assertFalse(submission.paper_id_verified)
-        self.assertTrue(submission.auto_verify_blocked)
-        self.assert_publication_blocked("Unverified Paper ID")
+        self.assertFalse(submission.auto_verify_blocked)
+        self.assertNotIn(
+            "Unverified Paper ID",
+            {row["category"] for row in publication_readiness_rows()},
+        )
 
     def test_import_reset_allows_identical_title_to_auto_verify_again(self):
         self.make_master_paper("P001", title="Corrected Exact Title")
@@ -4159,6 +4287,79 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(source_choices["grobid"], "GROBID")
         self.assertNotIn("extracted_title", form.fields)
         self.assertNotIn("extracted_authors", form.fields)
+
+    def test_final_submission_edit_does_not_expose_workflow_state_fields(self):
+        form = FinalSubmissionForm(instance=self.make_final_submission())
+
+        for field_name in {
+            "title_author_review_status",
+            "extracted_title_verified",
+            "duplicate_author_review_status",
+            "processing_message",
+            "excluded_from_publication",
+            "publication_exclusion_reason",
+            "publication_exclusion_notes",
+        }:
+            self.assertNotIn(field_name, form.fields)
+
+    def test_publication_candidates_exclude_invalid_and_not_publishing_records(self):
+        self.make_master_paper("P001", "Included Candidate", "Ada")
+        self.make_master_paper("P002", "Excluded Candidate", "Ada")
+        self.make_final_submission(
+            final_submission_id="PC001",
+            paper_id_filled="P001",
+            final_submission_title="Included Candidate",
+        )
+        self.make_final_submission(
+            final_submission_id="PC002",
+            paper_id_filled="P002",
+            final_submission_title="Excluded Candidate",
+            excluded_from_publication=True,
+        )
+        self.make_final_submission(
+            final_submission_id="PC003",
+            paper_id_filled="NOTMASTER",
+            final_submission_title="Invalid Candidate",
+        )
+
+        response = self.client.get(reverse("submissions:active_versions"))
+
+        self.assertContains(response, "Included Candidate")
+        self.assertNotContains(response, "Excluded Candidate")
+        self.assertNotContains(response, "Invalid Candidate")
+
+    def test_process_pdfs_only_processes_publication_candidates(self):
+        self.make_master_paper("P001", "Included", "Ada")
+        self.make_master_paper("P002", "Not Publishing", "Ada")
+        included = self.make_final_submission(
+            final_submission_id="PROC001",
+            paper_id_filled="P001",
+        )
+        self.make_final_submission(
+            final_submission_id="PROC002",
+            paper_id_filled="P002",
+            excluded_from_publication=True,
+        )
+        self.make_final_submission(
+            final_submission_id="PROC003",
+            paper_id_filled="NOTMASTER",
+        )
+        self.make_final_submission(
+            final_submission_id="PROC004",
+            paper_id_filled="P001",
+            discarded=True,
+        )
+
+        with patch(
+            "submissions.services.pdf_processor.process_submission_pdf",
+            return_value=None,
+        ) as process_one, patch(
+            "submissions.services.pdf_processor.sync_debug_publication_files",
+            return_value={"synced_count": 0, "skipped_count": 0, "manifest_path": ""},
+        ):
+            process_all_pdfs()
+
+        self.assertEqual([call.args[0].pk for call in process_one.call_args_list], [included.pk])
 
     def test_manual_override_source_choice_exists(self):
         source_choices = dict(FinalSubmission._meta.get_field("title_author_source").choices)
@@ -4252,8 +4453,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertTrue(Path(export_publication_package()).exists())
 
     def test_title_author_page_shows_manual_override_form_and_badge(self):
+        self.make_master_paper("P001", "Manual", "Ada")
         submission = self.make_final_submission(
             final_submission_id="MO004",
+            paper_id_filled="P001",
             title_author_source="manual_override",
             title_author_manual_override_reason="Existing override.",
         )
@@ -4267,13 +4470,17 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Reason required")
 
     def test_title_author_page_filters_manual_override_rows(self):
+        self.make_master_paper("P001", "Manual", "Ada")
+        self.make_master_paper("P002", "Built In", "Ada")
         self.make_final_submission(
             final_submission_id="MOFILTER1",
+            paper_id_filled="P001",
             title_author_source="manual_override",
             title_author_manual_override_reason="Existing override.",
         )
         self.make_final_submission(
             final_submission_id="MOFILTER2",
+            paper_id_filled="P002",
             title_author_source="built_in_extractor",
         )
 
@@ -4281,8 +4488,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             reverse("submissions:title_author_extraction") + "?filter=manual_override"
         )
 
-        self.assertContains(response, "Exception source")
-        self.assertContains(response, "Manual override")
+        self.assertContains(response, "Manual Override")
         self.assertContains(response, "MOFILTER1")
         self.assertNotContains(response, "MOFILTER2")
 
@@ -4520,17 +4726,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("GROBID API is unavailable", submission._last_grobid_error)
 
     def test_grobid_batch_only_processes_suspicious_rows(self):
+        self.make_master_paper("P001", "Suspicious", "Ada")
+        self.make_master_paper("P002", "Clean", "Ada")
         settings_obj = AppSetting.load()
         settings_obj.grobid_enabled = True
         settings_obj.save()
         suspicious = self.make_final_submission(
             final_submission_id="G003",
+            paper_id_filled="P001",
             title_author_extraction_status="error",
             title_author_review_status="pending",
         )
         clean = self.make_final_submission(
             final_submission_id="G004",
-            paper_id_filled="P001",
+            paper_id_filled="P002",
             extracted_authors="Ada Lovelace and Alan Turing",
             title_author_review_status="review_ok",
             title_author_verified=True,
@@ -4569,11 +4778,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(mocked_extract.call_args.args[0].pk, suspicious.pk)
 
     def test_grobid_batch_unavailable_aborts_without_processing_rows(self):
+        self.make_master_paper("P001", "Suspicious", "Ada")
         settings_obj = AppSetting.load()
         settings_obj.grobid_enabled = True
         settings_obj.save()
         self.make_final_submission(
             final_submission_id="G003A",
+            paper_id_filled="P001",
             title_author_extraction_status="error",
             title_author_review_status="pending",
         )
@@ -4599,21 +4810,26 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("GROBID API is unavailable", result["message"])
 
     def test_grobid_batch_stops_when_service_drops_mid_run(self):
+        for index in range(1, 4):
+            self.make_master_paper(f"P00{index}", f"Suspicious {index}", "Ada")
         settings_obj = AppSetting.load()
         settings_obj.grobid_enabled = True
         settings_obj.save()
         first = self.make_final_submission(
             final_submission_id="GSTOP1",
+            paper_id_filled="P001",
             title_author_extraction_status="error",
             title_author_review_status="pending",
         )
         second = self.make_final_submission(
             final_submission_id="GSTOP2",
+            paper_id_filled="P002",
             title_author_extraction_status="error",
             title_author_review_status="pending",
         )
         third = self.make_final_submission(
             final_submission_id="GSTOP3",
+            paper_id_filled="P003",
             title_author_extraction_status="error",
             title_author_review_status="pending",
         )
@@ -4649,7 +4865,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("timed out", result["message"])
 
     def test_title_author_page_shows_grobid_controls_only_when_enabled(self):
-        self.make_final_submission(final_submission_id="G005", title_author_review_status="pending")
+        self.make_master_paper("P001", "GROBID Paper", "Ada")
+        self.make_final_submission(final_submission_id="G005", paper_id_filled="P001", title_author_review_status="pending")
 
         response = self.client.get(reverse("submissions:title_author_extraction"))
         self.assertNotContains(response, "Try GROBID")
@@ -4664,11 +4881,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Try GROBID")
 
     def test_title_author_page_warns_review_ok_grobid_resets_review(self):
+        self.make_master_paper("P001", "GROBID Paper", "Ada")
         settings_obj = AppSetting.load()
         settings_obj.grobid_enabled = True
         settings_obj.save()
         self.make_final_submission(
             final_submission_id="G006",
+            paper_id_filled="P001",
             title_author_review_status="review_ok",
             title_author_verified=True,
         )
@@ -4679,8 +4898,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "GROBID re-extract resets review status.")
 
     def test_title_author_page_emphasizes_title_match_check(self):
+        self.make_master_paper("P001", "Bridging Disciplines", "Ada")
         submission = self.make_final_submission(
             final_submission_id="TMVIS1",
+            paper_id_filled="P001",
             final_submission_title="Bridging Disciplines",
             extracted_title="Bridging Disciplines",
             extracted_title_verified=False,
@@ -4700,19 +4921,23 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             reverse("submissions:title_author_extraction") + "?filter=all&q=TMVIS1"
         )
 
-        self.assertContains(response, "Title Match Check")
-        self.assertContains(response, "Needs match review")
+        self.assertContains(response, "Title Comparison")
+        self.assertContains(response, "Review with title/authors")
         self.assertContains(response, "Score 100%")
-        self.assertContains(response, "Confirm match")
-        self.assertContains(response, "Confirm if this 100% match is still correct.")
+        self.assertNotContains(response, "Confirm match")
+        self.assertContains(response, "Review OK")
         self.assertNotContains(response, "Extracted Title Diff Against Final Title")
 
-    def test_title_author_page_filters_title_match_and_needs_match(self):
+    def test_title_author_page_filters_review_ok_and_needs_review(self):
+        self.make_master_paper("TM001", "Matched Title", "Ada")
+        self.make_master_paper("TM002", "Needs Match Title", "Ada")
         self.make_final_submission(
             final_submission_id="TM001",
             paper_id_filled="TM001",
             final_submission_title="Matched Title",
             extracted_title="Matched Title",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
             extracted_title_verified=True,
         )
         self.make_final_submission(
@@ -4720,20 +4945,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             paper_id_filled="TM002",
             final_submission_title="Needs Match Title",
             extracted_title="Needs Match Title",
+            title_author_review_status="pending",
+            title_author_verified=False,
             extracted_title_verified=False,
         )
 
-        matched = self.client.get(reverse("submissions:title_author_extraction") + "?filter=title_match")
-        self.assertContains(matched, "Title Match")
+        matched = self.client.get(reverse("submissions:title_author_extraction") + "?filter=review_ok")
+        self.assertContains(matched, "Review OK")
         self.assertContains(matched, "TM001")
         self.assertNotContains(matched, "TM002")
 
         needs_match = self.client.get(
-            reverse("submissions:title_author_extraction") + "?filter=title_needs_match"
+            reverse("submissions:title_author_extraction") + "?filter=needs_verification"
         )
-        self.assertContains(needs_match, "Title Needs Match")
-        self.assertContains(needs_match, "Title match")
-        self.assertContains(needs_match, "Needs Match")
+        self.assertContains(needs_match, "Needs Review")
         self.assertContains(needs_match, "TM002")
         self.assertNotContains(needs_match, "TM001")
 
@@ -4804,6 +5029,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             paper_id_filled="P009",
             final_submission_title="Unverified Title",
             extracted_title="Unverified Title",
+            title_author_review_status="pending",
+            title_author_verified=False,
             extracted_title_verified=False,
         )
         self.make_master_paper("P010", "Missing Extracted Title", "Ada")
@@ -4886,7 +5113,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         response = self.client.get(reverse("submissions:organized_list"))
-        self.assertContains(response, "Download publication files")
+        self.assertContains(response, "Publication files")
         self.assertContains(response, "Download PDF")
         self.assertContains(response, "Download Source")
         self.assertContains(response, reverse("submissions:publication_pdf", args=[active.pk]))
@@ -4898,6 +5125,124 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(source_response.status_code, 200)
         self.assertIn("attachment", source_response["Content-Disposition"])
         self.assertEqual(b"".join(source_response.streaming_content), b"active source")
+
+    def test_organized_list_details_integrates_publication_authors_files_and_notes(self):
+        self.make_master_paper(
+            "P001",
+            "Publication Record",
+            "Master Metadata Author",
+            notes="Check the publisher category before release.",
+        )
+        submission = self.make_final_submission(
+            final_submission_id="EDITOR-P001-001",
+            paper_id_filled="P001",
+            final_submission_title="Publication Record",
+            final_submission_authors="Final Metadata Author",
+            extracted_title="Publication Record",
+            extracted_authors=(
+                "Vasile Rus and Panayiota Kendeou and Matthew L. Bernacki "
+                "and Amy Cook and Andrew Tawfik"
+            ),
+            title_author_source="grobid",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            submission_origin="editor_upload",
+            editor_upload_notes="Author supplied this version by email.",
+        )
+
+        response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Publication record")
+        self.assertContains(response, "Publication metadata")
+        self.assertContains(response, "Publication authors")
+        self.assertNotContains(response, "Publication content")
+        self.assertContains(response, "Publication files")
+        self.assertContains(response, "Vasile Rus")
+        self.assertContains(response, "Panayiota Kendeou")
+        self.assertContains(response, "Matthew L. Bernacki")
+        self.assertContains(response, "Amy Cook")
+        self.assertContains(response, "Andrew Tawfik")
+        self.assertContains(response, "5 authors")
+        self.assertContains(response, 'class="cfm-publication-author"', count=5)
+        self.assertContains(response, "GROBID")
+        self.assertContains(response, "Open Title/Author Review")
+        self.assertContains(
+            response,
+            f'{reverse("submissions:title_author_extraction")}?filter=all&amp;q=P001',
+            html=False,
+        )
+        self.assertContains(response, "Check the publisher category before release.")
+        self.assertContains(response, "Author supplied this version by email.")
+        self.assertContains(response, "Technical details")
+        self.assertContains(response, reverse("submissions:publication_pdf", args=[submission.pk]))
+        self.assertContains(response, reverse("submissions:publication_source", args=[submission.pk]))
+
+        rows, _summary, _settings_obj, _current_filter, _current_sort = organized_list_rows(
+            query="P001",
+            current_filter="all",
+        )
+        self.assertEqual(
+            rows[0]["author_display_items"],
+            [
+                {"order": 1, "name": "Vasile Rus"},
+                {"order": 2, "name": "Panayiota Kendeou"},
+                {"order": 3, "name": "Matthew L. Bernacki"},
+                {"order": 4, "name": "Amy Cook"},
+                {"order": 5, "name": "Andrew Tawfik"},
+            ],
+        )
+
+    def test_organized_list_details_marks_missing_publication_authors(self):
+        self.make_master_paper("P001", "Missing Authors", "Master Metadata Author")
+        self.make_final_submission(
+            final_submission_id="100",
+            paper_id_filled="P001",
+            final_submission_title="Missing Authors",
+            extracted_title="Missing Authors",
+            extracted_authors="",
+            title_author_review_status="pending",
+            title_author_verified=False,
+        )
+
+        response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No extracted authors")
+
+    def test_navbar_prioritizes_organized_list_and_groups_editorial_work(self):
+        response = self.client.get(reverse("submissions:organized_list"))
+        html = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            f'href="{reverse("submissions:organized_list")}" aria-current="page">Organized List</a>',
+            html,
+        )
+        self.assertIn("Submissions\n                    </a>", html)
+        self.assertIn("Reviews\n                    </a>", html)
+        self.assertIn("Output\n                    </a>", html)
+        self.assertIn("System\n                    </a>", html)
+        self.assertNotIn("Workflow\n                    </a>", html)
+        self.assertNotIn("Integrations\n                    </a>", html)
+        self.assertIn(reverse("submissions:editor_upload"), html)
+        self.assertIn(reverse("submissions:integration"), html)
+        self.assertIn(reverse("submissions:system_state"), html)
+
+        system_response = self.client.get(reverse("submissions:system_state"))
+        self.assertContains(system_response, "System Backup / Restore")
+        self.assertNotContains(system_response, "Prepare CrossCheck PDFs")
+        crosscheck_response = self.client.get(reverse("submissions:integration"))
+        self.assertContains(crosscheck_response, "Prepare CrossCheck PDFs")
+        self.assertNotContains(crosscheck_response, "Restore System State")
+
+    def test_base_layout_keeps_footer_at_viewport_bottom_on_short_pages(self):
+        response = self.client.get(reverse("submissions:organized_list"))
+        html = response.content.decode()
+
+        self.assertIn("min-height: 100vh", html)
+        self.assertIn("flex: 1 0 auto", html)
+        self.assertIn("flex-shrink: 0", html)
 
     def test_dashboard_plagiarism_threshold_count_is_paper_count_not_score_count(self):
         self.make_master_paper("P001", "Both Scores High", "Ada")
@@ -4927,6 +5272,92 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:dashboard"))
         self.assertContains(response, "2 papers over threshold")
         self.assertNotContains(response, "3 papers over threshold")
+
+    def test_dashboard_counts_only_active_invalid_ids_and_tracks_verified_title_differences(self):
+        self.make_master_paper("P001", "Paper Master Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Different Final Title",
+            extracted_title="Different Final Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="INVALID-OLD",
+            final_submission_title="Old Invalid Version",
+            extracted_title="Old Invalid Version",
+            active_version=False,
+        )
+
+        counts = dashboard_counts()
+
+        self.assertEqual(counts["invalid_paper_ids"], 0)
+        self.assertEqual(counts["title_mismatches"], 0)
+        self.assertEqual(counts["verified_title_differences"], 1)
+
+    def test_dashboard_title_author_attention_counts_each_paper_once(self):
+        self.make_master_paper("P001", "Review Metadata", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Review Metadata",
+            extracted_title="Review Metadata",
+            extracted_authors="",
+            title_author_review_status="pending",
+            title_author_verified=False,
+            extracted_title_verified=False,
+        )
+
+        counts = dashboard_counts()
+
+        self.assertEqual(counts["missing_title_author_extraction"], 1)
+        self.assertEqual(counts["title_author_attention_papers"], 1)
+
+    def test_dashboard_uses_the_same_blockers_as_publication_export(self):
+        self.make_master_paper("P001", "Needs Metadata Review", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Needs Metadata Review",
+            extracted_title="Needs Metadata Review",
+            extracted_authors="Ada",
+            title_author_review_status="pending",
+            title_author_verified=False,
+        )
+        readiness_rows = publication_readiness_rows()
+
+        response = self.client.get(reverse("submissions:dashboard"))
+
+        self.assertEqual(
+            response.context["readiness"]["blocking_issue_count"],
+            len(readiness_rows),
+        )
+        self.assertContains(response, "Final package is blocked")
+        self.assertContains(response, "Title and author review")
+        self.assertNotContains(response, "System Overview")
+        self.assertNotContains(response, "refresh active/old publication files")
+
+    def test_dashboard_tracks_reviewed_extracted_title_differences(self):
+        self.make_master_paper("P001", "Title Match Review", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Title Match Review Extended",
+            extracted_title="Title Match Review",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            extracted_title_verified=False,
+            format_status="review_ok",
+        )
+
+        response = self.client.get(reverse("submissions:dashboard"))
+
+        self.assertEqual(dashboard_counts()["unverified_extracted_title_match"], 0)
+        self.assertEqual(dashboard_counts()["reviewed_extracted_title_differences"], 1)
+        self.assertContains(response, "Reviewed extracted-title differences")
+        self.assertNotContains(response, "Extracted title match review")
 
     def test_organized_list_exception_panel_sections_are_relevant_and_actionable(self):
         self.make_master_paper("P001", "Clean", "Ada")
@@ -5596,10 +6027,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(publication_readiness_rows(), [])
 
         dashboard = self.client.get(reverse("submissions:dashboard"))
-        self.assertContains(dashboard, "3")
-        self.assertContains(dashboard, "1 current not publishing")
-        self.assertContains(dashboard, "0 missing")
-        self.assertContains(dashboard, "0 papers over threshold")
+        self.assertContains(dashboard, "Final package checks are clear")
+        self.assertContains(dashboard, "Publication candidates")
+        self.assertContains(dashboard, "Current Not Publishing")
+        self.assertContains(dashboard, "Plagiarism results")
         clean_organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
         self.assertContains(clean_organized, "Main Ready Paper")
         self.assertContains(clean_organized, "Corrected Source Paper")
@@ -5648,16 +6079,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         rows = error_report_rows()
         categories = {row["category"] for row in rows}
         self.assertIn("Unverified Title/Author Extraction", categories)
-        self.assertIn("Unverified Extracted Title Match", categories)
+        self.assertNotIn("Unverified Extracted Title Match", categories)
         self.assertTrue(all("group" in row and "level" in row for row in rows))
 
         verify_title_author(submission)
-        verify_extracted_title(submission)
         submission.refresh_from_db()
         self.assertTrue(submission.title_author_verified)
         self.assertTrue(submission.extracted_title_verified)
         unverify_title_author(submission)
-        unverify_extracted_title(submission)
         submission.refresh_from_db()
         self.assertFalse(submission.title_author_verified)
         self.assertFalse(submission.extracted_title_verified)

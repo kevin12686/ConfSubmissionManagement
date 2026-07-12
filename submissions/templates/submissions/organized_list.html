@@ -12,7 +12,7 @@
         {% endif %}
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify IDs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
-        <a class="btn btn-outline-primary" href="{% url 'submissions:title_author_extraction' %}">Title/Author Extraction</a>
+        <a class="btn btn-outline-primary" href="{% url 'submissions:title_author_extraction' %}">Title/Author Review</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
 </div>
@@ -81,7 +81,7 @@
 </form>
 
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle table-sm cfm-table">
+    <table class="table table-striped table-hover align-middle table-sm cfm-table cfm-table-sticky">
         <thead>
             <tr>
                 <th>Paper ID</th>
@@ -402,63 +402,155 @@
             {% endif %}
             <tr class="collapse" id="details-{{ forloop.counter }}">
                 <td colspan="10">
-                    <div class="row g-2 small">
-                        <div class="col-md-2">
-                            <div class="text-muted">Accept Status</div>
-                            <div>{{ paper.acceptance_status|default:"--" }}</div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="text-muted">Final ID</div>
-                            <div>{% if submission %}{{ submission.final_submission_id }}{% else %}--{% endif %}</div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="text-muted">Author-entered ID</div>
-                            <div>{% if submission %}{{ submission.start2_paper_id_raw|default:"--" }}{% else %}--{% endif %}</div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="text-muted">Paper ID</div>
-                            <div>{% if submission %}{{ submission.paper_id_filled|default:"--" }}{% else %}--{% endif %}</div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="text-muted">Publication PDF</div>
-                            {% if row.publication_pdf.exists %}
-                                <div><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span></div>
-                                <div class="text-break">{{ row.publication_pdf.path }}</div>
-                            {% else %}
-                                <span class="text-muted">--</span>
+                    <div class="cfm-publication-record">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <div class="fw-semibold">Publication record</div>
+                            {% if submission %}
+                                <div class="d-flex flex-wrap gap-1">
+                                    <span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span>
+                                    <span class="badge text-bg-secondary">{{ submission.get_submission_origin_display }}</span>
+                                </div>
                             {% endif %}
                         </div>
-                        <div class="col-md-4">
-                            <div class="text-muted">Download publication files</div>
-                            <div class="d-flex flex-wrap gap-2">
-                                {% if row.publication_pdf.exists %}
-                                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" download>Download PDF</a>
-                                {% else %}
-                                    <span class="badge text-bg-danger">No PDF</span>
-                                {% endif %}
-                                {% if row.publication_source.exists %}
-                                    <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:publication_source' submission.pk %}">Download Source</a>
-                                {% else %}
-                                    <span class="badge text-bg-danger">No source</span>
+
+                        <section class="cfm-record-section" aria-label="Publication metadata">
+                            <div class="cfm-record-section-title">Publication metadata</div>
+                            <div class="row g-3 small">
+                                <div class="col-sm-6 col-lg">
+                                    <div class="text-muted">Accept Status</div>
+                                    <div>{{ paper.acceptance_status|default:"--" }}</div>
+                                </div>
+                                <div class="col-sm-6 col-lg">
+                                    <div class="text-muted">Final ID</div>
+                                    <div>{% if submission %}{{ submission.final_submission_id }}{% else %}--{% endif %}</div>
+                                </div>
+                                <div class="col-sm-6 col-lg">
+                                    <div class="text-muted">Author-entered ID</div>
+                                    <div>{% if submission %}{{ submission.start2_paper_id_raw|default:"--" }}{% else %}--{% endif %}</div>
+                                </div>
+                                <div class="col-sm-6 col-lg">
+                                    <div class="text-muted">Paper ID</div>
+                                    <div>{% if submission %}{{ submission.paper_id_filled|default:"--" }}{% else %}--{% endif %}</div>
+                                </div>
+                                <div class="col-sm-6 col-lg">
+                                    <div class="text-muted">Version</div>
+                                    <div>{% if submission %}{% if submission.active_version %}Current final{% else %}Inactive{% endif %}{% else %}No final{% endif %}</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="cfm-record-section" aria-label="Publication authors">
+                            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                                <div class="cfm-record-section-title mb-0">Publication authors</div>
+                                {% if submission %}
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <span class="badge text-bg-{{ row.author_count_level }}">{{ row.author_count_label }}</span>
+                                        <span class="badge text-bg-{{ row.extraction_level }}">{{ row.extraction_label }}</span>
+                                        <span class="badge text-bg-secondary">{{ submission.get_title_author_source_display }}</span>
+                                    </div>
                                 {% endif %}
                             </div>
-                            {% if row.publication_source.exists %}
-                                <div class="small text-muted text-break mt-1">{{ row.publication_source.path }}</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-4">
-                            <div class="text-muted">Debug PDF copy</div>
-                            {% if row.debug_pdf.exists %}
-                                <a class="btn btn-sm btn-outline-secondary" href="{{ row.debug_pdf.url }}" target="_blank" rel="noopener">Open debug PDF</a>
-                                <div class="small text-muted text-break mt-1">{{ row.debug_pdf.path }}</div>
+                            {% if submission and submission.extracted_authors %}
+                                <ol class="cfm-publication-authors" aria-label="Publication authors in order">
+                                    {% for author in row.author_display_items %}
+                                        <li class="cfm-publication-author">
+                                            <span class="cfm-publication-author-order" aria-hidden="true">{{ author.order }}.</span>
+                                            <span class="text-break">{{ author.name }}</span>
+                                        </li>
+                                    {% endfor %}
+                                </ol>
+                                {% if row.unresolved_duplicate_authors %}
+                                    <div class="mt-2"><span class="badge text-bg-danger">Duplicate author needs review</span></div>
+                                {% elif row.has_duplicate_authors %}
+                                    <div class="mt-2"><span class="badge text-bg-secondary">Duplicate author reviewed</span></div>
+                                {% endif %}
                             {% else %}
-                                <div class="text-muted">Not synced. Use Settings &gt; Sync Debug PDFs if needed.</div>
+                                <div class="text-danger">No extracted authors</div>
                             {% endif %}
-                        </div>
-                        {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
-                            <div class="col-12">
-                                <div class="text-muted">Editor upload note</div>
-                                <div class="border rounded bg-light p-2 text-break">{{ submission.editor_upload_notes|linebreaksbr }}</div>
+                            {% if submission %}
+                                <div class="mt-2">
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:title_author_extraction' %}?filter=all&amp;q={{ submission.paper_id_filled|urlencode }}">Open Title/Author Review</a>
+                                </div>
+                            {% endif %}
+                        </section>
+
+                        <section class="cfm-record-section" aria-label="Publication files">
+                            <div class="cfm-record-section-title">Publication files</div>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                        <span class="fw-semibold">PDF</span>
+                                        {% if row.publication_pdf.exists %}
+                                            <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                                        {% else %}
+                                            <span class="badge text-bg-danger">No PDF</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if row.publication_pdf.exists %}
+                                        <div class="small text-break mb-2">{{ row.publication_pdf.filename }}</div>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" download>Download PDF</a>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                        <span class="fw-semibold">Source</span>
+                                        {% if row.publication_source.exists %}
+                                            <span class="badge text-bg-{% if row.publication_source.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_source.label }}</span>
+                                        {% else %}
+                                            <span class="badge text-bg-danger">No source</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if row.publication_source.exists %}
+                                        <div class="small text-break mb-2">{{ row.publication_source.filename }}</div>
+                                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:publication_source' submission.pk %}">Download Source</a>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                        <span class="fw-semibold">Debug PDF copy</span>
+                                        {% if row.debug_pdf.exists %}<span class="badge text-bg-secondary">Synced</span>{% endif %}
+                                    </div>
+                                    {% if row.debug_pdf.exists %}
+                                        <div class="small text-break mb-2">{{ row.debug_pdf.filename }}</div>
+                                        <a class="btn btn-sm btn-outline-secondary" href="{{ row.debug_pdf.url }}" target="_blank" rel="noopener">Open debug PDF</a>
+                                    {% else %}
+                                        <div class="small text-muted">Not synced. Use Settings &gt; Sync Debug PDFs if needed.</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </section>
+
+                        {% if paper.notes or submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+                            <section class="cfm-record-section" aria-label="Editorial notes">
+                                <div class="cfm-record-section-title">Editorial notes</div>
+                                <div class="row g-3 small">
+                                    {% if paper.notes %}
+                                        <div class="col-md-6">
+                                            <div class="text-muted mb-1">Paper Master note</div>
+                                            <div class="text-break">{{ paper.notes|linebreaksbr }}</div>
+                                        </div>
+                                    {% endif %}
+                                    {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+                                        <div class="col-md-6">
+                                            <div class="text-muted mb-1">Editor upload note</div>
+                                            <div class="text-break">{{ submission.editor_upload_notes|linebreaksbr }}</div>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </section>
+                        {% endif %}
+
+                        {% if row.publication_pdf.exists or row.publication_source.exists or row.debug_pdf.exists %}
+                            <div class="cfm-record-technical">
+                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#technical-details-{{ forloop.counter }}" aria-expanded="false" aria-controls="technical-details-{{ forloop.counter }}">Technical details</button>
+                                <div class="collapse mt-2" id="technical-details-{{ forloop.counter }}">
+                                    <dl class="row small mb-0">
+                                        <dt class="col-md-2">File selection</dt><dd class="col-md-10">Publication links above use the corrected file when available, otherwise the original file for this active submission.</dd>
+                                    </dl>
+                                </div>
                             </div>
                         {% endif %}
                     </div>
@@ -484,6 +576,60 @@
     .cfm-exception-panel .card-header {
         background: #f1f5f9;
         border-bottom-color: #7f8a99;
+    }
+    .cfm-publication-record {
+        border: 1px solid #6c757d;
+        border-radius: 0.35rem;
+        padding: 1rem;
+        background: var(--bs-body-bg);
+        box-sizing: border-box;
+        left: 0;
+        max-width: calc(100vw - 3rem);
+        position: sticky;
+        width: calc(100vw - 3rem);
+    }
+    .cfm-record-section {
+        border-top: 1px solid #7f8a99;
+        margin-top: 0.9rem;
+        padding-top: 0.9rem;
+    }
+    .cfm-record-section-title {
+        font-weight: 600;
+        margin-bottom: 0.55rem;
+    }
+    .cfm-publication-authors {
+        display: grid;
+        font-size: 1rem;
+        gap: 0.4rem 1.5rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        line-height: 1.4;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+    .cfm-publication-author {
+        align-items: baseline;
+        display: grid;
+        grid-template-columns: 1.75rem minmax(0, 1fr);
+    }
+    .cfm-publication-author-order {
+        color: var(--cfm-muted);
+        font-variant-numeric: tabular-nums;
+    }
+    .cfm-record-technical {
+        border-top: 1px solid #7f8a99;
+        margin-top: 0.9rem;
+        padding-top: 0.9rem;
+    }
+    @media (max-width: 575.98px) {
+        .cfm-publication-record {
+            max-width: calc(100vw - 2rem);
+            padding: 0.75rem;
+            width: calc(100vw - 2rem);
+        }
+        .cfm-publication-authors {
+            grid-template-columns: minmax(0, 1fr);
+        }
     }
     .title-diff {
         border-left: 4px solid #6c757d;

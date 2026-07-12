@@ -57,7 +57,6 @@ ERROR_GROUPS = {
             "Missing Extracted Authors",
             "Title/Author Red Flag",
             "Unverified Title/Author Extraction",
-            "Unverified Extracted Title Match",
             "Manual Title/Author Override",
             "Duplicate Author In Paper",
             "Author Over Limit",
@@ -144,7 +143,6 @@ ERROR_CATEGORY_SEVERITY = {
     "Missing Extracted Authors": "medium",
     "Title/Author Red Flag": "medium",
     "Unverified Title/Author Extraction": "medium",
-    "Unverified Extracted Title Match": "medium",
     "Manual Title/Author Override": "info",
     "Formatting Not Review OK": "medium",
     "Missing Plagiarism Result": "medium",
@@ -806,20 +804,6 @@ def publication_readiness_rows(include_allowed=False):
                     "message": "Extracted title/authors have not been manually verified.",
                 }
             )
-        if (
-            submission.extracted_title
-            and submission.final_submission_title
-            and not submission.extracted_title_verified
-        ):
-            rows.append(
-                {
-                    "category": "Unverified Extracted Title Match",
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "message": submission.extracted_title_match_message
-                    or "Extracted title has not been verified against Final Submission Title.",
-                }
-            )
         if submission.format_status != "review_ok":
             rows.append(
                 {
@@ -1178,6 +1162,7 @@ def invalid_paper_id_submissions():
     return [
         submission
         for submission in FinalSubmission.objects.filter(
+            active_version=True,
             excluded_from_publication=False,
             discarded=False,
         )
@@ -1282,14 +1267,59 @@ def dashboard_counts():
             master_by_id.get(submission.paper_id_filled),
         )
     )
+    verified_title_differences = sum(
+        1
+        for submission in active
+        if submission.paper_id_filled in valid_ids
+        and not paper_title_matches_master(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+        and paper_id_effectively_verified(
+            submission,
+            master_by_id.get(submission.paper_id_filled),
+        )
+    )
+    reviewed_extracted_title_differences = sum(
+        1
+        for submission in active
+        if submission.title_author_review_status == "review_ok"
+        and submission.extracted_title
+        and submission.final_submission_title
+        and not _titles_match_for_mapping(
+            submission.extracted_title,
+            submission.final_submission_title,
+        )
+    )
+    title_author_attention_papers = sum(
+        1
+        for submission in active
+        if (
+            not submission.extracted_title
+            or not submission.extracted_authors
+            or submission.title_author_review_status != "review_ok"
+        )
+    )
+    papers_over_author_number_limit = sum(
+        1
+        for submission in active
+        if author_number_over_limit(submission, setting)
+        and not has_valid_author_number_exception(submission)
+    )
+    duplicate_author_papers = sum(
+        1 for submission in active if has_unresolved_duplicate_authors(submission)
+    )
     from submissions.services.editor_uploads import editor_conflict_count
 
     return {
         "total_papers": InitialPaper.objects.count(),
         "total_final_submissions": FinalSubmission.objects.count(),
         "active_final_versions": active.count(),
+        "publication_candidates": active.filter(paper_id_filled__in=valid_ids).count(),
         "unverified_paper_ids": unverified_paper_ids,
         "title_mismatches": title_mismatches,
+        "verified_title_differences": verified_title_differences,
+        "reviewed_extracted_title_differences": reviewed_extracted_title_differences,
         "duplicate_final_submissions": FinalSubmission.objects.filter(
             duplicate_submission=True,
             discarded=False,
@@ -1322,8 +1352,9 @@ def dashboard_counts():
         "authors_over_limit": sum(
             1 for row in author_rows if row["over_limit"] and not row["waiver_valid"]
         ),
-        "missing_title_author_extraction": active.filter(extracted_title="").count()
-        + active.filter(extracted_authors="").count(),
+        "missing_title_author_extraction": active.filter(
+            Q(extracted_title="") | Q(extracted_authors="")
+        ).count(),
         "title_author_pending": active.filter(title_author_review_status="pending").count(),
         "title_author_red_flag": active.filter(title_author_review_status="red_flag").count(),
         "title_author_review_ok": active.filter(title_author_review_status="review_ok").count(),
@@ -1331,10 +1362,10 @@ def dashboard_counts():
         .exclude(extracted_authors="")
         .exclude(title_author_review_status="review_ok")
         .count(),
-        "unverified_extracted_title_match": active.exclude(extracted_title="")
-        .exclude(final_submission_title="")
-        .filter(extracted_title_verified=False)
-        .count(),
+        "unverified_extracted_title_match": 0,
+        "title_author_attention_papers": title_author_attention_papers,
+        "papers_over_author_number_limit": papers_over_author_number_limit,
+        "duplicate_author_papers": duplicate_author_papers,
         "missing_plagiarism_result": active.filter(
             Q(similarity_score__isnull=True) | Q(single_similarity_score__isnull=True)
         ).count(),
