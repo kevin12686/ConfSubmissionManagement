@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pandas as pd
 from django.conf import settings as django_settings
+from django.contrib.staticfiles import finders
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -2992,6 +2993,22 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_base_layout_exposes_brand_icon_and_favicons(self):
+        response = self.client.get(reverse("submissions:dashboard"))
+
+        self.assertContains(response, 'class="cfm-brand-icon"')
+        self.assertContains(response, '/static/submissions/brand/favicon-32.png')
+        self.assertContains(response, '/static/submissions/brand/favicon-16.png')
+        self.assertContains(response, '/static/submissions/brand/apple-touch-icon.png')
+        for asset in (
+            "submissions/brand/favicon-32.png",
+            "submissions/brand/favicon-16.png",
+            "submissions/brand/apple-touch-icon.png",
+            "submissions/brand/app-icon-512.png",
+        ):
+            with self.subTest(asset=asset):
+                self.assertIsNotNone(finders.find(asset))
+
     def test_get_smoke_for_editorial_pages(self):
         paths = [
             reverse("submissions:dashboard"),

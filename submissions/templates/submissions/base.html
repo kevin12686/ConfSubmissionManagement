@@ -1,9 +1,13 @@
+{% load static %}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Conference Final Manager{% endblock %}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'submissions/brand/favicon-32.png' %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'submissions/brand/favicon-16.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'submissions/brand/apple-touch-icon.png' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
@@ -20,6 +24,17 @@
         }
         body {
             background: var(--cfm-bg);
+        }
+        .navbar-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .cfm-brand-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 0.375rem;
+            flex: 0 0 auto;
         }
         .text-warning,
         .text-warning-emphasis {
@@ -315,7 +330,10 @@
 {% with current_url=request.resolver_match.url_name %}
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="{% url 'submissions:dashboard' %}">Conference Final Manager</a>
+        <a class="navbar-brand" href="{% url 'submissions:dashboard' %}">
+            <img class="cfm-brand-icon" src="{% static 'submissions/brand/favicon-32.png' %}" alt="" width="32" height="32" aria-hidden="true">
+            <span>Conference Final Manager</span>
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
             <span class="navbar-toggler-icon"></span>
         </button>

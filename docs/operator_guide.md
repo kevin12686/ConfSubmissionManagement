@@ -9,6 +9,8 @@ This guide is for editors running the local system to prepare final submissions 
 3. If continuing an existing conference on a new machine, go to `/integrations/crosscheck/` and restore a System State ZIP before importing new files.
 4. Set the conference name and limits in `/settings/`.
 
+The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar.
+
 ## Page Map
 
 | Page | URL | Main use |
