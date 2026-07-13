@@ -82,6 +82,8 @@ Tables use one uniform row surface with clear horizontal separators. Zebra strip
 
 Typography is centralized for long editorial sessions. Normal page and table text uses 15px type with increased line height, supporting text has a fixed 13px minimum, and status pills use 12px type. Nested `small` elements do not shrink further. Muted text is reserved for supporting metadata and remains dark enough to read against the work surfaces.
 
+Technical values such as paths, action names, and expanded Audit Log JSON use dark monospace text on a muted light surface. If any expanded detail shows light text on a light background, treat it as a display defect rather than an indication that the log data is missing.
+
 ## Import Workflow
 
 1. Download templates from the app.
