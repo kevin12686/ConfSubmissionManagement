@@ -18,7 +18,7 @@
 
 <style>
     .format-preview {
-        background: #fff;
+        background: var(--cfm-surface);
         border: 1px solid var(--cfm-border-strong);
         border-radius: 0.375rem;
         overflow: hidden;
@@ -39,10 +39,12 @@
     }
 </style>
 
+<div id="formatting-worklist">
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
     <li class="nav-item">
-        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+           {% if mode != "single" %}hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#formatting-worklist" hx-select="#formatting-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#formatting-loading"{% endif %}>
             {{ option.label }}
             <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_attention' or option.value == 'pending' or option.value == 'needs_edit' %}warning{% elif option.value == 'review_ok' or option.value == 'review_ok_no_edit' %}success{% elif option.value == 'edited' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
         </a>
@@ -50,7 +52,7 @@
     {% endfor %}
 </ul>
 
-<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" {% if mode != "single" %}hx-get="{% url 'submissions:formatting' %}" hx-target="#formatting-worklist" hx-select="#formatting-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#formatting-loading"{% endif %}>
     <input type="hidden" name="filter" value="{{ current_filter }}">
     <div class="col-lg-9">
         <label class="form-label" for="formatting-search">Search</label>
@@ -64,6 +66,7 @@
             <a class="btn btn-outline-secondary w-100" href="{% url 'submissions:formatting' %}">Clear</a>
         </div>
     {% endif %}
+    <div class="col-12"><span id="formatting-loading" class="cfm-loading-indicator" role="status">Updating queue...</span></div>
 </form>
 
 {% if formatting_confirmation %}
@@ -135,6 +138,7 @@
     </div>
 {% endif %}
 
+<div id="formatting-queue">
 {% for row in rows %}
     {% with item=row.submission form=row.form %}
     <div class="card cfm-review-card">
@@ -147,10 +151,16 @@
                 </span>
                 {% if item.has_corrected_files %}<span class="badge text-bg-primary">Edited</span>{% endif %}
                 {% if row.publication_pdf.exists %}
-                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
+                    <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">PDF {{ row.publication_pdf.label }}</span>
                 {% else %}
                     <span class="badge text-bg-danger">No PDF</span>
                 {% endif %}
+                {% if row.publication_source.exists %}
+                    <span class="badge text-bg-{% if row.publication_source.source == 'corrected' %}success{% else %}secondary{% endif %}">Source {{ row.publication_source.label }}</span>
+                {% else %}
+                    <span class="badge text-bg-danger">No source</span>
+                {% endif %}
+                {% if row.needs_processing_after_formatting %}<span class="badge text-bg-warning">Needs Process PDFs</span>{% endif %}
                 {% if mode != "single" %}
                     <span class="small text-muted">{{ item.final_submission_title|default:"Missing title"|truncatechars:72 }}</span>
                 {% endif %}
@@ -162,7 +172,7 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
             </div>
         </div>
-        <div id="format-review-{{ item.pk }}" class="{% if mode != 'single' %}collapse{% endif %}">
+        <div id="format-review-{{ item.pk }}" class="{% if mode != 'single' %}collapse{% endif %}" {% if mode != "single" %}data-bs-parent="#formatting-queue"{% endif %}>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-xl-4">
@@ -264,6 +274,8 @@
 {% empty %}
     <div class="cfm-empty">No active submissions found.</div>
 {% endfor %}
+</div>
+</div>
 {% if mode == "single" %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {

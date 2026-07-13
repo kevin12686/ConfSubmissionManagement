@@ -104,7 +104,7 @@ machine hostname or IP address to `SMS_ALLOWED_HOSTS`.
 3. Start the app with `start.command`, `start_windows.bat`, or `./scripts/start_local.sh`.
 4. If you have a System State ZIP, open `/integrations/system-state/` and preview the restore before applying it.
 
-The first run needs internet access to install Python packages from `requirements.txt`. After that, normal local use is offline except for Bootstrap CDN assets in the browser UI.
+The first run needs internet access to install Python packages from `requirements.txt`. After that, normal local use is offline. Tabler, HTMX, and their licenses are pinned under Django static files; the browser UI does not require CDN assets.
 
 System State ZIP files are portable. They restore settings, conference name, database records, PDFs, source files, reports, previews, and managed files into the new computer's local `data/` folders.
 
@@ -132,7 +132,9 @@ System State ZIP files are portable. They restore settings, conference name, dat
 12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.
 13. Download a System State ZIP before moving machines or archiving a conference.
 
-Large worklists are organized for editorial scanning: Final Submissions keeps Batch Upload collapsed until needed, Formatting Review uses a compact list with per-paper expansion plus Single Paper Mode, and Process PDFs keeps every selected paper's complete thumbnail strip expanded so blank pages remain easy to spot. Process PDFs, Author Count, Exceptions, and Publication Candidates provide focused search or filters without changing publication scope.
+Large worklists are organized for editorial scanning. Final Submissions keeps `Import / Re-upload` collapsed until needed. Formatting Review uses a compact queue with one expanded paper at a time plus Single Paper Mode. Process PDFs keeps every matching paper's complete thumbnail strip expanded, while search, four status filters, paper jump, sticky paper headers, lazy-loaded fixed-size thumbnails, and enlarged page previews make long runs manageable. Organized List separates publication blockers from tracked information and keeps stable table widths.
+
+The UI modernization is complete for the current scope. It uses locally pinned Tabler 1.4.0 on Bootstrap-compatible templates and HTMX 2.0.10 for GET-only worklist updates. Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs preserve filter URLs and ordinary Django fallback. Upload zones show selected file counts/types and allow removal before submit, but imports still require the server-side preview-before-apply step. Workflow decisions, publication files, active versions, review resets, exceptions, and state-changing actions remain server-owned; no publication-changing action uses optimistic browser state.
 
 ## Current Final Publication Version Rules
 
@@ -177,7 +179,7 @@ Legacy fields such as `current_file_path`, `source_current_file_path`, `active_f
 - `/reports/author-count/` Author Count
 - `/reports/audit-log/` Audit Log
 - `/reports/` Export Reports
-- `/reports/active-versions/` Publication Candidates
+- `/reports/active-versions/` legacy Publication Candidates URL; redirects to Organized List `Compact candidates`
 - `/integrations/crosscheck/` Plagiarism / CrossCheck
 - `/integrations/system-state/` System Backup / Restore
 - `/settings/` Settings and Storage Management

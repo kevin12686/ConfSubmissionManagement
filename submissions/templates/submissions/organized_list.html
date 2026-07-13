@@ -7,6 +7,10 @@
         <div class="cfm-page-subtitle">Current publication-prep checklist. PDF links open the version currently intended for publication.</div>
     </div>
     <div class="cfm-page-actions">
+        <div class="btn-group" role="group" aria-label="Organized List view">
+            <a class="btn btn-sm {% if view_mode == 'checklist' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'submissions:organized_list' %}?view=checklist{% if q %}&q={{ q|urlencode }}{% endif %}">Checklist</a>
+            <a class="btn btn-sm {% if view_mode == 'compact' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'submissions:organized_list' %}?view=compact{% if q %}&q={{ q|urlencode }}{% endif %}">Compact candidates</a>
+        </div>
         {% if note_count %}
             <button class="btn btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#paper-note-summary" aria-expanded="false" aria-controls="paper-note-summary">Note Summary ({{ note_count }})</button>
         {% endif %}
@@ -18,6 +22,8 @@
 </div>
 {% include "submissions/includes/note_summary.html" %}
 
+<div id="organized-worklist">
+{% if view_mode == "checklist" %}
 {% if summary.needs_process_pdfs %}
     <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
         <div>
@@ -35,21 +41,33 @@
     </div>
 {% endif %}
 
-<div class="row g-2 cfm-metric-strip">
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Rows</div><div class="cfm-metric-value">{{ summary.total_rows }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.missing_final %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">No Final</div><div class="cfm-metric-value">{{ summary.missing_final }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.unverified %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Paper ID Review</div><div class="cfm-metric-value">{{ summary.unverified }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.page_errors %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Page Issues</div><div class="cfm-metric-value">{{ summary.page_errors }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.missing_plagiarism %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">No Plagiarism</div><div class="cfm-metric-value">{{ summary.missing_plagiarism }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.plagiarism_issues %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">P/S Issues</div><div class="cfm-metric-value">{{ summary.plagiarism_issues }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.publication_duplicates %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">Duplicates</div><div class="cfm-metric-value">{{ summary.publication_duplicates }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.version_conflicts %}cfm-metric-warning{% endif %}"><div class="cfm-metric-label">Version Conflicts</div><div class="cfm-metric-value">{{ summary.version_conflicts }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric {% if summary.duplicate_author_issues %}cfm-metric-danger{% endif %}"><div class="cfm-metric-label">Duplicate Authors</div><div class="cfm-metric-value">{{ summary.duplicate_author_issues }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Not Publishing</div><div class="cfm-metric-value">{{ summary.excluded_from_publication }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Page Range</div><div class="cfm-metric-value">{{ settings_obj.page_minimum }}-{{ settings_obj.page_limit }}</div></div></div>
-</div>
+<section class="mb-3" aria-labelledby="organized-blockers-heading">
+    <h2 class="h6 text-uppercase text-muted mb-2" id="organized-blockers-heading">Publication blockers</h2>
+    {% if summary.blocker_metrics %}
+        <div class="row g-2 cfm-metric-strip">
+            {% for metric in summary.blocker_metrics %}
+                <div class="col-sm-6 col-lg-3 col-xxl-2">
+                    <a class="text-decoration-none text-reset" href="?filter={{ metric.filter }}&sort=needs_attention{% if q %}&q={{ q|urlencode }}{% endif %}">
+                        <div class="cfm-metric cfm-metric-{{ metric.level }}"><div class="cfm-metric-label">{{ metric.label }}</div><div class="cfm-metric-value">{{ metric.value }}</div></div>
+                    </a>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-success border py-2">No publication blockers in the current view.</div>
+    {% endif %}
+</section>
+<section class="mb-3" aria-labelledby="organized-tracked-heading">
+    <h2 class="h6 text-uppercase text-muted mb-2" id="organized-tracked-heading">Tracked information</h2>
+    <div class="row g-2 cfm-metric-strip">
+        {% for metric in summary.tracked_metrics %}
+            <div class="col-6 col-lg-3"><div class="cfm-metric cfm-metric-tracked"><div class="cfm-metric-label">{{ metric.label }}</div><div class="cfm-metric-value">{{ metric.value }}</div></div></div>
+        {% endfor %}
+    </div>
+</section>
 
-<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:organized_list' %}" hx-target="#organized-worklist" hx-select="#organized-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#organized-loading" hx-disabled-elt="button, input, select">
+    <input type="hidden" name="view" value="checklist">
     <div class="col-lg-5">
         <label class="form-label" for="organized-search">Search</label>
         <input id="organized-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search paper ID, title, authors, final ID, status">
@@ -78,10 +96,14 @@
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:organized_list' %}">Reset filters</a>
         </div>
     {% endif %}
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="organized-loading" message="Updating publication checklist..." %}
 </form>
 
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle table-sm cfm-table cfm-table-sticky">
+    <table class="table table-hover align-middle table-sm cfm-table cfm-table-sticky cfm-organized-table">
+        <colgroup>
+            <col class="cfm-col-paper-id"><col class="cfm-col-title"><col class="cfm-col-authors"><col class="cfm-col-pages"><col class="cfm-col-file"><col class="cfm-col-file"><col class="cfm-col-review"><col class="cfm-col-plagiarism"><col class="cfm-col-format"><col class="cfm-col-actions">
+        </colgroup>
         <thead>
             <tr>
                 <th>Paper ID</th>
@@ -99,7 +121,7 @@
         <tbody>
         {% for row in rows %}
             {% with paper=row.paper submission=row.submission %}
-            <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid %}table-danger{% elif row.row_type == 'unmatched' %}table-warning{% elif not submission %}table-danger{% endif %}">
+            <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid or row.row_type == 'unmatched' or not submission %}cfm-row-blocker{% endif %}">
                 <td>
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
                     <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
@@ -563,10 +585,61 @@
         </tbody>
     </table>
 </div>
+{% else %}
+<div class="alert alert-light border small">Compact candidates shows the same active Paper Master publication scope as Checklist, without readiness detail panels.</div>
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:organized_list' %}" hx-target="#organized-worklist" hx-select="#organized-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#organized-compact-loading" hx-disabled-elt="button, input">
+    <input type="hidden" name="view" value="compact">
+    <div class="col-lg-10"><label class="form-label" for="compact-candidate-search">Search</label><input id="compact-candidate-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors"></div>
+    <div class="col-lg-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill">Search</button>{% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:organized_list' %}?view=compact">Clear</a>{% endif %}</div>
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="organized-compact-loading" message="Updating publication candidates..." %}
+</form>
+<div class="table-responsive">
+    <table class="table table-hover align-middle cfm-table cfm-table-sticky cfm-compact-candidates-table">
+        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Extracted Title</th><th>Extracted Authors</th><th>Pages</th><th>Publication Files</th><th>Format</th><th></th></tr></thead>
+        <tbody>
+        {% for row in rows %}
+            {% with item=row.submission %}
+            <tr>
+                <td><strong>{{ item.paper_id_filled }}</strong><div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div></td>
+                <td>{{ item.final_submission_id }}</td>
+                <td class="cfm-title-cell">{{ item.extracted_title|default:item.final_submission_title|default:"Missing" }}</td>
+                <td>{{ item.extracted_authors|default:"Missing" }}</td>
+                <td>{{ item.page_count|default:"--" }}</td>
+                <td><div class="cfm-status-line">{% if row.publication_pdf.exists %}<a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">PDF</a><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>{% else %}<span class="badge text-bg-danger">No PDF</span>{% endif %}{% if row.publication_source.exists %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.publication_source.url }}">Source</a>{% else %}<span class="badge text-bg-danger">No source</span>{% endif %}</div></td>
+                <td><span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">{{ item.get_format_status_display }}</span></td>
+                <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></td>
+            </tr>
+            {% endwith %}
+        {% empty %}
+            <tr><td colspan="8">{% include "submissions/partials/empty_state.html" with message="No publication candidates match this search." %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+</div>
 <style>
+    .cfm-organized-table {
+        min-width: 1180px;
+    }
+    .cfm-compact-candidates-table {
+        min-width: 1050px;
+    }
+    .cfm-organized-table .cfm-col-paper-id { width: 9%; }
+    .cfm-organized-table .cfm-col-title { width: 32%; }
+    .cfm-organized-table .cfm-col-authors { width: 9%; }
+    .cfm-organized-table .cfm-col-pages { width: 7%; }
+    .cfm-organized-table .cfm-col-file { width: 7%; }
+    .cfm-organized-table .cfm-col-review { width: 8%; }
+    .cfm-organized-table .cfm-col-plagiarism { width: 8%; }
+    .cfm-organized-table .cfm-col-format { width: 6%; }
+    .cfm-organized-table .cfm-col-actions { width: 7%; }
+    .cfm-organized-table tbody > tr.cfm-row-blocker > td:first-child {
+        box-shadow: inset 4px 0 0 var(--cfm-danger-border);
+    }
     .cfm-exception-panel {
-        background: #f8fafc;
-        border: 1px solid #7f8a99;
+        background: var(--cfm-surface-subtle);
+        border: 1px solid var(--cfm-border-strong);
         border-radius: 0.5rem;
         padding: 0.85rem;
     }
@@ -574,14 +647,14 @@
         border-width: 1px;
     }
     .cfm-exception-panel .card-header {
-        background: #f1f5f9;
-        border-bottom-color: #7f8a99;
+        background: var(--cfm-surface-strong);
+        border-bottom-color: var(--cfm-border-strong);
     }
     .cfm-publication-record {
-        border: 1px solid #6c757d;
+        border: 1px solid var(--cfm-border-strong);
         border-radius: 0.35rem;
         padding: 1rem;
-        background: var(--bs-body-bg);
+        background: var(--cfm-surface);
         box-sizing: border-box;
         left: 0;
         max-width: calc(100vw - 3rem);
@@ -589,7 +662,7 @@
         width: calc(100vw - 3rem);
     }
     .cfm-record-section {
-        border-top: 1px solid #7f8a99;
+        border-top: 1px solid var(--cfm-border-strong);
         margin-top: 0.9rem;
         padding-top: 0.9rem;
     }
@@ -617,7 +690,7 @@
         font-variant-numeric: tabular-nums;
     }
     .cfm-record-technical {
-        border-top: 1px solid #7f8a99;
+        border-top: 1px solid var(--cfm-border-strong);
         margin-top: 0.9rem;
         padding-top: 0.9rem;
     }
@@ -632,38 +705,38 @@
         }
     }
     .title-diff {
-        border-left: 4px solid #6c757d;
+        border-left: 4px solid var(--cfm-neutral-border);
         margin-top: 0.35rem;
         padding: 0.35rem 0.5rem;
-        background: #f8f9fa;
+        background: var(--cfm-surface-subtle);
     }
     .title-diff-identical {
-        border-left-color: #198754;
+        border-left-color: var(--cfm-success-border);
     }
     .title-diff-soft {
-        border-left-color: #6ea8fe;
-        background: #eef5ff;
+        border-left-color: var(--cfm-info-border);
+        background: var(--cfm-info-bg);
     }
     .title-diff-hard {
-        border-left-color: #fd7e14;
-        background: #fff3e6;
+        border-left-color: var(--cfm-warning-border);
+        background: var(--cfm-warning-bg);
     }
     .title-diff-missing {
-        border-left-color: #dc3545;
-        background: #f8d7da;
+        border-left-color: var(--cfm-danger-border);
+        background: var(--cfm-danger-bg);
     }
     .title-diff-soft .diff-insert,
     .title-diff-soft .diff-replace,
     .title-diff-soft .diff-delete {
-        background: #dbeafe;
-        color: #1d4ed8;
+        background: var(--cfm-primary-soft);
+        color: var(--cfm-info-text);
         padding: 0 2px;
     }
     .title-diff-hard .diff-insert,
     .title-diff-hard .diff-replace,
     .title-diff-hard .diff-delete {
-        background: #ffc078;
-        color: #7c2d12;
+        background: var(--cfm-warning-fill);
+        color: var(--cfm-warning-dark);
         padding: 0 2px;
     }
 </style>

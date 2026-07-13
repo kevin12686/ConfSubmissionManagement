@@ -136,6 +136,7 @@ class ImportFileForm(BootstrapMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._apply_bootstrap()
+        self.fields["file"].widget.attrs["data-upload-kind"] = "metadata"
 
 
 class SystemStateRestoreForm(BootstrapMixin, forms.Form):
@@ -208,6 +209,8 @@ class FinalSubmissionImportForm(BootstrapMixin, forms.Form):
             "The system uses file extension to correct swapped PDF/source uploads."
         )
         self._apply_bootstrap()
+        self.fields["file"].widget.attrs["data-upload-kind"] = "metadata"
+        self.fields["submission_files"].widget.attrs["data-upload-kind"] = "submission-files"
 
 
 class FormattingUploadForm(BootstrapMixin, forms.Form):

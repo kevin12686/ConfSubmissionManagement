@@ -74,7 +74,7 @@ For documentation-only changes, run at least:
 - `submissions/application/selectors.py`: page/query context builders.
 - `submissions/application/commands.py`: workflow command wrappers.
 - `submissions/services/`: domain services.
-- `submissions/templates/submissions/`: Bootstrap templates.
+- `submissions/templates/submissions/`: server-rendered Tabler/Bootstrap-compatible templates and shared partials.
 - `submissions/tests/`: acceptance regression tests and factories.
 - `sample_data/`: CSV templates.
 - `docs/`: operator, developer, architecture, troubleshooting, and acceptance docs.
@@ -118,10 +118,19 @@ rewrite `extracted_authors` while preparing the display list.
 
 - Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
 - Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
-- Formatting list mode is a compact queue with per-paper expansion; Single Paper Mode remains the full sequential workspace.
-- Process PDF thumbnail strips remain expanded by design. Search and page-range filters may narrow rows, but the UI must not hide pages inside a matching paper.
+- Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.
+- Worklist GET filters/search are progressively enhanced with pinned local HTMX. Every enhanced endpoint must remain a valid normal GET, preserve URL query state, and render its named worklist container; never move service decisions into HTMX event handlers.
+- Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
+- Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.
+- Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.
+- Final Submissions must keep Import/Re-upload collapsed by default and preserve preview-before-apply behavior.
+- Upload zones may summarize/remove browser-selected files, but the server must continue extension/hash validation and preview-before-apply. Do not add direct-to-model uploads or bypass the import preview token.
 - Destructive actions such as discard belong in a clearly separated, collapsed action area rather than before normal edit fields.
 - Search/filter logic belongs in selectors/controllers and must not alter publication candidates, active-version rules, review flags, or export scope.
+
+Return-context coverage includes Organized List (both views), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions. Use `url_has_allowed_host_and_scheme()` at the Final Submission controller boundary; do not trust or redirect directly to arbitrary `next` values. The normal edit form and version-action danger-zone form remain separate POST forms even though they share the same controller endpoint.
+
+Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Enhanced GET requests use `hx-select` on the normal server page, avoiding duplicate fragment-only rendering paths. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. Alpine.js and Uppy are not dependencies; do not add them unless a future requirement needs durable client-side state or per-file retry/progress that cannot be met cleanly.
 
 ## Data And Review Reset Rules
 
@@ -137,6 +146,8 @@ Examples:
 - Active-version rule changes must be previewed and applied without resetting review flags.
 
 Workflow ownership is also a reset-safety boundary. `FinalSubmissionForm` must not expose processing messages/status, Title/Author Review status, duplicate-author review, or Not Publishing fields. Use the dedicated services and pages so required resets and audit events cannot be bypassed.
+
+Manual Final Submission create and edit paths are intentionally separate. Create must use `create_final_submission_manual()` so Paper ID evaluation, file paths, initial review state, active/duplicate selection, and audit logging happen atomically. Edit must use `apply_final_submission_manual_edit()` with an existing record; do not pass `None` or create a placeholder original record.
 
 Prefer preview-before-apply for imports, re-uploads, restore, and any setting change that can materially alter current publication candidates.
 
@@ -156,7 +167,7 @@ Use app-managed file helpers instead of ad hoc path logic.
 - `publication_pdf_info()` is publication-facing output: corrected PDF, then original PDF.
 - `publication_source_info()` is publication-facing output: corrected source, then original source.
 - `publication_debug_pdf_info()` describes generated inspection copies. It is never the source for publication package export or CrossCheck export.
-- Publication package export, CrossCheck export, duplicate checks, Organized List publication links, and Publication Candidates use publication-facing helpers.
+- Publication package export, CrossCheck export, duplicate checks, and both Organized List views use publication-facing helpers.
 - Final Submissions list file links are row-scoped display links and intentionally show only Original/Corrected files for that row, not another active submission's publication files.
 - Do not delete old uploads for traceability.
 - Do not expose editable path text fields for user-managed files when upload/link UI is safer.
@@ -194,6 +205,7 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Storage cleanup policy.
 - Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
+- Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
 
 Use factories in `submissions/tests/factories.py` rather than duplicating setup when possible.
 

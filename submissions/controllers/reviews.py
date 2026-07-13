@@ -229,11 +229,20 @@ def organized_list(request):
         return redirect(request.get_full_path())
 
     q = _search_query(request)
-    current_filter = request.GET.get("filter", "all")
-    current_sort = request.GET.get("sort", "needs_attention")
+    view_mode = request.GET.get("view", "checklist")
+    if view_mode not in {"checklist", "compact"}:
+        view_mode = "checklist"
+    current_filter = request.GET.get("filter", "all") if view_mode == "checklist" else "all"
+    current_sort = request.GET.get("sort", "needs_attention") if view_mode == "checklist" else "paper_id_asc"
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q, current_filter, current_sort
     )
+    if view_mode == "compact":
+        rows = [
+            row
+            for row in rows
+            if row["row_type"] == "master" and row["submission"]
+        ]
     note_summary = paper_note_summary()
     return render(
         request,
@@ -245,6 +254,7 @@ def organized_list(request):
             "q": q,
             "current_filter": current_filter,
             "current_sort": current_sort,
+            "view_mode": view_mode,
             "filter_options": ORGANIZED_LIST_FILTER_OPTIONS,
             "sort_options": ORGANIZED_LIST_SORT_OPTIONS,
             "note_summary": note_summary,
@@ -597,6 +607,7 @@ def formatting(request):
             "submission": submission,
             "form": FormattingUploadForm(submission=submission),
             "publication_pdf": publication_pdf_info(submission),
+            "publication_source": publication_source_info(submission),
             "preview": formatting_preview_info(submission),
             "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
             "original_source_type_label": original_source_type_label(submission),

@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import shutil
@@ -3030,7 +3031,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         ]
         for path in paths:
             with self.subTest(path=path):
-                self.assertEqual(self.client.get(path).status_code, 200)
+                response = self.client.get(path)
+                if path == reverse("submissions:active_versions"):
+                    self.assertEqual(response.status_code, 302)
+                    self.assertIn("view=compact", response["Location"])
+                else:
+                    self.assertEqual(response.status_code, 200)
 
     def test_final_submission_batch_upload_limit_is_documented(self):
         self.assertEqual(django_settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5000)
@@ -3051,13 +3057,17 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         final_list = self.client.get(reverse("submissions:final_submission_list"))
-        self.assertContains(final_list, 'data-bs-target="#batch-upload-panel"')
-        self.assertContains(final_list, 'id="batch-upload-panel"')
+        self.assertContains(final_list, 'data-bs-target="#import-reupload-panel"')
+        self.assertContains(final_list, 'id="import-reupload-panel"')
         self.assertContains(final_list, "cfm-table-sticky")
 
         formatting = self.client.get(reverse("submissions:formatting"), {"filter": "all"})
         self.assertContains(formatting, f'id="format-review-{submission.pk}"')
         self.assertContains(formatting, "Review paper")
+        self.assertContains(formatting, 'data-bs-parent="#formatting-queue"')
+        self.assertContains(formatting, 'hx-target="#formatting-worklist"')
+        self.assertContains(formatting, "PDF")
+        self.assertContains(formatting, "Source")
 
         title_review = self.client.get(
             reverse("submissions:title_author_extraction"),
@@ -3065,6 +3075,176 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(title_review, "Workflow")
         self.assertContains(title_review, "Tracked views")
+
+    def test_phase_two_uses_pinned_local_htmx_asset(self):
+        page = self.client.get(reverse("submissions:formatting"))
+
+        self.assertContains(page, "/static/submissions/vendor/htmx-2.0.10.min.js")
+        asset_path = finders.find("submissions/vendor/htmx-2.0.10.min.js")
+        self.assertIsNotNone(asset_path)
+        self.assertGreater(Path(asset_path).stat().st_size, 50000)
+
+    def test_modernized_worklists_use_local_assets_and_progressive_get_updates(self):
+        page = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(page, "/static/submissions/vendor/tabler-1.4.0.min.css")
+        self.assertContains(page, "/static/submissions/vendor/tabler-1.4.0.min.js")
+        for asset in (
+            "submissions/vendor/tabler-1.4.0.min.css",
+            "submissions/vendor/tabler-1.4.0.min.js",
+            "submissions/vendor/TABLER-LICENSE.txt",
+        ):
+            self.assertIsNotNone(finders.find(asset))
+
+        for route_name, target in (
+            ("author_count", "author-count-worklist"),
+            ("exceptions_center", "exceptions-worklist"),
+            ("title_author_extraction", "title-author-worklist"),
+            ("verify_paper_ids", "verify-paper-id-worklist"),
+            ("process", "process-preview-worklist"),
+            ("final_submission_list", "final-submission-worklist"),
+            ("organized_list", "organized-worklist"),
+        ):
+            response = self.client.get(reverse(f"submissions:{route_name}"))
+            self.assertContains(response, f'id="{target}"')
+            self.assertContains(response, f'hx-target="#{target}"')
+
+    def test_semantic_palette_and_navbar_contrast_are_centralized(self):
+        page = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(page, "--cfm-bg: #dfe5eb")
+        self.assertContains(page, "--cfm-surface: #eef2f5")
+        self.assertContains(page, "--cfm-surface-subtle: #e5ebf0")
+        self.assertContains(page, "--cfm-surface-strong: #d4dde6")
+        self.assertContains(page, "--cfm-text: #172033")
+        self.assertContains(page, "--cfm-muted: #42566f")
+        self.assertContains(page, "--cfm-nav-strip: #dfe6ed")
+        self.assertContains(page, "--cfm-nav-hover: #d2dce7")
+        self.assertContains(page, "--cfm-nav-active: #dbe8f8")
+        self.assertContains(page, "--cfm-danger-text: #991b1b")
+        self.assertContains(page, "--cfm-info-text: #1e40af")
+        self.assertContains(page, "--cfm-success-text: #166534")
+        self.assertContains(page, "--tblr-btn-bg: #f1f5f9")
+        self.assertContains(page, "--tblr-btn-border-color: #64748b")
+        self.assertContains(page, "--tblr-btn-bg: #f0f6ff")
+        self.assertContains(page, "border-radius: 999px")
+        self.assertContains(page, ".cfm-status-line .badge")
+        self.assertContains(page, "min-height: auto")
+        self.assertContains(page, ".cfm-primary-nav .nav-link:hover")
+        self.assertContains(page, "Editorial publication workspace")
+        self.assertContains(page, "Current conference")
+        self.assertContains(page, "submissions/brand/app-icon-512.png")
+        self.assertNotContains(page, ">Publication Candidates</a>")
+
+    def test_author_count_supports_stable_sorting(self):
+        self.make_master_paper("P001", "One", "Ada")
+        self.make_master_paper("P002", "Two", "Ada")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            extracted_authors="Ada Lovelace",
+        )
+        self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            extracted_authors="Ada Lovelace; Grace Hopper",
+        )
+        rebuild_paper_authors()
+
+        response = self.client.get(
+            reverse("submissions:author_count"),
+            {"filter": "all", "sort": "paper_count_desc"},
+        )
+        self.assertEqual(response.context["current_sort"], "paper_count_desc")
+        counts = [row["publication_paper_count"] for row in response.context["rows"]]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_publication_candidates_are_integrated_into_organized_list(self):
+        self.make_master_paper("P001", "Compact Candidate", "Ada")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Compact Candidate",
+            extracted_title="Compact Candidate",
+            extracted_authors="Ada Lovelace",
+        )
+
+        response = self.client.get(
+            reverse("submissions:organized_list"), {"view": "compact"}
+        )
+        self.assertEqual(response.context["view_mode"], "compact")
+        self.assertContains(response, "Compact candidates shows")
+        self.assertContains(response, "Compact Candidate")
+
+        legacy = self.client.get(reverse("submissions:active_versions"), {"q": "P001"})
+        self.assertEqual(legacy.status_code, 302)
+        self.assertIn("view=compact", legacy["Location"])
+        self.assertIn("q=P001", legacy["Location"])
+
+    def test_import_upload_zones_keep_preview_before_apply(self):
+        final_page = self.client.get(reverse("submissions:final_submission_list"))
+        self.assertContains(
+            final_page, '<div class="cfm-upload-zone" data-upload-zone>', count=2
+        )
+        self.assertContains(final_page, "0 selected: 0 PDF, 0 source/other.")
+        self.assertContains(final_page, "preview every change")
+
+        master_page = self.client.get(reverse("submissions:initial_paper_list"))
+        self.assertContains(master_page, '<div class="cfm-upload-zone" data-upload-zone>')
+        self.assertContains(master_page, "No metadata file selected.")
+
+    def test_ui_worklists_do_not_change_publication_package_bytes(self):
+        self.make_master_paper("P001", "Stable Publication", "Ada Lovelace")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Stable Publication",
+        )
+        self.mark_submission_publication_ready(
+            submission,
+            title="Stable Publication",
+            authors="Ada Lovelace",
+        )
+        rebuild_paper_authors()
+
+        def package_fingerprint(path):
+            with zipfile.ZipFile(path) as archive:
+                file_hashes = {
+                    name: hashlib.sha256(archive.read(name)).hexdigest()
+                    for name in archive.namelist()
+                    if not name.startswith("publication_manifest_")
+                }
+                manifest_name = next(
+                    name for name in archive.namelist()
+                    if name.startswith("publication_manifest_")
+                )
+                manifest_rows = list(
+                    csv.DictReader(
+                        io.StringIO(archive.read(manifest_name).decode("utf-8-sig"))
+                    )
+                )
+            return file_hashes, manifest_rows
+
+        blockers_before = [row["category"] for row in publication_readiness_rows()]
+        baseline = package_fingerprint(export_publication_package())
+        for route_name, params in (
+            ("organized_list", {"view": "checklist"}),
+            ("organized_list", {"view": "compact"}),
+            ("final_submission_list", {"filter": "all"}),
+            ("verify_paper_ids", {"filter": "all"}),
+            ("title_author_extraction", {"filter": "all"}),
+            ("formatting", {"filter": "all"}),
+            ("process", {"filter": "all"}),
+            ("exceptions_center", {"filter": "all"}),
+            ("author_count", {"filter": "all"}),
+        ):
+            self.assertEqual(
+                self.client.get(reverse(f"submissions:{route_name}"), params).status_code,
+                200,
+            )
+        after = package_fingerprint(export_publication_package())
+        blockers_after = [row["category"] for row in publication_readiness_rows()]
+
+        self.assertEqual(after, baseline)
+        self.assertEqual(blockers_after, blockers_before)
 
     def test_process_preview_keeps_full_rows_and_supports_issue_filtering(self):
         settings_obj = AppSetting.load()
@@ -3090,6 +3270,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         all_rows = self.client.get(reverse("submissions:process"))
         self.assertContains(all_rows, "Every matching paper remains fully expanded")
+        self.assertContains(all_rows, "Jump to paper")
+        self.assertContains(all_rows, "thumbnail-preview-modal")
         self.assertContains(all_rows, "P001")
         self.assertContains(all_rows, "P002")
 
@@ -3099,6 +3281,74 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(issues, "P001")
         self.assertNotContains(issues, "P002")
+
+    def test_process_preview_filters_needs_processing_and_processed_candidates(self):
+        self.make_master_paper("P001", "Needs Processing", "Ada")
+        self.make_master_paper("P002", "Processed Paper", "Grace")
+        pending = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Needs Processing",
+            processing_status="pending",
+        )
+        processed = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Processed Paper",
+            processing_status="processed",
+            page_count=8,
+        )
+        pending.pdf_file.save("pending.pdf", ContentFile(b"pending pdf"), save=True)
+        processed.pdf_file.save("processed.pdf", ContentFile(b"processed pdf"), save=True)
+        thumbnail_folder = Path(django_settings.MEDIA_ROOT) / "pdf_thumbnails" / "102"
+        thumbnail_folder.mkdir(parents=True, exist_ok=True)
+        (thumbnail_folder / "page-1.png").write_bytes(b"thumbnail")
+        processed.thumbnail_folder = str(thumbnail_folder)
+        processed.pdf_hash = calculate_pdf_hash(processed.pdf_file.path)
+        processed.save(update_fields=["thumbnail_folder", "pdf_hash", "updated_at"])
+
+        needs_processing = self.client.get(
+            reverse("submissions:process"), {"filter": "needs_processing"}
+        )
+        self.assertEqual(
+            [row["submission"].paper_id_filled for row in needs_processing.context["processed_rows"]],
+            ["P001"],
+        )
+
+        processed_page = self.client.get(
+            reverse("submissions:process"), {"filter": "processed"}
+        )
+        self.assertEqual(
+            [row["submission"].paper_id_filled for row in processed_page.context["processed_rows"]],
+            ["P002"],
+        )
+        self.assertContains(processed_page, 'loading="lazy"')
+
+    def test_organized_summary_separates_blockers_from_tracked_information(self):
+        self.make_master_paper("P001", "Master Title", "Ada")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Different Final Title",
+            extracted_title="Different Final Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+
+        response = self.client.get(reverse("submissions:organized_list"))
+        _rows, summary, _settings, _filter, _sort = organized_list_rows()
+        self.assertContains(response, "Publication blockers")
+        self.assertContains(response, "Tracked information")
+        self.assertContains(response, "Verified title differences")
+        self.assertEqual(summary["unverified"], 0)
+        self.assertEqual(summary["verified_title_differences"], 1)
+
+    def test_final_submission_import_panel_is_explicit_and_collapsed(self):
+        response = self.client.get(reverse("submissions:final_submission_list"))
+
+        self.assertContains(response, "Import / Re-upload")
+        self.assertContains(response, 'id="import-reupload-panel"')
+        self.assertContains(response, "preview every change")
 
     def test_author_count_and_exception_center_support_focused_filters(self):
         settings_obj = AppSetting.load()
@@ -3142,7 +3392,42 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         for route_name, params in (
             ("formatting", {"filter": "all", "q": "P001"}),
             ("title_author_extraction", {"filter": "all", "q": "P001"}),
+            ("verify_paper_ids", {"filter": "all", "q": "P001"}),
+            ("organized_list", {"view": "compact", "q": "P001"}),
         ):
+            response = self.client.get(reverse(f"submissions:{route_name}"), params)
+            expected_return = response.wsgi_request.get_full_path()
+            edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
+            self.assertContains(response, f"{edit_url}?next=")
+            self.assertContains(response, quote(expected_return, safe="/"))
+
+    def test_exception_and_not_publishing_edit_links_preserve_context(self):
+        settings_obj = AppSetting.load()
+        settings_obj.page_minimum = 6
+        settings_obj.save()
+        self.make_master_paper("P001", "Exception Return", "Ada")
+        issue = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Exception Return",
+            page_count=5,
+        )
+        excluded = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="OUTSIDE",
+            final_submission_title="Not Publishing Return",
+            excluded_from_publication=True,
+        )
+
+        cases = (
+            (
+                "exceptions_center",
+                {"filter": "not_allowed", "type": "page", "q": "P001"},
+                issue,
+            ),
+            ("not_publishing_list", {"q": "102"}, excluded),
+        )
+        for route_name, params, submission in cases:
             response = self.client.get(reverse(f"submissions:{route_name}"), params)
             expected_return = response.wsgi_request.get_full_path()
             edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
@@ -3163,7 +3448,63 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         content = response.content.decode()
         self.assertContains(response, "Version actions")
         self.assertContains(response, 'id="version-discard-panel" class="collapse"')
-        self.assertLess(content.index("Mapping"), content.index("Version actions"))
+        ordered_sections = [
+            "Submission identity",
+            "Metadata",
+            "Current row files",
+            "Plagiarism data and report",
+            "Workflow status summary",
+            "Save Final Submission",
+            "Version actions",
+        ]
+        positions = [content.index(label) for label in ordered_sections]
+        self.assertEqual(positions, sorted(positions))
+        self.assertContains(response, "Dangerous version-level actions are separate")
+
+    def test_phase_one_navigation_preserves_publication_files_and_review_state(self):
+        self.make_master_paper("P001", "Publication Safety", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Publication Safety",
+            extracted_title="Publication Safety",
+            extracted_authors="Ada Lovelace",
+            paper_id_verified=True,
+            processing_status="processed",
+            page_count=8,
+            pdf_hash="processed-hash",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            format_status="review_ok",
+        )
+        submission.pdf_file.save("original.pdf", ContentFile(b"original pdf"), save=True)
+        submission.source_file.save("original.docx", ContentFile(b"original source"), save=True)
+        submission.formatted_pdf_file.save("corrected.pdf", ContentFile(b"corrected pdf"), save=True)
+        submission.formatted_source_file.save("corrected.docx", ContentFile(b"corrected source"), save=True)
+        before_pdf = publication_pdf_info(submission)
+        before_source = publication_source_info(submission)
+        before_pdf_bytes = Path(before_pdf["path"]).read_bytes()
+        before_source_bytes = Path(before_source["path"]).read_bytes()
+
+        organized_url = reverse("submissions:organized_list") + "?filter=all&q=P001"
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(submission, next=organized_url),
+        )
+        self.assertEqual(response["Location"], organized_url)
+
+        submission.refresh_from_db()
+        after_pdf = publication_pdf_info(submission)
+        after_source = publication_source_info(submission)
+        self.assertEqual(after_pdf["source"], "corrected")
+        self.assertEqual(after_source["source"], "corrected")
+        self.assertEqual(Path(after_pdf["path"]).read_bytes(), before_pdf_bytes)
+        self.assertEqual(Path(after_source["path"]).read_bytes(), before_source_bytes)
+        self.assertTrue(submission.active_version)
+        self.assertTrue(submission.paper_id_verified)
+        self.assertEqual(submission.processing_status, "processed")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertEqual(submission.format_status, "review_ok")
 
     def test_final_submission_list_files_show_corrected_then_original(self):
         self.make_master_paper("P001", "Display Files", "Ada")
@@ -4016,6 +4357,113 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(publication_readiness_rows(), [])
         self.assertTrue(Path(export_publication_package()).exists())
 
+    def test_manual_create_final_submission_evaluates_paper_id_and_writes_audit(self):
+        self.make_master_paper("P001", title="Manual Final Paper")
+
+        response = self.client.post(
+            reverse("submissions:final_submission_add"),
+            {
+                "final_submission_id": "101",
+                "start2_paper_id_raw": "P001",
+                "paper_id_filled": "P001",
+                "final_submission_title": "Manual Final Paper",
+                "final_submission_authors": "Ada Lovelace",
+                "upload_date": "2026-07-12T12:00:00",
+                "similarity_score": "",
+                "single_similarity_score": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission = FinalSubmission.objects.get(final_submission_id="101")
+        self.assertEqual(submission.mapping_source, "manual_add")
+        self.assertTrue(submission.paper_id_verified)
+        self.assertEqual(submission.verification_status, "verified")
+        self.assertTrue(submission.active_version)
+        self.assertEqual(submission.processing_status, "pending")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertEqual(submission.format_status, "pending")
+        event = self.latest_audit_event("final_submission_manual_create")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(event["paper_id"], "P001")
+        self.assertEqual(event["final_submission_id"], "101")
+        self.assertEqual(event["before"], {})
+        self.assertTrue(event["reset_flags"]["active_versions_recalculated"])
+
+    def test_manual_create_final_submission_saves_pdf_source_and_recalculates_versions(self):
+        self.make_master_paper("P001", title="Replacement Paper")
+        older = self.make_final_submission(
+            final_submission_id="100",
+            paper_id_filled="P001",
+            start2_paper_id_raw="P001",
+            final_submission_title="Replacement Paper",
+            extracted_title="Replacement Paper",
+            active_version=True,
+            duplicate_submission=False,
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_add"),
+            {
+                "final_submission_id": "101",
+                "start2_paper_id_raw": "P001",
+                "paper_id_filled": "P001",
+                "final_submission_title": "Replacement Paper",
+                "final_submission_authors": "Ada Lovelace",
+                "upload_date": "2026-07-12T13:00:00",
+                "pdf_file": SimpleUploadedFile(
+                    "manual.pdf",
+                    b"%PDF manual final",
+                    content_type="application/pdf",
+                ),
+                "source_file": SimpleUploadedFile(
+                    "manual.docx",
+                    b"manual source",
+                    content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+                "similarity_score": "",
+                "single_similarity_score": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created = FinalSubmission.objects.get(final_submission_id="101")
+        older.refresh_from_db()
+        self.assertTrue(Path(created.pdf_file.path).exists())
+        self.assertTrue(Path(created.source_file.path).exists())
+        self.assertEqual(Path(created.current_file_path), Path(created.pdf_file.path))
+        self.assertEqual(Path(created.source_current_file_path), Path(created.source_file.path))
+        self.assertEqual(created.original_file_name, "manual.pdf")
+        self.assertEqual(created.source_original_file_name, "manual.docx")
+        self.assertEqual(created.processing_status, "pending")
+        self.assertIn("Process PDFs", created.processing_message)
+        self.assertTrue(created.active_version)
+        self.assertFalse(created.duplicate_submission)
+        self.assertFalse(older.active_version)
+        self.assertTrue(older.duplicate_submission)
+
+    def test_manual_create_invalid_form_does_not_create_record(self):
+        self.make_master_paper("P001", title="Invalid Manual Paper")
+
+        response = self.client.post(
+            reverse("submissions:final_submission_add"),
+            {
+                "final_submission_id": "",
+                "start2_paper_id_raw": "P001",
+                "paper_id_filled": "P001",
+                "final_submission_title": "Invalid Manual Paper",
+                "final_submission_authors": "Ada Lovelace",
+                "upload_date": "2026-07-12T12:00:00",
+                "similarity_score": "",
+                "single_similarity_score": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required.")
+        self.assertFalse(FinalSubmission.objects.exists())
+        self.assertEqual(read_audit_log(query="final_submission_manual_create", limit=10), [])
+
     def test_manual_edit_final_id_recalculates_active_version_and_duplicates(self):
         self.make_master_paper("P001", title="Ready Paper")
         older = self.make_final_submission(
@@ -4322,7 +4770,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             final_submission_title="Invalid Candidate",
         )
 
-        response = self.client.get(reverse("submissions:active_versions"))
+        legacy_response = self.client.get(reverse("submissions:active_versions"))
+        self.assertEqual(legacy_response.status_code, 302)
+        self.assertIn("view=compact", legacy_response["Location"])
+        response = self.client.get(legacy_response["Location"])
 
         self.assertContains(response, "Included Candidate")
         self.assertNotContains(response, "Excluded Candidate")
@@ -5055,7 +5506,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             ["P001", "P002", "P003", "P010", "P009", "P004", "P007", "P006", "P008", "P005"],
         )
         self.assertEqual(summary["missing_final"], 1)
-        self.assertEqual(summary["unverified"], 2)
+        self.assertEqual(summary["unverified"], 1)
+        self.assertEqual(summary["verified_title_differences"], 1)
         self.assertEqual(summary["page_errors"], 1)
         self.assertEqual(summary["missing_plagiarism"], 0)
         self.assertEqual(summary["plagiarism_issues"], 1)
@@ -5221,10 +5673,15 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertIn("Submissions\n                    </a>", html)
         self.assertIn("Reviews\n                    </a>", html)
-        self.assertIn("Output\n                    </a>", html)
-        self.assertIn("System\n                    </a>", html)
+        self.assertIn("Reports &amp; Output\n                    </a>", html)
+        self.assertIn("Administration\n                    </a>", html)
         self.assertNotIn("Workflow\n                    </a>", html)
         self.assertNotIn("Integrations\n                    </a>", html)
+        self.assertIn("Official publication scope and editorial notes", html)
+        self.assertIn("Trace state-changing editorial actions", html)
+        self.assertIn('class="navbar navbar-expand-xl cfm-primary-nav"', html)
+        self.assertIn('class="navbar-toggler d-xl-none"', html)
+        self.assertIn('aria-label="Toggle navigation"', html)
         self.assertIn(reverse("submissions:editor_upload"), html)
         self.assertIn(reverse("submissions:integration"), html)
         self.assertIn(reverse("submissions:system_state"), html)
@@ -5243,6 +5700,45 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("min-height: 100vh", html)
         self.assertIn("flex: 1 0 auto", html)
         self.assertIn("flex-shrink: 0", html)
+
+    def test_tables_use_uniform_rows_with_hover_instead_of_zebra_striping(self):
+        for index in (1, 2):
+            paper_id = f"P{index:03d}"
+            self.make_master_paper(paper_id, f"Paper {index}", "Ada Lovelace")
+            self.make_final_submission(
+                final_submission_id=str(index * 10),
+                paper_id_filled=paper_id,
+                final_submission_title=f"Paper {index}",
+                extracted_title=f"Paper {index}",
+                active_version=True,
+            )
+            self.make_final_submission(
+                final_submission_id=str(index * 10 - 1),
+                paper_id_filled=paper_id,
+                final_submission_title=f"Old Paper {index}",
+                extracted_title=f"Old Paper {index}",
+                active_version=False,
+                discarded=True,
+                discard_notes=f"Old version {index}",
+            )
+
+        organized = self.client.get(reverse("submissions:organized_list"))
+        final_submissions = self.client.get(reverse("submissions:final_submission_list"))
+        old_versions = self.client.get(reverse("submissions:old_versions"))
+
+        rows, _summary, _settings, _current_filter, _current_sort = organized_list_rows()
+        clean_row = next(row for row in rows if row["paper"] and row["paper"].paper_id == "P001")
+        self.assertEqual(clean_row["author_count_level"], "secondary")
+        self.assertEqual(clean_row["page_level"], "secondary")
+        self.assertEqual(clean_row["source_level"], "secondary")
+
+        for response in (organized, final_submissions, old_versions):
+            self.assertNotContains(response, "table-striped")
+            self.assertNotContains(response, "cfm-stripe-")
+            self.assertContains(response, "table-hover")
+        self.assertContains(organized, 'class="collapse"')
+        self.assertContains(final_submissions, 'class="collapse"')
+        self.assertContains(old_versions, 'class="collapse"')
 
     def test_dashboard_plagiarism_threshold_count_is_paper_count_not_score_count(self):
         self.make_master_paper("P001", "Both Scores High", "Ada")

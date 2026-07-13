@@ -96,6 +96,18 @@ It does not scan folders, create submissions, modify original uploads, modify co
 
 Run Process PDFs again. Corrected PDFs are the first publication PDF priority, but thumbnails, page count, hash, and debug copies must be refreshed.
 
+### Process PDFs page is long
+
+This is intentional: every page thumbnail for every matching paper stays expanded so blank middle/end pages remain visible. Use the paper status filters, search, and `Jump to paper` rather than collapsing strips. Images use fixed-size lazy-loaded tiles, so rapid scrolling should not change the layout. Select a thumbnail to inspect a larger version.
+
+### Formatting queue filter did not update
+
+Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs use the locally bundled HTMX asset for GET-only worklist updates. If a partial request fails, the page shows a red alert and no workflow state is changed. Retry, refresh, or open the filter/search URL normally; every filter remains a standard Django link/form fallback. If assets are missing after deployment, confirm `htmx-2.0.10.min.js`, `tabler-1.4.0.min.css`, and `tabler-1.4.0.min.js` exist under `submissions/static/submissions/vendor/` and static files are being served.
+
+### Upload drop zone summary looks wrong
+
+The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.
+
 ### Why did Settings show a missing legacy processed PDF path?
 
 Settings Storage checks DB file references against files on disk. `Legacy processed PDF path` means the old `current_file_path` field. It is retained for older restored data and debug traces, but it is no longer used to choose publication files.
@@ -149,6 +161,12 @@ The same Paper ID has both an undiscarded Start2 version and an undiscarded Edit
 ### Discard vs Not Publishing
 
 Discard excludes one Final Submission version from active selection.
+
+In Final Submission Edit, Discard is intentionally under the collapsed bottom `Version actions` danger zone and uses a separate form from `Save Final Submission`. If you mean to exclude the entire paper, leave Edit and use Not Publishing instead.
+
+### Edit returned to the wrong page
+
+Open Edit from the worklist button rather than manually rewriting the URL. Organized List (Checklist or Compact candidates), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions include a safe local return URL. External `next` URLs are rejected and fall back to Final Submissions.
 
 Not Publishing excludes the paper from publication output because of an editorial decision such as unpaid, withdrawn, or not in the final publication scope.
 

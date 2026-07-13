@@ -9,18 +9,18 @@
         overflow-wrap: anywhere;
     }
     .diff-insert {
-        background: #d1e7dd;
-        color: #0f5132;
+        background: var(--cfm-success-fill);
+        color: var(--cfm-success-text);
         padding: 0 0.1rem;
     }
     .diff-replace {
-        background: #fff3cd;
-        color: #664d03;
+        background: var(--cfm-warning-fill);
+        color: var(--cfm-warning-dark);
         padding: 0 0.1rem;
     }
     .diff-delete {
-        background: #f8d7da;
-        color: #842029;
+        background: var(--cfm-danger-fill);
+        color: var(--cfm-danger-text);
         padding: 0 0.1rem;
         text-decoration: line-through;
     }
@@ -35,10 +35,12 @@
     </div>
 </div>
 
+<div id="verify-paper-id-worklist">
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
     <li class="nav-item">
-        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+        <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+           hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#verify-paper-id-worklist" hx-select="#verify-paper-id-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#verify-paper-id-loading">
             {{ option.label }}
             <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_verification' %}danger{% elif option.value == 'verified_with_diff' or option.value == 'title_mismatch' %}warning{% elif option.value == 'identical' %}success{% else %}secondary{% endif %}">{{ option.count }}</span>
         </a>
@@ -46,7 +48,7 @@
     {% endfor %}
 </ul>
 
-<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:verify_paper_ids' %}" hx-target="#verify-paper-id-worklist" hx-select="#verify-paper-id-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#verify-paper-id-loading" hx-disabled-elt="button, input">
     <input type="hidden" name="filter" value="{{ current_filter }}">
     <div class="col-lg-10">
         <label class="form-label" for="verify-search">Search</label>
@@ -55,6 +57,7 @@
     <div class="col-lg-2">
         <button class="btn btn-outline-secondary w-100">Apply</button>
     </div>
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="verify-paper-id-loading" message="Updating Paper ID review..." %}
 </form>
 
 <div class="alert alert-light border cfm-attention">
@@ -96,6 +99,7 @@
                         <span class="badge text-bg-danger">Paper ID needs review</span>
                     {% endif %}
                     {% if row.score %}<span class="badge text-bg-light text-dark">Score {{ row.score }}%</span>{% endif %}
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' row.submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit submission</a>
                 </div>
             </div>
             <div class="card-body">
@@ -205,7 +209,8 @@
             </div>
         </div>
     {% empty %}
-        <div class="cfm-empty">No final submissions found.</div>
+        {% include "submissions/partials/empty_state.html" with message="No Paper ID records match this view." %}
     {% endfor %}
+</div>
 </div>
 {% endblock %}

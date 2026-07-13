@@ -23,17 +23,24 @@
         </form>
     </div>
     <div class="col-lg-7">
-        <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_initial_papers' %}" class="cfm-filter-panel h-100 cfm-inline-control">
+        <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_initial_papers' %}" class="cfm-filter-panel h-100">
             {% csrf_token %}
-            <div class="cfm-file-control-fill">
-                {{ import_form.file }}
+            <div class="d-flex flex-wrap gap-2 align-items-end">
+                <div class="cfm-file-control-fill">
+                    <label class="form-label" for="{{ import_form.file.id_for_label }}">Paper Master CSV/XLSX</label>
+                    <div class="cfm-upload-zone" data-upload-zone>
+                        {{ import_form.file }}
+                        <div class="cfm-upload-summary" data-upload-summary aria-live="polite">No metadata file selected.</div>
+                        <div class="cfm-upload-file-list" data-upload-list></div>
+                    </div>
+                </div>
+                <button class="btn btn-outline-primary flex-shrink-0">Preview CSV/XLSX</button>
             </div>
-            <button class="btn btn-outline-primary flex-shrink-0">Preview CSV/XLSX</button>
         </form>
     </div>
 </div>
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle cfm-table">
+    <table class="table table-hover align-middle cfm-table">
         <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Notes</th><th></th></tr></thead>
         <tbody>
         {% for paper in papers %}

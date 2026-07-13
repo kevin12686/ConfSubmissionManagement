@@ -2,6 +2,7 @@ import csv
 import logging
 import shutil
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.conf import settings as django_settings
@@ -107,7 +108,7 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
-from submissions.application.selectors import active_versions_context, old_versions_context
+from submissions.application.selectors import old_versions_context
 
 
 logger = logging.getLogger("submissions.views")
@@ -150,11 +151,11 @@ def download_template(request, template_type):
         writer.writerow(["9001", "R003", "Extracted Title", "Ada Lovelace; Alan Turing", "clear", "4.25", "1.50", "data/plagiarism_reports/R003.pdf"])
     return response
 def active_versions(request):
-    return render(
-        request,
-        "submissions/active_versions.html",
-        active_versions_context(request.GET.get("q", "").strip()),
-    )
+    query = {"view": "compact"}
+    q = request.GET.get("q", "").strip()
+    if q:
+        query["q"] = q
+    return redirect(f"{reverse('submissions:organized_list')}?{urlencode(query)}")
 
 
 def old_versions(request):
@@ -181,9 +182,13 @@ def error_report(request):
 def author_count(request):
     q = request.GET.get("q", "").strip()
     current_filter = request.GET.get("filter", "all")
+    current_sort = request.GET.get("sort", "attention")
     valid_filters = {"all", "attention", "over_limit", "duplicates", "allowed"}
+    valid_sorts = {"attention", "paper_count_desc", "paper_count_asc", "name"}
     if current_filter not in valid_filters:
         current_filter = "all"
+    if current_sort not in valid_sorts:
+        current_sort = "attention"
     all_rows = author_count_rows()
     if q:
         lowered_query = q.casefold()
@@ -210,6 +215,28 @@ def author_count(request):
         if current_filter in predicates
         else all_rows
     )
+    if current_sort == "paper_count_desc":
+        rows = sorted(
+            rows,
+            key=lambda row: (-row["publication_paper_count"], row["normalized_author_name"]),
+        )
+    elif current_sort == "paper_count_asc":
+        rows = sorted(
+            rows,
+            key=lambda row: (row["publication_paper_count"], row["normalized_author_name"]),
+        )
+    elif current_sort == "name":
+        rows = sorted(rows, key=lambda row: row["normalized_author_name"])
+    else:
+        rows = sorted(
+            rows,
+            key=lambda row: (
+                0 if row["over_limit"] and not row["waiver_valid"] else 1,
+                0 if row["duplicate_author_papers"] else 1,
+                -row["publication_paper_count"],
+                row["normalized_author_name"],
+            ),
+        )
     counts = {
         "all": len(all_rows),
         **{
@@ -231,6 +258,13 @@ def author_count(request):
             "rows": rows,
             "q": q,
             "current_filter": current_filter,
+            "current_sort": current_sort,
+            "sort_options": [
+                {"value": "attention", "label": "Needs attention first"},
+                {"value": "paper_count_desc", "label": "Publication paper count descending"},
+                {"value": "paper_count_asc", "label": "Publication paper count ascending"},
+                {"value": "name", "label": "Author name"},
+            ],
             "filter_options": [
                 {**option, "count": counts[option["value"]]}
                 for option in filter_options

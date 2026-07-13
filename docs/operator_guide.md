@@ -9,14 +9,17 @@ This guide is for editors running the local system to prepare final submissions 
 3. If continuing an existing conference on a new machine, go to `/integrations/system-state/` and preview the System State ZIP before applying it.
 4. Set the conference name and limits in `/settings/`.
 
-The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar.
+The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar. The navigation bar uses the high-resolution app icon so it remains sharp on high-density displays.
 
-The navigation bar follows the editorial workflow: `Organized List` is a direct
-primary link; `Submissions` contains Paper Master, Final Submission, Editor
-Upload, and Not Publishing records; `Reviews` contains ID, PDF, title/author,
-formatting, and exception work; `Output` contains readiness reports, versions,
-exports, and CrossCheck/plagiarism; `System` contains Audit Log, System State
-backup/restore, and Settings.
+The two-level navigation separates context from work. The top identity row shows
+the application and current conference. The workflow row keeps `Dashboard` and
+`Organized List` as direct links; `Submissions` contains Paper Master, Final
+Submission, Editor Upload, and Not Publishing records; `Reviews` contains ID,
+PDF, title/author, formatting, and exception work; `Reports & Output` contains
+readiness reports, versions, exports, and CrossCheck/plagiarism; `Administration`
+contains Audit Log, System State backup/restore, and Settings. Each dropdown item
+includes a short purpose statement, and the current page is marked by a blue
+underline and soft blue background.
 
 ## Page Map
 
@@ -37,7 +40,7 @@ backup/restore, and Settings.
 | Author Count | `/reports/author-count/` | Per-author publication paper counts |
 | Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
 | Export Reports | `/reports/` | Excel exports and publication package ZIPs |
-| Publication Candidates | `/reports/active-versions/` | Compact read-only roster of current active submissions inside Paper Master publication scope |
+| Compact candidates | `/submissions/organized/?view=compact` | Compact read-only roster inside the same Organized List publication scope |
 | Plagiarism / CrossCheck | `/integrations/crosscheck/` | Prepare publication PDFs and import scores/reports |
 | System Backup / Restore | `/integrations/system-state/` | Download or preview/apply a complete system snapshot |
 
@@ -46,6 +49,10 @@ its publication metadata, the complete extracted author list and extraction
 status, current publication PDF/source files, optional debug copy, and editorial
 notes in one publication-record view. Routine pages show file actions and source
 labels rather than machine-specific absolute paths.
+
+Its summary is split into `Publication blockers` and `Tracked information`. Blocker cards link to focused filters and only appear when the current view contains that issue. Tracked information remains visible without competing with work that can stop final export.
+
+Use the `Checklist / Compact candidates` control to switch views. Both use the same active Paper Master publication rows and publication-facing Corrected-to-Original file helpers. The old `/reports/active-versions/` link redirects to Compact candidates.
 
 ## Dashboard And Readiness
 
@@ -63,7 +70,15 @@ Uploading a corrected PDF intentionally sends the paper back through PDF process
 
 Final Submission Edit is intentionally limited to submission metadata, original files, and plagiarism score/report entry. Processing state, Title/Author Review, duplicate-author review, and Not Publishing decisions are shown there for context but must be changed from their dedicated pages.
 
-Batch Upload is collapsed on the Final Submissions page until selected so the version list remains the primary view. Destructive version actions are separated from normal editing: `Discard this version` is in the collapsed `Version actions` section near the bottom of Final Submission Edit and still requires a reason. When Edit is opened from Organized List, Title/Author Review, Formatting Review, or Not Publishing, Save returns to the originating worklist with its search/filter context.
+`Import / Re-upload` is collapsed on the Final Submissions page until selected so submission tabs and the version list remain the primary view. Expanding it exposes drag/drop file zones, selected-file counts, PDF/source summary, per-file removal, and the existing preview-before-apply workflow. Browser summaries are convenience only; server extension/hash checks decide actual file types. Final Submission Edit follows one sequence: Submission identity, Metadata, Current row files, Plagiarism data/report, read-only Workflow status summary, and Save. Destructive version actions are outside the normal edit form in the collapsed bottom `Version actions` danger zone and still require a reason. Not Publishing remains a separate workflow.
+
+When Edit is opened from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, or Exceptions, Save returns to the originating worklist with its view, filter, sort, search, tab, or single-paper selection. External return URLs are rejected. Worklist filters/search can update only that list area without a full refresh, but the same links/forms work as ordinary Django requests. No client-side code decides review state, exception validity, active versions, or publication files.
+
+Author Count supports author/Paper ID search, attention/over-limit/duplicate/allowed filters, and paper-count/name sorting. Exceptions supports search plus status and exception-type filters. Title/Author keeps Workflow and Tracked views separate. Verify Paper IDs preserves filter/search URLs. State-changing buttons still perform full audited server requests.
+
+Status colors are consistent across pages: red means a blocker or dangerous action, amber needs manual attention, blue is tracked information, green means the named review is complete, and gray is inactive/history. Primary text uses deep ink on muted work surfaces; labels and supporting text use a darker blue-gray instead of low-contrast gray. Compact pill-shaped labels report status, file origin, counts, or categories and are not controls. Action buttons are taller rectangular controls with stronger borders and visible hover states. Every label also includes text, so color is never the only status signal.
+
+Tables use one uniform row surface with clear horizontal separators. Zebra striping is intentionally disabled across the application; hovering a row provides the only temporary row highlight. Details, exception, note, and discard panels therefore cannot disrupt row coloring. Organized List keeps routine counts and file-origin information neutral, reserves muted green for completed editorial reviews, and marks blocking rows with a red left edge instead of replacing the entire row background.
 
 ## Import Workflow
 
@@ -84,6 +99,7 @@ Paper Master notes are internal editorial notes. They appear in review workbooks
 Final Submissions can be Start2 imports or Editor Uploads.
 
 - Start2 imports are the normal author-uploaded records.
+- `Add Final Submission` creates a normal Start2-origin record through a dedicated create workflow. It evaluates the entered Paper ID against Paper Master, initializes PDF/title-author/format checks as Pending, stores uploaded PDF/source paths, recalculates active and replaced versions, and writes a `final_submission_manual_create` audit event.
 - Editor Uploads are email-provided replacement versions created by the editorial team.
 - Editor Uploads are prioritized when both sources exist for the same Paper ID.
 - If Start2 and Editor Upload both exist and neither is discarded, the system shows a Start2/Editor conflict and blocks final export.
@@ -137,7 +153,9 @@ Process PDFs does not scan folders and does not silently create submissions. It 
 
 Run Process PDFs whenever Dashboard or the global alert says it is needed. Corrected PDFs require Process PDFs again so page count, hash, thumbnails, and debug copies match the current publication PDF source.
 
-The page-preview area defaults to `All processed` and keeps the complete thumbnail strip for every matching paper expanded. This is intentional: editors can scan the first, middle, and last pages without opening each record. Use `Page issues`, `Within page range`, or search to narrow the visible papers; these display filters do not alter processing or publication selection.
+The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or search to narrow papers; use `Jump to paper` for long runs. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
+
+Formatting Review queue mode keeps one paper expanded at a time. Its compact row identifies Paper ID, status, edited state, PDF/source origin, and processing warning before you open the full preview/upload workspace. Single Paper Mode remains the safer sequential workflow; Save stays on the current paper and Go next remains a separate action with unsaved-change protection.
 
 ## Paper ID Review
 

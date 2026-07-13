@@ -79,7 +79,7 @@ def _page_status(submission, settings_obj):
         if status == "stale":
             return "Stale allowed exception", "warning"
         return f"Over limit {settings_obj.page_limit}", "danger"
-    return "Page OK", "success"
+    return "Page OK", "secondary"
 
 
 def _verification_status(submission, paper=None):
@@ -188,7 +188,7 @@ def _source_status(submission):
     if source_info["source"] == "corrected":
         return "Corrected", "success" if submission.format_status == "review_ok" else "warning"
     if source_info["source"] == "original":
-        return "Original", "success"
+        return "Original", "secondary"
     return "No source", "danger"
 
 
@@ -241,7 +241,7 @@ def _author_count_status(submission, settings_obj):
         ],
         "author_count_level": "info"
         if over_limit and waiver_valid
-        else ("warning" if exception_status == "stale" else ("danger" if over_limit or unresolved_duplicate_authors else "success")),
+        else ("warning" if exception_status == "stale" else ("danger" if over_limit or unresolved_duplicate_authors else "secondary")),
         "over_author_limit": over_limit,
         "author_number_exception_valid": waiver_valid,
         "author_number_exception_status": exception_status,
@@ -686,6 +686,15 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "page_level": page_level,
                 "verify_label": verify_label,
                 "verify_level": verify_level,
+                "verify_is_blocker": bool(
+                    submission
+                    and not paper_id_effectively_verified(submission, paper)
+                ),
+                "verified_title_difference": bool(
+                    submission
+                    and submission.paper_id_verified
+                    and not paper_title_matches_master(submission, paper)
+                ),
                 "plagiarism_label": plagiarism_label,
                 "plagiarism_level": plagiarism_level,
                 "plagiarism_percent_level": _score_level(
@@ -741,6 +750,8 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
                 "page_level": page_level,
                 "verify_label": verify_label,
                 "verify_level": verify_level,
+                "verify_is_blocker": True,
+                "verified_title_difference": False,
                 "plagiarism_label": plagiarism_label,
                 "plagiarism_level": plagiarism_level,
                 "plagiarism_percent_level": _score_level(
@@ -783,11 +794,16 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
     summary = {
         "total_rows": len(filtered_rows),
         "missing_final": sum(1 for row in filtered_rows if not row["submission"]),
-        "unverified": sum(
-            1
-            for row in filtered_rows
-            if row["submission"] and row["verify_level"] in {"danger", "warning"}
+        "unverified": sum(1 for row in filtered_rows if row["verify_is_blocker"]),
+        "verified_title_differences": sum(
+            1 for row in filtered_rows if row["verified_title_difference"]
         ),
+        "pdf_issues": sum(1 for row in filtered_rows if _has_pdf_issue(row)),
+        "source_issues": sum(1 for row in filtered_rows if _has_source_issue(row)),
+        "extraction_issues": sum(
+            1 for row in filtered_rows if _has_extraction_issue(row)
+        ),
+        "format_issues": sum(1 for row in filtered_rows if _has_format_issue(row)),
         "page_errors": sum(
             1
             for row in filtered_rows
@@ -824,4 +840,35 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
         ],
         "needs_process_pdf_more": max(len(needs_process_rows) - 12, 0),
     }
+    blocker_specs = [
+        ("No Final", summary["missing_final"], "danger", "missing_final"),
+        ("Paper ID Review", summary["unverified"], "danger", "paper_id_review"),
+        ("PDF Issues", summary["pdf_issues"], "danger", "pdf_issues"),
+        ("Page Issues", summary["page_errors"], "warning", "page_issues"),
+        ("Source Issues", summary["source_issues"], "danger", "source_issues"),
+        ("Extraction Review", summary["extraction_issues"], "warning", "extraction_issues"),
+        ("No Plagiarism", summary["missing_plagiarism"], "warning", "missing_plagiarism"),
+        ("P/S Issues", summary["plagiarism_issues"], "danger", "plagiarism_issues"),
+        ("Format Not OK", summary["format_issues"], "warning", "format_not_ok"),
+        ("Duplicates", summary["publication_duplicates"], "danger", "needs_attention"),
+        ("Version Conflicts", summary["version_conflicts"], "danger", "version_conflicts"),
+        ("Duplicate Authors", summary["duplicate_author_issues"], "danger", "needs_attention"),
+    ]
+    summary["blocker_metrics"] = [
+        {"label": label, "value": value, "level": level, "filter": filter_value}
+        for label, value, level, filter_value in blocker_specs
+        if value
+    ]
+    summary["tracked_metrics"] = [
+        {"label": "Rows", "value": summary["total_rows"]},
+        {
+            "label": "Verified title differences",
+            "value": summary["verified_title_differences"],
+        },
+        {"label": "Not Publishing", "value": summary["excluded_from_publication"]},
+        {
+            "label": "Page range",
+            "value": f"{settings_obj.page_minimum}-{settings_obj.page_limit}",
+        },
+    ]
     return filtered_rows, summary, settings_obj, current_filter, current_sort

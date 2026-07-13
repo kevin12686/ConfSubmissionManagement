@@ -163,15 +163,18 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
 
 
 PROCESS_PREVIEW_FILTER_OPTIONS = [
-    {"value": "all", "label": "All processed"},
+    {"value": "needs_processing", "label": "Needs processing"},
     {"value": "page_issues", "label": "Page issues"},
-    {"value": "within_range", "label": "Within page range"},
+    {"value": "processed", "label": "Processed"},
+    {"value": "all", "label": "All"},
 ]
 
 
 def processed_pdf_context(query="", current_filter="all"):
     settings_obj = AppSetting.load()
     valid_ids = InitialPaper.objects.values("paper_id")
+    active_needs_processing_rows = active_pdfs_needing_processing()
+    needs_processing_ids = {submission.pk for submission in active_needs_processing_rows}
     active_missing_pdf_rows = [
         submission
         for submission in FinalSubmission.objects.filter(
@@ -183,6 +186,23 @@ def processed_pdf_context(query="", current_filter="all"):
         if not pdf_available_for_processing(submission)
     ]
     all_rows = processed_pdf_rows()
+    missing_pdf_ids = {submission.pk for submission in active_missing_pdf_rows}
+    for row in all_rows:
+        submission = row["submission"]
+        row["needs_processing"] = submission.pk in needs_processing_ids
+        row["missing_pdf"] = submission.pk in missing_pdf_ids
+        row["page_issue"] = bool(
+            submission.page_count is not None
+            and (
+                submission.page_count < settings_obj.page_minimum
+                or submission.page_count > settings_obj.page_limit
+            )
+        )
+        row["is_processed"] = bool(
+            submission.processing_status == "processed"
+            and not row["needs_processing"]
+            and not row["missing_pdf"]
+        )
     if query:
         lowered_query = query.casefold()
         all_rows = [
@@ -197,28 +217,27 @@ def processed_pdf_context(query="", current_filter="all"):
                 ]
             ).casefold()
         ]
-    page_issue = lambda row: (
-        row["submission"].page_count < settings_obj.page_minimum
-        or row["submission"].page_count > settings_obj.page_limit
-    )
     counts = {
         "all": len(all_rows),
-        "page_issues": sum(1 for row in all_rows if page_issue(row)),
-        "within_range": sum(1 for row in all_rows if not page_issue(row)),
+        "needs_processing": sum(1 for row in all_rows if row["needs_processing"]),
+        "page_issues": sum(1 for row in all_rows if row["page_issue"]),
+        "processed": sum(1 for row in all_rows if row["is_processed"]),
     }
     valid_filters = {option["value"] for option in PROCESS_PREVIEW_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "all"
-    if current_filter == "page_issues":
-        display_rows = [row for row in all_rows if page_issue(row)]
-    elif current_filter == "within_range":
-        display_rows = [row for row in all_rows if not page_issue(row)]
+    if current_filter == "needs_processing":
+        display_rows = [row for row in all_rows if row["needs_processing"]]
+    elif current_filter == "page_issues":
+        display_rows = [row for row in all_rows if row["page_issue"]]
+    elif current_filter == "processed":
+        display_rows = [row for row in all_rows if row["is_processed"]]
     else:
         display_rows = all_rows
     return {
         "processed_rows": display_rows,
         "settings_obj": settings_obj,
-        "active_needs_processing_rows": active_pdfs_needing_processing(),
+        "active_needs_processing_rows": active_needs_processing_rows,
         "active_missing_pdf_rows": active_missing_pdf_rows,
         "q": query,
         "current_filter": current_filter,

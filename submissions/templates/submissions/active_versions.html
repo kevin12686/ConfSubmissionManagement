@@ -16,8 +16,8 @@
     {% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:active_versions' %}">Clear</a>{% endif %}
 </form>
 <div class="table-responsive">
-    <table class="table table-striped align-middle cfm-table cfm-table-sticky">
-        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Final Title</th><th>Final Authors</th><th>Pages</th><th>Publication PDF</th></tr></thead>
+    <table class="table table-hover align-middle cfm-table cfm-table-sticky">
+        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Final Title</th><th>Final Authors</th><th>Pages</th><th>Publication PDF</th><th>Actions</th></tr></thead>
         <tbody>
         {% for row in rows %}
             {% with item=row.submission %}
@@ -40,10 +40,11 @@
                         <span class="badge text-bg-danger">No PDF</span>
                     {% endif %}
                 </td>
+                <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></td>
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="6" class="text-muted">No publication candidates found.</td></tr>
+            <tr><td colspan="7" class="text-muted">No publication candidates found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

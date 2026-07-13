@@ -62,7 +62,10 @@ from submissions.services.import_preview import (
     preview_final_import,
     preview_initial_import,
 )
-from submissions.services.manual_edit import apply_final_submission_manual_edit
+from submissions.services.manual_edit import (
+    apply_final_submission_manual_edit,
+    create_final_submission_manual,
+)
 from submissions.services.system_state import (
     CONFIRMATION_TEXT,
     SystemStateError,
@@ -267,11 +270,19 @@ def final_submission_form(request, pk=None):
         request.POST or None, request.FILES or None, instance=submission
     )
     if request.method == "POST" and form.is_valid():
-        _obj, summary = apply_final_submission_manual_edit(
-            submission,
-            form,
-            form.cleaned_data.get("plagiarism_report_file"),
-        )
+        if submission is None:
+            _obj, summary = create_final_submission_manual(
+                form,
+                form.cleaned_data.get("plagiarism_report_file"),
+            )
+            saved_action = "created"
+        else:
+            _obj, summary = apply_final_submission_manual_edit(
+                submission,
+                form,
+                form.cleaned_data.get("plagiarism_report_file"),
+            )
+            saved_action = "saved"
         details = [
             label
             for key, label in [
@@ -287,7 +298,7 @@ def final_submission_form(request, pk=None):
             if summary.get(key)
         ]
         suffix = f" ({'; '.join(details)})." if details else "."
-        messages.success(request, f"Final submission saved{suffix}")
+        messages.success(request, f"Final submission {saved_action}{suffix}")
         if return_url:
             return redirect(return_url)
         return redirect("submissions:final_submission_list")

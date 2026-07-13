@@ -66,13 +66,15 @@
     {% endif %}
 {% endif %}
 
+<div id="title-author-worklist">
 <div class="cfm-filter-groups">
     <div class="cfm-filter-group">
         <div class="cfm-filter-group-label">Workflow</div>
         <div class="cfm-filter-group-links">
             {% for option in filter_options %}
                 {% if option.group == "workflow" %}
-                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+                       hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#title-author-worklist" hx-select="#title-author-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#title-author-loading">
                         {{ option.tab_label|default:option.label }}
                         <span class="badge text-bg-{{ option.badge_level|default:'secondary' }} ms-1">{{ option.count }}</span>
                     </a>
@@ -85,7 +87,8 @@
         <div class="cfm-filter-group-links">
             {% for option in filter_options %}
                 {% if option.group == "tracked" %}
-                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+                    <a class="btn btn-sm {% if current_filter == option.value %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+                       hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#title-author-worklist" hx-select="#title-author-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#title-author-loading">
                         {{ option.tab_label|default:option.label }}
                         <span class="badge text-bg-{{ option.badge_level|default:'secondary' }} ms-1">{{ option.count }}</span>
                     </a>
@@ -95,7 +98,7 @@
     </div>
 </div>
 
-<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:title_author_extraction' %}" hx-target="#title-author-worklist" hx-select="#title-author-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#title-author-loading" hx-disabled-elt="button, input, select">
     <input type="hidden" name="filter" value="{{ current_filter }}">
     <div class="col-md-8">
         <label class="form-label" for="extract-search">Search</label>
@@ -105,6 +108,7 @@
         <button class="btn btn-outline-secondary">Apply</button>
         <a class="btn btn-outline-secondary" href="{% url 'submissions:title_author_extraction' %}">Reset</a>
     </div>
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="title-author-loading" message="Updating title/author review..." %}
 </form>
 
 {% for row in rows %}
@@ -307,8 +311,9 @@
     </div>
     {% endwith %}
 {% empty %}
-    <div class="cfm-empty">No records match this filter.</div>
+    {% include "submissions/partials/empty_state.html" with message="No title/author records match this view." %}
 {% endfor %}
+</div>
 <style>
     .cfm-tool-group {
         display: grid;
@@ -338,26 +343,26 @@
         padding: 0.85rem;
     }
     .cfm-title-match-ok {
-        background: #f0f8f3;
-        border-left-color: #198754;
+        background: var(--cfm-success-bg);
+        border-left-color: var(--cfm-success-border);
     }
     .cfm-title-match-warning {
-        background: #fff8e1;
-        border-left-color: #f0ad00;
+        background: var(--cfm-warning-bg);
+        border-left-color: var(--cfm-warning-border);
     }
     .cfm-title-match-danger {
-        background: #fff1f1;
-        border-left-color: #dc3545;
+        background: var(--cfm-danger-bg);
+        border-left-color: var(--cfm-danger-border);
     }
     .cfm-title-match-message {
         font-weight: 600;
     }
     .diff-box { font-size: 0.95rem; line-height: 1.6; }
-    .diff-insert { background: #d1e7dd; padding: 0 2px; }
-    .diff-replace { background: #fff3cd; padding: 0 2px; }
-    .diff-delete { background: #f8d7da; color: #842029; padding: 0 2px; }
+    .diff-insert { background: var(--cfm-success-fill); color: var(--cfm-success-text); padding: 0 2px; }
+    .diff-replace { background: var(--cfm-warning-fill); color: var(--cfm-warning-dark); padding: 0 2px; }
+    .diff-delete { background: var(--cfm-danger-fill); color: var(--cfm-danger-text); padding: 0 2px; }
     .extraction-red-flag {
-        box-shadow: inset 4px 0 0 #dc3545;
+        box-shadow: inset 4px 0 0 var(--cfm-danger-border);
     }
 </style>
 {% endblock %}

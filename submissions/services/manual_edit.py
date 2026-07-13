@@ -330,8 +330,119 @@ def _apply_publishing_decision(submission, changed_fields, summary):
 
 
 @transaction.atomic
+def create_final_submission_manual(form, report_file=None):
+    """Create a FinalSubmission with explicit publication-workflow initialization."""
+    if getattr(form.instance, "pk", None):
+        raise ValueError("Manual create requires an unsaved Final Submission form.")
+
+    obj = form.save(commit=False)
+    changed_fields = set(form.changed_data)
+    report_file = (
+        report_file
+        if report_file is not None
+        else form.cleaned_data.get("plagiarism_report_file")
+    )
+    pdf_uploaded = bool(obj.pdf_file)
+    source_uploaded = bool(obj.source_file)
+    entered_similarity_score = obj.similarity_score
+    entered_single_score = obj.single_similarity_score
+    summary = _empty_summary()
+
+    obj.submission_origin = "start2"
+    obj.mapping_source = "manual_add"
+    _reset_identity_review(
+        obj,
+        "Final submission created manually; Paper ID review was evaluated.",
+    )
+    summary["identity_recalculated"] = True
+
+    if pdf_uploaded:
+        _reset_pdf_dependent_state(
+            obj,
+            "New PDF uploaded; run Process PDFs before publication.",
+        )
+        obj.similarity_score = entered_similarity_score
+        obj.single_similarity_score = entered_single_score
+        summary["pdf_reset"] = True
+    else:
+        obj.processing_status = "pending"
+        obj.processing_message = "No PDF uploaded; add a PDF before Process PDFs."
+
+    if source_uploaded:
+        obj.format_status = "pending"
+        summary["source_reset"] = True
+
+    if entered_similarity_score is not None or entered_single_score is not None:
+        obj.plagiarism_imported_at = timezone.now()
+    if report_file:
+        _write_plagiarism_report(obj, report_file)
+
+    if _guard_review_fields(obj):
+        summary["review_status_guarded"] = True
+
+    obj.save()
+    _set_saved_file_paths(obj, pdf_uploaded, source_uploaded)
+    evaluate_submission(obj, save=True)
+    determine_active_versions()
+    _mark_duplicate_submissions()
+    summary["active_versions_recalculated"] = True
+    obj.refresh_from_db()
+
+    audit_fields = _audit_fields_for_change(
+        changed_fields,
+        pdf_uploaded,
+        source_uploaded,
+        report_file,
+    )
+    audit_fields.update(
+        {
+            "submission_origin",
+            "mapping_source",
+            "paper_id_verified",
+            "auto_verify_blocked",
+            "verification_status",
+            "title_match_score",
+            "verification_message",
+            "processing_status",
+            "processing_message",
+            "title_author_review_status",
+            "format_status",
+            "active_version",
+            "duplicate_submission",
+            "current_file_path",
+            "source_current_file_path",
+            "original_file_name",
+            "source_original_file_name",
+        }
+    )
+    audit_success(
+        "final_submission_manual_create",
+        "Final submission manually created.",
+        submission=obj,
+        changed_fields=sorted(changed_fields),
+        before={},
+        after=_audit_snapshot(obj, audit_fields),
+        reset_flags=summary,
+        file_changes={
+            "pdf_uploaded": pdf_uploaded,
+            "source_uploaded": source_uploaded,
+            "report_uploaded": bool(report_file),
+        },
+        file_hashes=_audit_file_hashes(
+            obj,
+            pdf_uploaded,
+            source_uploaded,
+            report_file,
+        ),
+    )
+    return obj, summary
+
+
+@transaction.atomic
 def apply_final_submission_manual_edit(_submission, form, report_file=None):
     """Apply a FinalSubmission edit with publication-critical reset rules."""
+    if _submission is None or not getattr(_submission, "pk", None):
+        raise ValueError("Manual edit requires an existing Final Submission record.")
     original = _submission.__class__.objects.get(pk=_submission.pk)
     obj = form.save(commit=False)
     changed_fields = set(form.changed_data)

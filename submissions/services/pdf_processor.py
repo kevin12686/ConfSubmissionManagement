@@ -270,14 +270,17 @@ def process_all_pdfs(force=False):
         raise
 
 
-def processed_pdf_rows(limit=100):
+def processed_pdf_rows(limit=None):
     rows = []
-    for submission in FinalSubmission.objects.filter(
+    submissions = FinalSubmission.objects.filter(
         active_version=True,
         discarded=False,
         excluded_from_publication=False,
         paper_id_filled__in=InitialPaper.objects.values("paper_id"),
-    ).exclude(page_count__isnull=True).order_by("paper_id_filled", "final_submission_id")[:limit]:
+    ).order_by("paper_id_filled", "final_submission_id")
+    if limit is not None:
+        submissions = submissions[:limit]
+    for submission in submissions:
         rows.append(
             {
                 "submission": submission,

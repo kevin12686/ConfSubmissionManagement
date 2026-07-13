@@ -11,7 +11,7 @@
         <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:editor_upload' %}">Upload Editor Version</a>
         <a class="btn btn-primary" href="{% url 'submissions:final_submission_add' %}">Add Final Submission</a>
-        <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#batch-upload-panel" aria-expanded="false" aria-controls="batch-upload-panel">Batch Upload</button>
+        <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#import-reupload-panel" aria-expanded="false" aria-controls="import-reupload-panel">Import / Re-upload</button>
     </div>
 </div>
 {% if current_filter == "version_conflicts" %}
@@ -20,20 +20,29 @@
     These papers have both Start2 and Editor-uploaded versions. Editor upload is currently prioritized, but final export stays blocked until you discard either the Start2 version or the editor upload with a note.
 </div>
 {% endif %}
-<div class="collapse mb-3" id="batch-upload-panel">
+<div class="collapse mb-3" id="import-reupload-panel">
         <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_final_submissions' %}" class="card border-primary">
             {% csrf_token %}
             <div class="card-body">
-                <h2 class="h6">Batch Upload</h2>
+                <h2 class="h6">Import / Re-upload Final Submissions</h2>
+                <p class="small text-muted">Upload metadata and matching PDF/source files, preview every change, then apply only after confirmation.</p>
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
                         <label class="form-label" for="{{ import_form.file.id_for_label }}">Metadata CSV/XLSX</label>
-                        {{ import_form.file }}
+                        <div class="cfm-upload-zone" data-upload-zone>
+                            {{ import_form.file }}
+                            <div class="cfm-upload-summary" data-upload-summary aria-live="polite">No metadata file selected.</div>
+                            <div class="cfm-upload-file-list" data-upload-list></div>
+                        </div>
                         <div class="form-text">Use the template. It contains Final ID, Author-entered ID, title, authors, optional upload date, and uploaded field names. Import first previews differences; nothing is applied until you confirm.</div>
                     </div>
                     <div class="col-md-5">
                         <label class="form-label" for="{{ import_form.submission_files.id_for_label }}">PDF and Source files</label>
-                        {{ import_form.submission_files }}
+                        <div class="cfm-upload-zone" data-upload-zone>
+                            {{ import_form.submission_files }}
+                            <div class="cfm-upload-summary" data-upload-summary aria-live="polite">0 selected: 0 PDF, 0 source/other.</div>
+                            <div class="cfm-upload-file-list" data-upload-list></div>
+                        </div>
                         <div class="form-text">Select all files named like 34_file_Submit_PDF.pdf and 34_file_Submit_Source.docx/zip/tex. Large batches are supported up to 5000 files per request; split larger uploads into batches. File extension decides the real type if authors uploaded to the wrong slot.</div>
                     </div>
                     <div class="col-md-2">
@@ -43,21 +52,24 @@
             </div>
 	        </form>
 </div>
-	<ul class="nav nav-tabs mb-3">
+<div id="final-submission-worklist">
+	<ul class="nav nav-tabs cfm-tabs">
 	    {% for option in filter_options %}
 	        <li class="nav-item">
-	            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+	            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+	               hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading">
 	                {{ option.label }}
 	                <span class="badge text-bg-{% if option.value == current_filter %}primary{% else %}secondary{% endif %}">{{ option.count }}</span>
 	            </a>
 	        </li>
 	    {% endfor %}
 	</ul>
-	<form method="get" class="cfm-filter-panel d-flex gap-2">
+	<form method="get" class="cfm-filter-panel d-flex flex-wrap gap-2" hx-get="{% url 'submissions:final_submission_list' %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading" hx-disabled-elt="button, input">
 	    <input type="hidden" name="filter" value="{{ current_filter }}">
 	    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final ID, Paper ID, title, authors, or status">
 	    <button class="btn btn-outline-secondary">Search</button>
 	    {% if q %}<a class="btn btn-outline-secondary" href="?filter={{ current_filter }}">Clear</a>{% endif %}
+	    {% include "submissions/partials/loading_indicator.html" with indicator_id="final-submission-loading" message="Updating submissions..." %}
 	</form>
 	<details class="small text-muted border rounded px-2 py-1 mb-3">
     <summary class="fw-semibold">Status guide</summary>
@@ -73,7 +85,7 @@
     </div>
 </details>
 <div class="table-responsive">
-    <table class="table table-striped table-hover align-middle cfm-table cfm-table-sticky">
+    <table class="table table-hover align-middle cfm-table cfm-table-sticky">
         <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Version</th><th>Final Title</th><th>Files</th><th>Plagiarism</th><th>Processing</th><th>Actions</th></tr></thead>
         <tbody>
         {% for item in submissions %}
@@ -210,5 +222,6 @@
 	        {% endfor %}
         </tbody>
     </table>
+</div>
 </div>
 {% endblock %}

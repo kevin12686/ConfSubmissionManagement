@@ -10,23 +10,26 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:exceptions_center' %}">Exceptions</a>
     </div>
 </div>
+<div id="author-count-worklist">
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
-            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}&sort={{ current_sort }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               hx-get="?filter={{ option.value }}&sort={{ current_sort }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#author-count-worklist" hx-select="#author-count-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#author-count-loading">
                 {{ option.label }} <span class="badge cfm-tab-count text-bg-{% if option.value == 'attention' or option.value == 'over_limit' or option.value == 'duplicates' %}warning{% elif option.value == 'allowed' %}info{% else %}secondary{% endif %}">{{ option.count }}</span>
             </a>
         </li>
     {% endfor %}
 </ul>
-<form method="get" class="cfm-filter-panel d-flex gap-2">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:author_count' %}" hx-target="#author-count-worklist" hx-select="#author-count-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#author-count-loading" hx-disabled-elt="button, input, select">
     <input type="hidden" name="filter" value="{{ current_filter }}">
-    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search normalized name, display name, or Paper ID">
-    <button class="btn btn-outline-secondary">Search</button>
-    {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:author_count' %}">Reset</a>{% endif %}
+    <div class="col-lg-6"><label class="form-label" for="author-count-search">Search</label><input id="author-count-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search normalized name, display name, or Paper ID"></div>
+    <div class="col-lg-4"><label class="form-label" for="author-count-sort">Sort</label><select id="author-count-sort" class="form-select" name="sort">{% for option in sort_options %}<option value="{{ option.value }}" {% if option.value == current_sort %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></div>
+    <div class="col-lg-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill">Apply</button>{% if q or current_filter != "all" or current_sort != "attention" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:author_count' %}">Reset</a>{% endif %}</div>
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="author-count-loading" message="Updating author list..." %}
 </form>
 <div class="table-responsive">
-    <table class="table table-striped align-middle cfm-table cfm-table-sticky">
+    <table class="table table-hover align-middle cfm-table cfm-table-sticky">
         <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
         <tbody>
         {% for row in rows %}
@@ -74,9 +77,10 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="7" class="text-muted">No author counts available.</td></tr>
+            <tr><td colspan="7">{% include "submissions/partials/empty_state.html" with message="No author counts match this view." %}</td></tr>
         {% endfor %}
         </tbody>
     </table>
+</div>
 </div>
 {% endblock %}

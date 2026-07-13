@@ -11,6 +11,7 @@
     </div>
 </div>
 
+<div id="exceptions-worklist">
 <div class="row g-2 cfm-metric-strip">
     <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Not allowed</div><div class="cfm-metric-value text-danger">{{ counts.not_allowed }}</div></div></div>
     <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Allowed</div><div class="cfm-metric-value text-info">{{ counts.allowed }}</div></div></div>
@@ -21,7 +22,8 @@
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
-            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}&type={{ current_type }}{% if q %}&q={{ q|urlencode }}{% endif %}">
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}&type={{ current_type }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               hx-get="?filter={{ option.value }}&type={{ current_type }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#exceptions-worklist" hx-select="#exceptions-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#exceptions-loading">
                 {{ option.label }}
                 <span class="badge cfm-tab-count text-bg-{% if option.value == 'not_allowed' %}danger{% elif option.value == 'allowed' %}info{% elif option.value == 'stale' %}warning{% else %}secondary{% endif %}">{{ option.count }}</span>
             </a>
@@ -29,7 +31,7 @@
     {% endfor %}
 </ul>
 
-<form method="get" class="row g-2 align-items-end cfm-filter-panel">
+<form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:exceptions_center' %}" hx-target="#exceptions-worklist" hx-select="#exceptions-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#exceptions-loading" hx-disabled-elt="button, input, select">
     <input type="hidden" name="filter" value="{{ current_filter }}">
     <div class="col-lg-6">
         <label class="form-label" for="exception-search">Search</label>
@@ -47,6 +49,7 @@
         <button class="btn btn-outline-secondary flex-fill">Apply</button>
         {% if q or current_type != "all" %}<a class="btn btn-outline-secondary" href="?filter={{ current_filter }}">Reset</a>{% endif %}
     </div>
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="exceptions-loading" message="Updating exceptions..." %}
 </form>
 
 <div class="vstack gap-3">
@@ -93,6 +96,11 @@
                             </div>
                         </div>
                     {% endif %}
+                    {% if row.submission %}
+                        <div class="col-12">
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' row.submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit submission</a>
+                        </div>
+                    {% endif %}
                     <div class="col-12">
                         <div class="small text-muted">Reason</div>
                         {% if row.reason %}
@@ -133,7 +141,8 @@
             </div>
         </div>
     {% empty %}
-        <div class="alert alert-success border cfm-attention">No exceptions in this filter.</div>
+        {% include "submissions/partials/empty_state.html" with message="No exceptions match this view." %}
     {% endfor %}
+</div>
 </div>
 {% endblock %}

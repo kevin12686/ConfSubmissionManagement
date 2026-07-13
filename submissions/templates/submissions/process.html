@@ -1,6 +1,51 @@
 {% extends "submissions/base.html" %}
 {% block title %}Process PDFs{% endblock %}
 {% block content %}
+<style>
+    .cfm-pdf-preview-card {
+        scroll-margin-top: 1rem;
+    }
+    .cfm-pdf-preview-card.cfm-page-issue {
+        border: 2px solid var(--cfm-warning-border);
+    }
+    .cfm-pdf-preview-card.cfm-processing-error {
+        border: 2px solid var(--cfm-danger-border);
+    }
+    .cfm-pdf-preview-header {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+    }
+    .cfm-page-thumbnail-button {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        padding: 0;
+    }
+    .cfm-page-thumbnail-image,
+    .cfm-page-thumbnail-empty {
+        align-items: center;
+        background: var(--cfm-surface);
+        border: 1px solid var(--cfm-border-strong);
+        border-radius: 0.375rem;
+        display: flex;
+        height: 170px;
+        justify-content: center;
+        object-fit: contain;
+        overflow: hidden;
+        width: 120px;
+    }
+    .cfm-page-thumbnail-empty {
+        background: var(--cfm-surface-subtle);
+        color: var(--cfm-muted);
+        padding: 0.5rem;
+    }
+    .cfm-thumbnail-modal-image {
+        max-height: 78vh;
+        object-fit: contain;
+        width: 100%;
+    }
+</style>
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Process PDFs</h1>
@@ -124,31 +169,46 @@
 
 <h2 class="h4 mt-4">Processed PDF Page Preview</h2>
 <div class="small text-muted mb-2">Every matching paper remains fully expanded so blank pages can be spotted by scanning the complete page strip.</div>
+<div id="process-preview-worklist">
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
-            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}">
-                {{ option.label }} <span class="badge cfm-tab-count text-bg-{% if option.value == 'page_issues' %}warning{% else %}secondary{% endif %}">{{ option.count }}</span>
+            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#process-preview-worklist" hx-select="#process-preview-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#process-preview-loading">
+                {{ option.label }} <span class="badge cfm-tab-count text-bg-{% if option.value == 'needs_processing' or option.value == 'page_issues' %}warning{% elif option.value == 'processed' %}success{% else %}secondary{% endif %}">{{ option.count }}</span>
             </a>
         </li>
     {% endfor %}
 </ul>
-<form method="get" class="cfm-filter-panel d-flex gap-2">
+<form method="get" class="cfm-filter-panel d-flex flex-wrap gap-2" hx-get="{% url 'submissions:process' %}" hx-target="#process-preview-worklist" hx-select="#process-preview-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#process-preview-loading" hx-disabled-elt="button, input">
     <input type="hidden" name="filter" value="{{ current_filter }}">
     <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, or title">
     <button class="btn btn-outline-secondary">Search</button>
     {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:process' %}">Reset</a>{% endif %}
+    {% include "submissions/partials/loading_indicator.html" with indicator_id="process-preview-loading" message="Updating PDF previews..." %}
 </form>
+{% if processed_rows %}
+<div class="cfm-filter-panel d-flex flex-wrap gap-2 align-items-end">
+    <div class="flex-grow-1">
+        <label class="form-label" for="paper-preview-jump">Jump to paper</label>
+        <select id="paper-preview-jump" class="form-select" onchange="if (this.value) window.location.hash = this.value;">
+            <option value="">Choose Paper ID / Final ID</option>
+            {% for row in processed_rows %}<option value="paper-preview-{{ row.submission.pk }}">{{ row.submission.paper_id_filled }} / Final {{ row.submission.final_submission_id }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="small text-muted pb-2">Paper headers stay visible while you scan each complete thumbnail strip.</div>
+</div>
+{% endif %}
 <div class="vstack gap-3">
     {% for row in processed_rows %}
-        <div class="card cfm-review-card">
-            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <div id="paper-preview-{{ row.submission.pk }}" class="card cfm-review-card cfm-pdf-preview-card {% if row.submission.processing_status == 'error' %}cfm-processing-error{% elif row.page_issue or row.needs_processing %}cfm-page-issue{% endif %}">
+            <div class="card-header cfm-pdf-preview-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
                 <div>
                     <strong>{{ row.submission.paper_id_filled|default:"No Paper ID" }}</strong>
                     <span class="text-muted ms-2">Final ID {{ row.submission.final_submission_id }}</span>
-                    <span class="badge {% if row.submission.page_count < settings_obj.page_minimum or row.submission.page_count > settings_obj.page_limit %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">
-                        Page count: {{ row.submission.page_count }} pages
-                    </span>
+                    {% if row.submission.page_count != None %}<span class="badge {% if row.page_issue %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">Page count: {{ row.submission.page_count }} pages</span>{% endif %}
+                    {% if row.needs_processing %}<span class="badge text-bg-warning">Needs processing</span>{% elif row.is_processed %}<span class="badge text-bg-success">Processed</span>{% endif %}
+                    {% if row.missing_pdf %}<span class="badge text-bg-danger">No PDF</span>{% endif %}
                     <div class="small text-muted mt-1">{{ row.submission.final_submission_title|default:"Missing title" }}</div>
                 </div>
                 <div class="small text-muted">{{ row.submission.processing_message }}</div>
@@ -158,18 +218,47 @@
                     <div class="d-flex gap-2 overflow-auto pb-2">
                         {% for url in row.thumbnail_urls %}
                             <div class="text-center flex-shrink-0">
-                                <img src="{{ url }}" class="border rounded bg-light" style="width: 120px; max-height: 170px; object-fit: contain;" alt="Page {{ forloop.counter }}">
+                                <button class="cfm-page-thumbnail-button" type="button" data-bs-toggle="modal" data-bs-target="#thumbnail-preview-modal" data-preview-src="{{ url }}" data-preview-label="{{ row.submission.paper_id_filled }} / Page {{ forloop.counter }}">
+                                    <img src="{{ url }}" class="cfm-page-thumbnail-image" width="120" height="170" loading="lazy" alt="{{ row.submission.paper_id_filled }} page {{ forloop.counter }}">
+                                </button>
                                 <div class="small text-muted">Page {{ forloop.counter }}</div>
                             </div>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <span class="text-muted">No thumbnails generated yet.</span>
+                    <div class="text-center d-inline-block">
+                        <div class="cfm-page-thumbnail-empty small">{% if row.submission.processing_status == "error" %}Thumbnail render failed{% elif row.missing_pdf %}No PDF available{% else %}No thumbnails generated yet{% endif %}</div>
+                        <div class="small text-muted">Preview unavailable</div>
+                    </div>
                 {% endif %}
             </div>
         </div>
     {% empty %}
-        <div class="cfm-empty">No processed PDFs yet.</div>
+        <div class="cfm-empty">No publication PDFs match the current filter.</div>
     {% endfor %}
 </div>
+</div>
+
+<div class="modal fade" id="thumbnail-preview-modal" tabindex="-1" aria-labelledby="thumbnail-preview-title" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h2 class="modal-title h5" id="thumbnail-preview-title">PDF page preview</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body text-center"><img class="cfm-thumbnail-modal-image" src="" alt="Expanded PDF page preview"></div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const modal = document.getElementById("thumbnail-preview-modal");
+    if (!modal) return;
+    modal.addEventListener("show.bs.modal", function (event) {
+        const trigger = event.relatedTarget;
+        modal.querySelector("img").src = trigger.dataset.previewSrc || "";
+        modal.querySelector("#thumbnail-preview-title").textContent = trigger.dataset.previewLabel || "PDF page preview";
+    });
+    modal.addEventListener("hidden.bs.modal", function () {
+        modal.querySelector("img").src = "";
+    });
+});
+</script>
 {% endblock %}

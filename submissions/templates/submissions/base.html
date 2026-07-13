@@ -8,36 +8,232 @@
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'submissions/brand/favicon-32.png' %}">
     <link rel="icon" type="image/png" sizes="16x16" href="{% static 'submissions/brand/favicon-16.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'submissions/brand/apple-touch-icon.png' %}">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{% static 'submissions/vendor/tabler-1.4.0.min.css' %}" rel="stylesheet">
     <style>
         :root {
-            --cfm-bg: #f6f7f9;
-            --cfm-surface: #ffffff;
-            --cfm-border: #b8c0cc;
-            --cfm-border-strong: #677180;
-            --cfm-muted: #5f6b7a;
+            --cfm-bg: #dfe5eb;
+            --cfm-surface: #eef2f5;
+            --cfm-surface-subtle: #e5ebf0;
+            --cfm-surface-strong: #d4dde6;
+            --cfm-border: #8898a9;
+            --cfm-border-strong: #46566a;
+            --cfm-text: #172033;
+            --cfm-heading: #101827;
+            --cfm-secondary-text: #2f4055;
+            --cfm-muted: #42566f;
+            --cfm-primary: #2563eb;
+            --cfm-primary-hover: #1d4ed8;
+            --cfm-primary-soft: #dbeafe;
+            --cfm-nav-bg: #eef2f5;
+            --cfm-nav-strip: #dfe6ed;
+            --cfm-nav-hover: #d2dce7;
+            --cfm-nav-active: #dbe8f8;
+            --cfm-danger-text: #991b1b;
+            --cfm-danger-border: #dc2626;
+            --cfm-danger-bg: #f3e2e4;
+            --cfm-danger-fill: #e9cfd3;
             --cfm-warning-text: #b45309;
+            --cfm-warning-dark: #78350f;
             --cfm-warning-border: #f59e0b;
-            --cfm-warning-bg: #fff8db;
-            --cfm-warning-fill: #ffcd39;
+            --cfm-warning-bg: #f3ecd5;
+            --cfm-warning-fill: #eadca7;
             --cfm-warning-strong: #f59e0b;
+            --cfm-info-text: #1e40af;
+            --cfm-info-border: #60a5fa;
+            --cfm-info-bg: #e3eaf2;
+            --cfm-success-text: #166534;
+            --cfm-success-border: #22c55e;
+            --cfm-success-bg: #e6eee9;
+            --cfm-success-fill: #d7e7dc;
+            --cfm-neutral-text: #2f3c4f;
+            --cfm-neutral-border: #9ca3af;
+            --cfm-neutral-bg: #dce3ea;
         }
         body {
             background: var(--cfm-bg);
+            color: var(--cfm-text);
             display: flex;
             min-height: 100vh;
             flex-direction: column;
+            line-height: 1.5;
+        }
+        :focus-visible {
+            outline: 3px solid #2563eb !important;
+            outline-offset: 2px;
         }
         main {
             flex: 1 0 auto;
         }
         footer {
+            background: var(--cfm-surface-strong) !important;
+            border-color: var(--cfm-border-strong) !important;
+            color: var(--cfm-muted);
             flex-shrink: 0;
         }
-        .navbar-brand {
+        a {
+            color: #1746a2;
+        }
+        a:hover {
+            color: #12377d;
+        }
+        h1, h2, h3, h4, h5, h6,
+        .h1, .h2, .h3, .h4, .h5, .h6,
+        strong, .fw-semibold, .fw-bold {
+            color: var(--cfm-heading);
+        }
+        .cfm-app-header {
+            background: var(--cfm-nav-bg);
+            border-bottom: 2px solid var(--cfm-border-strong);
+            box-shadow: 0 0.2rem 0.7rem rgba(15, 23, 42, 0.1);
+            position: relative;
+            z-index: 1020;
+        }
+        .cfm-header-identity {
+            align-items: center;
+            display: flex;
+            gap: 1rem;
+            justify-content: space-between;
+            min-height: 3.75rem;
+            padding-bottom: 0.55rem;
+            padding-top: 0.55rem;
+        }
+        .cfm-app-header .navbar-brand {
+            color: var(--cfm-heading) !important;
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.65rem;
+            margin: 0;
+            min-width: 0;
+            padding: 0;
+        }
+        .cfm-brand-copy {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.15;
+            min-width: 0;
+        }
+        .cfm-brand-title {
+            color: var(--cfm-heading);
+            font-size: 1rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .cfm-brand-title-short {
+            display: none;
+        }
+        .cfm-brand-subtitle {
+            color: var(--cfm-muted);
+            font-size: 0.72rem;
+            font-weight: 500;
+            margin-top: 0.15rem;
+        }
+        .cfm-conference-context {
+            align-items: flex-end;
+            display: flex;
+            flex-direction: column;
+            margin-left: auto;
+            min-width: 0;
+        }
+        .cfm-conference-label {
+            color: var(--cfm-muted);
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+        .cfm-conference-name {
+            color: var(--cfm-heading);
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-top: 0.2rem;
+            max-width: 22rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cfm-app-header .navbar-toggler {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border-strong);
+            color: var(--cfm-heading);
+            height: 2.35rem;
+            padding: 0.35rem 0.55rem;
+            width: 2.65rem;
+        }
+        .cfm-menu-glyph {
+            color: var(--cfm-heading);
+            display: block;
+            font-size: 1.35rem;
+            line-height: 1;
+        }
+        .cfm-primary-nav {
+            background: var(--cfm-nav-strip);
+            border-top: 1px solid var(--cfm-border);
+            padding: 0;
+        }
+        .cfm-primary-nav .navbar-nav {
+            gap: 0.15rem;
+        }
+        .cfm-primary-nav .nav-link {
+            border-bottom: 3px solid transparent;
+            color: var(--cfm-secondary-text) !important;
+            font-weight: 600;
+            padding: 0.7rem 0.9rem 0.6rem;
+        }
+        .cfm-primary-nav .nav-link:hover,
+        .cfm-primary-nav .nav-link:focus-visible,
+        .cfm-primary-nav .nav-link.show {
+            background: var(--cfm-nav-hover) !important;
+            color: #143d73 !important;
+        }
+        .cfm-primary-nav .nav-link.active {
+            background: var(--cfm-nav-active) !important;
+            border-bottom-color: var(--cfm-primary);
+            color: #123b73 !important;
+            font-weight: 700;
+        }
+        .cfm-primary-nav .dropdown-menu {
+            background: var(--cfm-surface);
+            border-color: var(--cfm-border-strong);
+            box-shadow: 0 0.5rem 1.25rem rgba(15, 23, 42, 0.18);
+            min-width: 20rem;
+            padding: 0.45rem;
+        }
+        .cfm-primary-nav .dropdown-item {
+            border-radius: 0.3rem;
+            color: var(--cfm-text);
+            display: block;
+            padding: 0.55rem 0.65rem;
+        }
+        .cfm-primary-nav .dropdown-item:hover,
+        .cfm-primary-nav .dropdown-item:focus-visible {
+            background: var(--cfm-nav-hover);
+            color: #123b73;
+        }
+        .cfm-primary-nav .dropdown-item.active,
+        .cfm-primary-nav .dropdown-item:active {
+            background: var(--cfm-nav-active);
+            color: #123b73;
+            font-weight: 600;
+        }
+        .cfm-nav-item-title {
+            display: block;
+            font-weight: 650;
+            line-height: 1.2;
+        }
+        .cfm-nav-item-help {
+            color: var(--cfm-muted);
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 400;
+            line-height: 1.25;
+            margin-top: 0.16rem;
+            white-space: normal;
+        }
+        .cfm-primary-nav .dropdown-item.active .cfm-nav-item-help,
+        .cfm-primary-nav .dropdown-item:hover .cfm-nav-item-help,
+        .cfm-primary-nav .dropdown-item:focus-visible .cfm-nav-item-help {
+            color: #294f7d;
         }
         .cfm-brand-icon {
             width: 32px;
@@ -49,27 +245,102 @@
         .text-warning-emphasis {
             color: var(--cfm-warning-text) !important;
         }
+        .badge {
+            border: 0 !important;
+            border-radius: 999px;
+            box-shadow: none !important;
+            font-size: 0.68rem;
+            font-weight: 700;
+            line-height: 1.15;
+            padding: 0.28rem 0.5rem;
+            vertical-align: middle;
+        }
         .text-bg-warning {
             background-color: var(--cfm-warning-fill) !important;
             color: #111827 !important;
         }
-        .badge.text-bg-warning {
-            border: 1px solid var(--cfm-warning-border);
+        .text-bg-danger {
+            background-color: var(--cfm-danger-fill) !important;
+            color: var(--cfm-danger-text) !important;
+        }
+        .text-bg-info,
+        .text-bg-primary {
+            background-color: #d6e1ee !important;
+            color: var(--cfm-info-text) !important;
+        }
+        .text-bg-success {
+            background-color: var(--cfm-success-fill) !important;
+            color: var(--cfm-success-text) !important;
+        }
+        .text-bg-secondary,
+        .text-bg-light {
+            background-color: var(--cfm-neutral-bg) !important;
+            color: var(--cfm-neutral-text) !important;
         }
         .alert-warning {
             --bs-alert-color: var(--cfm-warning-text);
             --bs-alert-bg: var(--cfm-warning-bg);
             --bs-alert-border-color: var(--cfm-warning-border);
         }
+        .alert-danger {
+            --bs-alert-color: var(--cfm-danger-text);
+            --bs-alert-bg: var(--cfm-danger-bg);
+            --bs-alert-border-color: var(--cfm-danger-border);
+        }
+        .alert-info {
+            --bs-alert-color: var(--cfm-info-text);
+            --bs-alert-bg: var(--cfm-info-bg);
+            --bs-alert-border-color: var(--cfm-info-border);
+        }
+        .alert-success {
+            --bs-alert-color: var(--cfm-success-text);
+            --bs-alert-bg: var(--cfm-success-bg);
+            --bs-alert-border-color: var(--cfm-success-border);
+        }
+        .alert-light {
+            --bs-alert-color: var(--cfm-neutral-text);
+            --bs-alert-bg: var(--cfm-surface-subtle);
+            --bs-alert-border-color: var(--cfm-border);
+        }
+        .bg-light {
+            background-color: var(--cfm-surface-subtle) !important;
+        }
+        .bg-white {
+            background-color: var(--cfm-surface) !important;
+        }
+        .text-muted {
+            color: var(--cfm-muted) !important;
+        }
+        .text-secondary,
+        .form-text {
+            color: var(--cfm-muted) !important;
+            opacity: 1;
+        }
+        .form-label,
+        label {
+            color: var(--cfm-secondary-text);
+            font-weight: 600;
+        }
+        ::placeholder {
+            color: #64748b !important;
+            opacity: 1;
+        }
         .table-warning {
             --bs-table-color: #111827;
             --bs-table-bg: #fff4c2;
-            --bs-table-striped-bg: #ffeaa3;
             --bs-table-hover-bg: #ffdf7e;
             color: var(--bs-table-color);
         }
+        .btn {
+            border-width: 1.5px;
+            font-weight: 600;
+        }
+        .btn:not(.btn-link):not(:disabled):not(.disabled) {
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
         .btn-outline-warning {
             --bs-btn-color: var(--cfm-warning-text);
+            --bs-btn-bg: var(--cfm-warning-bg);
             --bs-btn-border-color: var(--cfm-warning-border);
             --bs-btn-hover-color: #111827;
             --bs-btn-hover-bg: var(--cfm-warning-fill);
@@ -81,6 +352,183 @@
             --bs-btn-disabled-color: #b45309;
             --bs-btn-disabled-border-color: #f6c453;
         }
+        .btn-primary {
+            --bs-btn-bg: var(--cfm-primary);
+            --bs-btn-border-color: var(--cfm-primary);
+            --bs-btn-hover-bg: var(--cfm-primary-hover);
+            --bs-btn-hover-border-color: var(--cfm-primary-hover);
+            --bs-btn-active-bg: #1e40af;
+            --bs-btn-active-border-color: #1e40af;
+        }
+        .btn-outline-primary {
+            --bs-btn-color: var(--cfm-primary-hover);
+            --bs-btn-bg: #f0f6ff;
+            --bs-btn-border-color: #4f7fe8;
+            --bs-btn-hover-color: #ffffff;
+            --bs-btn-hover-bg: var(--cfm-primary-hover);
+            --bs-btn-hover-border-color: var(--cfm-primary-hover);
+        }
+        .btn-secondary {
+            --bs-btn-color: #ffffff;
+            --bs-btn-bg: #475569;
+            --bs-btn-border-color: #475569;
+            --bs-btn-hover-color: #ffffff;
+            --bs-btn-hover-bg: #334155;
+            --bs-btn-hover-border-color: #334155;
+            --bs-btn-active-bg: #1f2937;
+            --bs-btn-active-border-color: #1f2937;
+        }
+        .btn-outline-secondary {
+            --bs-btn-color: #334155;
+            --bs-btn-bg: #f1f5f9;
+            --bs-btn-border-color: #64748b;
+            --bs-btn-hover-color: #ffffff;
+            --bs-btn-hover-bg: #475569;
+            --bs-btn-hover-border-color: #475569;
+            --bs-btn-active-color: #ffffff;
+            --bs-btn-active-bg: #334155;
+            --bs-btn-active-border-color: #334155;
+        }
+        .btn-outline-success {
+            --bs-btn-color: var(--cfm-success-text);
+            --bs-btn-bg: var(--cfm-success-bg);
+            --bs-btn-border-color: var(--cfm-success-border);
+            --bs-btn-hover-color: #ffffff;
+            --bs-btn-hover-bg: #15803d;
+            --bs-btn-hover-border-color: #15803d;
+            --bs-btn-active-color: #ffffff;
+            --bs-btn-active-bg: #166534;
+            --bs-btn-active-border-color: #166534;
+        }
+        .btn-outline-danger {
+            --bs-btn-color: var(--cfm-danger-text);
+            --bs-btn-bg: var(--cfm-danger-bg);
+            --bs-btn-border-color: var(--cfm-danger-border);
+            --bs-btn-hover-color: #ffffff;
+            --bs-btn-hover-bg: #b91c1c;
+            --bs-btn-hover-border-color: #b91c1c;
+            --bs-btn-active-color: #ffffff;
+            --bs-btn-active-bg: #991b1b;
+            --bs-btn-active-border-color: #991b1b;
+        }
+        .btn-dark,
+        .btn-outline-dark:hover {
+            --bs-btn-bg: #334155;
+            --bs-btn-border-color: #334155;
+            --bs-btn-hover-bg: #1f2937;
+            --bs-btn-hover-border-color: #1f2937;
+        }
+        .btn-outline-dark {
+            --bs-btn-color: #334155;
+            --bs-btn-bg: #f1f5f9;
+            --bs-btn-border-color: #64748b;
+        }
+        .btn-light {
+            --bs-btn-color: #253449;
+            --bs-btn-bg: #f8fafc;
+            --bs-btn-border-color: #64748b;
+            --bs-btn-hover-color: #172033;
+            --bs-btn-hover-bg: #e2e8f0;
+            --bs-btn-hover-border-color: #475569;
+        }
+        .btn:disabled,
+        .btn.disabled {
+            box-shadow: none !important;
+            opacity: 0.58;
+        }
+        .btn-primary {
+            --tblr-btn-color: #ffffff;
+            --tblr-btn-bg: var(--cfm-primary);
+            --tblr-btn-border-color: var(--cfm-primary);
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: var(--cfm-primary-hover);
+            --tblr-btn-hover-border-color: var(--cfm-primary-hover);
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #1e40af;
+            --tblr-btn-active-border-color: #1e40af;
+        }
+        .btn-outline-primary {
+            --tblr-btn-color: var(--cfm-primary-hover);
+            --tblr-btn-bg: #f0f6ff;
+            --tblr-btn-border-color: #4f7fe8;
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: var(--cfm-primary-hover);
+            --tblr-btn-hover-border-color: var(--cfm-primary-hover);
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #1e40af;
+            --tblr-btn-active-border-color: #1e40af;
+        }
+        .btn-secondary {
+            --tblr-btn-color: #ffffff;
+            --tblr-btn-bg: #475569;
+            --tblr-btn-border-color: #475569;
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: #334155;
+            --tblr-btn-hover-border-color: #334155;
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #1f2937;
+            --tblr-btn-active-border-color: #1f2937;
+        }
+        .btn-outline-secondary {
+            --tblr-btn-color: #334155;
+            --tblr-btn-bg: #f1f5f9;
+            --tblr-btn-border-color: #64748b;
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: #475569;
+            --tblr-btn-hover-border-color: #475569;
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #334155;
+            --tblr-btn-active-border-color: #334155;
+        }
+        .btn-outline-success {
+            --tblr-btn-color: var(--cfm-success-text);
+            --tblr-btn-bg: var(--cfm-success-bg);
+            --tblr-btn-border-color: var(--cfm-success-border);
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: #15803d;
+            --tblr-btn-hover-border-color: #15803d;
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #166534;
+            --tblr-btn-active-border-color: #166534;
+        }
+        .btn-outline-danger {
+            --tblr-btn-color: var(--cfm-danger-text);
+            --tblr-btn-bg: var(--cfm-danger-bg);
+            --tblr-btn-border-color: var(--cfm-danger-border);
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: #b91c1c;
+            --tblr-btn-hover-border-color: #b91c1c;
+            --tblr-btn-active-color: #ffffff;
+            --tblr-btn-active-bg: #991b1b;
+            --tblr-btn-active-border-color: #991b1b;
+        }
+        .btn-outline-warning {
+            --tblr-btn-color: var(--cfm-warning-text);
+            --tblr-btn-bg: var(--cfm-warning-bg);
+            --tblr-btn-border-color: var(--cfm-warning-border);
+            --tblr-btn-hover-color: #111827;
+            --tblr-btn-hover-bg: var(--cfm-warning-fill);
+            --tblr-btn-hover-border-color: var(--cfm-warning-border);
+            --tblr-btn-active-color: #111827;
+            --tblr-btn-active-bg: var(--cfm-warning-strong);
+            --tblr-btn-active-border-color: var(--cfm-warning-border);
+        }
+        .btn-outline-dark {
+            --tblr-btn-color: #334155;
+            --tblr-btn-bg: #f1f5f9;
+            --tblr-btn-border-color: #64748b;
+            --tblr-btn-hover-color: #ffffff;
+            --tblr-btn-hover-bg: #334155;
+            --tblr-btn-hover-border-color: #334155;
+        }
+        .btn-light {
+            --tblr-btn-color: #253449;
+            --tblr-btn-bg: #f8fafc;
+            --tblr-btn-border-color: #64748b;
+            --tblr-btn-hover-color: #172033;
+            --tblr-btn-hover-bg: #e2e8f0;
+            --tblr-btn-hover-border-color: #475569;
+        }
         .border,
         .card,
         .form-control,
@@ -88,14 +536,54 @@
         .list-group-item {
             border-color: var(--cfm-border) !important;
         }
+        .card,
+        .modal-content,
+        .dropdown-menu,
+        .list-group-item {
+            background-color: var(--cfm-surface);
+            color: var(--cfm-text);
+        }
+        .card-header,
+        .modal-header {
+            background-color: var(--cfm-surface-strong);
+        }
+        .card-footer,
+        .modal-footer {
+            background-color: var(--cfm-surface-subtle);
+        }
+        .form-control,
+        .form-select {
+            background-color: #f4f6f8;
+            color: var(--cfm-text);
+        }
+        .form-control:focus,
+        .form-select:focus {
+            background-color: #f8fafc;
+            border-color: var(--cfm-primary) !important;
+            box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.16);
+            color: var(--cfm-text);
+        }
         .table {
             --bs-table-border-color: var(--cfm-border);
+            --bs-table-bg: var(--cfm-surface);
+            color: var(--cfm-text);
         }
         .table > :not(caption) > * > * {
             border-bottom-color: var(--cfm-border);
         }
         .table thead th {
+            background: var(--cfm-surface-strong);
             border-bottom: 2px solid var(--cfm-border-strong) !important;
+            color: #1f3045;
+            font-weight: 700;
+        }
+        .table-hover > tbody > tr:hover > * {
+            background-color: #eaf2fb;
+            color: var(--cfm-text);
+        }
+        .table-hover > tbody > tr.table-warning:hover > * {
+            background-color: #fff1bd;
+            color: #3f2b05;
         }
         .table-responsive {
             border: 1px solid var(--cfm-border);
@@ -111,6 +599,7 @@
             margin-bottom: 1rem;
         }
         .cfm-page-title {
+            color: var(--cfm-heading);
             margin-bottom: 0;
         }
         .cfm-page-subtitle {
@@ -135,7 +624,7 @@
         .cfm-status-line .badge {
             display: inline-flex;
             align-items: center;
-            min-height: 31px;
+            min-height: auto;
         }
         .cfm-review-actions {
             display: flex;
@@ -170,7 +659,7 @@
             box-shadow: inset 4px 0 0 currentColor;
         }
         .cfm-filter-panel {
-            background: var(--cfm-surface);
+            background: var(--cfm-surface-subtle);
             border: 1px solid var(--cfm-border);
             border-radius: 0.5rem;
             padding: 0.75rem;
@@ -188,30 +677,32 @@
         }
         .cfm-tabs {
             gap: 0.35rem;
-            border-bottom: 1px solid var(--cfm-border);
+            border-bottom: 2px solid var(--cfm-border);
             margin-bottom: 1rem;
         }
         .cfm-tabs .nav-link {
             border: 1px solid transparent;
             border-top-left-radius: 0.5rem;
             border-top-right-radius: 0.5rem;
-            color: #334155;
+            color: #3d4b5d;
             display: flex;
             align-items: center;
             gap: 0.4rem;
         }
         .cfm-tabs .nav-link:hover {
-            border-color: #d7dce3 #d7dce3 var(--cfm-border);
-            background: #f8f9fb;
+            border-color: var(--cfm-border) var(--cfm-border) var(--cfm-border);
+            background: var(--cfm-primary-soft);
+            color: var(--cfm-info-text);
         }
         .cfm-tabs .nav-link.active {
             background: var(--cfm-surface);
-            border-color: var(--cfm-border) var(--cfm-border) var(--cfm-surface);
-            color: #111827;
+            border-color: var(--cfm-primary) var(--cfm-border) var(--cfm-surface);
+            border-top-width: 3px;
+            color: var(--cfm-info-text);
             font-weight: 600;
         }
         .cfm-filter-groups {
-            background: var(--cfm-surface);
+            background: var(--cfm-surface-subtle);
             border: 1px solid var(--cfm-border);
             border-radius: 0.5rem;
             margin-bottom: 1rem;
@@ -223,7 +714,7 @@
             padding-top: 0.65rem;
         }
         .cfm-filter-group-label {
-            color: var(--cfm-muted);
+            color: var(--cfm-secondary-text);
             font-size: 0.72rem;
             font-weight: 700;
             margin-bottom: 0.35rem;
@@ -246,6 +737,44 @@
         .cfm-file-control-fill input[type="file"] {
             width: 100%;
         }
+        .cfm-upload-zone {
+            background: var(--cfm-surface);
+            border: 2px dashed var(--cfm-border-strong);
+            border-radius: 0.5rem;
+            padding: 0.85rem;
+            transition: background-color 120ms ease, border-color 120ms ease;
+        }
+        .cfm-upload-zone.cfm-upload-zone-active {
+            background: var(--cfm-info-bg);
+            border-color: var(--cfm-primary);
+        }
+        .cfm-upload-summary {
+            color: var(--cfm-muted);
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+        .cfm-upload-file-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+        }
+        .cfm-upload-file-item {
+            align-items: center;
+            background: var(--cfm-surface-subtle);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.375rem;
+            display: inline-flex;
+            gap: 0.35rem;
+            max-width: 100%;
+            padding: 0.2rem 0.35rem;
+        }
+        .cfm-upload-file-name {
+            max-width: 18rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .cfm-file-control-fill input[type="file"] {
             height: 100%;
             min-height: 38px;
@@ -261,17 +790,17 @@
             height: 100%;
         }
         .cfm-metric-warning {
-            background: #fff8db;
+            background: var(--cfm-warning-bg);
             border-color: var(--cfm-warning-border) !important;
             box-shadow: inset 4px 0 0 var(--cfm-warning-strong);
         }
         .cfm-metric-danger {
-            background: #fff1f2;
-            border-color: #dc3545 !important;
-            box-shadow: inset 4px 0 0 #dc3545;
+            background: var(--cfm-danger-bg);
+            border-color: var(--cfm-danger-border) !important;
+            box-shadow: inset 4px 0 0 var(--cfm-danger-border);
         }
         .cfm-metric-label {
-            color: var(--cfm-muted);
+            color: var(--cfm-secondary-text);
             font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
@@ -290,14 +819,22 @@
             border-radius: 0.375rem;
             padding: 0.1rem 0.45rem;
         }
+        .cfm-metric-tracked {
+            background: var(--cfm-surface-subtle);
+            color: var(--cfm-secondary-text);
+        }
+        .cfm-metric-tracked .cfm-metric-value {
+            color: var(--cfm-heading);
+            font-size: 1.05rem;
+        }
         .cfm-metric-warning .cfm-metric-value {
             background: var(--cfm-warning-fill);
             border: 1px solid var(--cfm-warning-border);
             color: #111827 !important;
         }
         .cfm-metric-danger .cfm-metric-value {
-            background: #dc3545;
-            border: 1px solid #b02a37;
+            background: var(--cfm-danger-border);
+            border: 1px solid #991b1b;
             color: #ffffff !important;
         }
         .cfm-section {
@@ -311,16 +848,16 @@
             margin-bottom: 1rem;
         }
         .cfm-review-card .card-header {
-            background: #f8f9fb;
+            background: var(--cfm-surface-strong);
         }
         .cfm-review-card .card-footer {
-            background: #fbfcfd;
+            background: var(--cfm-surface-subtle);
         }
         .cfm-table {
             margin-bottom: 0;
         }
         .cfm-table-sticky thead th {
-            background: #f3f4f6;
+            background: var(--cfm-surface-strong);
             box-shadow: inset 0 -2px 0 var(--cfm-border-strong);
             position: sticky;
             top: 0;
@@ -357,28 +894,139 @@
             position: sticky;
             bottom: 0;
             z-index: 10;
-            background: rgba(255, 255, 255, 0.94);
+            background: rgba(238, 242, 245, 0.96);
             backdrop-filter: blur(6px);
             border: 1px solid var(--cfm-border);
             border-radius: 0.5rem;
             padding: 0.5rem;
             margin-top: 1rem;
         }
+        .cfm-workflow-summary-item {
+            border-right: 1px solid var(--cfm-border);
+            min-height: 7rem;
+            padding: 0.25rem 1rem;
+        }
+        .cfm-workflow-summary-item:first-child {
+            padding-left: 0;
+        }
+        .cfm-workflow-summary-item:last-child {
+            border-right: 0;
+            padding-right: 0;
+        }
+        .cfm-loading-indicator {
+            color: var(--cfm-muted);
+            display: none;
+            font-size: 0.8rem;
+        }
+        .htmx-request .cfm-loading-indicator,
+        .htmx-request.cfm-loading-indicator {
+            display: inline-flex;
+        }
+        @media (max-width: 1199.98px) {
+            .cfm-primary-nav .navbar-collapse {
+                padding: 0.5rem 0 0.65rem;
+            }
+            .cfm-primary-nav .navbar-nav {
+                gap: 0.1rem;
+            }
+            .cfm-primary-nav .nav-link {
+                border-bottom: 0;
+                border-left: 3px solid transparent;
+                padding: 0.65rem 0.8rem;
+            }
+            .cfm-primary-nav .nav-link.active {
+                border-bottom-color: transparent;
+                border-left-color: var(--cfm-primary);
+            }
+            .cfm-primary-nav .dropdown-menu {
+                border: 1px solid var(--cfm-border);
+                box-shadow: none;
+                margin: 0.2rem 0 0.5rem 0.75rem;
+                max-width: calc(100% - 0.75rem);
+                min-width: 0;
+                width: 28rem;
+            }
+            .cfm-workflow-summary-item:nth-child(2) {
+                border-right: 0;
+            }
+            .cfm-workflow-summary-item:nth-child(n+3) {
+                border-top: 1px solid var(--cfm-border);
+                margin-top: 0.75rem;
+                padding-top: 0.75rem;
+            }
+        }
+        @media (max-width: 767.98px) {
+            .cfm-workflow-summary-item {
+                border-right: 0;
+                border-top: 1px solid var(--cfm-border);
+                min-height: auto;
+                padding: 0.75rem 0;
+            }
+            .cfm-workflow-summary-item:first-child {
+                border-top: 0;
+                padding-top: 0;
+            }
+        }
+        @media (max-width: 575.98px) {
+            .cfm-header-identity {
+                gap: 0.55rem;
+            }
+            .cfm-brand-title-full,
+            .cfm-brand-subtitle,
+            .cfm-conference-label {
+                display: none;
+            }
+            .cfm-brand-title-short {
+                display: block;
+            }
+            .cfm-conference-name {
+                font-size: 0.78rem;
+                max-width: 9rem;
+            }
+            .cfm-page-header {
+                display: block;
+            }
+            .cfm-page-actions {
+                margin-top: 0.75rem;
+                width: 100%;
+            }
+            .cfm-page-actions > .btn,
+            .cfm-page-actions > .btn-group {
+                flex: 1 1 auto;
+            }
+            .cfm-filter-panel .btn {
+                white-space: normal;
+            }
+            .cfm-upload-file-name {
+                max-width: 13rem;
+            }
+        }
     </style>
 </head>
 <body>
 {% with current_url=request.resolver_match.url_name %}
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
+<header class="cfm-app-header navbar-light">
+    <div class="container-fluid cfm-header-identity">
         <a class="navbar-brand" href="{% url 'submissions:dashboard' %}">
-            <img class="cfm-brand-icon" src="{% static 'submissions/brand/favicon-32.png' %}" alt="" width="32" height="32" aria-hidden="true">
-            <span>Conference Final Manager</span>
+            <img class="cfm-brand-icon" src="{% static 'submissions/brand/app-icon-512.png' %}" alt="" width="32" height="32" aria-hidden="true">
+            <span class="cfm-brand-copy">
+                <span class="cfm-brand-title cfm-brand-title-full">Conference Final Manager</span>
+                <span class="cfm-brand-title cfm-brand-title-short">CFM</span>
+                <span class="cfm-brand-subtitle">Editorial publication workspace</span>
+            </span>
         </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
-            <span class="navbar-toggler-icon"></span>
+        <div class="cfm-conference-context" title="{{ current_conference_name|default:'Local Conference' }}">
+            <span class="cfm-conference-label">Current conference</span>
+            <span class="cfm-conference-name">{{ current_conference_name|default:"Local Conference" }}</span>
+        </div>
+        <button class="navbar-toggler d-xl-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="cfm-menu-glyph" aria-hidden="true">&#9776;</span>
         </button>
-        <div class="collapse navbar-collapse" id="mainNav">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+    </div>
+    <nav class="navbar navbar-expand-xl cfm-primary-nav" aria-label="Primary navigation">
+        <div class="container-fluid">
+            <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav me-auto mb-0">
                 <li class="nav-item">
                     <a class="nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'submissions:dashboard' %}" {% if current_url == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
                 </li>
@@ -390,10 +1038,10 @@
                         Submissions
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' or current_url == 'import_initial_papers' %}active{% endif %}" href="{% url 'submissions:initial_paper_list' %}">Paper Master List</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' or current_url == 'import_final_submissions' %}active{% endif %}" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'editor_upload' %}active{% endif %}" href="{% url 'submissions:editor_upload' %}">Editor Upload</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'not_publishing_list' %}active{% endif %}" href="{% url 'submissions:not_publishing_list' %}">Not Publishing</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'initial_paper_list' or current_url == 'initial_paper_add' or current_url == 'initial_paper_edit' or current_url == 'initial_paper_delete' or current_url == 'import_initial_papers' %}active{% endif %}" href="{% url 'submissions:initial_paper_list' %}"><span class="cfm-nav-item-title">Paper Master List</span><span class="cfm-nav-item-help">Official publication scope and editorial notes</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'final_submission_list' or current_url == 'final_submission_add' or current_url == 'final_submission_edit' or current_url == 'final_submission_delete' or current_url == 'import_final_submissions' %}active{% endif %}" href="{% url 'submissions:final_submission_list' %}"><span class="cfm-nav-item-title">Final Submissions</span><span class="cfm-nav-item-help">Start2, corrected, replaced, and discarded versions</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'editor_upload' %}active{% endif %}" href="{% url 'submissions:editor_upload' %}"><span class="cfm-nav-item-title">Editor Upload</span><span class="cfm-nav-item-help">Add an editor-supplied replacement version</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'not_publishing_list' %}active{% endif %}" href="{% url 'submissions:not_publishing_list' %}"><span class="cfm-nav-item-title">Not Publishing</span><span class="cfm-nav-item-help">Track explicit publication exclusions</span></a></li>
                     </ul>
                 </li>
                 <li class="nav-item dropdown">
@@ -401,47 +1049,47 @@
                         Reviews
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'verify_paper_ids' %}active{% endif %}" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'process' %}active{% endif %}" href="{% url 'submissions:process' %}">Process PDFs</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'title_author_extraction' %}active{% endif %}" href="{% url 'submissions:title_author_extraction' %}">Title/Author Review</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'formatting' %}active{% endif %}" href="{% url 'submissions:formatting' %}">Formatting Review</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}">Exceptions</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'verify_paper_ids' %}active{% endif %}" href="{% url 'submissions:verify_paper_ids' %}"><span class="cfm-nav-item-title">Verify Paper IDs</span><span class="cfm-nav-item-help">Confirm mapping against the Paper Master List</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'process' %}active{% endif %}" href="{% url 'submissions:process' %}"><span class="cfm-nav-item-title">Process PDFs</span><span class="cfm-nav-item-help">Refresh page count, hash, and page previews</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'title_author_extraction' %}active{% endif %}" href="{% url 'submissions:title_author_extraction' %}"><span class="cfm-nav-item-title">Title/Author Review</span><span class="cfm-nav-item-help">Review extracted metadata and title comparison</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'formatting' %}active{% endif %}" href="{% url 'submissions:formatting' %}"><span class="cfm-nav-item-title">Formatting Review</span><span class="cfm-nav-item-help">Inspect and correct the publication files</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'exceptions_center' %}active{% endif %}" href="{% url 'submissions:exceptions_center' %}"><span class="cfm-nav-item-title">Exceptions</span><span class="cfm-nav-item-help">Manage approved limit and plagiarism waivers</span></a></li>
                     </ul>
                 </li>
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'active_versions' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'author_count' or current_url == 'integration' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Output
+                    <a class="nav-link dropdown-toggle {% if current_url == 'export_reports' or current_url == 'old_versions' or current_url == 'error_report' or current_url == 'author_count' or current_url == 'integration' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Reports &amp; Output
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}">Error Report</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}">Author Count</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'active_versions' %}active{% endif %}" href="{% url 'submissions:active_versions' %}">Publication Candidates</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'old_versions' %}active{% endif %}" href="{% url 'submissions:old_versions' %}">Old Versions</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'export_reports' %}active{% endif %}" href="{% url 'submissions:export_reports' %}">Export Reports</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'error_report' %}active{% endif %}" href="{% url 'submissions:error_report' %}"><span class="cfm-nav-item-title">Error Report</span><span class="cfm-nav-item-help">Publication blockers, warnings, and information</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'author_count' %}active{% endif %}" href="{% url 'submissions:author_count' %}"><span class="cfm-nav-item-title">Author Count</span><span class="cfm-nav-item-help">Publication papers grouped by normalized author</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'old_versions' %}active{% endif %}" href="{% url 'submissions:old_versions' %}"><span class="cfm-nav-item-title">Old Versions</span><span class="cfm-nav-item-help">Replaced, discarded, and inactive history</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'export_reports' %}active{% endif %}" href="{% url 'submissions:export_reports' %}"><span class="cfm-nav-item-title">Export Reports</span><span class="cfm-nav-item-help">Workbooks and final or draft publication packages</span></a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}">Plagiarism / CrossCheck</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'integration' %}active{% endif %}" href="{% url 'submissions:integration' %}"><span class="cfm-nav-item-title">Plagiarism / CrossCheck</span><span class="cfm-nav-item-help">Export publication PDFs and import results</span></a></li>
                     </ul>
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if current_url == 'audit_log' or current_url == 'system_state' or current_url == 'settings' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        System
+                        Administration
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item {% if current_url == 'audit_log' %}active{% endif %}" href="{% url 'submissions:audit_log' %}">Audit Log</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'system_state' %}active{% endif %}" href="{% url 'submissions:system_state' %}">System Backup / Restore</a></li>
-                        <li><a class="dropdown-item {% if current_url == 'settings' %}active{% endif %}" href="{% url 'submissions:settings' %}">Settings</a></li>
+                        <li><a class="dropdown-item {% if current_url == 'audit_log' %}active{% endif %}" href="{% url 'submissions:audit_log' %}"><span class="cfm-nav-item-title">Audit Log</span><span class="cfm-nav-item-help">Trace state-changing editorial actions</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'system_state' %}active{% endif %}" href="{% url 'submissions:system_state' %}"><span class="cfm-nav-item-title">System Backup / Restore</span><span class="cfm-nav-item-help">Portable conference state and managed files</span></a></li>
+                        <li><a class="dropdown-item {% if current_url == 'settings' %}active{% endif %}" href="{% url 'submissions:settings' %}"><span class="cfm-nav-item-title">Settings</span><span class="cfm-nav-item-help">Conference rules, folders, and integrations</span></a></li>
                     </ul>
                 </li>
             </ul>
-            <div class="navbar-text ms-lg-3 text-light fw-semibold">
-                {{ current_conference_name|default:"Local Conference" }}
             </div>
         </div>
-    </div>
-</nav>
+    </nav>
+</header>
 {% endwith %}
 
 <main class="container-fluid py-4">
+    <div id="htmx-request-error" class="alert alert-danger border cfm-attention d-none" role="alert">
+        The partial page update failed. No workflow state was changed. Retry the action or refresh the page.
+    </div>
     {% if global_workflow_alerts.active_pdfs_need_processing %}
         <div class="alert alert-danger border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-center" role="alert">
             <div>
@@ -484,6 +1132,106 @@
     </div>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{% static 'submissions/vendor/htmx-2.0.10.min.js' %}"></script>
+<script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>
+<script>
+document.body.addEventListener("htmx:beforeRequest", function () {
+    document.getElementById("htmx-request-error")?.classList.add("d-none");
+});
+document.body.addEventListener("htmx:responseError", function () {
+    document.getElementById("htmx-request-error")?.classList.remove("d-none");
+});
+document.body.addEventListener("htmx:sendError", function () {
+    document.getElementById("htmx-request-error")?.classList.remove("d-none");
+});
+
+document.addEventListener("submit", function (event) {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement) || form.method.toLowerCase() !== "post") return;
+    if (form.dataset.cfmSubmitting === "true") {
+        event.preventDefault();
+        return;
+    }
+    form.dataset.cfmSubmitting = "true";
+    const submitter = event.submitter;
+    if (submitter && submitter.name) {
+        const submittedAction = document.createElement("input");
+        submittedAction.type = "hidden";
+        submittedAction.name = submitter.name;
+        submittedAction.value = submitter.value;
+        submittedAction.dataset.cfmSubmitterCopy = "true";
+        form.appendChild(submittedAction);
+    }
+});
+
+function initializeUploadZones(root) {
+    root.querySelectorAll("[data-upload-zone]").forEach(function (zone) {
+        if (zone.dataset.uploadInitialized === "true") return;
+        zone.dataset.uploadInitialized = "true";
+        const input = zone.querySelector("input[type='file']");
+        const summary = zone.querySelector("[data-upload-summary]");
+        const list = zone.querySelector("[data-upload-list]");
+        if (!input || !summary || !list) return;
+
+        const render = function () {
+            const files = Array.from(input.files || []);
+            const pdfCount = files.filter(file => file.name.toLowerCase().endsWith(".pdf")).length;
+            const sourceCount = files.length - pdfCount;
+            summary.textContent = input.dataset.uploadKind === "metadata"
+                ? (files.length ? files[0].name : "No metadata file selected.")
+                : `${files.length} selected: ${pdfCount} PDF, ${sourceCount} source/other.`;
+            list.replaceChildren();
+            files.forEach(function (file, index) {
+                const item = document.createElement("span");
+                item.className = "cfm-upload-file-item";
+                const name = document.createElement("span");
+                name.className = "cfm-upload-file-name";
+                name.textContent = file.name;
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "btn btn-sm btn-link text-danger p-0";
+                remove.textContent = "Remove";
+                remove.setAttribute("aria-label", `Remove ${file.name}`);
+                remove.addEventListener("click", function () {
+                    const transfer = new DataTransfer();
+                    files.forEach((candidate, candidateIndex) => {
+                        if (candidateIndex !== index) transfer.items.add(candidate);
+                    });
+                    input.files = transfer.files;
+                    render();
+                });
+                item.append(name, remove);
+                list.appendChild(item);
+            });
+        };
+
+        input.addEventListener("change", render);
+        zone.addEventListener("dragover", function (event) {
+            event.preventDefault();
+            zone.classList.add("cfm-upload-zone-active");
+        });
+        zone.addEventListener("dragleave", function () {
+            zone.classList.remove("cfm-upload-zone-active");
+        });
+        zone.addEventListener("drop", function (event) {
+            event.preventDefault();
+            zone.classList.remove("cfm-upload-zone-active");
+            if (!event.dataTransfer?.files?.length) return;
+            const transfer = new DataTransfer();
+            Array.from(event.dataTransfer.files).forEach(file => transfer.items.add(file));
+            input.files = transfer.files;
+            render();
+        });
+        render();
+    });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    initializeUploadZones(document);
+});
+document.body.addEventListener("htmx:afterSwap", function (event) {
+    initializeUploadZones(event.target);
+});
+</script>
 </body>
 </html>
