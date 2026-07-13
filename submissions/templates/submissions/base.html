@@ -11,16 +11,21 @@
     <link href="{% static 'submissions/vendor/tabler-1.4.0.min.css' %}" rel="stylesheet">
     <style>
         :root {
+            --cfm-font-body: 0.9375rem;
+            --cfm-font-secondary: 0.875rem;
+            --cfm-font-small: 0.8125rem;
+            --cfm-font-label: 0.8125rem;
+            --cfm-font-badge: 0.75rem;
             --cfm-bg: #dfe5eb;
             --cfm-surface: #eef2f5;
             --cfm-surface-subtle: #e5ebf0;
             --cfm-surface-strong: #d4dde6;
             --cfm-border: #8898a9;
             --cfm-border-strong: #46566a;
-            --cfm-text: #172033;
-            --cfm-heading: #101827;
-            --cfm-secondary-text: #2f4055;
-            --cfm-muted: #42566f;
+            --cfm-text: #141d2b;
+            --cfm-heading: #0d1522;
+            --cfm-secondary-text: #26394d;
+            --cfm-muted: #31475e;
             --cfm-primary: #2563eb;
             --cfm-primary-hover: #1d4ed8;
             --cfm-primary-soft: #dbeafe;
@@ -53,9 +58,15 @@
             background: var(--cfm-bg);
             color: var(--cfm-text);
             display: flex;
+            font-size: var(--cfm-font-body);
             min-height: 100vh;
             flex-direction: column;
-            line-height: 1.5;
+            line-height: 1.55;
+        }
+        small,
+        .small {
+            font-size: var(--cfm-font-small) !important;
+            line-height: 1.45;
         }
         :focus-visible {
             outline: 3px solid #2563eb !important;
@@ -80,6 +91,20 @@
         .h1, .h2, .h3, .h4, .h5, .h6,
         strong, .fw-semibold, .fw-bold {
             color: var(--cfm-heading);
+        }
+        h1, .h1 { font-size: 1.5rem; line-height: 1.25; }
+        h2, .h2 { font-size: 1.25rem; line-height: 1.3; }
+        h3, .h3 { font-size: 1.0625rem; line-height: 1.35; }
+        h4, .h4 { font-size: 1rem; line-height: 1.35; }
+        h5, .h5 { font-size: 0.9375rem; line-height: 1.4; }
+        h6, .h6 { font-size: 0.875rem; line-height: 1.4; }
+        .cfm-data-value {
+            font-size: 1rem;
+            line-height: 1.35;
+        }
+        .cfm-data-value-lg {
+            font-size: 1.125rem;
+            font-weight: 650;
         }
         .cfm-app-header {
             background: var(--cfm-nav-bg);
@@ -123,7 +148,7 @@
         }
         .cfm-brand-subtitle {
             color: var(--cfm-muted);
-            font-size: 0.72rem;
+            font-size: var(--cfm-font-small);
             font-weight: 500;
             margin-top: 0.15rem;
         }
@@ -136,15 +161,15 @@
         }
         .cfm-conference-label {
             color: var(--cfm-muted);
-            font-size: 0.62rem;
+            font-size: 0.6875rem;
             font-weight: 700;
-            letter-spacing: 0.08em;
+            letter-spacing: 0;
             line-height: 1;
             text-transform: uppercase;
         }
         .cfm-conference-name {
             color: var(--cfm-heading);
-            font-size: 0.9rem;
+            font-size: var(--cfm-font-body);
             font-weight: 700;
             margin-top: 0.2rem;
             max-width: 22rem;
@@ -224,7 +249,7 @@
         .cfm-nav-item-help {
             color: var(--cfm-muted);
             display: block;
-            font-size: 0.72rem;
+            font-size: var(--cfm-font-small);
             font-weight: 400;
             line-height: 1.25;
             margin-top: 0.16rem;
@@ -249,10 +274,10 @@
             border: 0 !important;
             border-radius: 999px;
             box-shadow: none !important;
-            font-size: 0.68rem;
+            font-size: var(--cfm-font-badge);
             font-weight: 700;
-            line-height: 1.15;
-            padding: 0.28rem 0.5rem;
+            line-height: 1.2;
+            padding: 0.3rem 0.52rem;
             vertical-align: middle;
         }
         .text-bg-warning {
@@ -314,15 +339,18 @@
         .text-secondary,
         .form-text {
             color: var(--cfm-muted) !important;
+            font-size: var(--cfm-font-small);
+            line-height: 1.45;
             opacity: 1;
         }
         .form-label,
         label {
             color: var(--cfm-secondary-text);
+            font-size: var(--cfm-font-secondary);
             font-weight: 600;
         }
         ::placeholder {
-            color: #64748b !important;
+            color: #53677f !important;
             opacity: 1;
         }
         .table-warning {
@@ -333,7 +361,9 @@
         }
         .btn {
             border-width: 1.5px;
+            font-size: var(--cfm-font-secondary);
             font-weight: 600;
+            line-height: 1.35;
         }
         .btn:not(.btn-link):not(:disabled):not(.disabled) {
             box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
@@ -555,6 +585,14 @@
         .form-select {
             background-color: #f4f6f8;
             color: var(--cfm-text);
+            font-size: var(--cfm-font-body);
+            line-height: 1.45;
+        }
+        .form-control:disabled,
+        .form-select:disabled {
+            background-color: var(--cfm-surface-strong);
+            color: #526376;
+            opacity: 1;
         }
         .form-control:focus,
         .form-select:focus {
@@ -567,15 +605,22 @@
             --bs-table-border-color: var(--cfm-border);
             --bs-table-bg: var(--cfm-surface);
             color: var(--cfm-text);
+            font-size: var(--cfm-font-body);
+            line-height: 1.45;
         }
         .table > :not(caption) > * > * {
             border-bottom-color: var(--cfm-border);
+            padding: 0.55rem 0.6rem;
         }
         .table thead th {
             background: var(--cfm-surface-strong);
             border-bottom: 2px solid var(--cfm-border-strong) !important;
             color: #1f3045;
+            font-size: var(--cfm-font-label);
             font-weight: 700;
+            line-height: 1.25;
+            padding-bottom: 0.65rem;
+            padding-top: 0.65rem;
         }
         .table-hover > tbody > tr:hover > * {
             background-color: #eaf2fb;
@@ -604,7 +649,8 @@
         }
         .cfm-page-subtitle {
             color: var(--cfm-muted);
-            font-size: 0.875rem;
+            font-size: var(--cfm-font-secondary);
+            line-height: 1.5;
             margin-top: 0.15rem;
             max-width: 58rem;
         }
@@ -715,7 +761,7 @@
         }
         .cfm-filter-group-label {
             color: var(--cfm-secondary-text);
-            font-size: 0.72rem;
+            font-size: var(--cfm-font-label);
             font-weight: 700;
             margin-bottom: 0.35rem;
             text-transform: uppercase;
@@ -726,7 +772,7 @@
             gap: 0.35rem;
         }
         .cfm-tab-count {
-            font-size: 0.72rem;
+            font-size: var(--cfm-font-badge);
             line-height: 1;
         }
         .cfm-file-control-fill {
@@ -750,7 +796,7 @@
         }
         .cfm-upload-summary {
             color: var(--cfm-muted);
-            font-size: 0.8rem;
+            font-size: var(--cfm-font-small);
             margin-top: 0.5rem;
         }
         .cfm-upload-file-list {
@@ -801,7 +847,7 @@
         }
         .cfm-metric-label {
             color: var(--cfm-secondary-text);
-            font-size: 0.75rem;
+            font-size: var(--cfm-font-label);
             font-weight: 600;
             text-transform: uppercase;
         }
@@ -916,7 +962,7 @@
         .cfm-loading-indicator {
             color: var(--cfm-muted);
             display: none;
-            font-size: 0.8rem;
+            font-size: var(--cfm-font-small);
         }
         .htmx-request .cfm-loading-indicator,
         .htmx-request.cfm-loading-indicator {
@@ -980,7 +1026,7 @@
                 display: block;
             }
             .cfm-conference-name {
-                font-size: 0.78rem;
+                font-size: var(--cfm-font-small);
                 max-width: 9rem;
             }
             .cfm-page-header {

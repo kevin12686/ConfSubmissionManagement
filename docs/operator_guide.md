@@ -80,6 +80,8 @@ Status colors are consistent across pages: red means a blocker or dangerous acti
 
 Tables use one uniform row surface with clear horizontal separators. Zebra striping is intentionally disabled across the application; hovering a row provides the only temporary row highlight. Details, exception, note, and discard panels therefore cannot disrupt row coloring. Organized List keeps routine counts and file-origin information neutral, reserves muted green for completed editorial reviews, and marks blocking rows with a red left edge instead of replacing the entire row background.
 
+Typography is centralized for long editorial sessions. Normal page and table text uses 15px type with increased line height, supporting text has a fixed 13px minimum, and status pills use 12px type. Nested `small` elements do not shrink further. Muted text is reserved for supporting metadata and remains dark enough to read against the work surfaces.
+
 ## Import Workflow
 
 1. Download templates from the app.

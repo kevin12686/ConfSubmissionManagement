@@ -24,7 +24,7 @@
                 <p class="mb-0">Complete the required system setup before creating a final package.</p>
             {% endif %}
         </div>
-        <span class="badge fs-6 text-bg-{% if readiness.ready %}success{% else %}danger{% endif %}">{% if readiness.ready %}Ready{% else %}Blocked{% endif %}</span>
+        <span class="badge text-bg-{% if readiness.ready %}success{% else %}danger{% endif %}">{% if readiness.ready %}Ready{% else %}Blocked{% endif %}</span>
     </div>
     {% if readiness.top_categories %}
         <div class="d-flex flex-wrap gap-1 mt-3">
