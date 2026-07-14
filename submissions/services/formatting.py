@@ -21,7 +21,7 @@ from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
 )
-from submissions.services.verification import text_diff_html, titles_identical
+from submissions.services.verification import build_title_guard_context, titles_identical
 
 
 FORMAT_FILTER_OPTIONS = [
@@ -150,9 +150,12 @@ def preview_formatting_upload(submission, cleaned_data):
         "dry_run_extracted_title": extracted_title,
         "extraction_status": extraction_status,
         "extraction_message": extraction_message,
-        "diff_html": text_diff_html(final_title, extracted_title)
-        if final_title and extracted_title
-        else "",
+        "title_guard": build_title_guard_context(
+            extracted_title=extracted_title,
+            references=[{"label": "Final Submission Title", "title": final_title}],
+            extraction_status=extraction_status,
+            extraction_message=extraction_message,
+        ),
     }
 
 
@@ -216,10 +219,26 @@ def formatting_upload_confirmation(token):
         "dry_run_extracted_title": extracted_title,
         "extraction_status": payload.get("extraction_status", ""),
         "extraction_message": payload.get("extraction_message", ""),
-        "diff_html": text_diff_html(final_title, extracted_title)
-        if final_title and extracted_title
-        else "",
+        "title_guard": build_title_guard_context(
+            extracted_title=extracted_title,
+            references=[{"label": "Final Submission Title", "title": final_title}],
+            extraction_status=payload.get("extraction_status", ""),
+            extraction_message=payload.get("extraction_message", ""),
+        ),
     }
+
+
+def cancel_formatting_upload_preview(token):
+    payload, token_root = load_formatting_upload_preview(token)
+    submission = FinalSubmission.objects.filter(pk=payload.get("submission_id")).first()
+    shutil.rmtree(token_root, ignore_errors=True)
+    audit_success(
+        "formatting_upload_preview_canceled",
+        "Corrected PDF title-guard preview canceled.",
+        submission=submission,
+        result_counts={"removed_preview": 1},
+    )
+    return payload
 
 
 def formatting_single_navigation(current_submission, query="", status_filter="needs_attention"):

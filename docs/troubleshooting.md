@@ -125,11 +125,11 @@ No. Current publication ZIP generation uses the publication-facing PDF helper:
 
 ### Editor Upload asks for confirmation
 
-Editor Upload performs a dry-run title extraction and compares the PDF title with the selected Paper Master title and Final Title. If either comparison differs, confirm only after checking that the uploaded file is the intended paper.
+Editor Upload performs a dry-run title extraction and compares the PDF title with the selected Paper Master title and Final Title. The uploaded title is shown once above vertically stacked comparisons so long titles do not overlap on short or narrow screens. If Paper Master and Final Title are exactly the same, they appear as one reference. Open the temporary PDF to inspect it, choose another PDF to replace the preview, or cancel without creating a record. Confirm a mismatch only after checking that the uploaded file is the intended paper.
 
 ### Formatting upload asks for confirmation
 
-Corrected PDF upload also runs a title guard. A mismatch does not forbid saving, but it prevents accidental wrong-file upload by requiring confirmation.
+Corrected PDF upload uses the same title safety component. A mismatch does not forbid saving, but it prevents accidental wrong-file upload by requiring confirmation. The ordinary word-level difference is shown first; character-level differences are available in an expandable detail.
 
 ### Title/Author extraction is wrong
 

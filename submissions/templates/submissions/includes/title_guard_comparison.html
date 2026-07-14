@@ -1,0 +1,42 @@
+<div class="cfm-title-guard-body">
+    <section class="cfm-title-guard-primary" aria-labelledby="title-guard-uploaded-title">
+        <div class="cfm-title-guard-label" id="title-guard-uploaded-title">Uploaded PDF Title</div>
+        <div class="cfm-title-guard-title">
+            {{ guard.extracted_title|default:"Title extraction failed" }}
+        </div>
+    </section>
+
+    <div class="cfm-title-guard-comparisons">
+        {% for comparison in guard.comparisons %}
+            <section class="cfm-title-guard-comparison cfm-title-guard-{{ comparison.level }}">
+                <div class="cfm-title-guard-comparison-header">
+                    <div class="cfm-title-guard-label">Compared with {{ comparison.label }}</div>
+                    <div class="cfm-status-line">
+                        <span class="badge text-bg-{{ comparison.level }}">{{ comparison.status_label }}</span>
+                        {% if comparison.score != None %}
+                            <span class="badge text-bg-secondary">Score {{ comparison.score|floatformat:0 }}%</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="cfm-title-guard-reference">
+                    <div class="cfm-title-guard-reference-label">Reference title</div>
+                    <div class="cfm-title-guard-title">{{ comparison.title|default:"Missing" }}</div>
+                </div>
+                {% if comparison.word_diff_html %}
+                    <div class="cfm-title-guard-diff-block">
+                        <div class="cfm-title-guard-reference-label">Uploaded PDF title with differences highlighted</div>
+                        <div class="cfm-title-guard-diff">{{ comparison.word_diff_html }}</div>
+                    </div>
+                    <details class="cfm-title-guard-details">
+                        <summary>Show detailed character diff</summary>
+                        <div class="cfm-title-guard-diff mt-2">{{ comparison.character_diff_html }}</div>
+                    </details>
+                {% endif %}
+            </section>
+        {% endfor %}
+    </div>
+
+    {% if guard.extraction_message %}
+        <div class="cfm-title-guard-message">{{ guard.extraction_message }}</div>
+    {% endif %}
+</div>

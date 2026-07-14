@@ -39,6 +39,11 @@ The split supports gradual refactoring. Reads can move to state models one workf
 - Paper Master List is the publication scope.
 - Final Submissions can come from Start2 imports or Editor Uploads.
 - Editor Uploads are prioritized over Start2 records, but unresolved Start2/Editor conflicts block final publication export until one side is discarded.
+- Editor Upload and corrected-PDF formatting uploads share one server-rendered title
+  safety component. Services build a common comparison payload, templates render the
+  uploaded title once with vertically stacked references, and character-level detail
+  remains collapsed by default. Preview files stay temporary until apply; opening,
+  replacing, or canceling a preview never changes publication state.
 - Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
 - Not Publishing is paper/publication-decision-level: it keeps records for traceability but excludes the paper from publication readiness and package output.
 - Publication PDF priority is corrected PDF, then original author PDF.

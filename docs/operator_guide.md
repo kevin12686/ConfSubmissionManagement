@@ -105,6 +105,13 @@ Final Submissions can be Start2 imports or Editor Uploads.
 - Start2 imports are the normal author-uploaded records.
 - `Add Final Submission` creates a normal Start2-origin record through a dedicated create workflow. It evaluates the entered Paper ID against Paper Master, initializes PDF/title-author/format checks as Pending, stores uploaded PDF/source paths, recalculates active and replaced versions, and writes a `final_submission_manual_create` audit event.
 - Editor Uploads are email-provided replacement versions created by the editorial team.
+- Before an Editor Upload is created, the PDF title is extracted in dry-run mode.
+  The title safety check shows the uploaded title first and each applicable reference
+  below it. Identical Paper Master and Final titles are combined instead of shown
+  twice. Review the word-level highlight first; use the expandable character diff
+  only when necessary. You can open the temporary PDF, choose another PDF, or cancel
+  without creating a submission. Confirming a real mismatch creates an unverified
+  Editor Upload that still requires Paper ID review.
 - Editor Uploads are prioritized when both sources exist for the same Paper ID.
 - If Start2 and Editor Upload both exist and neither is discarded, the system shows a Start2/Editor conflict and blocks final export.
 
@@ -191,7 +198,9 @@ Use `/reviews/formatting/` to review title/author formatting visually.
 
 - List mode is a compact queue; select `Review paper` to expand one full workspace.
 - Single Paper Mode shows one paper at a time to reduce wrong-file uploads.
-- Corrected PDF upload performs a title guard: the PDF title is extracted in dry-run mode and compared with the Paper Master title and Final Title before the file is saved.
+- Corrected PDF upload performs the same responsive title safety check in dry-run
+  mode before the file is saved. It compares with the Final Submission title without
+  replacing stored extracted metadata.
 - Source file buttons show type labels such as Word, ZIP, or TeX.
 - Review OK means the current publication version's format is acceptable.
 - Edited means corrected PDF/source files exist.

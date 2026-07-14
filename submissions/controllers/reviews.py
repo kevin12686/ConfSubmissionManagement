@@ -72,6 +72,7 @@ from submissions.services.system_state import (
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
     apply_formatting_upload_preview,
+    cancel_formatting_upload_preview,
     corrected_source_type_label,
     formatting_single_navigation,
     formatting_upload_confirmation,
@@ -553,12 +554,20 @@ def formatting(request):
                 audit_failure("formatting_upload_confirm", exc, "Formatting upload confirmation failed.", request=request)
                 messages.error(request, str(exc))
         elif action == "cancel_formatting_upload":
-            audit_success(
-                "formatting_upload_cancel",
-                "Corrected file upload canceled.",
-                request=request,
-            )
-            messages.info(request, "Corrected file upload canceled. No formatting files were changed.")
+            try:
+                cancel_formatting_upload_preview(request.POST.get("preview_token", ""))
+                messages.info(
+                    request,
+                    "Corrected file upload canceled. No formatting files were changed.",
+                )
+            except Exception as exc:
+                audit_failure(
+                    "formatting_upload_cancel",
+                    exc,
+                    "Corrected file upload could not be canceled.",
+                    request=request,
+                )
+                messages.error(request, str(exc))
             return _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=True)
         else:
             submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
@@ -574,10 +583,6 @@ def formatting(request):
                             "filter": current_filter,
                             "q": q,
                         }
-                        messages.warning(
-                            request,
-                            "Corrected PDF title does not match. Confirm before saving corrected files.",
-                        )
                     elif preview.get("token"):
                         apply_formatting_upload_preview(preview["token"])
                         messages.success(request, _formatting_success_message(submission, mode))

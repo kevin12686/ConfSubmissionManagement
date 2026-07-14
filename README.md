@@ -122,6 +122,10 @@ System State ZIP files are portable. They restore settings, conference name, dat
 2. Import the Paper Master List from CSV/XLSX.
 3. Import Final Submission metadata plus PDF/source files from CSV/XLSX and uploaded files.
 4. Resolve Paper ID mapping, Not Publishing decisions, and Start2/Editor Upload conflicts.
+   Editor Upload dry-runs title extraction before saving a record. Its responsive
+   title safety check compares the uploaded PDF title vertically against Paper
+   Master and Final titles, combines identical references, and lets you open,
+   replace, or cancel the temporary PDF before confirming a mismatch.
 5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies.
 6. Run Title/Author Review. Extraction, the verification image, title comparison, and authors are reviewed together; `Review OK` is the single completion state. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.

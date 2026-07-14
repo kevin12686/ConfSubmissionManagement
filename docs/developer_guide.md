@@ -207,6 +207,14 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Editor Upload, discard, and Not Publishing behavior.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
 
+Title-upload safeguards must use `build_title_guard_context()` and the shared
+`includes/title_guard_comparison.html` partial. Do not create separate three-column
+Master/Final/PDF title layouts. Full titles remain in a single-column
+`minmax(0, 1fr)` flow with explicit wrapping; word-level differences are primary and
+character-level differences are optional detail. Preview open/cancel/replace actions
+must operate on the server-owned preview token and write audit events without creating
+or modifying a submission before confirmation.
+
 Use factories in `submissions/tests/factories.py` rather than duplicating setup when possible.
 
 ## Version And Release Checklist

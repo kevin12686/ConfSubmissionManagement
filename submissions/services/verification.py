@@ -1,7 +1,7 @@
 import re
 from difflib import SequenceMatcher
 
-from django.utils.html import escape
+from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils import timezone
 
@@ -33,29 +33,145 @@ def titles_identical(left, right):
     return bool(left_normalized and right_normalized and left_normalized == right_normalized)
 
 
-def text_diff_html(initial_text, final_text):
+def _diff_html(initial_text, final_text, *, word_level=False):
     initial = initial_text or ""
     final = final_text or ""
-    matcher = SequenceMatcher(None, initial, final)
+    if word_level:
+        initial_units = re.findall(r"\s+|\w+|[^\w\s]", initial, flags=re.UNICODE)
+        final_units = re.findall(r"\s+|\w+|[^\w\s]", final, flags=re.UNICODE)
+    else:
+        initial_units = list(initial)
+        final_units = list(final)
+    matcher = SequenceMatcher(None, initial_units, final_units)
     parts = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        final_chunk = final[j1:j2]
-        initial_chunk = initial[i1:i2]
+        final_chunk = "".join(final_units[j1:j2])
+        initial_chunk = "".join(initial_units[i1:i2])
         if tag == "equal":
-            parts.append(escape(final_chunk))
+            parts.append(conditional_escape(final_chunk))
         elif tag == "insert":
-            parts.append(f'<mark class="diff-insert">{escape(final_chunk)}</mark>')
+            parts.append(format_html('<mark class="diff-insert">{}</mark>', final_chunk))
         elif tag == "replace":
-            title = f'replaces "{escape(initial_chunk)}"'
             parts.append(
-                f'<mark class="diff-replace" title="{title}">{escape(final_chunk)}</mark>'
+                format_html(
+                    '<mark class="diff-replace" title="{}">{}</mark>',
+                    f'Replaces "{initial_chunk}"',
+                    final_chunk,
+                )
             )
         elif tag == "delete":
-            title = "missing from final title"
             parts.append(
-                f'<mark class="diff-delete" title="{title}">[-{escape(initial_chunk)}-]</mark>'
+                format_html(
+                    '<mark class="diff-delete" title="{}">[-{}-]</mark>',
+                    "Missing from uploaded PDF title",
+                    initial_chunk,
+                )
             )
-    return mark_safe("".join(parts))
+    return mark_safe("".join(str(part) for part in parts))
+
+
+def text_diff_html(initial_text, final_text):
+    return _diff_html(initial_text, final_text)
+
+
+def word_diff_html(initial_text, final_text):
+    return _diff_html(initial_text, final_text, word_level=True)
+
+
+def build_title_guard_context(
+    *,
+    extracted_title,
+    references,
+    extraction_status="extracted",
+    extraction_message="",
+):
+    extracted_title = (extracted_title or "").strip()
+    grouped_references = []
+    grouped_by_title = {}
+    for reference in references:
+        title = (reference.get("title") or "").strip()
+        label = reference.get("label") or "Reference Title"
+        if title and title in grouped_by_title:
+            grouped_by_title[title]["labels"].append(label)
+            continue
+        grouped = {"labels": [label], "title": title}
+        grouped_references.append(grouped)
+        if title:
+            grouped_by_title[title] = grouped
+
+    comparisons = []
+    extraction_available = extraction_status == "extracted" and bool(extracted_title)
+    for reference in grouped_references:
+        reference_title = reference["title"]
+        exact_match = bool(
+            extraction_available
+            and reference_title
+            and reference_title == extracted_title
+        )
+        normalized_match = bool(
+            extraction_available
+            and reference_title
+            and titles_identical(reference_title, extracted_title)
+        )
+        if not extraction_available:
+            level = "danger"
+            status_label = "PDF title unavailable"
+        elif not reference_title:
+            level = "danger"
+            status_label = "Reference title missing"
+        elif exact_match:
+            level = "success"
+            status_label = "Exact match"
+        elif normalized_match:
+            level = "info"
+            status_label = "Formatting-only difference"
+        else:
+            level = "warning"
+            status_label = "Content differs"
+        comparisons.append(
+            {
+                "label": " = ".join(reference["labels"]),
+                "title": reference_title,
+                "level": level,
+                "status_label": status_label,
+                "exact_match": exact_match,
+                "normalized_match": normalized_match,
+                "score": title_similarity(reference_title, extracted_title)
+                if reference_title and extracted_title
+                else None,
+                "word_diff_html": word_diff_html(reference_title, extracted_title)
+                if reference_title and extracted_title and not exact_match
+                else "",
+                "character_diff_html": text_diff_html(reference_title, extracted_title)
+                if reference_title and extracted_title and not exact_match
+                else "",
+            }
+        )
+
+    if not extraction_available:
+        summary_level = "danger"
+        summary_label = "PDF title could not be checked"
+    elif any(item["level"] == "danger" for item in comparisons):
+        summary_level = "danger"
+        summary_label = "Title reference is incomplete"
+    elif any(item["level"] == "warning" for item in comparisons):
+        summary_level = "warning"
+        summary_label = "Possible wrong paper"
+    elif any(item["level"] == "info" for item in comparisons):
+        summary_level = "info"
+        summary_label = "Formatting-only title difference"
+    else:
+        summary_level = "success"
+        summary_label = "Titles match"
+
+    return {
+        "extracted_title": extracted_title,
+        "extraction_available": extraction_available,
+        "extraction_message": extraction_message,
+        "summary_level": summary_level,
+        "summary_label": summary_label,
+        "comparisons": comparisons,
+    }
 
 
 def title_diff_html(initial_title, final_title):

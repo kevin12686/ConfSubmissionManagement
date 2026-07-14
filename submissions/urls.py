@@ -21,6 +21,11 @@ urlpatterns = [
     path("submissions/<int:pk>/plagiarism-report/", views.plagiarism_report, name="plagiarism_report"),
     path("submissions/", views.final_submission_list, name="final_submission_list"),
     path("submissions/editor-upload/", views.editor_upload_form, name="editor_upload"),
+    path(
+        "submissions/editor-upload/preview/<str:token>/pdf/",
+        views.editor_upload_preview_pdf,
+        name="editor_upload_preview_pdf",
+    ),
     path("submissions/add/", views.final_submission_form, name="final_submission_add"),
     path("submissions/<int:pk>/edit/", views.final_submission_form, name="final_submission_edit"),
     path("submissions/<int:pk>/delete/", views.final_submission_delete, name="final_submission_delete"),

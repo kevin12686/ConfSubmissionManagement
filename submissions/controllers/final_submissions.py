@@ -93,7 +93,9 @@ from submissions.services.file_manager import (
 )
 from submissions.services.editor_uploads import (
     apply_editor_upload_preview,
+    cancel_editor_upload_preview,
     discard_submission,
+    load_editor_upload_preview,
     preview_editor_upload,
     undo_discard_submission,
 )
@@ -325,7 +327,41 @@ def _safe_return_url(request):
 
 def editor_upload_form(request):
     editor_upload_confirmation = None
-    if request.method == "POST" and request.POST.get("action") == "confirm_editor_upload":
+    action = request.POST.get("action", "") if request.method == "POST" else ""
+    if action in {"replace_editor_upload_pdf", "cancel_editor_upload"}:
+        try:
+            payload = cancel_editor_upload_preview(
+                request.POST.get("preview_token", ""),
+                reason="replace_pdf" if action == "replace_editor_upload_pdf" else "canceled",
+            )
+        except Exception as exc:
+            audit_failure(
+                "editor_upload_preview_cancel",
+                exc,
+                "Editor upload preview could not be canceled.",
+                request=request,
+            )
+            messages.error(request, str(exc))
+            return redirect("submissions:editor_upload")
+        if action == "cancel_editor_upload":
+            messages.info(request, "Editor upload canceled. No submission or file was saved.")
+            return redirect("submissions:final_submission_list")
+        form = EditorUploadForm(
+            initial={
+                "paper": payload.get("paper_pk"),
+                "final_submission_title": payload.get("final_submission_title", ""),
+                "final_submission_authors": payload.get("final_submission_authors", ""),
+                "notes": payload.get("notes", ""),
+            },
+            initial_paper_id=payload.get("paper_id", ""),
+        )
+        messages.info(request, "Choose the replacement PDF. The previous preview file was removed.")
+        return render(
+            request,
+            "submissions/editor_upload_form.html",
+            {"form": form, "editor_upload_confirmation": None},
+        )
+    if action == "confirm_editor_upload":
         form = EditorUploadForm(initial_paper_id=request.POST.get("paper_id", ""))
         try:
             submission = apply_editor_upload_preview(
@@ -355,10 +391,6 @@ def editor_upload_form(request):
             preview = preview_editor_upload(form.cleaned_data)
             if preview["requires_confirmation"]:
                 editor_upload_confirmation = preview
-                messages.warning(
-                    request,
-                    "Editor upload PDF title differs from the selected Paper Master or Final Title. Confirm before creating this version.",
-                )
                 return render(
                     request,
                     "submissions/editor_upload_form.html",
@@ -377,6 +409,19 @@ def editor_upload_form(request):
         request,
         "submissions/editor_upload_form.html",
         {"form": form, "editor_upload_confirmation": editor_upload_confirmation},
+    )
+
+
+def editor_upload_preview_pdf(request, token):
+    try:
+        payload, _token_root = load_editor_upload_preview(token)
+    except ValueError as exc:
+        raise Http404(str(exc)) from exc
+    path = Path(payload["pdf"]["path"])
+    return FileResponse(
+        path.open("rb"),
+        content_type="application/pdf",
+        filename=payload["pdf"].get("original_name") or path.name,
     )
 
 

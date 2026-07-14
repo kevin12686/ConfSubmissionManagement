@@ -70,29 +70,21 @@
 </form>
 
 {% if formatting_confirmation %}
-    <div class="alert alert-warning border cfm-attention">
-        <h2 class="h5">Corrected PDF title check</h2>
-        <p class="mb-2">The uploaded corrected PDF did not clearly match the Final Submission title. No corrected files have been saved yet.</p>
-        <div class="row g-2 mb-3">
-            <div class="col-md-6">
-                <div class="small text-muted">Final Submission Title</div>
-                <div class="border rounded bg-white p-2">{{ formatting_confirmation.final_title|default:"Missing" }}</div>
+    <div class="cfm-title-guard">
+        <div class="cfm-title-guard-header">
+            <div>
+                <h2 class="h4 mb-1">Corrected PDF Title Safety Check</h2>
+                <div class="cfm-page-subtitle mt-0">The corrected files have not been saved. Compare the uploaded PDF title with the Final Submission title first.</div>
             </div>
-            <div class="col-md-6">
-                <div class="small text-muted">Dry-run Extracted Title</div>
-                <div class="border rounded bg-white p-2">{{ formatting_confirmation.dry_run_extracted_title|default:"Missing" }}</div>
+            <div class="cfm-status-line">
+                <span class="badge text-bg-secondary">PDF not saved yet</span>
+                <span class="badge text-bg-{{ formatting_confirmation.title_guard.summary_level }}">{{ formatting_confirmation.title_guard.summary_label }}</span>
             </div>
         </div>
-        {% if formatting_confirmation.diff_html %}
-            <div class="mb-3">
-                <div class="small text-muted">Difference</div>
-                <div class="border rounded bg-white p-2">{{ formatting_confirmation.diff_html|safe }}</div>
-            </div>
-        {% endif %}
-        {% if formatting_confirmation.extraction_message %}
-            <div class="small text-muted mb-3">{{ formatting_confirmation.extraction_message }}</div>
-        {% endif %}
-        <div class="d-flex flex-wrap gap-2">
+
+        {% include "submissions/includes/title_guard_comparison.html" with guard=formatting_confirmation.title_guard %}
+
+        <div class="cfm-title-guard-actions">
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="confirm_formatting_upload">
@@ -106,6 +98,7 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="cancel_formatting_upload">
+                <input type="hidden" name="preview_token" value="{{ formatting_confirmation.token }}">
                 <input type="hidden" name="submission_id" value="{{ formatting_confirmation.submission.pk }}">
                 <input type="hidden" name="mode" value="{{ formatting_confirmation.mode }}">
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">

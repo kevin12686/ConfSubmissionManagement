@@ -18,58 +18,47 @@
 {% endif %}
 
 {% if editor_upload_confirmation %}
-    <div class="alert alert-warning border cfm-attention">
-        <h2 class="h5">Editor upload title check</h2>
-        <p class="mb-3">The uploaded PDF title differs from the selected Paper Master title or the Final Title. Confirm only if this is intentional.</p>
-        <div class="row g-2 mb-3">
-            <div class="col-md-4">
-                <div class="small text-muted">Paper Master Title</div>
-                <div class="border rounded bg-white p-2">{{ editor_upload_confirmation.master_title|default:"Missing" }}</div>
-                {% if editor_upload_confirmation.master_matches %}
-                    <span class="badge text-bg-success mt-1">PDF title matches Master</span>
-                {% else %}
-                    <span class="badge text-bg-warning mt-1">PDF title differs from Master</span>
-                {% endif %}
+    <div class="cfm-title-guard">
+        <div class="cfm-title-guard-header">
+            <div>
+                <h2 class="h4 mb-1">Editor Upload Title Safety Check</h2>
+                <div class="cfm-page-subtitle mt-0">Review the uploaded PDF title before creating a new final-submission version.</div>
             </div>
-            <div class="col-md-4">
-                <div class="small text-muted">Final Title</div>
-                <div class="border rounded bg-white p-2">{{ editor_upload_confirmation.effective_final_title|default:"Missing" }}</div>
-                {% if editor_upload_confirmation.final_matches %}
-                    <span class="badge text-bg-success mt-1">PDF title matches Final</span>
-                {% else %}
-                    <span class="badge text-bg-warning mt-1">PDF title differs from Final</span>
-                {% endif %}
-            </div>
-            <div class="col-md-4">
-                <div class="small text-muted">Dry-run Extracted PDF Title</div>
-                <div class="border rounded bg-white p-2">{{ editor_upload_confirmation.dry_run_extracted_title|default:"Missing" }}</div>
+            <div class="cfm-status-line">
+                <span class="badge text-bg-secondary">PDF not saved yet</span>
+                <span class="badge text-bg-{{ editor_upload_confirmation.title_guard.summary_level }}">{{ editor_upload_confirmation.title_guard.summary_label }}</span>
             </div>
         </div>
-        {% if editor_upload_confirmation.diff_master_html %}
-            <div class="mb-2">
-                <div class="small fw-semibold">PDF title vs Master</div>
-                <div class="border rounded bg-white p-2">{{ editor_upload_confirmation.diff_master_html|safe }}</div>
-            </div>
-        {% endif %}
-        {% if editor_upload_confirmation.diff_final_html %}
-            <div class="mb-2">
-                <div class="small fw-semibold">PDF title vs Final</div>
-                <div class="border rounded bg-white p-2">{{ editor_upload_confirmation.diff_final_html|safe }}</div>
-            </div>
-        {% endif %}
-        {% if editor_upload_confirmation.extraction_message %}
-            <div class="small text-muted mb-3">{{ editor_upload_confirmation.extraction_message }}</div>
-        {% endif %}
-        <form method="post" class="d-inline">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="confirm_editor_upload">
-            <input type="hidden" name="preview_token" value="{{ editor_upload_confirmation.token }}">
-            <input type="hidden" name="paper_id" value="{{ editor_upload_confirmation.paper_pk }}">
-            <button class="btn btn-warning">Confirm create editor upload anyway</button>
-        </form>
-    </div>
-{% endif %}
 
+        {% include "submissions/includes/title_guard_comparison.html" with guard=editor_upload_confirmation.title_guard %}
+
+        <div class="cfm-title-guard-consequence">
+            <div class="cfm-title-guard-consequence-label">If you continue</div>
+            <div>Paper ID review will remain pending, and the new version will require Process PDFs before publication.</div>
+        </div>
+        <div class="cfm-title-guard-actions">
+            <a class="btn btn-outline-dark" href="{% url 'submissions:editor_upload_preview_pdf' editor_upload_confirmation.token %}" target="_blank" rel="noopener">Open uploaded PDF</a>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="replace_editor_upload_pdf">
+                <input type="hidden" name="preview_token" value="{{ editor_upload_confirmation.token }}">
+                <button class="btn btn-outline-primary">Choose another PDF</button>
+            </form>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="cancel_editor_upload">
+                <input type="hidden" name="preview_token" value="{{ editor_upload_confirmation.token }}">
+                <button class="btn btn-outline-secondary">Cancel preview</button>
+            </form>
+            <form method="post" class="cfm-title-guard-confirm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirm_editor_upload">
+                <input type="hidden" name="preview_token" value="{{ editor_upload_confirmation.token }}">
+                <button class="btn btn-warning">Create unverified Editor Upload anyway</button>
+            </form>
+        </div>
+    </div>
+{% else %}
 <form method="post" enctype="multipart/form-data" class="card">
     {% csrf_token %}
     <div class="card-body">
@@ -90,4 +79,5 @@
         <button class="btn btn-primary">Create Editor Upload</button>
     </div>
 </form>
+{% endif %}
 {% endblock %}

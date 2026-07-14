@@ -18,7 +18,7 @@ from submissions.services.import_preview import _reset_pdf_dependent_state, _res
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.file_manager import sanitize_filename_part
 from submissions.services.text_utils import clean_note_text
-from submissions.services.verification import text_diff_html, titles_identical
+from submissions.services.verification import build_title_guard_context, titles_identical
 
 
 EDITOR_UPLOAD_PREVIEW_TTL_HOURS = 2
@@ -160,6 +160,7 @@ def preview_editor_upload(cleaned_data):
     payload = {
         "token": token,
         "paper_pk": paper.pk,
+        "paper_id": paper.paper_id,
         "created_at": timezone.now().isoformat(),
         "pdf": pdf_info,
         "source": source_info,
@@ -248,19 +249,31 @@ def load_editor_upload_preview(token):
     return payload, token_root
 
 
+def cancel_editor_upload_preview(token, *, reason="canceled"):
+    payload, token_root = load_editor_upload_preview(token)
+    shutil.rmtree(token_root, ignore_errors=True)
+    audit_success(
+        "editor_upload_preview_canceled",
+        "Editor upload title-guard preview canceled.",
+        object_type="InitialPaper",
+        paper_id=payload.get("paper_id", ""),
+        result_counts={"reason": reason},
+    )
+    return payload
+
+
 def _editor_upload_confirmation_context(payload):
     return {
         **payload,
-        "diff_master_html": text_diff_html(
-            payload.get("master_title", ""), payload.get("dry_run_extracted_title", "")
-        )
-        if payload.get("master_title") and payload.get("dry_run_extracted_title")
-        else "",
-        "diff_final_html": text_diff_html(
-            payload.get("effective_final_title", ""), payload.get("dry_run_extracted_title", "")
-        )
-        if payload.get("effective_final_title") and payload.get("dry_run_extracted_title")
-        else "",
+        "title_guard": build_title_guard_context(
+            extracted_title=payload.get("dry_run_extracted_title", ""),
+            references=[
+                {"label": "Paper Master Title", "title": payload.get("master_title", "")},
+                {"label": "Final Title", "title": payload.get("effective_final_title", "")},
+            ],
+            extraction_status=payload.get("extraction_status", ""),
+            extraction_message=payload.get("extraction_message", ""),
+        ),
     }
 
 

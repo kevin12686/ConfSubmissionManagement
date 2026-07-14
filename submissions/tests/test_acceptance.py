@@ -118,7 +118,9 @@ from submissions.services.grobid_extractor import (
     parse_grobid_tei,
 )
 from submissions.services.verification import (
+    build_title_guard_context,
     mark_not_publishing,
+    text_diff_html,
     undo_not_publishing,
     unverify_submission,
     verification_rows,
@@ -2067,11 +2069,26 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Editor upload title check")
-        self.assertContains(response, "PDF title differs from Final")
+        self.assertContains(response, "Editor Upload Title Safety Check")
+        self.assertContains(response, "Uploaded PDF Title")
+        self.assertContains(response, "Compared with Paper Master Title")
+        self.assertContains(response, "Compared with Final Title")
+        self.assertContains(response, "Content differs")
+        self.assertContains(response, "Show detailed character diff")
+        self.assertContains(response, "Open uploaded PDF")
+        self.assertContains(response, "Choose another PDF")
+        self.assertContains(response, "Cancel preview")
+        self.assertContains(response, "cfm-title-guard-consequence")
+        self.assertContains(response, "If you continue")
+        self.assertNotContains(response, 'id="id_pdf_file"')
         self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
 
         token = response.context["editor_upload_confirmation"]["token"]
+        preview_response = self.client.get(
+            reverse("submissions:editor_upload_preview_pdf", args=[token])
+        )
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(b"".join(preview_response.streaming_content), b"%PDF mismatch")
         response = self.client.post(
             reverse("submissions:editor_upload"),
             {
@@ -2105,9 +2122,99 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Editor upload title check")
+        self.assertContains(response, "Editor Upload Title Safety Check")
         self.assertContains(response, "Title extraction failed")
         self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+
+    def test_editor_upload_title_guard_deduplicates_references_and_cleans_canceled_preview(self):
+        paper = self.make_master_paper("P015", "Same Reference Title", "Ada")
+
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Different Uploaded Title", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Same Reference Title",
+                    "final_submission_authors": "Ada",
+                    "notes": "Test title guard.",
+                    "pdf_file": self.uploaded_file("different.pdf", b"%PDF different"),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Compared with Paper Master Title = Final Title")
+        self.assertContains(
+            response,
+            'class="cfm-title-guard-comparison cfm-title-guard-warning"',
+            count=1,
+        )
+        token = response.context["editor_upload_confirmation"]["token"]
+
+        replace_response = self.client.post(
+            reverse("submissions:editor_upload"),
+            {"action": "replace_editor_upload_pdf", "preview_token": token},
+        )
+        self.assertEqual(replace_response.status_code, 200)
+        self.assertContains(replace_response, "Choose the replacement PDF")
+        self.assertContains(replace_response, 'id="id_pdf_file"')
+        self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+        self.assertEqual(
+            self.client.get(
+                reverse("submissions:editor_upload_preview_pdf", args=[token])
+            ).status_code,
+            404,
+        )
+
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Different Uploaded Title", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Same Reference Title",
+                    "final_submission_authors": "Ada",
+                    "notes": "Cancel this preview.",
+                    "pdf_file": self.uploaded_file("cancel.pdf", b"%PDF cancel"),
+                },
+            )
+        token = response.context["editor_upload_confirmation"]["token"]
+        cancel_response = self.client.post(
+            reverse("submissions:editor_upload"),
+            {"action": "cancel_editor_upload", "preview_token": token},
+        )
+        self.assertRedirects(cancel_response, reverse("submissions:final_submission_list"))
+        self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+        self.assertEqual(
+            self.client.get(
+                reverse("submissions:editor_upload_preview_pdf", args=[token])
+            ).status_code,
+            404,
+        )
+
+    def test_title_guard_diff_is_quote_safe_and_uses_word_first_detail(self):
+        diff = str(text_diff_html('Reference "R"', 'Uploaded "U"'))
+        self.assertIn("&quot;", diff)
+        self.assertNotIn('title="Replaces "', diff)
+
+        guard = build_title_guard_context(
+            extracted_title="Uploaded PDF Title",
+            references=[
+                {"label": "Paper Master Title", "title": "Reference Title"},
+                {"label": "Final Title", "title": "Reference Title"},
+            ],
+        )
+        self.assertEqual(len(guard["comparisons"]), 1)
+        self.assertEqual(
+            guard["comparisons"][0]["label"],
+            "Paper Master Title = Final Title",
+        )
+        self.assertTrue(guard["comparisons"][0]["word_diff_html"])
+        self.assertTrue(guard["comparisons"][0]["character_diff_html"])
 
     def test_discarding_editor_upload_returns_start2_to_active_version(self):
         paper = self.make_master_paper("P001", "Back To Start2", "Ada")
@@ -3145,6 +3252,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(page, "--tblr-btn-bg: #b91c1c")
         self.assertContains(page, "border-radius: 999px")
         self.assertContains(page, ".cfm-status-line .badge")
+        self.assertContains(page, ".cfm-title-guard-comparisons")
+        self.assertContains(page, "grid-template-columns: minmax(0, 1fr)")
+        self.assertContains(page, "overflow-wrap: anywhere")
         self.assertContains(page, "min-height: auto")
         self.assertContains(page, ".cfm-primary-nav .nav-link:hover")
         self.assertContains(page, "Editorial publication workspace")
@@ -4167,7 +4277,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Corrected PDF title check")
+        self.assertContains(response, "Corrected PDF Title Safety Check")
+        self.assertContains(response, "Uploaded PDF Title")
+        self.assertContains(response, "Compared with Final Submission Title")
+        self.assertContains(response, "Show detailed character diff")
         self.assertContains(response, "Confirm save corrected files anyway")
         submission.refresh_from_db()
         self.assertFalse(submission.formatted_pdf_file)
@@ -4222,6 +4335,54 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertTrue(submission.formatted_pdf_file)
         self.assertEqual(submission.extracted_title, "Existing Extracted Title")
         self.assertEqual(submission.title_author_review_status, "pending")
+
+    def test_cancel_formatting_title_guard_removes_preview_without_saving(self):
+        self.make_master_paper("P016", "Formatting Cancel Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="116",
+            paper_id_filled="P016",
+            final_submission_title="Formatting Cancel Paper",
+            extracted_title="Existing Title",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+        )
+
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Wrong Uploaded Paper", "Ada", 1),
+        ):
+            response = self.client.post(
+                reverse("submissions:formatting"),
+                {
+                    "submission_id": submission.pk,
+                    "mode": "single",
+                    "filter": "all",
+                    "format_status": "pending",
+                    "format_notes": "cancel this upload",
+                    "corrected_pdf": self.uploaded_file("cancel.pdf", b"%PDF cancel"),
+                },
+            )
+
+        token = response.context["formatting_confirmation"]["token"]
+        token_root = Path(django_settings.MEDIA_ROOT) / "formatting_upload_previews" / token
+        self.assertTrue(token_root.exists())
+        cancel_response = self.client.post(
+            reverse("submissions:formatting"),
+            {
+                "action": "cancel_formatting_upload",
+                "preview_token": token,
+                "submission_id": submission.pk,
+                "mode": "single",
+                "filter": "all",
+            },
+        )
+
+        self.assertEqual(cancel_response.status_code, 302)
+        self.assertFalse(token_root.exists())
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
+        self.assertEqual(submission.extracted_title, "Existing Title")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
 
     def test_formatting_corrected_pdf_extraction_error_requires_confirmation(self):
         self.make_master_paper("P001", "Extraction Error Paper", "Ada")
