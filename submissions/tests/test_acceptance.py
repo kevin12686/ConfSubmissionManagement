@@ -6550,9 +6550,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         master_page = self.client.get(reverse("submissions:initial_paper_list"))
+        self.assertEqual(master_page.context["total_paper_count"], 2)
+        self.assertEqual(master_page.context["displayed_paper_count"], 2)
+        self.assertContains(master_page, "in publication scope")
         self.assertContains(master_page, "Note Summary (1)")
         self.assertContains(master_page, "Check special session placement.")
         self.assertContains(master_page, "cfm-title-cell")
+
+        filtered_master_page = self.client.get(
+            reverse("submissions:initial_paper_list"),
+            {"q": "Noted"},
+        )
+        self.assertEqual(filtered_master_page.context["displayed_paper_count"], 1)
+        self.assertEqual(filtered_master_page.context["total_paper_count"], 2)
+        self.assertContains(filtered_master_page, "shown")
 
         organized = self.client.get(reverse("submissions:organized_list"))
         self.assertContains(organized, "Note Summary (1)")

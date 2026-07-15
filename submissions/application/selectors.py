@@ -54,7 +54,9 @@ def dashboard_context(context_builder):
 
 
 def paper_master_list_context(query=""):
-    papers = InitialPaper.objects.all()
+    all_papers = InitialPaper.objects.all()
+    total_paper_count = all_papers.count()
+    papers = all_papers
     if query:
         papers = papers.filter(
             Q(paper_id__icontains=query)
@@ -67,6 +69,8 @@ def paper_master_list_context(query=""):
     return {
         "papers": papers,
         "q": query,
+        "total_paper_count": total_paper_count,
+        "displayed_paper_count": papers.count(),
         "import_form": ImportFileForm(),
         "note_summary": note_summary,
         "note_count": len(note_summary),

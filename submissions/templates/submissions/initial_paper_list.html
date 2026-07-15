@@ -4,7 +4,14 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Paper Master List</h1>
-        <div class="cfm-page-subtitle">Source-of-truth accepted paper records used for matching and publication readiness checks.</div>
+        <div class="cfm-page-subtitle">
+            {% if q %}
+                <strong>{{ displayed_paper_count }}</strong> of <strong>{{ total_paper_count }}</strong> paper{{ total_paper_count|pluralize }} shown.
+            {% else %}
+                <strong>{{ total_paper_count }}</strong> paper{{ total_paper_count|pluralize }} in publication scope.
+            {% endif %}
+            Source-of-truth accepted records used for matching and publication readiness checks.
+        </div>
     </div>
     <div class="cfm-page-actions">
         {% if note_count %}

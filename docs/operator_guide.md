@@ -88,6 +88,8 @@ Technical values such as paths, action names, and expanded Audit Log JSON use da
 
 1. Download templates from the app.
 2. Import the Paper Master List first.
+   The page header shows the total publication-scope paper count; while searching, it
+   shows the number of matching rows alongside the unchanged total.
 3. Review the Paper Master Import Preview. Rows needing attention are sorted above unchanged rows.
 4. For existing Paper Master notes, choose whether to preserve existing system notes or apply imported notes. The default is preserve.
 5. Import Final Submission metadata and upload all PDF/source files together.
