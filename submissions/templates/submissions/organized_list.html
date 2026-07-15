@@ -225,18 +225,26 @@
                         <span class="badge text-bg-danger">No PDF</span>
                     {% endif %}
                 </td>
-                <td>
-                    <span class="badge text-bg-{{ row.source_level }}">{{ row.source_label }}</span>
-                    {% if row.publication_source.source == "corrected" and submission.format_status != "review_ok" %}
-                        <div><span class="badge text-bg-warning">Not OK yet</span></div>
+                <td data-column="source">
+                    {% if submission %}
+                        <span class="badge text-bg-{{ row.source_level }}">{{ row.source_label }}</span>
+                        {% if row.publication_source.source == "corrected" and submission.format_status != "review_ok" %}
+                            <div><span class="badge text-bg-warning">Not OK yet</span></div>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-muted">--</span>
                     {% endif %}
                 </td>
-                <td>
-                    <span class="badge text-bg-{{ row.extraction_level }}">{{ row.extraction_label }}</span>
-                    {% if submission.title_author_source == "manual_override" %}
-                        <div><span class="badge text-bg-warning">Manual override</span></div>
-                    {% elif submission.title_author_source == "manual" %}
-                        <div><span class="badge text-bg-warning">Legacy manual</span></div>
+                <td data-column="extraction">
+                    {% if submission %}
+                        <span class="badge text-bg-{{ row.extraction_level }}">{{ row.extraction_label }}</span>
+                        {% if submission.title_author_source == "manual_override" %}
+                            <div><span class="badge text-bg-warning">Manual override</span></div>
+                        {% elif submission.title_author_source == "manual" %}
+                            <div><span class="badge text-bg-warning">Legacy manual</span></div>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-muted">--</span>
                     {% endif %}
                 </td>
                 <td>

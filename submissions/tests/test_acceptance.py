@@ -3103,6 +3103,23 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_organized_list_missing_final_does_not_render_empty_status_badges(self):
+        self.make_master_paper("P001", "Missing Final", "Ada")
+
+        response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<td data-column="source"><span class="text-muted">--</span></td>',
+            html=True,
+        )
+        self.assertContains(
+            response,
+            '<td data-column="extraction"><span class="text-muted">--</span></td>',
+            html=True,
+        )
+
     def test_process_page_uses_full_width_when_only_one_issue_type_exists(self):
         self.make_master_paper("P001", "Pending PDF", "Ada")
         self.make_final_submission(

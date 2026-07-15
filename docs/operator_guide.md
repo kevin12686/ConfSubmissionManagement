@@ -172,6 +172,10 @@ The Process PDFs status area uses the full page width when only one issue type i
 present. It splits into two columns only when both unprocessed PDFs and missing-PDF
 issues need to be shown at the same time.
 
+In Organized List, checks that require a Final Submission show `--` when a Paper
+Master record has no Final Submission. Empty status badges are never used as a
+placeholder.
+
 Formatting Review queue mode keeps one paper expanded at a time. Its compact row identifies Paper ID, status, edited state, PDF/source origin, and processing warning before you open the full preview/upload workspace. Single Paper Mode remains the safer sequential workflow; Save stays on the current paper and Go next remains a separate action with unsaved-change protection.
 
 ## Paper ID Review
