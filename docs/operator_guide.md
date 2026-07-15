@@ -168,6 +168,10 @@ Run Process PDFs whenever Dashboard or the global alert says it is needed. Corre
 
 The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or search to narrow papers; use `Jump to paper` for long runs. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
 
+The Process PDFs status area uses the full page width when only one issue type is
+present. It splits into two columns only when both unprocessed PDFs and missing-PDF
+issues need to be shown at the same time.
+
 Formatting Review queue mode keeps one paper expanded at a time. Its compact row identifies Paper ID, status, edited state, PDF/source origin, and processing warning before you open the full preview/upload workspace. Single Paper Mode remains the safer sequential workflow; Save stays on the current paper and Go next remains a separate action with unsaved-change protection.
 
 ## Paper ID Review

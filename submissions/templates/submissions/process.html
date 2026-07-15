@@ -62,108 +62,114 @@
 {% if active_needs_processing_rows or active_missing_pdf_rows %}
 <div class="row g-3 mb-3">
     {% if active_needs_processing_rows %}
-        <div class="col-lg-6">
+        <div class="{% if active_missing_pdf_rows %}col-lg-6{% else %}col-12{% endif %}">
             <div class="alert alert-warning border cfm-attention h-100">
-                <div class="fw-semibold mb-2">Active PDFs not processed</div>
-                <div class="small mb-2">These active versions have a PDF but still need page count/hash/thumbnails refreshed.</div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered align-middle mb-0">
-                        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Status</th></tr></thead>
-                        <tbody>
-                            {% for item in active_needs_processing_rows|slice:":12" %}
-                                <tr>
-                                    <td>{{ item.paper_id_filled|default:"--" }}</td>
-                                    <td>{{ item.final_submission_id }}</td>
-                                    <td>{{ item.processing_status|default:"pending" }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="w-100 cfm-process-issue-content">
+                    <div class="fw-semibold mb-2">Active PDFs not processed</div>
+                    <div class="small mb-2">These active versions have a PDF but still need page count/hash/thumbnails refreshed.</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle mb-0">
+                            <thead><tr><th>Paper ID</th><th>Final ID</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {% for item in active_needs_processing_rows|slice:":12" %}
+                                    <tr>
+                                        <td>{{ item.paper_id_filled|default:"--" }}</td>
+                                        <td>{{ item.final_submission_id }}</td>
+                                        <td>{{ item.processing_status|default:"pending" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if active_needs_processing_rows|length > 12 %}
+                        <div class="small text-muted mt-2">Showing first 12 of {{ active_needs_processing_rows|length }} active PDFs needing processing.</div>
+                    {% endif %}
                 </div>
-                {% if active_needs_processing_rows|length > 12 %}
-                    <div class="small text-muted mt-2">Showing first 12 of {{ active_needs_processing_rows|length }} active PDFs needing processing.</div>
-                {% endif %}
             </div>
         </div>
     {% endif %}
     {% if active_missing_pdf_rows %}
-        <div class="col-lg-6">
+        <div class="{% if active_needs_processing_rows %}col-lg-6{% else %}col-12{% endif %}">
             <div class="alert alert-danger border cfm-attention h-100">
-                <div class="fw-semibold mb-2">Active submissions missing PDF</div>
-                <div class="small mb-2">These are missing-file issues, not Process PDFs candidates.</div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered align-middle mb-0">
-                        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Title</th></tr></thead>
-                        <tbody>
-                            {% for item in active_missing_pdf_rows|slice:":12" %}
-                                <tr>
-                                    <td>{{ item.paper_id_filled|default:"--" }}</td>
-                                    <td>{{ item.final_submission_id }}</td>
-                                    <td>{{ item.final_submission_title|default:"--" }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="w-100 cfm-process-issue-content">
+                    <div class="fw-semibold mb-2">Active submissions missing PDF</div>
+                    <div class="small mb-2">These are missing-file issues, not Process PDFs candidates.</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle mb-0">
+                            <thead><tr><th>Paper ID</th><th>Final ID</th><th>Title</th></tr></thead>
+                            <tbody>
+                                {% for item in active_missing_pdf_rows|slice:":12" %}
+                                    <tr>
+                                        <td>{{ item.paper_id_filled|default:"--" }}</td>
+                                        <td>{{ item.final_submission_id }}</td>
+                                        <td>{{ item.final_submission_title|default:"--" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if active_missing_pdf_rows|length > 12 %}
+                        <div class="small text-muted mt-2">Showing first 12 of {{ active_missing_pdf_rows|length }} missing PDFs.</div>
+                    {% endif %}
                 </div>
-                {% if active_missing_pdf_rows|length > 12 %}
-                    <div class="small text-muted mt-2">Showing first 12 of {{ active_missing_pdf_rows|length }} missing PDFs.</div>
-                {% endif %}
             </div>
         </div>
     {% endif %}
 </div>
 {% endif %}
-<div class="row g-3">
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
+<div class="card cfm-process-action-card mb-3">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-3 justify-content-between align-items-start">
+            <div class="flex-grow-1">
                 <h2 class="h5">Process Publication PDFs</h2>
-                <p class="text-muted">Recalculates active versions, then processes only current Paper Master publication candidates. Discarded, Not Publishing, invalid-ID, and historical versions are retained but excluded.</p>
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="process">
-                    <button class="btn btn-primary">Process Publication PDFs</button>
-                </form>
-                {% if process_result %}
-                    <hr>
-                    <ul class="mb-0">
-                        <li>Processed: {{ process_result.processed }}</li>
-                        <li>Skipped unchanged: {{ process_result.skipped }}</li>
-                        <li>Errors: {{ process_result.errors }}</li>
-                        <li>Debug PDFs synced: {{ process_result.debug_synced }}</li>
-                        <li>Debug skipped: {{ process_result.debug_skipped }}</li>
-                        {% if process_result.debug_manifest %}<li>Publication debug manifest updated.</li>{% endif %}
-                    </ul>
-                    {% if process_result.error_rows %}
-                        <div class="alert alert-danger border cfm-attention mt-3 mb-0">
-                            <div class="fw-semibold mb-2">Processing errors</div>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-bordered align-middle cfm-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Paper ID</th>
-                                            <th>Final ID</th>
-                                            <th>Author-entered ID</th>
-                                            <th>Reason</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for row in process_result.error_rows %}
-                                            <tr>
-                                                <td>{{ row.paper_id|default:"--" }}</td>
-                                                <td>{{ row.final_submission_id|default:"--" }}</td>
-                                                <td>{{ row.author_entered_id|default:"--" }}</td>
-                                                <td>{{ row.message }}</td>
-                                            </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    {% endif %}
-                {% endif %}
+                <p class="text-muted mb-0">Recalculates active versions, then processes only current Paper Master publication candidates. Discarded, Not Publishing, invalid-ID, and historical versions are retained but excluded.</p>
             </div>
+            <form method="post" class="flex-shrink-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="process">
+                <button class="btn btn-primary">Process Publication PDFs</button>
+            </form>
         </div>
+        {% if process_result %}
+            <hr>
+            <ul class="mb-0">
+                <li>Processed: {{ process_result.processed }}</li>
+                <li>Skipped unchanged: {{ process_result.skipped }}</li>
+                <li>Errors: {{ process_result.errors }}</li>
+                <li>Debug PDFs synced: {{ process_result.debug_synced }}</li>
+                <li>Debug skipped: {{ process_result.debug_skipped }}</li>
+                {% if process_result.debug_manifest %}<li>Publication debug manifest updated.</li>{% endif %}
+            </ul>
+            {% if process_result.error_rows %}
+                <div class="alert alert-danger border cfm-attention mt-3 mb-0">
+                    <div class="w-100">
+                        <div class="fw-semibold mb-2">Processing errors</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle cfm-table">
+                                <thead>
+                                    <tr>
+                                        <th>Paper ID</th>
+                                        <th>Final ID</th>
+                                        <th>Author-entered ID</th>
+                                        <th>Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in process_result.error_rows %}
+                                        <tr>
+                                            <td>{{ row.paper_id|default:"--" }}</td>
+                                            <td>{{ row.final_submission_id|default:"--" }}</td>
+                                            <td>{{ row.author_entered_id|default:"--" }}</td>
+                                            <td>{{ row.message }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
     </div>
 </div>
 

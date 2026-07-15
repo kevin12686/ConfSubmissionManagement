@@ -2041,6 +2041,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertContains(process_page, "Active PDFs not processed")
         self.assertContains(process_page, editor.final_submission_id)
         self.assertContains(process_page, start2_pending.final_submission_id)
+        self.assertContains(process_page, 'class="col-lg-6"', count=2)
 
         final_list = self.client.get(reverse("submissions:final_submission_list"), {"filter": "editor_uploads"})
         self.assertContains(final_list, "Editor note")
@@ -3102,6 +3103,26 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_process_page_uses_full_width_when_only_one_issue_type_exists(self):
+        self.make_master_paper("P001", "Pending PDF", "Ada")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Pending PDF",
+            processing_status="pending",
+            page_count=None,
+            pdf_hash="",
+            thumbnail_status="pending",
+        )
+
+        response = self.client.get(reverse("submissions:process"))
+
+        self.assertContains(response, "Active PDFs not processed")
+        self.assertContains(response, 'class="col-12"')
+        self.assertContains(response, "cfm-process-issue-content")
+        self.assertContains(response, "cfm-process-action-card")
+        self.assertNotContains(response, 'class="col-md-6"')
+
     def test_base_layout_exposes_brand_icon_and_favicons(self):
         response = self.client.get(reverse("submissions:dashboard"))
 
