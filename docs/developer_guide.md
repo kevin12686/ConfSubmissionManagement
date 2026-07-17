@@ -123,6 +123,15 @@ rewrite `extracted_authors` while preparing the display list.
   alerts for a short message paired with a compact action group.
 - Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
 - Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
+- System-generated cross-page links must use exact identifiers: `submission=<pk>`
+  for Final Submission work, `paper_id=<exact Paper Master ID>` for Organized
+  List, and `exception_key=<service row key>` for Exceptions. Reserve `q` for
+  user-entered fuzzy search. Exact focus must never fall back to the first or
+  nearest matching record.
+- Exact-target worklists render the shared
+  `partials/focused_worklist.html` context. When a target is outside a
+  publication worklist's scope, render an explicit read-only explanation; do
+  not widen the service queryset or change active/review state to make it appear.
 - Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.
 - Worklist GET filters/search are progressively enhanced with pinned local HTMX. Every enhanced endpoint must remain a valid normal GET, preserve URL query state, and render its named worklist container; never move service decisions into HTMX event handlers.
 - Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
@@ -229,6 +238,10 @@ The app version is `APP_VERSION` in `conference_final_manager/settings.py`. The 
 Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export changes.
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
+
+Exact-navigation and focused-worklist changes do not alter System State archive
+contents, so they require an app version change but not an archive version
+change.
 
 Before release:
 

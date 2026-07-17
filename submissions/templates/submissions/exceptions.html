@@ -10,8 +10,10 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 
 <div id="exceptions-worklist">
+{% if not focused_context %}
 <div class="row g-2 cfm-metric-strip">
     <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Not allowed</div><div class="cfm-metric-value text-danger">{{ counts.not_allowed }}</div></div></div>
     <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Allowed</div><div class="cfm-metric-value text-info">{{ counts.allowed }}</div></div></div>
@@ -51,6 +53,7 @@
     </div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="exceptions-loading" message="Updating exceptions..." %}
 </form>
+{% endif %}
 
 <div class="vstack gap-3">
     {% for row in rows %}

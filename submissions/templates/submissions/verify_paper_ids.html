@@ -34,8 +34,10 @@
         <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Final Submissions</a>
     </div>
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 
 <div id="verify-paper-id-worklist">
+{% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
     <li class="nav-item">
@@ -59,6 +61,7 @@
     </div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="verify-paper-id-loading" message="Updating Paper ID review..." %}
 </form>
+{% endif %}
 
 <div class="alert alert-light border cfm-attention">
     <strong>Diff guide:</strong>

@@ -55,6 +55,7 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">View PDF Issues</a>
     </div>
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 <div class="alert alert-light border cfm-attention small">
     Page minimum: {{ settings_obj.page_minimum }}. Page limit: {{ settings_obj.page_limit }}.
     Processing calculates page count, PDF hash, and one thumbnail per page.
@@ -176,6 +177,7 @@
 <h2 class="h4 mt-4">Processed PDF Page Preview</h2>
 <div class="small text-muted mb-2">Every matching paper remains fully expanded so blank pages can be spotted by scanning the complete page strip.</div>
 <div id="process-preview-worklist">
+{% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
@@ -193,6 +195,7 @@
     {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:process' %}">Reset</a>{% endif %}
     {% include "submissions/partials/loading_indicator.html" with indicator_id="process-preview-loading" message="Updating PDF previews..." %}
 </form>
+{% endif %}
 {% if processed_rows %}
 <div class="cfm-filter-panel d-flex flex-wrap gap-2 align-items-end">
     <div class="flex-grow-1">

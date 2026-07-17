@@ -21,9 +21,11 @@
     </div>
 </div>
 {% include "submissions/includes/note_summary.html" %}
+{% include "submissions/partials/focused_worklist.html" %}
 
 <div id="organized-worklist">
 {% if view_mode == "checklist" %}
+{% if not focused_context %}
 {% if summary.needs_process_pdfs %}
     <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-start" role="alert">
         <div>
@@ -98,6 +100,7 @@
     {% endif %}
     {% include "submissions/partials/loading_indicator.html" with indicator_id="organized-loading" message="Updating publication checklist..." %}
 </form>
+{% endif %}
 
 <div class="table-responsive">
     <table class="table table-hover align-middle table-sm cfm-table cfm-table-sticky cfm-organized-table">
@@ -499,7 +502,7 @@
                             {% endif %}
                             {% if submission %}
                                 <div class="mt-2">
-                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:title_author_extraction' %}?filter=all&amp;q={{ submission.paper_id_filled|urlencode }}">Open Title/Author Review</a>
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:title_author_extraction' %}?submission={{ submission.pk }}">Open Title/Author Review</a>
                                 </div>
                             {% endif %}
                         </section>

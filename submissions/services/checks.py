@@ -156,6 +156,40 @@ ERROR_CATEGORY_SEVERITY = {
     "Allowed Author Paper Count Exception": "info",
 }
 
+ERROR_REPORT_AREA_CATEGORIES = {
+    "mapping": {
+        "Invalid Paper ID",
+        "Unclassified Final Not In Master",
+        "Unverified Paper ID",
+        "Final Title / Paper Master Title Mismatch",
+        "Missing Final Submission",
+        "Multiple Active Final Submissions",
+        "Start2/Editor Version Conflict",
+    },
+    "files": {
+        "Missing PDF",
+        "Corrected PDF Not Processed",
+        "Missing Source File",
+        "PDF Not Processed",
+        "Page Limit Exceeded",
+        "Below Page Minimum",
+        "PDF Processing Error",
+        "Allowed Page Exception",
+    },
+    "authors": {
+        "Duplicate Author In Paper",
+        "Author Over Limit",
+        "Allowed Author Number Exception",
+        "Allowed Author Paper Count Exception",
+    },
+}
+
+ERROR_REPORT_AREA_LABELS = {
+    "mapping": "Paper mapping and version decisions",
+    "files": "PDF, source, and page checks",
+    "authors": "Author limits and duplicates",
+}
+
 
 def _error_group_for_category(category):
     for group_name, config in ERROR_GROUPS.items():
@@ -379,6 +413,17 @@ def error_report_severity_sections(rows):
             }
         )
     return sections
+
+
+def filter_error_report_rows(rows, area=""):
+    categories = ERROR_REPORT_AREA_CATEGORIES.get(area)
+    if not categories:
+        return rows, "", ""
+    return (
+        [row for row in rows if row["category"] in categories],
+        area,
+        ERROR_REPORT_AREA_LABELS[area],
+    )
 
 
 def build_paper_id(initial_submission_id, track):
@@ -1150,6 +1195,7 @@ def author_count_rows():
                 "over_limit": over_limit,
                 "waiver": waiver,
                 "waiver_valid": waiver_valid,
+                "exception_key": f"author_limit:{normalized_name}",
                 "waiver_reason": waiver.reason if waiver else "",
                 "waiver_approved_count": waiver.approved_publication_paper_count if waiver else None,
             }

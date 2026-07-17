@@ -5869,7 +5869,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Open Title/Author Review")
         self.assertContains(
             response,
-            f'{reverse("submissions:title_author_extraction")}?filter=all&amp;q=P001',
+            f'{reverse("submissions:title_author_extraction")}?submission={submission.pk}',
             html=False,
         )
         self.assertContains(response, "Check the publisher category before release.")
@@ -6964,3 +6964,185 @@ class PerformanceRegressionTests(EditorialAcceptanceTestCase):
         submission.refresh_from_db()
         self.assertFalse(submission.extracted_title_verified)
         self.assertEqual(submission.extracted_title_match_status, "pending")
+
+class ExactNavigationTests(EditorialAcceptanceTestCase):
+    def test_exact_submission_focus_does_not_collide_with_similar_ids(self):
+        self.make_master_paper(paper_id="PT007", title="Exact Target")
+        self.make_master_paper(paper_id="R058", title="Similar Paper ID")
+        target = self.make_final_submission(
+            final_submission_id="58",
+            paper_id_filled="PT007",
+            final_submission_title="Exact Target",
+            extracted_title="Exact Target",
+        )
+        other = self.make_final_submission(
+            final_submission_id="33",
+            paper_id_filled="R058",
+            final_submission_title="Similar Paper ID",
+            extracted_title="Similar Paper ID",
+        )
+
+        focused_pages = [
+            ("verify_paper_ids", {"submission": target.pk}),
+            ("title_author_extraction", {"submission": target.pk}),
+            ("process", {"submission": target.pk}),
+        ]
+        for url_name, query in focused_pages:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(f"submissions:{url_name}"), query
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "Focused")
+                self.assertContains(response, "Exact Target")
+                self.assertNotContains(response, "Similar Paper ID")
+
+        fuzzy = self.client.get(
+            reverse("submissions:title_author_extraction"), {"filter": "all", "q": "58"}
+        )
+        self.assertContains(fuzzy, "Exact Target")
+        self.assertContains(fuzzy, "Similar Paper ID")
+        self.assertNotEqual(target.pk, other.pk)
+
+    def test_final_submission_workflow_links_use_exact_targets(self):
+        self.make_master_paper(paper_id="P001")
+        submission = self.make_final_submission()
+        response = self.client.get(
+            reverse("submissions:final_submission_edit", args=[submission.pk])
+        )
+
+        self.assertContains(
+            response,
+            f'{reverse("submissions:organized_list")}?paper_id=P001',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'{reverse("submissions:verify_paper_ids")}?submission={submission.pk}',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'{reverse("submissions:process")}?submission={submission.pk}',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'{reverse("submissions:title_author_extraction")}?submission={submission.pk}',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            (
+                f'{reverse("submissions:formatting")}?mode=single&amp;'
+                f'filter=all&amp;submission={submission.pk}'
+            ),
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'{reverse("submissions:not_publishing_list")}?submission={submission.pk}',
+            html=False,
+        )
+
+    def test_focused_publication_decision_can_show_normal_candidate(self):
+        self.make_master_paper(paper_id="P001")
+        submission = self.make_final_submission()
+        response = self.client.get(
+            reverse("submissions:not_publishing_list"),
+            {"submission": submission.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Focused publication decision")
+        self.assertContains(response, "Publication candidate")
+        self.assertContains(response, "Mark Not Publishing")
+
+    def test_author_count_links_to_exact_exception_key(self):
+        for index in range(4):
+            paper_id = f"A{index:03d}"
+            self.make_master_paper(
+                paper_id=paper_id,
+                title=f"Author Paper {index}",
+                authors="Ada Lovelace",
+            )
+            self.make_final_submission(
+                final_submission_id=str(700 + index),
+                paper_id_filled=paper_id,
+                final_submission_title=f"Author Paper {index}",
+                extracted_title=f"Author Paper {index}",
+                extracted_authors="Ada Lovelace",
+            )
+        rebuild_paper_authors()
+
+        author_page = self.client.get(reverse("submissions:author_count"))
+        expected_key = "author_limit:ada lovelace"
+        self.assertContains(
+            author_page,
+            (
+                f'{reverse("submissions:exceptions_center")}?'
+                "exception_key=author_limit%3Aada%20lovelace"
+            ),
+            html=False,
+        )
+        focused = self.client.get(
+            reverse("submissions:exceptions_center"),
+            {"exception_key": expected_key},
+        )
+        self.assertContains(focused, "Focused author exception")
+        self.assertContains(focused, "Ada Lovelace")
+
+    def test_dashboard_links_open_scoped_worklists(self):
+        self.make_master_paper(paper_id="MISSING")
+        response = self.client.get(reverse("submissions:dashboard"))
+        self.assertContains(
+            response,
+            f'{reverse("submissions:error_report")}?area=mapping',
+            html=False,
+        )
+
+        report = self.client.get(
+            reverse("submissions:error_report"), {"area": "mapping"}
+        )
+        self.assertEqual(report.context["current_area"], "mapping")
+        self.assertContains(report, "Focused workflow area")
+        self.assertContains(report, "Missing Final Submission")
+
+    def test_focused_worklist_gets_do_not_change_review_state(self):
+        self.make_master_paper(paper_id="P001")
+        submission = self.make_final_submission(
+            paper_id_verified=False,
+            verification_status="pending",
+            title_author_review_status="pending",
+            title_author_verified=False,
+        )
+        before = {
+            "paper_id_verified": submission.paper_id_verified,
+            "verification_status": submission.verification_status,
+            "title_author_review_status": submission.title_author_review_status,
+            "active_version": submission.active_version,
+        }
+
+        for url_name, query in [
+            ("verify_paper_ids", {"submission": submission.pk}),
+            ("title_author_extraction", {"submission": submission.pk}),
+            ("process", {"submission": submission.pk}),
+            ("formatting", {"mode": "single", "filter": "all", "submission": submission.pk}),
+            ("not_publishing_list", {"submission": submission.pk}),
+            ("organized_list", {"paper_id": "P001"}),
+        ]:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(f"submissions:{url_name}"), query
+                )
+                self.assertEqual(response.status_code, 200)
+
+        submission.refresh_from_db()
+        self.assertEqual(
+            {
+                "paper_id_verified": submission.paper_id_verified,
+                "verification_status": submission.verification_status,
+                "title_author_review_status": submission.title_author_review_status,
+                "active_version": submission.active_version,
+            },
+            before,
+        )

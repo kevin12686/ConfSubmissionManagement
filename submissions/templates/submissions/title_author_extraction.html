@@ -9,7 +9,7 @@
             Review the marked extraction image, extracted metadata, and title comparison together. Review OK completes this review.
         </div>
     </div>
-    <div class="cfm-page-actions">
+    {% if not focused_context %}<div class="cfm-page-actions">
         <div class="cfm-tool-group">
             <div class="cfm-tool-label">Built-in extractor</div>
             <form method="post">
@@ -33,8 +33,9 @@
                 <button class="btn btn-outline-danger" name="action" value="reextract_all_prompt">Re-extract All</button>
             </form>
         </div>
-    </div>
+    </div>{% endif %}
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 
 {% if confirm_reextract_all %}
     <div class="alert alert-danger border cfm-attention cfm-alert-stack">
@@ -67,6 +68,7 @@
 {% endif %}
 
 <div id="title-author-worklist">
+{% if not focused_context %}
 <div class="cfm-filter-groups">
     <div class="cfm-filter-group">
         <div class="cfm-filter-group-label">Workflow</div>
@@ -110,6 +112,7 @@
     </div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="title-author-loading" message="Updating title/author review..." %}
 </form>
+{% endif %}
 
 {% for row in rows %}
     {% with item=row.submission %}

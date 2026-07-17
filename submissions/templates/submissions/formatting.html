@@ -15,6 +15,7 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
     </div>
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 
 <style>
     .format-preview {
@@ -40,6 +41,7 @@
 </style>
 
 <div id="formatting-worklist">
+{% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
     <li class="nav-item">
@@ -68,6 +70,7 @@
     {% endif %}
     <div class="col-12"><span id="formatting-loading" class="cfm-loading-indicator" role="status">Updating queue...</span></div>
 </form>
+{% endif %}
 
 {% if formatting_confirmation %}
     <div class="cfm-title-guard">

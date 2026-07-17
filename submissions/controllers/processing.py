@@ -108,7 +108,10 @@ from submissions.services.verification import (
     verify_submission,
 )
 from submissions.application.commands import run_pdf_processing_action
-from submissions.application.selectors import processed_pdf_context
+from submissions.application.selectors import (
+    focused_submission_context,
+    processed_pdf_context,
+)
 
 
 logger = logging.getLogger("submissions.views")
@@ -132,10 +135,48 @@ def process_pdfs_view(request):
             messages.success(request, "PDF processing completed.")
         elif action == "reprocess":
             messages.success(request, "PDF reprocessing completed.")
+    focused_id = request.GET.get("submission", "").strip()
+    focused_submission = (
+        get_object_or_404(FinalSubmission, pk=focused_id) if focused_id else None
+    )
     context.update(
         processed_pdf_context(
-            request.GET.get("q", "").strip(),
-            request.GET.get("filter", "all"),
+            "" if focused_submission else request.GET.get("q", "").strip(),
+            "all" if focused_submission else request.GET.get("filter", "all"),
+            exact_submission_id=(
+                focused_submission.pk if focused_submission else None
+            ),
         )
     )
+    if focused_submission:
+        in_scope = any(
+            row["submission"].pk == focused_submission.pk
+            for row in context["processed_rows"]
+        )
+        context["focused_context"] = focused_submission_context(
+            focused_submission,
+            title="Focused PDF processing record",
+            message=(
+                "Showing page count, hash, and thumbnails for this exact current "
+                "publication candidate."
+                if in_scope
+                else (
+                    "This Final Submission is not a current Paper Master publication "
+                    "candidate, so Process PDFs does not process it."
+                )
+            ),
+            back_url=reverse("submissions:process"),
+            status_label=(
+                focused_submission.get_processing_status_display()
+                if in_scope
+                else "Outside processing scope"
+            ),
+            status_level=(
+                "success"
+                if in_scope
+                and focused_submission.processing_status == "processed"
+                else "warning"
+            ),
+            out_of_scope=not in_scope,
+        )
     return render(request, "submissions/process.html", context)

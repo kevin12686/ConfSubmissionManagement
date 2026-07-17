@@ -1,4 +1,7 @@
+from urllib.parse import urlencode
+
 from django.db.models import Q
+from django.urls import reverse
 
 from submissions.forms import FinalSubmissionImportForm, ImportFileForm
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
@@ -43,6 +46,55 @@ def verification_badge(submission, master_paper=None):
 
 def search_query(request):
     return request.GET.get("q", "").strip()
+
+
+def focused_submission_context(
+    submission,
+    *,
+    title,
+    message,
+    back_url,
+    status_label="Focused record",
+    status_level="primary",
+    out_of_scope=False,
+):
+    return {
+        "title": title,
+        "message": message,
+        "paper_id": submission.paper_id_filled or "No Paper ID",
+        "final_submission_id": submission.final_submission_id,
+        "origin": submission.get_submission_origin_display(),
+        "status_label": status_label,
+        "status_level": status_level,
+        "out_of_scope": out_of_scope,
+        "back_url": back_url,
+        "edit_url": (
+            reverse("submissions:final_submission_edit", args=[submission.pk])
+            + f"?{urlencode({'next': back_url})}"
+        ),
+    }
+
+
+def focused_paper_context(paper, *, message, back_url, submission=None):
+    return {
+        "title": "Focused publication paper",
+        "message": message,
+        "paper_id": paper.paper_id,
+        "final_submission_id": (
+            submission.final_submission_id if submission else ""
+        ),
+        "origin": submission.get_submission_origin_display() if submission else "",
+        "status_label": "Current publication record" if submission else "No final",
+        "status_level": "primary" if submission else "danger",
+        "out_of_scope": False,
+        "back_url": back_url,
+        "edit_url": (
+            reverse("submissions:final_submission_edit", args=[submission.pk])
+            + f"?{urlencode({'next': back_url})}"
+            if submission
+            else ""
+        ),
+    }
 
 
 def dashboard_context(context_builder):
@@ -174,7 +226,7 @@ PROCESS_PREVIEW_FILTER_OPTIONS = [
 ]
 
 
-def processed_pdf_context(query="", current_filter="all"):
+def processed_pdf_context(query="", current_filter="all", exact_submission_id=None):
     settings_obj = AppSetting.load()
     valid_ids = InitialPaper.objects.values("paper_id")
     active_needs_processing_rows = active_pdfs_needing_processing()
@@ -190,6 +242,23 @@ def processed_pdf_context(query="", current_filter="all"):
         if not pdf_available_for_processing(submission)
     ]
     all_rows = processed_pdf_rows()
+    if exact_submission_id is not None:
+        active_needs_processing_rows = [
+            submission
+            for submission in active_needs_processing_rows
+            if submission.pk == exact_submission_id
+        ]
+        active_missing_pdf_rows = [
+            submission
+            for submission in active_missing_pdf_rows
+            if submission.pk == exact_submission_id
+        ]
+        all_rows = [
+            row
+            for row in all_rows
+            if row["submission"].pk == exact_submission_id
+        ]
+        current_filter = "all"
     missing_pdf_ids = {submission.pk for submission in active_missing_pdf_rows}
     for row in all_rows:
         submission = row["submission"]
@@ -207,7 +276,7 @@ def processed_pdf_context(query="", current_filter="all"):
             and not row["needs_processing"]
             and not row["missing_pdf"]
         )
-    if query:
+    if query and exact_submission_id is None:
         lowered_query = query.casefold()
         all_rows = [
             row

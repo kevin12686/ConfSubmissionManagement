@@ -41,6 +41,7 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "extraction_issues", "label": "Extraction issues"},
     {"value": "missing_plagiarism", "label": "Missing plagiarism"},
     {"value": "plagiarism_issues", "label": "Plagiarism issues"},
+    {"value": "publication_duplicates", "label": "Publication duplicates"},
     {"value": "format_not_ok", "label": "Format not OK"},
 ]
 
@@ -589,6 +590,7 @@ def _filter_rows(rows, current_filter):
         "extraction_issues": _has_extraction_issue,
         "missing_plagiarism": _has_missing_plagiarism,
         "plagiarism_issues": _has_plagiarism_issue,
+        "publication_duplicates": lambda row: bool(row.get("duplicate_badges")),
         "format_not_ok": _has_format_issue,
     }
     predicate = predicates.get(current_filter, predicates["needs_attention"])
@@ -638,7 +640,12 @@ def _sort_rows(rows, current_sort):
     return sorted(rows, key=lambda row: (_attention_priority(row), _row_paper_id(row)))
 
 
-def organized_list_rows(query="", current_filter="all", current_sort="needs_attention"):
+def organized_list_rows(
+    query="",
+    current_filter="all",
+    current_sort="needs_attention",
+    exact_paper_id="",
+):
     settings_obj = AppSetting.load()
     papers = list(InitialPaper.objects.all())
     valid_paper_ids = {paper.paper_id for paper in papers}
@@ -784,7 +791,13 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
     if current_sort not in valid_sort_values:
         current_sort = "needs_attention"
 
-    searched_rows = [row for row in rows if _row_matches(row, query.strip())]
+    if exact_paper_id:
+        searched_rows = [
+            row for row in rows if _row_paper_id(row) == exact_paper_id
+        ]
+        current_filter = "all"
+    else:
+        searched_rows = [row for row in rows if _row_matches(row, query.strip())]
     filtered_rows = _sort_rows(_filter_rows(searched_rows, current_filter), current_sort)
     needs_process_rows = [
         row
@@ -850,7 +863,12 @@ def organized_list_rows(query="", current_filter="all", current_sort="needs_atte
         ("No Plagiarism", summary["missing_plagiarism"], "warning", "missing_plagiarism"),
         ("P/S Issues", summary["plagiarism_issues"], "danger", "plagiarism_issues"),
         ("Format Not OK", summary["format_issues"], "warning", "format_not_ok"),
-        ("Duplicates", summary["publication_duplicates"], "danger", "needs_attention"),
+        (
+            "Duplicates",
+            summary["publication_duplicates"],
+            "danger",
+            "publication_duplicates",
+        ),
         ("Version Conflicts", summary["version_conflicts"], "danger", "version_conflicts"),
         ("Duplicate Authors", summary["duplicate_author_issues"], "danger", "needs_attention"),
     ]

@@ -168,6 +168,20 @@ In Final Submission Edit, Discard is intentionally under the collapsed bottom `V
 
 Open Edit from the worklist button rather than manually rewriting the URL. Organized List (Checklist or Compact candidates), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions include a safe local return URL. External `next` URLs are rejected and fall back to Final Submissions.
 
+## A Workflow Link Shows Several Similar Papers
+
+Normal search fields use partial matching, so a search such as `58` may match
+Final ID `58` and Paper ID `R058`. System-generated links from Final Submission
+Edit and worklist details should instead open a `Focused ...` banner and one
+exact record. If a current link still includes a prefilled `q=` solely to locate
+one record, treat it as stale UI and report the source and destination pages.
+
+A focused page may show `Outside review scope` for an inactive, discarded, Not
+Publishing, or non-Master version. That message is safer than showing another
+active record. Use the Edit link or return to the full worklist to resolve the
+version state; do not change the URL to force an out-of-scope record into a
+publication workflow.
+
 Not Publishing excludes the paper from publication output because of an editorial decision such as unpaid, withdrawn, or not in the final publication scope.
 
 Old Versions shows version history. Not Publishing List shows publication decisions.

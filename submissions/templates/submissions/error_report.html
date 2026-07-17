@@ -10,6 +10,18 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
 </div>
+{% if current_area %}
+    <div class="card cfm-focused-worklist border-primary">
+        <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <div class="cfm-kicker">Focused workflow area</div>
+                <strong>{{ area_label }}</strong>
+                <div class="text-muted">Only issues in this editorial workflow are shown.</div>
+            </div>
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:error_report' %}">Back to full Error Report</a>
+        </div>
+    </div>
+{% endif %}
 
 {% if rows %}
     <div class="row g-2 cfm-metric-strip">

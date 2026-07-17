@@ -138,7 +138,7 @@ DASHBOARD_WORKFLOW_GROUPS = [
         },
         "action_label": "Review mapping issues",
         "action_url_name": "submissions:error_report",
-        "action_query": "",
+        "action_query": "?area=mapping",
     },
     {
         "key": "files",
@@ -155,7 +155,7 @@ DASHBOARD_WORKFLOW_GROUPS = [
         },
         "action_label": "Review file issues",
         "action_url_name": "submissions:error_report",
-        "action_query": "",
+        "action_query": "?area=files",
     },
     {
         "key": "title_authors",
@@ -169,7 +169,7 @@ DASHBOARD_WORKFLOW_GROUPS = [
         },
         "action_label": "Open Title/Author Review",
         "action_url_name": "submissions:title_author_extraction",
-        "action_query": "?filter=all",
+        "action_query": "?filter=needs_verification",
     },
     {
         "key": "formatting",
@@ -203,7 +203,7 @@ DASHBOARD_WORKFLOW_GROUPS = [
         "categories": {"Author Over Limit", "Duplicate Author In Paper"},
         "action_label": "Review author issues",
         "action_url_name": "submissions:error_report",
-        "action_query": "",
+        "action_query": "?area=authors",
     },
     {
         "key": "duplicates",
@@ -216,7 +216,7 @@ DASHBOARD_WORKFLOW_GROUPS = [
         },
         "action_label": "Review duplicates",
         "action_url_name": "submissions:organized_list",
-        "action_query": "?filter=needs_attention",
+        "action_query": "?filter=publication_duplicates",
     },
 ]
 

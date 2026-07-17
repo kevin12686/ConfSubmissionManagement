@@ -11,7 +11,79 @@
         <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}">Organized List</a>
     </div>
 </div>
+{% include "submissions/partials/focused_worklist.html" %}
 
+{% if focused_submission %}
+<section class="card cfm-review-card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <strong>{{ focused_submission.paper_id_filled|default:"No Paper ID" }}</strong>
+            <span class="text-muted">Final {{ focused_submission.final_submission_id }}</span>
+        </div>
+        {% if focused_submission.discarded %}
+            <span class="badge text-bg-secondary">Discarded version</span>
+        {% elif focused_submission.excluded_from_publication %}
+            <span class="badge text-bg-secondary">Not Publishing</span>
+        {% else %}
+            <span class="badge text-bg-primary">Publication candidate</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="small text-muted">Final title</div>
+                <div>{{ focused_submission.final_submission_title|default:"Missing" }}</div>
+            </div>
+            <div class="col-lg-6">
+                <div class="small text-muted">Final authors</div>
+                <div>{{ focused_submission.final_submission_authors|default:"Missing" }}</div>
+            </div>
+            {% if focused_submission.excluded_from_publication %}
+                <div class="col-md-4">
+                    <div class="small text-muted">Reason</div>
+                    <div>{{ focused_submission.get_publication_exclusion_reason_display }}</div>
+                </div>
+                <div class="col-md-8">
+                    <div class="small text-muted">Note</div>
+                    <div>{{ focused_submission.publication_exclusion_notes|default:"No note" }}</div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% if not focused_submission.discarded %}
+    <div class="card-footer">
+        {% if focused_submission.excluded_from_publication %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="submission_id" value="{{ focused_submission.pk }}">
+                <button class="btn btn-outline-secondary" name="action" value="undo_not_publishing">Undo Not Publishing</button>
+            </form>
+        {% else %}
+            <form method="post" class="row g-3 align-items-end">
+                {% csrf_token %}
+                <input type="hidden" name="submission_id" value="{{ focused_submission.pk }}">
+                <div class="col-md-4">
+                    <label class="form-label">Reason</label>
+                    <select class="form-select" name="publication_exclusion_reason">
+                        <option value="unpaid">Unpaid</option>
+                        <option value="withdrawn">Withdrawn</option>
+                        <option value="not_in_master">Not in Master List</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Editorial note</label>
+                    <textarea class="form-control" name="publication_exclusion_notes" rows="2"></textarea>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button class="btn btn-outline-danger" name="action" value="mark_not_publishing">Mark Not Publishing</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+{% else %}
 <form method="get" class="row g-2 align-items-end cfm-filter-panel">
     <div class="col-lg-6">
         <label class="form-label" for="not-publishing-search">Search</label>
@@ -158,4 +230,5 @@
         </table>
     </div>
 </section>
+{% endif %}
 {% endblock %}

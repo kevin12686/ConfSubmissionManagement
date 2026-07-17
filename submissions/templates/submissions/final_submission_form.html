@@ -12,8 +12,8 @@
         {% else %}
             <a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_list' %}">Back to Final Submissions</a>
         {% endif %}
-        {% if submission %}
-            <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?q={{ submission.paper_id_filled|urlencode }}">Open in Organized List</a>
+        {% if submission and submission.paper_id_filled %}
+            <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?paper_id={{ submission.paper_id_filled|urlencode }}">Open in Organized List</a>
         {% endif %}
     </div>
 </div>
@@ -170,24 +170,24 @@
                     <div class="col-md-6 col-xl-3 cfm-workflow-summary-item">
                         <div class="small text-muted">Paper ID review</div>
                         <span class="badge text-bg-{% if submission.paper_id_verified %}success{% else %}warning{% endif %}">{% if submission.paper_id_verified %}Verified{% else %}Needs review{% endif %}</span>
-                        <div class="mt-2"><a href="{% url 'submissions:verify_paper_ids' %}?filter=all&q={{ submission.final_submission_id|urlencode }}">Open Paper ID Review</a></div>
+                        <div class="mt-2"><a href="{% url 'submissions:verify_paper_ids' %}?submission={{ submission.pk }}">Open Paper ID Review</a></div>
                     </div>
                     <div class="col-md-6 col-xl-3 cfm-workflow-summary-item">
                         <div class="small text-muted">PDF processing</div>
                         <span class="badge text-bg-{% if submission.processing_status == 'processed' %}success{% elif submission.processing_status == 'error' %}danger{% else %}warning{% endif %}">{{ submission.get_processing_status_display }}</span>
                         <div class="small mt-2">{{ submission.page_count|default:"--" }} pages</div>
-                        <div><a href="{% url 'submissions:process' %}?q={{ submission.paper_id_filled|urlencode }}">Open Process PDFs</a></div>
+                        <div><a href="{% url 'submissions:process' %}?submission={{ submission.pk }}">Open Process PDFs</a></div>
                     </div>
                     <div class="col-md-6 col-xl-3 cfm-workflow-summary-item">
                         <div class="small text-muted">Title/Author review</div>
                         <span class="badge text-bg-{% if submission.title_author_review_status == 'review_ok' %}success{% elif submission.title_author_review_status == 'red_flag' %}danger{% else %}warning{% endif %}">{{ submission.get_title_author_review_status_display }}</span>
                         <div class="small mt-2">{{ submission.get_title_author_source_display }}</div>
-                        <div><a href="{% url 'submissions:title_author_extraction' %}?filter=all&q={{ submission.final_submission_id|urlencode }}">Open Title/Author Review</a></div>
+                        <div><a href="{% url 'submissions:title_author_extraction' %}?submission={{ submission.pk }}">Open Title/Author Review</a></div>
                     </div>
                     <div class="col-md-6 col-xl-3 cfm-workflow-summary-item">
                         <div class="small text-muted">Formatting review</div>
                         <span class="badge text-bg-{% if submission.format_status == 'review_ok' %}success{% elif submission.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">{{ submission.get_format_status_display }}</span>
-                        <div class="mt-2"><a href="{% url 'submissions:formatting' %}?filter=all&q={{ submission.paper_id_filled|urlencode }}">Open Formatting Review</a></div>
+                        <div class="mt-2"><a href="{% url 'submissions:formatting' %}?mode=single&amp;filter=all&amp;submission={{ submission.pk }}">Open Formatting Review</a></div>
                     </div>
                 </div>
                 <div class="cfm-workflow-detail mt-3 pt-3 border-top">
@@ -206,7 +206,7 @@
                                 <span class="badge text-bg-secondary">Not publishing</span>
                                 <div class="small mt-1">{{ submission.get_publication_exclusion_reason_display }}</div>
                             {% else %}<span class="badge text-bg-light text-dark">Publication candidate</span>{% endif %}
-                            <div class="mt-2"><a href="{% url 'submissions:not_publishing_list' %}?q={{ submission.final_submission_id|urlencode }}">Manage publication decision</a></div>
+                            <div class="mt-2"><a href="{% url 'submissions:not_publishing_list' %}?submission={{ submission.pk }}">Manage publication decision</a></div>
                         </div>
                     </div>
                     {% if submission.title_author_source == "manual_override" %}

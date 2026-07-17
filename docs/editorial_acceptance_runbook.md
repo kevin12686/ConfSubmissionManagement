@@ -52,6 +52,14 @@ Create Final Submission records and files:
 13. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
 14. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again.
 15. Confirm Final Submissions opens with submission tabs/table first and `Import / Re-upload` collapsed. Expand it, drop/select metadata plus PDF/source files, verify counts/type summary/removal, and confirm preview-before-apply still controls storage. Open Final Submission Edit from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, and Exceptions. Confirm Save returns to the same worklist/view/filter/search/tab. Confirm the edit order is Submission identity, Metadata, Current row files, Plagiarism data/report, Workflow status summary, and Save. Confirm version discard is a separate form under the collapsed bottom `Version actions` danger zone and still requires a reason. Then open Organized List, switch Checklist/Compact candidates, and confirm both show the same active publication scope.
+16. From one Final Submission Edit page, open Paper ID Review, Process PDFs,
+    Title/Author Review, Formatting Review, Not Publishing, and Organized List.
+    Confirm each destination shows the shared focused-record banner and only the
+    intended Final/Paper record. Create a collision such as Final ID `58` plus
+    Paper ID `R058`; exact links must not show both, while manually searching
+    `58` may. Confirm an inactive or excluded target shows an outside-scope
+    explanation and that opening any focused GET leaves all review and active
+    flags unchanged.
 16. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
 17. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
 18. Resolve all blockers and export the final publication package.

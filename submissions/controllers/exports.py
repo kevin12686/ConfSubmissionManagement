@@ -31,6 +31,7 @@ from submissions.services.checks import (
     error_report_rows,
     error_report_severity_sections,
     error_report_sections,
+    filter_error_report_rows,
     reset_author_number_exception,
 )
 from submissions.services.crosscheck import (
@@ -168,6 +169,9 @@ def old_versions(request):
 
 def error_report(request):
     rows = error_report_rows()
+    rows, current_area, area_label = filter_error_report_rows(
+        rows, request.GET.get("area", "")
+    )
     return render(
         request,
         "submissions/error_report.html",
@@ -175,6 +179,8 @@ def error_report(request):
             "rows": rows,
             "sections": error_report_sections(rows),
             "severity_sections": error_report_severity_sections(rows),
+            "current_area": current_area,
+            "area_label": area_label,
         },
     )
 

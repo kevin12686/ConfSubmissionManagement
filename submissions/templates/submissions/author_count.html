@@ -70,7 +70,7 @@
                 </td>
                 <td>
                     {% if row.over_limit %}
-                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:exceptions_center' %}">Manage exception</a>
+                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:exceptions_center' %}?exception_key={{ row.exception_key|urlencode }}">Manage exception</a>
                     {% else %}
                         <span class="text-muted">--</span>
                     {% endif %}

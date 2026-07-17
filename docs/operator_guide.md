@@ -74,6 +74,14 @@ Final Submission Edit is intentionally limited to submission metadata, original 
 
 When Edit is opened from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, or Exceptions, Save returns to the originating worklist with its view, filter, sort, search, tab, or single-paper selection. External return URLs are rejected. Worklist filters/search can update only that list area without a full refresh, but the same links/forms work as ordinary Django requests. No client-side code decides review state, exception validity, active versions, or publication files.
 
+The workflow links inside Final Submission Edit are exact links, not prefilled
+searches. Their focused banner names the Paper ID, Final ID, origin, and current
+status. `Back to full worklist` returns to normal browsing. A focused page may
+say that the selected version is outside its current workflow scope; this is
+intentional and prevents an inactive or excluded version from being replaced on
+screen by a similarly named active record. Search boxes remain broad matching
+tools and should not be used as proof that a particular Final ID was selected.
+
 Author Count supports author/Paper ID search, attention/over-limit/duplicate/allowed filters, and paper-count/name sorting. Exceptions supports search plus status and exception-type filters. Title/Author keeps Workflow and Tracked views separate. Verify Paper IDs preserves filter/search URLs. State-changing buttons still perform full audited server requests.
 
 Status colors are consistent across pages: red means a blocker or dangerous action, amber needs manual attention, blue is tracked information, green means the named review is complete, and gray is inactive/history. Primary text uses deep ink on muted work surfaces; labels and supporting text use a darker blue-gray instead of low-contrast gray. Compact pill-shaped labels report status, file origin, counts, or categories and are not controls. Action buttons are taller rectangular controls with stronger borders and visible hover states. Every label also includes text, so color is never the only status signal.
@@ -247,6 +255,11 @@ Default status is Not allowed. Only Allowed exception with a required reason not
 For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show a `Manage exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
 
 Exceptions also supports Paper/Final ID text search and exception-type filtering. Author Count supports focused views for over-limit authors, duplicate names inside a paper, allowed exceptions, and all authors. These filters are review aids only and do not change exception validity.
+
+`Manage exception` from Author Count opens the exact author exception. Row-level
+exception actions from Organized List continue to use the exact active Final
+Submission. Dashboard issue actions open the matching workflow subset rather
+than the full Error Report or a broad Needs Attention list.
 
 ## Export Workflow
 

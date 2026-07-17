@@ -1,0 +1,22 @@
+{% if focused_context %}
+<section class="card cfm-focused-worklist {% if focused_context.out_of_scope %}border-warning{% else %}border-primary{% endif %}" aria-label="{{ focused_context.title }}">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <div class="cfm-kicker">{{ focused_context.title }}</div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                    <strong class="h5 mb-0">{{ focused_context.paper_id }}</strong>
+                    {% if focused_context.final_submission_id %}<span>Final {{ focused_context.final_submission_id }}</span>{% endif %}
+                    {% if focused_context.origin %}<span class="text-muted">{{ focused_context.origin }}</span>{% endif %}
+                    <span class="badge text-bg-{{ focused_context.status_level }}">{{ focused_context.status_label }}</span>
+                </div>
+                <p class="mb-0 mt-2 {% if focused_context.out_of_scope %}text-warning-emphasis{% else %}text-muted{% endif %}">{{ focused_context.message }}</p>
+            </div>
+            <div class="cfm-table-actions">
+                {% if focused_context.edit_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ focused_context.edit_url }}">Edit submission</a>{% endif %}
+                <a class="btn btn-sm btn-outline-dark" href="{{ focused_context.back_url }}">Back to full worklist</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}

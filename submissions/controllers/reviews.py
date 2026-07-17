@@ -123,7 +123,11 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
-from submissions.application.selectors import paper_note_summary
+from submissions.application.selectors import (
+    focused_paper_context,
+    focused_submission_context,
+    paper_note_summary,
+)
 
 
 logger = logging.getLogger("submissions.views")
@@ -230,13 +234,17 @@ def organized_list(request):
         return redirect(request.get_full_path())
 
     q = _search_query(request)
+    exact_paper_id = request.GET.get("paper_id", "").strip()
     view_mode = request.GET.get("view", "checklist")
     if view_mode not in {"checklist", "compact"}:
         view_mode = "checklist"
     current_filter = request.GET.get("filter", "all") if view_mode == "checklist" else "all"
     current_sort = request.GET.get("sort", "needs_attention") if view_mode == "checklist" else "paper_id_asc"
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
-        q, current_filter, current_sort
+        q,
+        current_filter,
+        current_sort,
+        exact_paper_id=exact_paper_id,
     )
     if view_mode == "compact":
         rows = [
@@ -245,6 +253,47 @@ def organized_list(request):
             if row["row_type"] == "master" and row["submission"]
         ]
     note_summary = paper_note_summary()
+    focused_context = None
+    if exact_paper_id:
+        paper = InitialPaper.objects.filter(paper_id=exact_paper_id).first()
+        focused_row = rows[0] if rows else None
+        if paper:
+            focused_context = focused_paper_context(
+                paper,
+                submission=focused_row["submission"] if focused_row else None,
+                message=(
+                    "Showing the exact Paper Master publication record and its current "
+                    "publication candidate."
+                ),
+                back_url=reverse("submissions:organized_list"),
+            )
+        elif focused_row and focused_row["submission"]:
+            focused_context = focused_submission_context(
+                focused_row["submission"],
+                title="Focused unmatched final",
+                message=(
+                    "This active Final Submission is outside the Paper Master List "
+                    "and cannot be published until its Paper ID is corrected or a "
+                    "Not Publishing decision is recorded."
+                ),
+                back_url=reverse("submissions:organized_list"),
+                status_label="Not in Paper Master List",
+                status_level="danger",
+                out_of_scope=True,
+            )
+        else:
+            focused_context = {
+                "title": "Focused publication paper",
+                "message": "No Paper Master or active Final Submission uses this exact Paper ID.",
+                "paper_id": exact_paper_id,
+                "final_submission_id": "",
+                "origin": "",
+                "status_label": "Not found",
+                "status_level": "secondary",
+                "out_of_scope": True,
+                "back_url": reverse("submissions:organized_list"),
+                "edit_url": "",
+            }
     return render(
         request,
         "submissions/organized_list.html",
@@ -260,13 +309,22 @@ def organized_list(request):
             "sort_options": ORGANIZED_LIST_SORT_OPTIONS,
             "note_summary": note_summary,
             "note_count": len(note_summary),
+            "focused_context": focused_context,
+            "exact_paper_id": exact_paper_id,
         },
     )
 def verify_paper_ids(request):
     submissions = FinalSubmission.objects.all()
     q = _search_query(request)
     current_filter = request.GET.get("filter", "needs_verification")
-    if q:
+    focused_submission = None
+    focused_id = request.GET.get("submission", "").strip()
+    if focused_id:
+        focused_submission = get_object_or_404(FinalSubmission, pk=focused_id)
+        submissions = submissions.filter(pk=focused_submission.pk)
+        q = ""
+        current_filter = "all"
+    elif q:
         submissions = submissions.filter(
             Q(final_submission_id__icontains=q)
             | Q(start2_paper_id_raw__icontains=q)
@@ -340,6 +398,23 @@ def verify_paper_ids(request):
         current_filter = "all"
         rows = all_rows
 
+    focused_context = None
+    if focused_submission:
+        focused_context = focused_submission_context(
+            focused_submission,
+            title="Focused Paper ID review",
+            message=(
+                "Showing only this Final Submission record. Paper ID review on this "
+                "page does not switch to another version."
+            ),
+            back_url=reverse("submissions:verify_paper_ids"),
+            status_label=(
+                "Verified" if rows and rows[0]["is_verified"] else "Needs review"
+            ),
+            status_level=(
+                "success" if rows and rows[0]["is_verified"] else "warning"
+            ),
+        )
     return render(
         request,
         "submissions/verify_paper_ids.html",
@@ -350,11 +425,18 @@ def verify_paper_ids(request):
             "current_filter": current_filter,
             "filter_options": filter_options,
             "filter_counts": counts,
+            "focused_context": focused_context,
         },
     )
 def title_author_extraction(request):
     q = _search_query(request)
     current_filter = request.GET.get("filter", "needs_verification")
+    focused_submission = None
+    focused_id = request.GET.get("submission", "").strip()
+    if focused_id:
+        focused_submission = get_object_or_404(FinalSubmission, pk=focused_id)
+        q = ""
+        current_filter = "all"
     confirm_reextract_all = False
     allowed_filters = {
         "needs_verification",
@@ -490,6 +572,12 @@ def title_author_extraction(request):
         {"value": "manual_override", "label": "Manual Override", "tab_label": "Manual Override", "badge_level": "warning", "group": "tracked"},
     ]
     all_title_author_rows = title_author_extraction_rows(q, "all")
+    if focused_submission:
+        all_title_author_rows = [
+            row
+            for row in all_title_author_rows
+            if row["submission"].pk == focused_submission.pk
+        ]
     rows = filter_title_author_extraction_rows(all_title_author_rows, current_filter)
     settings_obj = AppSetting.load()
     grobid_status = (
@@ -510,6 +598,35 @@ def title_author_extraction(request):
     }
     for option in filter_options:
         option["count"] = tab_counts[option["value"]]
+    focused_context = None
+    if focused_submission:
+        in_scope = bool(all_title_author_rows)
+        focused_context = focused_submission_context(
+            focused_submission,
+            title="Focused Title/Author review",
+            message=(
+                "Showing only this current publication candidate."
+                if in_scope
+                else (
+                    "This Final Submission is not in the current publication review "
+                    "scope because it is inactive, discarded, Not Publishing, or "
+                    "outside the Paper Master List."
+                )
+            ),
+            back_url=reverse("submissions:title_author_extraction"),
+            status_label=(
+                focused_submission.get_title_author_review_status_display()
+                if in_scope
+                else "Outside review scope"
+            ),
+            status_level=(
+                "success"
+                if in_scope
+                and focused_submission.title_author_review_status == "review_ok"
+                else "warning"
+            ),
+            out_of_scope=not in_scope,
+        )
     return render(
         request,
         "submissions/title_author_extraction.html",
@@ -528,6 +645,7 @@ def title_author_extraction(request):
                 if settings_obj.grobid_enabled and not grobid_status["available"]
                 else ""
             ),
+            "focused_context": focused_context,
         },
     )
 
@@ -597,13 +715,22 @@ def formatting(request):
             else:
                 messages.error(request, "Formatting update failed. Check the uploaded files and status.")
 
+    requested_id = request.POST.get("submission_id") or request.GET.get("submission")
+    explicit_focus = bool(request.GET.get("submission"))
+    focused_submission = (
+        get_object_or_404(FinalSubmission, pk=request.GET.get("submission"))
+        if explicit_focus
+        else None
+    )
+    if explicit_focus:
+        q = ""
+        current_filter = "all"
     all_submissions = list(formatting_rows(q, current_filter))
     single_navigation = None
     if mode == "single":
-        requested_id = request.POST.get("submission_id") or request.GET.get("submission")
         current_submission = next(
             (submission for submission in all_submissions if str(submission.pk) == str(requested_id)),
-            all_submissions[0] if all_submissions else None,
+            None if requested_id else (all_submissions[0] if all_submissions else None),
         )
         all_submissions = [current_submission] if current_submission else []
         single_navigation = formatting_single_navigation(current_submission, q, current_filter)
@@ -625,6 +752,34 @@ def formatting(request):
         {**option, "count": filter_counts.get(option["value"], 0)}
         for option in FORMAT_FILTER_OPTIONS
     ]
+    focused_context = None
+    if explicit_focus:
+        in_scope = bool(all_submissions)
+        focused_context = focused_submission_context(
+            focused_submission,
+            title="Focused Formatting review",
+            message=(
+                "Single Paper Mode is locked to this current publication candidate."
+                if in_scope
+                else (
+                    "This Final Submission is not in the current formatting queue "
+                    "because it is inactive, discarded, Not Publishing, or outside "
+                    "the Paper Master List."
+                )
+            ),
+            back_url=reverse("submissions:formatting"),
+            status_label=(
+                focused_submission.get_format_status_display()
+                if in_scope
+                else "Outside review scope"
+            ),
+            status_level=(
+                "success"
+                if in_scope and focused_submission.format_status == "review_ok"
+                else "warning"
+            ),
+            out_of_scope=not in_scope,
+        )
     return render(
         request,
         "submissions/formatting.html",
@@ -636,6 +791,7 @@ def formatting(request):
             "mode": mode,
             "single_navigation": single_navigation,
             "formatting_confirmation": formatting_confirmation,
+            "focused_context": focused_context,
         },
     )
 
@@ -665,6 +821,12 @@ def _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_cu
 
 def not_publishing_list(request):
     q = _search_query(request)
+    focused_id = request.GET.get("submission", "").strip()
+    focused_submission = (
+        get_object_or_404(FinalSubmission, pk=focused_id) if focused_id else None
+    )
+    if focused_submission:
+        q = ""
     valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
 
     if request.method == "POST":
@@ -680,7 +842,7 @@ def not_publishing_list(request):
         elif action == "undo_not_publishing":
             undo_not_publishing(submission)
             messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
-        return redirect("submissions:not_publishing_list")
+        return redirect(_worklist_return_url(request, "not_publishing_list"))
 
     needs_decision = FinalSubmission.objects.filter(
         active_version=True,
@@ -689,7 +851,10 @@ def not_publishing_list(request):
     ).exclude(paper_id_filled__in=valid_ids)
     excluded = FinalSubmission.objects.filter(excluded_from_publication=True, discarded=False)
 
-    if q:
+    if focused_submission:
+        needs_decision = needs_decision.filter(pk=focused_submission.pk)
+        excluded = excluded.filter(pk=focused_submission.pk)
+    elif q:
         search_filter = (
             Q(final_submission_id__icontains=q)
             | Q(start2_paper_id_raw__icontains=q)
@@ -721,6 +886,33 @@ def not_publishing_list(request):
         submission.version_state_level = "secondary" if submission.active_version else "light text-dark"
         submission.origin_label = submission.get_submission_origin_display()
         submission.active_replacement = replacement
+    focused_context = None
+    if focused_submission:
+        focused_context = focused_submission_context(
+            focused_submission,
+            title="Focused publication decision",
+            message=(
+                "Review or change the publication decision for this exact Final "
+                "Submission. Not Publishing is separate from discarding a version."
+            ),
+            back_url=reverse("submissions:not_publishing_list"),
+            status_label=(
+                "Discarded version"
+                if focused_submission.discarded
+                else (
+                    "Not Publishing"
+                    if focused_submission.excluded_from_publication
+                    else "Publication candidate"
+                )
+            ),
+            status_level=(
+                "secondary"
+                if focused_submission.discarded
+                or focused_submission.excluded_from_publication
+                else "primary"
+            ),
+            out_of_scope=focused_submission.discarded,
+        )
     return render(
         request,
         "submissions/not_publishing_list.html",
@@ -731,12 +923,15 @@ def not_publishing_list(request):
             "needs_decision_count": needs_decision.count(),
             "excluded_count": len(excluded),
             "active_excluded_count": sum(1 for item in excluded if item.active_version),
+            "focused_submission": focused_submission,
+            "focused_context": focused_context,
         },
     )
 def exceptions_center(request):
     current_filter = request.GET.get("filter", "not_allowed")
     q = request.GET.get("q", "").strip()
     current_type = request.GET.get("type", "all")
+    focused_key = request.GET.get("exception_key", "").strip()
     all_rows, _resolved_filter = exception_rows("all")
     valid_filters = {option["value"] for option in EXCEPTION_FILTER_OPTIONS}
     if current_filter not in valid_filters:
@@ -760,7 +955,12 @@ def exceptions_center(request):
     rows = status_rows
     if current_type != "all":
         rows = [row for row in rows if row["type"] == current_type]
-    if q:
+    if focused_key:
+        rows = [row for row in all_rows if row["key"] == focused_key]
+        q = ""
+        current_filter = "all"
+        current_type = "all"
+    elif q:
         lowered_query = q.casefold()
         rows = [
             row
@@ -802,6 +1002,50 @@ def exceptions_center(request):
         {**option, "count": counts.get(option["value"], 0)}
         for option in EXCEPTION_FILTER_OPTIONS
     ]
+    focused_context = None
+    if focused_key:
+        focused_row = rows[0] if rows else None
+        if focused_row and focused_row.get("submission"):
+            focused_context = focused_submission_context(
+                focused_row["submission"],
+                title="Focused exception",
+                message=(
+                    f"Showing only the {focused_row['type_label']} exception for "
+                    "this Final Submission."
+                ),
+                back_url=reverse("submissions:exceptions_center"),
+                status_label=focused_row["status_label"],
+                status_level=focused_row["status_level"],
+            )
+        elif focused_row:
+            focused_context = {
+                "title": "Focused author exception",
+                "message": "Showing only this author-level publication exception.",
+                "paper_id": focused_row["subject"],
+                "final_submission_id": "",
+                "origin": "",
+                "status_label": focused_row["status_label"],
+                "status_level": focused_row["status_level"],
+                "out_of_scope": False,
+                "back_url": reverse("submissions:exceptions_center"),
+                "edit_url": "",
+            }
+        else:
+            focused_context = {
+                "title": "Focused exception",
+                "message": (
+                    "This exception is no longer applicable. The value may now be "
+                    "within its configured limit."
+                ),
+                "paper_id": "No active exception",
+                "final_submission_id": "",
+                "origin": "",
+                "status_label": "Not applicable",
+                "status_level": "secondary",
+                "out_of_scope": True,
+                "back_url": reverse("submissions:exceptions_center"),
+                "edit_url": "",
+            }
     return render(
         request,
         "submissions/exceptions.html",
@@ -813,5 +1057,7 @@ def exceptions_center(request):
             "q": q,
             "current_type": current_type,
             "type_options": type_options,
+            "focused_context": focused_context,
+            "focused_key": focused_key,
         },
     )

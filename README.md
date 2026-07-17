@@ -140,6 +140,14 @@ Large worklists are organized for editorial scanning. Final Submissions keeps `I
 
 The UI modernization is complete for the current scope. It uses locally pinned Tabler 1.4.0 on Bootstrap-compatible templates and HTMX 2.0.10 for GET-only worklist updates. Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs preserve filter URLs and ordinary Django fallback. Upload zones show selected file counts/types and allow removal before submit, but imports still require the server-side preview-before-apply step. Workflow decisions, publication files, active versions, review resets, exceptions, and state-changing actions remain server-owned; no publication-changing action uses optimistic browser state.
 
+Links opened from a specific Final Submission use exact record identifiers rather
+than the normal fuzzy search box. Paper ID Review, Process PDFs, Title/Author
+Review, Formatting Review, Not Publishing, Organized List, and Exceptions show a
+consistent focused-record banner and only the intended record. If that version is
+inactive, discarded, Not Publishing, or otherwise outside a page's workflow
+scope, the page explains that condition instead of silently showing a different
+match. User-entered search fields remain intentionally fuzzy.
+
 ## Current Final Publication Version Rules
 
 The Paper Master List is the publication scope. A paper is considered for final publication only when its Paper ID exists in Paper Master List and the selected Final Submission is not discarded and not marked Not Publishing.

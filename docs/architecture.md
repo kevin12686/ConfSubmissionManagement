@@ -56,6 +56,12 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
 - Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. `apply_final_submission_manual_edit()` requires an existing record and applies dependency-based reset rules; it must never receive `None` or synthesize an original record.
 - Editorial worklists preserve navigation context when they link into Final Submission Edit. Organized List, Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions pass a return URL that is restricted to the local host. The legacy Publication Candidates URL redirects to Organized List compact mode.
+- Cross-page record navigation is separate from search. System-generated links
+  identify a Final Submission by database primary key, a Paper Master record by
+  exact Paper ID, or an exception by its service-generated key. Controllers
+  build a shared focused-worklist context and services keep their normal
+  publication scope. If the exact target is outside that scope, the UI reports
+  why; it never substitutes another fuzzy match. GET focus modes are read-only.
 - Final Submission Edit separates editable identity/metadata/files/plagiarism data from a read-only workflow summary. Its normal Save form is structurally separate from the collapsed bottom version-action danger-zone form. Discard and undo continue to call the existing audited service; Not Publishing remains owned by its dedicated workflow.
 - Formatting Review exposes a compact queue plus a full Single Paper Mode. Queue rows show publication file/status context before expansion, Bootstrap's shared parent keeps one paper expanded at a time, and HTMX enhances GET-only filter/search navigation without owning workflow state.
 - Process PDFs deliberately keeps complete page-thumbnail strips expanded. Search and `Needs processing / Page issues / Processed / All` filters narrow papers only; paper jump, sticky identity headers, fixed thumbnail geometry, lazy image loading, and the enlarged preview modal do not change processing scope.
