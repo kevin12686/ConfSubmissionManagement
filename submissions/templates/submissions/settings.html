@@ -20,7 +20,7 @@
 {% endif %}
 
 {% if active_version_change_report %}
-    <div class="alert alert-warning border cfm-attention">
+    <div class="alert alert-warning border cfm-attention cfm-alert-stack">
         <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
             <div>
                 <strong>Active final version rule changed.</strong>
@@ -59,7 +59,7 @@
 {% endif %}
 
 {% if active_version_rule_preview %}
-    <div class="alert alert-danger border cfm-attention">
+    <div class="alert alert-danger border cfm-attention cfm-alert-stack">
         <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
             <div>
                 <strong>Active Version Rule Change Preview.</strong>
@@ -287,7 +287,7 @@
         </div>
 
         {% if storage_inventory.missing_references %}
-            <div class="alert alert-warning">
+            <div class="alert alert-warning cfm-alert-stack">
                 <div class="fw-semibold mb-2">Missing file references</div>
                 <div class="table-responsive">
                     <table class="table table-sm mb-0">
@@ -348,7 +348,7 @@
         </div>
 
         {% if storage_repair_result %}
-            <div class="alert alert-info mt-3 mb-0">
+            <div class="alert alert-info cfm-alert-stack mt-3 mb-0">
                 Synced {{ storage_repair_result.synced_count }} publication debug PDFs.
                 {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} Paper Master records without an active publication PDF.{% endif %}
                 {% if storage_repair_result.manifest_path %}<div class="small mt-1">Manifest: <code>{{ storage_repair_result.manifest_path }}</code></div>{% endif %}

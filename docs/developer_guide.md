@@ -116,6 +116,11 @@ rewrite `extracted_authors` while preparing the display list.
 
 ## Worklist UI Conventions
 
+- Tabler renders `.alert` as a horizontal flex row by default, but CFM alerts
+  use normal vertical document flow unless the template explicitly adds
+  `.d-flex`. Use `.cfm-alert-stack` for alerts containing tables, lists,
+  multi-step forms, or several content blocks. Reserve explicit `.d-flex`
+  alerts for a short message paired with a compact action group.
 - Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
 - Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
 - Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.

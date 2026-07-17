@@ -353,6 +353,23 @@
             --bs-alert-bg: var(--cfm-surface-subtle);
             --bs-alert-border-color: var(--cfm-border);
         }
+        /*
+         * Tabler renders alerts as horizontal flex rows by default. Most CFM
+         * alerts are document-like content and must keep tables, lists, and
+         * forms in normal vertical flow. Explicit .d-flex alerts remain the
+         * opt-in pattern for a short message paired with actions.
+         */
+        .alert:not(.d-flex) {
+            display: block;
+        }
+        .cfm-alert-stack,
+        .cfm-alert-stack > .table-responsive {
+            width: 100%;
+            min-width: 0;
+        }
+        .cfm-alert-stack > :last-child {
+            margin-bottom: 0;
+        }
         .bg-light {
             background-color: var(--cfm-surface-subtle) !important;
         }

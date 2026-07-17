@@ -44,7 +44,7 @@
                     {% if system_state_preview.missing_files or system_state_preview.corrupt_files %}
                         <div class="alert alert-warning">This snapshot has missing or corrupted files and cannot be restored.</div>
                     {% elif system_state_preview.referenced_artifact_warnings %}
-                        <div class="alert alert-warning"><strong>Referenced artifact warnings</strong><ul class="mb-0">{% for warning in system_state_preview.referenced_artifact_warnings %}<li>{{ warning.final_submission_id }}: {{ warning.message }}</li>{% endfor %}</ul></div>
+                        <div class="alert alert-warning cfm-alert-stack"><strong>Referenced artifact warnings</strong><ul class="mb-0">{% for warning in system_state_preview.referenced_artifact_warnings %}<li>{{ warning.final_submission_id }}: {{ warning.message }}</li>{% endfor %}</ul></div>
                     {% endif %}
                     {% if not system_state_preview.missing_files and not system_state_preview.corrupt_files %}
                         <form method="post" class="vstack gap-2">

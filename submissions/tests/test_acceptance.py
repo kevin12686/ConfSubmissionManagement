@@ -3103,6 +3103,36 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_alert_layout_defaults_to_stacked_content_and_keeps_flex_opt_in(self):
+        response = self.client.get(reverse("submissions:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, ".alert:not(.d-flex) {")
+        self.assertContains(response, ".cfm-alert-stack")
+
+        reextract_prompt = self.client.post(
+            reverse("submissions:title_author_extraction"),
+            {"action": "reextract_all_prompt"},
+        )
+        self.assertEqual(reextract_prompt.status_code, 200)
+        self.assertContains(
+            reextract_prompt,
+            'class="alert alert-danger border cfm-attention cfm-alert-stack"',
+        )
+        self.assertContains(reextract_prompt, "Confirm Re-extract All Active PDFs")
+
+        self.make_master_paper("P001", "Missing Final", "Ada")
+        blocked_export = self.client.post(
+            reverse("submissions:export_reports"),
+            {"action": "publication_package"},
+        )
+        self.assertEqual(blocked_export.status_code, 200)
+        self.assertContains(
+            blocked_export,
+            'class="alert alert-danger border cfm-attention cfm-alert-stack"',
+        )
+        self.assertContains(blocked_export, "Missing Final Submission")
+
     def test_organized_list_missing_final_does_not_render_empty_status_badges(self):
         self.make_master_paper("P001", "Missing Final", "Ada")
 
@@ -6258,6 +6288,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertFalse(older.active_version)
         self.assertTrue(newer.active_version)
         self.assertContains(response, "Active Version Rule Change Preview")
+        self.assertContains(response, "cfm-alert-stack")
         self.assertContains(response, "1 paper would change active final version")
         self.assertContains(response, "P001")
         self.assertContains(response, "10")
@@ -6282,6 +6313,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertTrue(older.paper_id_verified)
         self.assertTrue(newer.paper_id_verified)
         self.assertContains(response, "Active final version rule changed.")
+        self.assertContains(response, "cfm-alert-stack")
         self.assertContains(response, "1 paper changed active final version")
         self.assertContains(response, "P001")
         self.assertContains(response, "10")
@@ -6712,6 +6744,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             follow=True,
         )
         self.assertContains(blocked, "Publication package is not ready")
+        self.assertContains(blocked, "cfm-alert-stack")
         self.assertContains(blocked, "Missing Final Submission")
         self.assertContains(blocked, "Unclassified Final Not In Master")
         self.assertContains(blocked, "Download Draft Package Anyway")

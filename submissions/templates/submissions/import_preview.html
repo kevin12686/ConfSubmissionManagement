@@ -26,7 +26,7 @@
 </div>
 
 {% if preview.invalid_files %}
-    <div class="alert alert-danger border cfm-attention">
+    <div class="alert alert-danger border cfm-attention cfm-alert-stack">
         <div class="fw-semibold">Files ignored because filenames did not match FinalID_file_Submit_PDF.ext or FinalID_file_Submit_Source.ext:</div>
         <ul class="mb-0">
             {% for name in preview.invalid_files %}
@@ -37,7 +37,7 @@
 {% endif %}
 
 {% if preview.blocking_errors %}
-    <div class="alert alert-danger border cfm-attention">
+    <div class="alert alert-danger border cfm-attention cfm-alert-stack">
         <div class="fw-semibold">Apply is blocked. Fix these upload file problems first:</div>
         <ul class="mb-0">
             {% for error in preview.blocking_errors %}
