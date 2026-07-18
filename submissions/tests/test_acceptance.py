@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import io
+import importlib.util
 import json
 import shutil
 import tempfile
@@ -3214,6 +3215,83 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                     self.assertIn("view=compact", response["Location"])
                 else:
                     self.assertEqual(response.status_code, 200)
+
+    def test_verify_paper_ids_defers_suggestions_for_hidden_rows(self):
+        self.make_master_paper("P001", title="Ready Paper")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="BAD",
+            final_submission_title="Unknown Paper",
+            extracted_title="Unknown Paper",
+            paper_id_verified=False,
+            verification_status="pending",
+        )
+
+        with patch(
+            "submissions.services.verification.best_title_match",
+            side_effect=AssertionError("Hidden rows should not calculate suggestions."),
+        ):
+            response = self.client.get(
+                reverse("submissions:verify_paper_ids"), {"filter": "identical"}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Final ID 10")
+        self.assertNotContains(response, "Final ID 20")
+
+    def test_docker_rebuild_script_infers_existing_instance_settings(self):
+        script_path = (
+            Path(django_settings.BASE_DIR) / "scripts" / "rebuild_docker_instances.py"
+        )
+        spec = importlib.util.spec_from_file_location("docker_rebuild", script_path)
+        docker_rebuild = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker_rebuild)
+        container = {
+            "Name": "/sms-conf-a-web-1",
+            "Config": {
+                "Labels": {
+                    "com.docker.compose.project": "sms-conf-a",
+                    "com.docker.compose.project.working_dir": str(
+                        django_settings.BASE_DIR
+                    ),
+                    "com.docker.compose.service": "web",
+                },
+                "Env": [
+                    "SMS_SECRET_KEY=secret",
+                    "SMS_DEBUG=1",
+                    "SMS_ALLOWED_HOSTS=127.0.0.1,localhost",
+                ],
+            },
+            "HostConfig": {
+                "PortBindings": {
+                    "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "9000"}]
+                }
+            },
+            "Mounts": [
+                {"Destination": "/app/data", "Source": "/srv/sms/conf-a"},
+                {"Destination": "/app", "Source": str(django_settings.BASE_DIR)},
+            ],
+            "State": {"Running": True},
+        }
+
+        instances = docker_rebuild.matching_instances(
+            [container], Path(django_settings.BASE_DIR), set()
+        )
+
+        self.assertEqual(len(instances), 1)
+        self.assertEqual(instances[0]["project"], "sms-conf-a")
+        self.assertEqual(instances[0]["sms_bind_host"], "127.0.0.1")
+        self.assertEqual(instances[0]["sms_port"], "9000")
+        self.assertEqual(instances[0]["sms_data_dir"], "/srv/sms/conf-a")
+        self.assertEqual(instances[0]["env"]["SMS_ALLOWED_HOSTS"], "127.0.0.1,localhost")
 
     def test_final_submission_batch_upload_limit_is_documented(self):
         self.assertEqual(django_settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5000)

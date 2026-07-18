@@ -49,6 +49,12 @@ The Docker entrypoint creates the standard `data/...` folders, runs migrations
 unless `SMS_RUN_MIGRATIONS=0`, and starts Django on `0.0.0.0:8000` inside the
 container. It does not change publication file selection rules.
 
+After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
+existing Compose `web` container created from this checkout. It reads Docker
+labels, the published host port, the `/app/data` bind mount, and SMS environment
+variables from the existing container, then runs `docker compose up -d --build`
+with the same project name. Use `--dry-run` to inspect the inferred settings.
+
 ## Regression Commands
 
 Run these before finishing code changes:

@@ -179,16 +179,14 @@ def title_diff_html(initial_title, final_title):
 
 
 def best_title_match(final_title, papers=None):
-    scored = []
+    best_score = None
+    best_paper = None
     for paper in papers if papers is not None else InitialPaper.objects.all():
         score = title_similarity(final_title, paper.title)
-        if score is not None:
-            scored.append((score, paper))
-    if not scored:
-        return None, None
-    scored.sort(key=lambda item: item[0], reverse=True)
-    score, paper = scored[0]
-    return paper, score
+        if score is not None and (best_score is None or score > best_score):
+            best_score = score
+            best_paper = paper
+    return best_paper, best_score
 
 
 def evaluate_submission(
@@ -196,6 +194,8 @@ def evaluate_submission(
     save=False,
     initial_paper_by_id=None,
     paper_candidates=None,
+    include_display_details=True,
+    include_suggestion=True,
 ):
     if submission.excluded_from_publication:
         status = "invalid_paper_id"
@@ -221,9 +221,14 @@ def evaluate_submission(
                     "updated_at",
                 ]
             )
+        display_details = _verification_display_details(
+            submission,
+            initial,
+            include_display_details=include_display_details,
+        )
         return {
             "submission": submission,
-            "publication_pdf": publication_pdf_info(submission),
+            "publication_pdf": display_details["publication_pdf"],
             "initial_paper": initial,
             "suggested_paper": suggested_paper,
             "suggested_score": suggested_score,
@@ -234,12 +239,8 @@ def evaluate_submission(
             "is_verified": False,
             "verified_with_diff": False,
             "needs_verification": False,
-            "final_title_diff_html": title_diff_html(
-                initial.title if initial else "", submission.final_submission_title
-            ),
-            "final_authors_diff_html": text_diff_html(
-                initial.authors if initial else "", submission.final_submission_authors
-            ),
+            "final_title_diff_html": display_details["final_title_diff_html"],
+            "final_authors_diff_html": display_details["final_authors_diff_html"],
         }
 
     initial = (
@@ -247,9 +248,11 @@ def evaluate_submission(
         if initial_paper_by_id is not None
         else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
     )
-    suggested_paper, suggested_score = best_title_match(
-        submission.final_submission_title, paper_candidates
-    ) if not initial else (None, None)
+    suggested_paper, suggested_score = (
+        best_title_match(submission.final_submission_title, paper_candidates)
+        if include_suggestion and not initial
+        else (None, None)
+    )
 
     if not submission.paper_id_filled or not initial:
         status = "invalid_paper_id"
@@ -284,9 +287,10 @@ def evaluate_submission(
                 status = "verified"
                 message = f"Paper ID manually verified; title differs from {initial.paper_id} ({score}%)."
             else:
-                suggested_paper, suggested_score = best_title_match(
-                    submission.final_submission_title, paper_candidates
-                )
+                if include_suggestion:
+                    suggested_paper, suggested_score = best_title_match(
+                        submission.final_submission_title, paper_candidates
+                    )
                 status = "title_mismatch"
                 if suggested_paper and suggested_paper.paper_id != initial.paper_id:
                     message = (
@@ -324,10 +328,15 @@ def evaluate_submission(
     is_verified = bool(submission.paper_id_verified or (status == "verified" and is_identical))
     verified_with_diff = bool(is_verified and not is_identical)
     needs_verification = not is_verified
+    display_details = _verification_display_details(
+        submission,
+        initial,
+        include_display_details=include_display_details,
+    )
 
     return {
         "submission": submission,
-        "publication_pdf": publication_pdf_info(submission),
+        "publication_pdf": display_details["publication_pdf"],
         "initial_paper": initial,
         "suggested_paper": suggested_paper,
         "suggested_score": suggested_score,
@@ -338,6 +347,20 @@ def evaluate_submission(
         "is_verified": is_verified,
         "verified_with_diff": verified_with_diff,
         "needs_verification": needs_verification,
+        "final_title_diff_html": display_details["final_title_diff_html"],
+        "final_authors_diff_html": display_details["final_authors_diff_html"],
+    }
+
+
+def _verification_display_details(submission, initial, *, include_display_details):
+    if not include_display_details:
+        return {
+            "publication_pdf": None,
+            "final_title_diff_html": "",
+            "final_authors_diff_html": "",
+        }
+    return {
+        "publication_pdf": publication_pdf_info(submission),
         "final_title_diff_html": title_diff_html(
             initial.title if initial else "", submission.final_submission_title
         ),
@@ -486,10 +509,23 @@ def unverify_submission(submission):
     return result
 
 
-def verification_rows(queryset=None):
+def verification_rows(
+    queryset=None,
+    *,
+    include_display_details=True,
+    include_suggestion=True,
+    paper_candidates=None,
+    initial_paper_by_id=None,
+):
     queryset = queryset or FinalSubmission.objects.all()
-    paper_candidates = list(InitialPaper.objects.all())
-    initial_paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
+    paper_candidates = (
+        list(InitialPaper.objects.all()) if paper_candidates is None else paper_candidates
+    )
+    initial_paper_by_id = (
+        {paper.paper_id: paper for paper in paper_candidates}
+        if initial_paper_by_id is None
+        else initial_paper_by_id
+    )
     rows = []
     for submission in queryset.select_related():
         result = evaluate_submission(
@@ -497,9 +533,33 @@ def verification_rows(queryset=None):
             save=False,
             initial_paper_by_id=initial_paper_by_id,
             paper_candidates=paper_candidates,
+            include_display_details=include_display_details,
+            include_suggestion=include_suggestion,
         )
         rows.append(result)
     return sorted(rows, key=verification_sort_key)
+
+
+def hydrate_verification_rows(rows, *, paper_candidates=None, initial_paper_by_id=None):
+    paper_candidates = (
+        list(InitialPaper.objects.all()) if paper_candidates is None else paper_candidates
+    )
+    initial_paper_by_id = (
+        {paper.paper_id: paper for paper in paper_candidates}
+        if initial_paper_by_id is None
+        else initial_paper_by_id
+    )
+    return [
+        evaluate_submission(
+            row["submission"],
+            save=False,
+            initial_paper_by_id=initial_paper_by_id,
+            paper_candidates=paper_candidates,
+            include_display_details=True,
+            include_suggestion=True,
+        )
+        for row in rows
+    ]
 
 
 def verification_sort_key(row):

@@ -88,6 +88,19 @@ git pull
 docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
 ```
 
+If several conference containers already exist for this checkout, rebuild and
+restart all of them from their current Docker settings:
+
+```bash
+python3 scripts/rebuild_docker_instances.py
+```
+
+Preview what will be rebuilt without changing containers:
+
+```bash
+python3 scripts/rebuild_docker_instances.py --dry-run
+```
+
 The source checkout is bind-mounted into the container, so a plain restart is
 often enough for code-only changes. Use `up -d --build` for the normal update
 path because it also refreshes the image when `requirements.txt` or Docker

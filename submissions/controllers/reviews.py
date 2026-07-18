@@ -117,6 +117,7 @@ from submissions.services import reports
 from submissions.services.audit import audit_failure, audit_success
 from submissions.services.verification import (
     evaluate_submission,
+    hydrate_verification_rows,
     mark_not_publishing,
     unverify_submission,
     undo_not_publishing,
@@ -363,7 +364,15 @@ def verify_paper_ids(request):
             messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "verify_paper_ids"))
 
-    all_rows = verification_rows(submissions)
+    paper_candidates = list(InitialPaper.objects.all())
+    initial_paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
+    all_rows = verification_rows(
+        submissions,
+        include_display_details=False,
+        include_suggestion=False,
+        paper_candidates=paper_candidates,
+        initial_paper_by_id=initial_paper_by_id,
+    )
     counts = {
         "all": len(all_rows),
         "needs_verification": sum(1 for row in all_rows if row["needs_verification"]),
@@ -397,6 +406,11 @@ def verify_paper_ids(request):
     else:
         current_filter = "all"
         rows = all_rows
+    rows = hydrate_verification_rows(
+        rows,
+        paper_candidates=paper_candidates,
+        initial_paper_by_id=initial_paper_by_id,
+    )
 
     focused_context = None
     if focused_submission:
@@ -420,7 +434,7 @@ def verify_paper_ids(request):
         "submissions/verify_paper_ids.html",
         {
             "rows": rows,
-            "papers": InitialPaper.objects.all(),
+            "papers": paper_candidates,
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,
