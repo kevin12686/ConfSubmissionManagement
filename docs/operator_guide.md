@@ -134,6 +134,9 @@ Old Versions is version history. Not Publishing is a publication decision.
 ## Final Publication Version Rules
 
 The Paper Master List is the publication scope. A final submission is publication-relevant only when its Paper ID is in Paper Master List, it is not discarded, and it is not marked Not Publishing.
+When the active final is marked Not Publishing, Organized List omits that Paper Master
+row instead of reporting a missing final; inactive replaced versions remain history and
+are never restored as publication candidates.
 
 Active version selection is per Paper ID:
 

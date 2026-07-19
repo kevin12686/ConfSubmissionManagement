@@ -13,9 +13,9 @@ from django.utils import timezone
 from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
-from submissions.services.import_export import _mark_duplicate_submissions, classify_uploaded_file
+from submissions.services.import_export import classify_uploaded_file
 from submissions.services.import_preview import _reset_pdf_dependent_state, _reset_source_dependent_state
-from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.recompute import recompute_active_and_duplicate_state
 from submissions.services.file_manager import sanitize_filename_part
 from submissions.services.text_utils import clean_note_text
 from submissions.services.verification import build_title_guard_context, titles_identical
@@ -344,8 +344,7 @@ def create_editor_submission(
         "Editor-uploaded PDF needs Process PDFs.",
     )
     submission.save()
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     submission.refresh_from_db()
     audit_success(
         "editor_upload_create",
@@ -387,8 +386,7 @@ def discard_submission(submission, notes):
             "updated_at",
         ]
     )
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     audit_success(
         "discard_submission",
         "Final submission version discarded.",
@@ -404,8 +402,7 @@ def undo_discard_submission(submission):
     submission.discard_notes = ""
     submission.discarded_at = None
     submission.save(update_fields=["discarded", "discard_notes", "discarded_at", "updated_at"])
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     audit_success(
         "undo_discard_submission",
         "Final submission discard undone.",

@@ -34,6 +34,21 @@ Core route groups:
 
 The split supports gradual refactoring. Reads can move to state models one workflow at a time, but writes must stay synchronized until legacy fields are fully retired.
 
+State persistence is centralized in
+`submissions/services/final_submission_state.py`. Its domain mapping is the
+single definition of how compatibility fields populate Identity, File, Review,
+Publication, and Plagiarism state rows. Normal `FinalSubmission.save()` calls
+upsert only affected domains. Full repair/restore synchronization performs bulk
+upserts, and database-heavy workflows use the same service for bulk main-table
+updates plus matching state upserts.
+
+Do not call `FinalSubmission.objects.bulk_update()` directly for mirrored
+fields. Use `bulk_update_submissions()` so derived review fields, timestamps,
+and mirror rows remain synchronized in one transaction. Short import workflows
+may defer mirror writes inside an outer transaction. Long PDF, file, or remote
+service loops flush bounded batches so SQLite is not locked for the duration of
+external processing.
+
 ## Workflow Rules
 
 - Paper Master List is the publication scope.
@@ -65,7 +80,7 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Final Submission Edit separates editable identity/metadata/files/plagiarism data from a read-only workflow summary. Its normal Save form is structurally separate from the collapsed bottom version-action danger-zone form. Discard and undo continue to call the existing audited service; Not Publishing remains owned by its dedicated workflow.
 - Formatting Review exposes a compact queue plus a full Single Paper Mode. Queue rows show publication file/status context before expansion, Bootstrap's shared parent keeps one paper expanded at a time, and HTMX enhances GET-only filter/search navigation without owning workflow state.
 - Process PDFs deliberately keeps complete page-thumbnail strips expanded. Search and `Needs processing / Page issues / Processed / All` filters narrow papers only; paper jump, sticky identity headers, fixed thumbnail geometry, lazy image loading, and the enlarged preview modal do not change processing scope.
-- Organized List separates current-view publication blockers from tracked information and uses stable table columns. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
+- Organized List separates current-view publication blockers from tracked information and uses stable table columns. Paper Master rows whose active final is Not Publishing are omitted from this publication-current view, while replaced versions remain inactive history. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
 - Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.
 - `Review OK` is the single Title/Author completion decision. The Final-versus-extracted title comparison remains visible evidence; a reviewed difference is tracked but does not create a second blocker.
 
@@ -95,6 +110,12 @@ Current active-version selection is implemented in `submissions/services/pdf_pro
    - `final_id`: numeric/natural Final ID sort.
    - `upload_date`: upload date, with Final ID sort as tie-breaker.
 7. State mirror tables and `PaperAuthor` cache are refreshed after active selection.
+
+Workflows that also recalculate duplicate/replaced status call
+`recompute_active_and_duplicate_state()`. It computes both values in memory,
+bulk-updates the compatibility table, bulk-syncs only Identity state, and
+rebuilds the author cache once. Publication scope and Editor Upload priority
+are unchanged.
 
 Publication file resolution is implemented in `submissions/services/file_manager.py`.
 

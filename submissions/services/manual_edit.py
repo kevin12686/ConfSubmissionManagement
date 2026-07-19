@@ -12,7 +12,6 @@ from submissions.services.checks import (
     reset_plagiarism_exceptions,
 )
 from submissions.services.file_manager import resolve_folder, sanitize_filename_part
-from submissions.services.import_export import _mark_duplicate_submissions
 from submissions.services.import_preview import (
     _archive_and_unlink_corrected_files,
     _clear_title_author_manual_override,
@@ -20,7 +19,7 @@ from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
 )
-from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.recompute import recompute_active_and_duplicate_state
 from submissions.services.title_author_extraction import evaluate_extracted_title_match
 from submissions.services.verification import evaluate_submission, title_similarity, titles_identical
 
@@ -383,8 +382,7 @@ def create_final_submission_manual(form, report_file=None):
     obj.save()
     _set_saved_file_paths(obj, pdf_uploaded, source_uploaded)
     evaluate_submission(obj, save=True)
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     summary["active_versions_recalculated"] = True
     obj.refresh_from_db()
 
@@ -527,8 +525,7 @@ def apply_final_submission_manual_edit(_submission, form, report_file=None):
         evaluate_submission(obj, save=True)
 
     if active_version_needs_update:
-        determine_active_versions()
-        _mark_duplicate_submissions()
+        recompute_active_and_duplicate_state()
         summary["active_versions_recalculated"] = True
         obj.refresh_from_db()
 

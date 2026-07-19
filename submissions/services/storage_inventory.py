@@ -22,6 +22,7 @@ from submissions.services.file_manager import (
     title_short_name,
 )
 from submissions.services.audit import audit_failure, audit_preview, audit_success
+from submissions.services.final_submission_state import bulk_update_submissions
 
 
 CLEANUP_CONFIRMATION_TEXT = "CLEAN STORAGE"
@@ -644,6 +645,7 @@ def repair_publication_paths(force=False):
     pdf_repaired = []
     source_repaired = []
     skipped = []
+    pending_updates = {}
     for submission in FinalSubmission.objects.all():
         source = source_pdf_path(submission)
         if source:
@@ -663,7 +665,7 @@ def repair_publication_paths(force=False):
                 copied = target
             if copied and copied.exists():
                 submission.current_file_path = str(copied)
-                submission.save(update_fields=["current_file_path", "updated_at"])
+                pending_updates[submission.pk] = submission
                 pdf_repaired.append(
                     {
                         "final_submission_id": submission.final_submission_id,
@@ -693,7 +695,7 @@ def repair_publication_paths(force=False):
         source_path = _current_source_path(submission)
         if source_path and (force or not source_current or not source_current.exists()):
             submission.source_current_file_path = str(source_path)
-            submission.save(update_fields=["source_current_file_path", "updated_at"])
+            pending_updates[submission.pk] = submission
             source_repaired.append(
                 {
                     "final_submission_id": submission.final_submission_id,
@@ -709,6 +711,17 @@ def repair_publication_paths(force=False):
                     "message": "No source manuscript is available.",
                 }
             )
+        if len(pending_updates) >= 100:
+            bulk_update_submissions(
+                pending_updates.values(),
+                ["current_file_path", "source_current_file_path"],
+            )
+            pending_updates.clear()
+    if pending_updates:
+        bulk_update_submissions(
+            pending_updates.values(),
+            ["current_file_path", "source_current_file_path"],
+        )
     repaired = pdf_repaired + source_repaired
     return {
         "repaired": repaired,

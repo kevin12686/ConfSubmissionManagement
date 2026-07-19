@@ -662,9 +662,19 @@ def organized_list_rows(
     active_by_paper_id = {}
     for submission in active_submissions:
         active_by_paper_id.setdefault(submission.paper_id_filled, submission)
+    excluded_paper_ids = set(
+        FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=True,
+            paper_id_filled__in=valid_paper_ids,
+        ).values_list("paper_id_filled", flat=True)
+    )
 
     rows = []
     for paper in papers:
+        if paper.paper_id in excluded_paper_ids:
+            continue
         submission = active_by_paper_id.get(paper.paper_id)
         page_label, page_level = _page_status(submission, settings_obj)
         verify_label, verify_level = _verification_status(submission, paper)

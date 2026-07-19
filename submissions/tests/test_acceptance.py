@@ -808,6 +808,12 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
 
 
 class SystemStateTests(EditorialAcceptanceTestCase):
+    def setUp(self):
+        super().setUp()
+        self.base_dir_override = override_settings(BASE_DIR=self.root.resolve())
+        self.base_dir_override.enable()
+        self.addCleanup(self.base_dir_override.disable)
+
     def test_system_state_restore_round_trips_settings_records_and_files(self):
         settings_obj = AppSetting.load()
         settings_obj.conference_name = "DSA 2026"
@@ -2319,6 +2325,9 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         categories = {row["category"] for row in publication_readiness_rows()}
         self.assertNotIn("Missing Final Submission", categories)
         self.assertEqual(dashboard_counts()["missing_final_submissions"], 0)
+        organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+        self.assertNotContains(organized, "Ready Paper")
+        self.assertContains(organized, "Publishing Paper")
         zip_path = export_publication_package()
         with zipfile.ZipFile(zip_path) as archive:
             self.assertIn("PDF/P002-Publishing Paper.pdf", archive.namelist())
@@ -2326,6 +2335,58 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
 
         undo_not_publishing(excluded)
         self.assert_publication_blocked("Unverified Paper ID")
+
+    def test_not_publishing_latest_replacement_does_not_resurrect_old_version_or_show_no_final(self):
+        self.make_master_paper("P001", "Withdrawn Replacement", "Ada")
+        self.make_master_paper("P002", "Publishing Paper", "Grace")
+        old = self.make_final_submission(
+            final_submission_id="100",
+            paper_id_filled="P001",
+            final_submission_title="Withdrawn Replacement",
+            extracted_title="Withdrawn Replacement",
+        )
+        latest = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Withdrawn Replacement",
+            extracted_title="Withdrawn Replacement",
+        )
+        included = self.make_final_submission(
+            final_submission_id="200",
+            paper_id_filled="P002",
+            final_submission_title="Publishing Paper",
+            extracted_title="Publishing Paper",
+            final_submission_authors="Grace Hopper",
+            extracted_authors="Grace Hopper",
+        )
+        determine_active_versions()
+        _mark_duplicate_submissions()
+        mark_not_publishing(latest, "withdrawn", "Latest replacement withdrawn.")
+
+        old.refresh_from_db()
+        latest.refresh_from_db()
+        self.assertFalse(old.active_version)
+        self.assertTrue(latest.active_version)
+        self.assertTrue(latest.excluded_from_publication)
+        self.assertNotIn(
+            "Missing Final Submission",
+            {row["category"] for row in publication_readiness_rows()},
+        )
+
+        organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
+        self.assertNotContains(organized, "Withdrawn Replacement")
+        self.assertNotContains(organized, "No final")
+        self.assertContains(organized, "Publishing Paper")
+
+        zip_path = export_publication_package()
+        with zipfile.ZipFile(zip_path) as archive:
+            names = archive.namelist()
+            self.assertIn("PDF/P002-Publishing Paper.pdf", names)
+            self.assertNotIn("PDF/P001-Withdrawn Replacement.pdf", names)
+            manifest_name = next(name for name in names if name.startswith("publication_manifest_"))
+            manifest = archive.read(manifest_name).decode("utf-8-sig")
+            self.assertIn(included.paper_id_filled, manifest)
+            self.assertNotIn(latest.paper_id_filled, manifest)
 
     def test_every_core_readiness_blocker_blocks_publication(self):
         cases = [

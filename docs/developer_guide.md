@@ -105,8 +105,32 @@ Put reusable workflow behavior in services:
 - Storage cleanup: `storage_inventory.py`.
 - Backup/restore: `system_state.py`.
 - Audit logging: `audit.py`.
+- Final Submission state persistence and batch writes:
+  `final_submission_state.py`.
+- Active/duplicate derived-state coordination: `recompute.py`.
 
 Do not put processing or integration logic directly in views.
+
+## Final Submission Write Rules
+
+`FinalSubmission` remains the compatibility source of truth while five
+one-to-one state tables mirror its lifecycle domains.
+
+- Keep all compatibility-to-state field mappings in
+  `submissions/services/final_submission_state.py`.
+- Ordinary model saves use the model `save()` path, which performs
+  domain-aware state upserts.
+- For several existing submissions, use `bulk_update_submissions()` instead of
+  direct `bulk_update()`. It preserves derived review fields, timestamps, and
+  state rows in one transaction.
+- Use `sync_all_submission_state_records()` for repair/restore and specify
+  domain keys when a workflow changed only one lifecycle domain.
+- Use `defer_submission_state_sync()` only inside a short outer transaction.
+  Long PDF, file, or remote-service loops must flush bounded batches.
+- Use `recompute_active_and_duplicate_state()` whenever both active and
+  duplicate/replaced values may change.
+- Bulk APIs bypass model signals by design. Every new mirrored field must be
+  added to the central mapping; mapping-coverage tests enforce this contract.
 
 Organized List may expose paper-level exception actions, but it must reuse `exceptions.py` row builders and approve/remove services. Do not duplicate page/author/plagiarism exception validity rules in templates or controllers. Author paper-count exceptions remain author-level and belong in Author Count / Exceptions, not a single paper row.
 

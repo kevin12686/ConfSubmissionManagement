@@ -1,20 +1,25 @@
 import hashlib
 import re
 import shutil
+from collections import defaultdict
 from pathlib import Path
 
 import fitz
 from django.conf import settings as django_settings
 from django.db import transaction
+from django.utils import timezone
 from pypdf import PdfReader
 
 from submissions.models import (
     AppSetting,
     FinalSubmission,
     InitialPaper,
-    sync_final_submission_state_records,
 )
 from submissions.services.checks import reset_page_limit_exception
+from submissions.services.final_submission_state import (
+    bulk_update_submissions,
+    sync_all_submission_state_records,
+)
 from submissions.services.file_manager import (
     sanitize_filename_part,
     source_pdf_path,
@@ -93,60 +98,89 @@ def final_submission_sort_key(submission):
     return numeric_value, natural_parts, submission.created_at
 
 
-def determine_active_versions():
+def determine_active_versions(*, sync_state_records=True, rebuild_authors=True):
     setting = AppSetting.load()
-    with transaction.atomic():
-        FinalSubmission.objects.update(active_version=False)
-        paper_ids = (
-            FinalSubmission.objects.filter(discarded=False)
-            .exclude(paper_id_filled="")
-            .order_by()
-            .values_list("paper_id_filled", flat=True)
-            .distinct()
-        )
-        for paper_id in paper_ids:
-            submissions = list(
-                FinalSubmission.objects.filter(paper_id_filled=paper_id, discarded=False)
-            )
-            editor_submissions = [
-                submission
-                for submission in submissions
-                if submission.submission_origin == "editor_upload"
-            ]
-            candidate_submissions = editor_submissions or submissions
-            if setting.active_version_rule == "upload_date":
-                newest = max(
+    grouped_submissions = defaultdict(list)
+    for submission in FinalSubmission.objects.filter(discarded=False).exclude(
+        paper_id_filled=""
+    ):
+        grouped_submissions[submission.paper_id_filled].append(submission)
+    active_ids = []
+    for submissions in grouped_submissions.values():
+        editor_submissions = [
+            submission
+            for submission in submissions
+            if submission.submission_origin == "editor_upload"
+        ]
+        candidate_submissions = editor_submissions or submissions
+        if setting.active_version_rule == "upload_date":
+            newest = (
+                max(
                     candidate_submissions,
                     key=lambda submission: (
                         submission.upload_date,
                         final_submission_sort_key(submission),
                     ),
-                ) if candidate_submissions else None
-            else:
-                newest = (
-                    max(candidate_submissions, key=final_submission_sort_key)
-                    if candidate_submissions
-                    else None
                 )
-            if newest:
-                newest.active_version = True
-                newest.save(update_fields=["active_version", "updated_at"])
-    sync_final_submission_state_records()
-    from submissions.services.checks import rebuild_paper_authors
+                if candidate_submissions
+                else None
+            )
+        else:
+            newest = (
+                max(candidate_submissions, key=final_submission_sort_key)
+                if candidate_submissions
+                else None
+            )
+        if newest:
+            active_ids.append(newest.pk)
 
-    rebuild_paper_authors()
+    with transaction.atomic():
+        FinalSubmission.objects.update(active_version=False)
+        if active_ids:
+            FinalSubmission.objects.filter(pk__in=active_ids).update(
+                active_version=True,
+                updated_at=timezone.now(),
+            )
+    if sync_state_records:
+        sync_all_submission_state_records(domain_keys={"identity"})
+    if rebuild_authors:
+        from submissions.services.checks import rebuild_paper_authors
+
+        rebuild_paper_authors()
 
 
 def _thumbnail_folder_ready(submission):
     return bool(submission.thumbnail_folder and Path(submission.thumbnail_folder).exists())
 
 
-def process_submission_pdf(submission, force=False):
+PDF_PROCESSING_UPDATE_FIELDS = [
+    "page_count",
+    "page_limit_exception_approved",
+    "page_limit_exception_reason",
+    "page_limit_exception_page_count",
+    "page_limit_exception_approved_at",
+    "pdf_hash",
+    "processing_status",
+    "processing_message",
+    "thumbnail_folder",
+    "thumbnail_status",
+    "thumbnail_message",
+]
+
+
+def process_submission_pdf(submission, force=False, *, save=True):
     path = source_pdf_path(submission)
     if not path:
         submission.processing_status = "error"
         submission.processing_message = "Missing PDF file."
-        submission.save(update_fields=["processing_status", "processing_message", "updated_at"])
+        if save:
+            submission.save(
+                update_fields=[
+                    "processing_status",
+                    "processing_message",
+                    "updated_at",
+                ]
+            )
         return False
 
     try:
@@ -171,37 +205,26 @@ def process_submission_pdf(submission, force=False):
         submission.thumbnail_folder = str(thumbnail_dir)
         submission.thumbnail_status = "processed"
         submission.thumbnail_message = "PDF thumbnails generated."
-        submission.save(
-            update_fields=[
-                "page_count",
-                "page_limit_exception_approved",
-                "page_limit_exception_reason",
-                "page_limit_exception_page_count",
-                "page_limit_exception_approved_at",
-                "pdf_hash",
-                "processing_status",
-                "processing_message",
-                "thumbnail_folder",
-                "thumbnail_status",
-                "thumbnail_message",
-                "updated_at",
-            ]
-        )
+        if save:
+            submission.save(
+                update_fields=PDF_PROCESSING_UPDATE_FIELDS + ["updated_at"]
+            )
         return True
     except Exception as exc:
         submission.processing_status = "error"
         submission.processing_message = f"PDF processing failed: {exc}"
         submission.thumbnail_status = "error"
         submission.thumbnail_message = f"Thumbnail generation failed: {exc}"
-        submission.save(
-            update_fields=[
-                "processing_status",
-                "processing_message",
-                "thumbnail_status",
-                "thumbnail_message",
-                "updated_at",
-            ]
-        )
+        if save:
+            submission.save(
+                update_fields=[
+                    "processing_status",
+                    "processing_message",
+                    "thumbnail_status",
+                    "thumbnail_message",
+                    "updated_at",
+                ]
+            )
         return False
 
 
@@ -224,22 +247,44 @@ def process_all_pdfs(force=False):
             excluded_from_publication=False,
             paper_id_filled__in=InitialPaper.objects.values("paper_id"),
         )
-        for submission in publication_submissions:
-            result = process_submission_pdf(submission, force=force)
-            if result is True:
-                processed += 1
-            elif result is None:
-                skipped += 1
-            else:
-                errors += 1
-                error_rows.append(
-                    {
-                        "final_submission_id": submission.final_submission_id,
-                        "paper_id": submission.paper_id_filled,
-                        "author_entered_id": submission.start2_paper_id_raw,
-                        "message": submission.processing_message or "Unknown processing error.",
-                    }
+        pending_updates = []
+
+        def flush_pending_updates():
+            updates = list(pending_updates)
+            pending_updates.clear()
+            if updates:
+                bulk_update_submissions(
+                    updates,
+                    PDF_PROCESSING_UPDATE_FIELDS,
                 )
+
+        try:
+            for submission in publication_submissions:
+                result = process_submission_pdf(
+                    submission,
+                    force=force,
+                    save=False,
+                )
+                if result is True:
+                    processed += 1
+                    pending_updates.append(submission)
+                elif result is None:
+                    skipped += 1
+                else:
+                    errors += 1
+                    pending_updates.append(submission)
+                    error_rows.append(
+                        {
+                            "final_submission_id": submission.final_submission_id,
+                            "paper_id": submission.paper_id_filled,
+                            "author_entered_id": submission.start2_paper_id_raw,
+                            "message": submission.processing_message or "Unknown processing error.",
+                        }
+                    )
+                if len(pending_updates) >= 100:
+                    flush_pending_updates()
+        finally:
+            flush_pending_updates()
         debug_result = sync_debug_publication_files()
         result = {
             "processed": processed,

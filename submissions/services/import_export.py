@@ -1,22 +1,27 @@
+from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
+from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import (
     AppSetting,
     FinalSubmission,
     InitialPaper,
-    sync_final_submission_state_records,
 )
 from submissions.services.checks import clean_identifier, resolve_official_paper_id
+from submissions.services.final_submission_state import (
+    defer_submission_state_sync,
+    sync_all_submission_state_records,
+)
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
     publication_pdf_info,
     publication_source_info,
 )
-from submissions.services.pdf_processor import determine_active_versions, final_submission_sort_key
+from submissions.services.pdf_processor import final_submission_sort_key
 from submissions.services.text_utils import clean_note_text
 
 
@@ -149,6 +154,8 @@ def import_initial_papers(uploaded_file):
     return _import_initial_frame(frame)
 
 
+@transaction.atomic
+@defer_submission_state_sync()
 def import_final_submissions(uploaded_file, submission_files=None):
     if is_excel_file(uploaded_file):
         if hasattr(uploaded_file, "seek"):
@@ -205,8 +212,9 @@ def import_final_submissions(uploaded_file, submission_files=None):
             attached_sources += 1
         created += int(was_created)
         updated += int(not was_created)
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    from submissions.services.recompute import recompute_active_and_duplicate_state
+
+    recompute_active_and_duplicate_state()
     evaluate_imported_submissions()
     return {
         "created": created,
@@ -216,6 +224,8 @@ def import_final_submissions(uploaded_file, submission_files=None):
     }
 
 
+@transaction.atomic
+@defer_submission_state_sync()
 def import_mapping_workbook(uploaded_file):
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
@@ -270,8 +280,9 @@ def import_mapping_workbook(uploaded_file):
         created += int(was_created)
         updated += int(not was_created)
 
-    determine_active_versions()
-    duplicate_count = _mark_duplicate_submissions()
+    from submissions.services.recompute import recompute_active_and_duplicate_state
+
+    duplicate_count = recompute_active_and_duplicate_state()
     evaluate_imported_submissions()
     return {
         "created": created,
@@ -308,31 +319,26 @@ def _import_initial_frame(frame):
     return {"created": created, "updated": updated}
 
 
-def _mark_duplicate_submissions():
+def _mark_duplicate_submissions(*, sync_state_records=True):
     setting = AppSetting.load()
-    duplicate_count = 0
-    FinalSubmission.objects.update(duplicate_submission=False)
-    for paper_id in (
-        FinalSubmission.objects.filter(discarded=False)
-        .exclude(paper_id_filled="")
-        .order_by()
-        .values_list("paper_id_filled", flat=True)
-        .distinct()
+    grouped_submissions = defaultdict(list)
+    for submission in FinalSubmission.objects.filter(discarded=False).exclude(
+        paper_id_filled=""
     ):
-        submissions = list(
-            FinalSubmission.objects.filter(paper_id_filled=paper_id, discarded=False)
-        )
+        grouped_submissions[submission.paper_id_filled].append(submission)
+    duplicate_ids = set()
+    for submissions in grouped_submissions.values():
         editor_submissions = [
             submission
             for submission in submissions
             if submission.submission_origin == "editor_upload"
         ]
         if editor_submissions:
-            for submission in submissions:
-                if submission.submission_origin == "start2":
-                    submission.duplicate_submission = True
-                    submission.save(update_fields=["duplicate_submission", "updated_at"])
-                    duplicate_count += 1
+            duplicate_ids.update(
+                submission.pk
+                for submission in submissions
+                if submission.submission_origin == "start2"
+            )
             submissions = editor_submissions
         if setting.active_version_rule == "upload_date":
             submissions.sort(
@@ -343,12 +349,17 @@ def _mark_duplicate_submissions():
             )
         else:
             submissions.sort(key=final_submission_sort_key)
-        for submission in submissions[:-1]:
-            submission.duplicate_submission = True
-            submission.save(update_fields=["duplicate_submission", "updated_at"])
-            duplicate_count += 1
-    sync_final_submission_state_records()
-    return duplicate_count
+        duplicate_ids.update(submission.pk for submission in submissions[:-1])
+
+    FinalSubmission.objects.update(duplicate_submission=False)
+    if duplicate_ids:
+        FinalSubmission.objects.filter(pk__in=duplicate_ids).update(
+            duplicate_submission=True,
+            updated_at=timezone.now(),
+        )
+    if sync_state_records:
+        sync_all_submission_state_records(domain_keys={"identity"})
+    return len(duplicate_ids)
 
 
 def _build_submission_file_lookup(submission_files):
@@ -442,17 +453,9 @@ def _attach_source(submission, source_file):
 
 
 def evaluate_imported_submissions():
-    from submissions.services.verification import evaluate_submission
+    from submissions.services.verification import evaluate_submissions_bulk
 
-    paper_candidates = list(InitialPaper.objects.all())
-    initial_paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
-    for submission in FinalSubmission.objects.all():
-        evaluate_submission(
-            submission,
-            save=True,
-            initial_paper_by_id=initial_paper_by_id,
-            paper_candidates=paper_candidates,
-        )
+    return evaluate_submissions_bulk()
 
 
 def submissions_to_frame(queryset):

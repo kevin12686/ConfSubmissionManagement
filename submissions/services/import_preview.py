@@ -28,8 +28,8 @@ from submissions.services.import_export import (
     parse_submission_file_name,
     read_table,
 )
-from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.audit import audit_failure, audit_preview, audit_success
+from submissions.services.final_submission_state import defer_submission_state_sync
 from submissions.services.text_utils import clean_note_text
 
 
@@ -575,6 +575,7 @@ def apply_import_preview(token, **options):
 
 
 @transaction.atomic
+@defer_submission_state_sync()
 def _apply_initial(payload, notes_policy="preserve_existing_notes"):
     apply_imported_notes = notes_policy == "apply_imported_notes"
     for row in payload["rows"]:
@@ -599,6 +600,7 @@ def _apply_initial(payload, notes_policy="preserve_existing_notes"):
 
 
 @transaction.atomic
+@defer_submission_state_sync()
 def _apply_final(payload):
     for row in payload["rows"]:
         if row.get("skip_apply"):
@@ -644,11 +646,11 @@ def _apply_final(payload):
             _attach_file(submission, file_changes["pdf"], "pdf")
         if file_changes.get("source", {}).get("status") in {"new", "different"}:
             _attach_file(submission, file_changes["source"], "source")
-    determine_active_versions()
-    from submissions.services.import_export import _mark_duplicate_submissions, evaluate_imported_submissions
+    from submissions.services.import_export import evaluate_imported_submissions
     from submissions.services.checks import rebuild_paper_authors
+    from submissions.services.recompute import recompute_active_and_duplicate_state
 
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state(refresh_author_cache=False)
     evaluate_imported_submissions()
     rebuild_paper_authors()
     return payload["stats"]

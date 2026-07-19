@@ -9,8 +9,8 @@ from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_success
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.file_manager import publication_pdf_info
-from submissions.services.import_export import _mark_duplicate_submissions
-from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.final_submission_state import bulk_update_submissions
+from submissions.services.recompute import recompute_active_and_duplicate_state
 
 
 def normalize_title(value):
@@ -352,6 +352,52 @@ def evaluate_submission(
     }
 
 
+def evaluate_submissions_bulk(queryset=None):
+    submissions = list(
+        FinalSubmission.objects.all()
+        if queryset is None
+        else queryset
+    )
+    if not submissions:
+        return 0
+    paper_candidates = list(InitialPaper.objects.all())
+    initial_paper_by_id = {
+        paper.paper_id: paper
+        for paper in paper_candidates
+    }
+    for submission in submissions:
+        result = evaluate_submission(
+            submission,
+            save=False,
+            initial_paper_by_id=initial_paper_by_id,
+            paper_candidates=paper_candidates,
+            include_display_details=False,
+        )
+        submission.verification_status = result["status"]
+        submission.title_match_score = result["score"]
+        submission.verification_message = result["message"]
+        if submission.excluded_from_publication:
+            submission.paper_id_verified = False
+        elif (
+            result["status"] == "verified"
+            and result["is_identical"]
+            and not submission.auto_verify_blocked
+        ):
+            submission.paper_id_verified = True
+            submission.verified_at = submission.verified_at or timezone.now()
+
+    return bulk_update_submissions(
+        submissions,
+        [
+            "verification_status",
+            "title_match_score",
+            "verification_message",
+            "paper_id_verified",
+            "verified_at",
+        ],
+    )
+
+
 def _verification_display_details(submission, initial, *, include_display_details):
     if not include_display_details:
         return {
@@ -396,8 +442,7 @@ def verify_submission(submission, corrected_paper_id=None):
             "updated_at",
         ]
     )
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     result = evaluate_submission(submission, save=True)
     audit_success(
         "verify_paper_id",
@@ -436,8 +481,7 @@ def mark_not_publishing(submission, reason="unpaid", notes=""):
             "updated_at",
         ]
     )
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     result = evaluate_submission(submission, save=True)
     audit_success(
         "mark_not_publishing",
@@ -474,8 +518,7 @@ def undo_not_publishing(submission):
             "updated_at",
         ]
     )
-    determine_active_versions()
-    _mark_duplicate_submissions()
+    recompute_active_and_duplicate_state()
     result = evaluate_submission(submission, save=True)
     audit_success(
         "undo_not_publishing",

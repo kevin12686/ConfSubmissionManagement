@@ -5,12 +5,13 @@ import zipfile
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.audit import audit_failure, audit_success
 from submissions.services.file_manager import publication_pdf_info, resolve_folder
+from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.import_export import clean_value, normalize_columns, read_table, round_percent
 
 
@@ -203,12 +204,14 @@ def _crosscheck_scope_label(scope):
     return "All publication PDFs"
 
 
+@transaction.atomic
 def import_crosscheck_results(uploaded_file):
     try:
         frame = normalize_columns(read_table(uploaded_file))
         updated = 0
         invalid = []
         unmatched = []
+        changed_submissions = []
 
         for index, row in enumerate(frame.to_dict("records"), start=2):
             filename = clean_value(row.get("filename"))
@@ -233,17 +236,18 @@ def import_crosscheck_results(uploaded_file):
             if score_changed and submission.plagiarism_report_path:
                 submission.plagiarism_report_stale = True
             submission.plagiarism_imported_at = timezone.now()
-            submission.save(
-                update_fields=[
-                    "similarity_score",
-                    "single_similarity_score",
-                    "plagiarism_report_stale",
-                    "plagiarism_imported_at",
-                    "updated_at",
-                ]
-            )
+            changed_submissions.append(submission)
             updated += 1
 
+        bulk_update_submissions(
+            changed_submissions,
+            [
+                "similarity_score",
+                "single_similarity_score",
+                "plagiarism_report_stale",
+                "plagiarism_imported_at",
+            ],
+        )
         result = {"updated": updated, "invalid": invalid, "unmatched": unmatched}
         audit_success(
             "crosscheck_result_import",
@@ -261,12 +265,14 @@ def import_crosscheck_results(uploaded_file):
         raise
 
 
+@transaction.atomic
 def upload_crosscheck_reports(files):
     try:
         report_dir = resolve_folder(AppSetting.load().plagiarism_reports_folder)
         updated = 0
         invalid = []
         unmatched = []
+        changed_submissions = []
 
         for file_obj in files:
             filename = Path(getattr(file_obj, "name", "")).name
@@ -286,16 +292,17 @@ def upload_crosscheck_reports(files):
             submission.plagiarism_report_path = str(target)
             submission.plagiarism_report_stale = False
             submission.plagiarism_imported_at = timezone.now()
-            submission.save(
-                update_fields=[
-                    "plagiarism_report_path",
-                    "plagiarism_report_stale",
-                    "plagiarism_imported_at",
-                    "updated_at",
-                ]
-            )
+            changed_submissions.append(submission)
             updated += 1
 
+        bulk_update_submissions(
+            changed_submissions,
+            [
+                "plagiarism_report_path",
+                "plagiarism_report_stale",
+                "plagiarism_imported_at",
+            ],
+        )
         result = {"updated": updated, "invalid": invalid, "unmatched": unmatched}
         audit_success(
             "crosscheck_report_upload",

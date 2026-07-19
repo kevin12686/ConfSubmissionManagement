@@ -63,7 +63,6 @@ from submissions.services.import_export import (
     EXTERNAL_RESULTS_TEMPLATE_COLUMNS,
     FINAL_SUBMISSION_TEMPLATE_COLUMNS,
     INITIAL_PAPER_TEMPLATE_COLUMNS,
-    _mark_duplicate_submissions,
 )
 from submissions.services.import_preview import (
     apply_import_preview,
@@ -105,7 +104,6 @@ from submissions.services.organized_list import (
     organized_list_rows,
 )
 from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
-from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.title_author_extraction import (
     extract_active_title_authors,
     extract_title_author_for_submission,
@@ -278,8 +276,11 @@ def app_settings(request):
         form = AppSettingForm(preview["form_data"], instance=settings_obj)
         if form.is_valid():
             saved_settings = form.save()
-            determine_active_versions()
-            _mark_duplicate_submissions()
+            from submissions.services.recompute import (
+                recompute_active_and_duplicate_state,
+            )
+
+            recompute_active_and_duplicate_state()
             result_report = {
                 **preview["report"],
                 "applied": True,

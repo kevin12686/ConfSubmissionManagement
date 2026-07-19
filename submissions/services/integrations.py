@@ -1,8 +1,10 @@
+from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import FinalSubmission
 from submissions.services.audit import audit_success
 from submissions.services.checks import rebuild_paper_authors, reset_author_number_exception
+from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.import_export import clean_value, normalize_columns, parse_decimal, read_table
 from submissions.services.import_preview import _clear_title_author_manual_override
 
@@ -28,17 +30,21 @@ def find_submission(row):
     return None
 
 
+@transaction.atomic
 def import_external_results(uploaded_file):
     frame = normalize_columns(read_table(uploaded_file))
     updated_title_author = 0
     updated_plagiarism = 0
     unmatched = 0
+    changed_submissions = []
+    changed_by_id = {}
 
     for row in frame.to_dict("records"):
         submission = find_submission(row)
         if not submission:
             unmatched += 1
             continue
+        submission = changed_by_id.setdefault(submission.pk, submission)
 
         title_author_changed = False
         plagiarism_changed = False
@@ -97,7 +103,44 @@ def import_external_results(uploaded_file):
             submission.plagiarism_imported_at = timezone.now()
             updated_plagiarism += 1
 
-        submission.save()
+        changed_submissions.append(submission)
+
+    bulk_update_submissions(
+        changed_submissions,
+        [
+            "extracted_title",
+            "extracted_authors",
+            "title_author_source",
+            "title_author_imported_at",
+            "title_author_extraction_status",
+            "title_author_extraction_message",
+            "title_author_verification_image",
+            "title_author_manual_override_reason",
+            "title_author_manual_override_at",
+            "title_author_review_status",
+            "title_author_verified",
+            "title_author_verified_at",
+            "duplicate_author_review_status",
+            "duplicate_author_review_notes",
+            "duplicate_author_reviewed_at",
+            "author_number_exception_approved",
+            "author_number_exception_reason",
+            "author_number_exception_author_count",
+            "author_number_exception_approved_at",
+            "extracted_title_match_status",
+            "extracted_title_match_score",
+            "extracted_title_match_message",
+            "extracted_title_verified",
+            "extracted_title_auto_verify_blocked",
+            "extracted_title_verified_at",
+            "plagiarism_status",
+            "similarity_score",
+            "single_similarity_score",
+            "plagiarism_report_path",
+            "plagiarism_report_stale",
+            "plagiarism_imported_at",
+        ],
+    )
 
     if updated_title_author:
         rebuild_paper_authors()

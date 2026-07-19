@@ -295,7 +295,8 @@ class FinalSubmission(models.Model):
             )
         )
 
-    def save(self, *args, **kwargs):
+    def prepare_derived_fields_for_save(self, update_fields=None):
+        update_fields = None if update_fields is None else set(update_fields)
         if self.pdf_file and not self.original_file_name:
             self.original_file_name = self.pdf_file.name.split("/")[-1]
         if self.source_file and not self.source_original_file_name:
@@ -306,143 +307,27 @@ class FinalSubmission(models.Model):
         else:
             self.title_author_verified = False
             self.title_author_verified_at = None
-        update_fields = kwargs.get("update_fields")
         if update_fields is not None:
-            update_fields = set(update_fields)
             update_fields.update({"title_author_verified", "title_author_verified_at"})
+        return update_fields
+
+    def save(self, *args, **kwargs):
+        update_fields = self.prepare_derived_fields_for_save(
+            kwargs.get("update_fields")
+        )
+        if update_fields is not None:
             kwargs["update_fields"] = list(update_fields)
         super().save(*args, **kwargs)
-        self.sync_state_records()
+        self.sync_state_records(update_fields=kwargs.get("update_fields"))
 
-    def sync_state_records(self):
-        FinalSubmissionIdentityState.objects.update_or_create(
-            final_submission=self,
-            defaults={
-                "submission_identifier": self.final_submission_id,
-                "start2_paper_id_raw": self.start2_paper_id_raw,
-                "paper_id_filled": self.paper_id_filled,
-                "final_submission_title": self.final_submission_title,
-                "final_submission_authors": self.final_submission_authors,
-                "upload_date": self.upload_date,
-                "active_version": self.active_version,
-                "duplicate_submission": self.duplicate_submission,
-                "submission_origin": self.submission_origin,
-                "editor_upload_notes": self.editor_upload_notes,
-                "editor_uploaded_at": self.editor_uploaded_at,
-                "mapping_source": self.mapping_source,
-                "mapping_order": self.mapping_order,
-            },
+    def sync_state_records(self, update_fields=None):
+        from submissions.services.final_submission_state import (
+            schedule_submission_state_sync,
         )
-        FinalSubmissionFileState.objects.update_or_create(
-            final_submission=self,
-            defaults={
-                "original_file_name": self.original_file_name,
-                "pdf_file_name": self.pdf_file.name if self.pdf_file else "",
-                "source_original_file_name": self.source_original_file_name,
-                "source_file_name": self.source_file.name if self.source_file else "",
-                "current_file_path": self.current_file_path,
-                "source_current_file_path": self.source_current_file_path,
-                "formatted_pdf_file_name": (
-                    self.formatted_pdf_file.name if self.formatted_pdf_file else ""
-                ),
-                "formatted_source_file_name": (
-                    self.formatted_source_file.name if self.formatted_source_file else ""
-                ),
-                "formatted_pdf_uploaded_at": self.formatted_pdf_uploaded_at,
-                "formatted_source_uploaded_at": self.formatted_source_uploaded_at,
-                "page_count": self.page_count,
-                "pdf_hash": self.pdf_hash,
-                "thumbnail_folder": self.thumbnail_folder,
-                "thumbnail_status": self.thumbnail_status,
-                "thumbnail_message": self.thumbnail_message,
-                "processing_status": self.processing_status,
-                "processing_message": self.processing_message,
-            },
-        )
-        FinalSubmissionReviewState.objects.update_or_create(
-            final_submission=self,
-            defaults={
-                "paper_id_verified": self.paper_id_verified,
-                "auto_verify_blocked": self.auto_verify_blocked,
-                "verification_status": self.verification_status,
-                "title_match_score": self.title_match_score,
-                "verification_message": self.verification_message,
-                "verified_at": self.verified_at,
-                "extracted_title": self.extracted_title,
-                "extracted_authors": self.extracted_authors,
-                "title_author_source": self.title_author_source,
-                "title_author_imported_at": self.title_author_imported_at,
-                "title_author_extraction_status": self.title_author_extraction_status,
-                "title_author_extraction_message": self.title_author_extraction_message,
-                "title_author_verification_image": self.title_author_verification_image,
-                "title_author_manual_override_reason": self.title_author_manual_override_reason,
-                "title_author_manual_override_at": self.title_author_manual_override_at,
-                "title_author_verified": self.title_author_verified,
-                "title_author_verified_at": self.title_author_verified_at,
-                "title_author_review_status": self.title_author_review_status,
-                "duplicate_author_review_status": self.duplicate_author_review_status,
-                "duplicate_author_review_notes": self.duplicate_author_review_notes,
-                "duplicate_author_reviewed_at": self.duplicate_author_reviewed_at,
-                "extracted_title_match_status": self.extracted_title_match_status,
-                "extracted_title_match_score": self.extracted_title_match_score,
-                "extracted_title_match_message": self.extracted_title_match_message,
-                "extracted_title_verified": self.extracted_title_verified,
-                "extracted_title_auto_verify_blocked": self.extracted_title_auto_verify_blocked,
-                "extracted_title_verified_at": self.extracted_title_verified_at,
-                "format_status": self.format_status,
-                "format_notes": self.format_notes,
-            },
-        )
-        FinalSubmissionPublicationState.objects.update_or_create(
-            final_submission=self,
-            defaults={
-                "excluded_from_publication": self.excluded_from_publication,
-                "publication_exclusion_reason": self.publication_exclusion_reason,
-                "publication_exclusion_notes": self.publication_exclusion_notes,
-                "publication_excluded_at": self.publication_excluded_at,
-                "discarded": self.discarded,
-                "discard_notes": self.discard_notes,
-                "discarded_at": self.discarded_at,
-                "page_limit_exception_approved": self.page_limit_exception_approved,
-                "page_limit_exception_reason": self.page_limit_exception_reason,
-                "page_limit_exception_page_count": self.page_limit_exception_page_count,
-                "page_limit_exception_approved_at": self.page_limit_exception_approved_at,
-                "author_number_exception_approved": self.author_number_exception_approved,
-                "author_number_exception_reason": self.author_number_exception_reason,
-                "author_number_exception_author_count": (
-                    self.author_number_exception_author_count
-                ),
-                "author_number_exception_approved_at": (
-                    self.author_number_exception_approved_at
-                ),
-            },
-        )
-        FinalSubmissionPlagiarismState.objects.update_or_create(
-            final_submission=self,
-            defaults={
-                "plagiarism_status": self.plagiarism_status,
-                "similarity_score": self.similarity_score,
-                "single_similarity_score": self.single_similarity_score,
-                "plagiarism_percent_exception_approved": self.plagiarism_percent_exception_approved,
-                "plagiarism_percent_exception_reason": self.plagiarism_percent_exception_reason,
-                "plagiarism_percent_exception_approved_score": (
-                    self.plagiarism_percent_exception_approved_score
-                ),
-                "plagiarism_percent_exception_approved_at": (
-                    self.plagiarism_percent_exception_approved_at
-                ),
-                "single_percent_exception_approved": self.single_percent_exception_approved,
-                "single_percent_exception_reason": self.single_percent_exception_reason,
-                "single_percent_exception_approved_score": (
-                    self.single_percent_exception_approved_score
-                ),
-                "single_percent_exception_approved_at": (
-                    self.single_percent_exception_approved_at
-                ),
-                "plagiarism_report_path": self.plagiarism_report_path,
-                "plagiarism_report_stale": self.plagiarism_report_stale,
-                "plagiarism_imported_at": self.plagiarism_imported_at,
-            },
+
+        return schedule_submission_state_sync(
+            self,
+            update_fields=update_fields,
         )
 
 
@@ -615,9 +500,11 @@ class FinalSubmissionPlagiarismState(models.Model):
 
 
 def sync_final_submission_state_records(queryset=None):
-    submissions = queryset or FinalSubmission.objects.all()
-    for submission in submissions.iterator():
-        submission.sync_state_records()
+    from submissions.services.final_submission_state import (
+        sync_all_submission_state_records,
+    )
+
+    return sync_all_submission_state_records(queryset)
 
 
 class PaperAuthor(models.Model):
