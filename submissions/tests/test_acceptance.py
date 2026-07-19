@@ -3354,6 +3354,40 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(instances[0]["sms_data_dir"], "/srv/sms/conf-a")
         self.assertEqual(instances[0]["env"]["SMS_ALLOWED_HOSTS"], "127.0.0.1,localhost")
 
+    def test_docker_rebuild_script_closes_and_removes_generated_env_file(self):
+        script_path = (
+            Path(django_settings.BASE_DIR) / "scripts" / "rebuild_docker_instances.py"
+        )
+        spec = importlib.util.spec_from_file_location("docker_rebuild", script_path)
+        docker_rebuild = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker_rebuild)
+        instance = {
+            "project": "sms-conf-a",
+            "name": "sms-conf-a-web-1",
+            "running": True,
+            "sms_bind_host": "127.0.0.1",
+            "sms_port": "9000",
+            "sms_data_dir": "/srv/sms/conf-a",
+            "env": {"SMS_SECRET_KEY": "secret"},
+        }
+        generated_path = None
+
+        def inspect_generated_env(command, *, cwd, capture):
+            nonlocal generated_path
+            generated_path = Path(command[command.index("--env-file") + 1])
+            with generated_path.open(encoding="utf-8") as handle:
+                contents = handle.read()
+            self.assertIn("SMS_PORT=9000", contents)
+            self.assertIn("SMS_SECRET_KEY=secret", contents)
+
+        with patch.object(docker_rebuild, "run", side_effect=inspect_generated_env):
+            docker_rebuild.rebuild_instance(
+                instance, Path(django_settings.BASE_DIR), dry_run=False
+            )
+
+        self.assertIsNotNone(generated_path)
+        self.assertFalse(generated_path.exists())
+
     def test_final_submission_batch_upload_limit_is_documented(self):
         self.assertEqual(django_settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5000)
 

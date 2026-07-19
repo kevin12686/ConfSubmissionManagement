@@ -181,13 +181,20 @@ def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
     if dry_run:
         return
 
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=True) as handle:
-        for key, value in env_values.items():
-            handle.write(format_env_line(key, value))
-        handle.flush()
+    env_file_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=False
+        ) as handle:
+            env_file_path = Path(handle.name)
+            for key, value in env_values.items():
+                handle.write(format_env_line(key, value))
         actual_command = command.copy()
-        actual_command[actual_command.index("<generated>")] = handle.name
+        actual_command[actual_command.index("<generated>")] = str(env_file_path)
         run(actual_command, cwd=root, capture=False)
+    finally:
+        if env_file_path is not None:
+            env_file_path.unlink(missing_ok=True)
 
 
 def format_env_line(key: str, value: str) -> str:
