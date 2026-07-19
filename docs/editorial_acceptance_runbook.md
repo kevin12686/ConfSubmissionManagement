@@ -107,6 +107,8 @@ Create Final Submission records and files:
 - Final publication package contains one PDF/source pair per publishable Paper Master record and no replaced, discarded, or Not Publishing records.
 - Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
 - Formatting Review `Review OK` stores the current publication source hash.
+  A Pending/Needs Edit record with no source hash reports only `Formatting Not
+  Review OK`; it must not also report `Source Review Hash Missing`.
   Replacing that source externally, clearing the hash, or deleting a selected
   Corrected PDF/source must block final export; no Original fallback is allowed
   while a Corrected file is selected.

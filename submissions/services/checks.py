@@ -887,39 +887,41 @@ def publication_readiness_rows(
                     "message": f"No source file is attached for {label}.",
                 }
             )
-        elif not submission.source_hash:
-            rows.append(
-                {
-                    "category": "Source Review Hash Missing",
-                    "paper_id": submission.paper_id_filled,
-                    "final_submission_id": submission.final_submission_id,
-                    "message": (
-                        "The publication source is not bound to a completed "
-                        "Formatting Review. Mark formatting Review OK again."
-                    ),
-                }
-            )
-        else:
-            try:
-                current_source_hash = context.file_inspection.sha256(
-                    publication_source["path"],
-                    fresh=strict_hash,
-                )
-            except Exception:
-                current_source_hash = ""
-            if current_source_hash != submission.source_hash:
+        elif submission.format_status == "review_ok":
+            if not submission.source_hash:
                 rows.append(
                     {
-                        "category": "Source Changed After Review",
+                        "category": "Source Review Hash Missing",
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
-                            "The publication source bytes differ from the source "
-                            "approved in Formatting Review. Review the current "
-                            "source and mark formatting Review OK again."
+                            "Formatting is marked Review OK, but the publication "
+                            "source is not bound to that completed review. Mark "
+                            "formatting Review OK again."
                         ),
                     }
                 )
+            else:
+                try:
+                    current_source_hash = context.file_inspection.sha256(
+                        publication_source["path"],
+                        fresh=strict_hash,
+                    )
+                except Exception:
+                    current_source_hash = ""
+                if current_source_hash != submission.source_hash:
+                    rows.append(
+                        {
+                            "category": "Source Changed After Review",
+                            "paper_id": submission.paper_id_filled,
+                            "final_submission_id": submission.final_submission_id,
+                            "message": (
+                                "The publication source bytes differ from the source "
+                                "approved in Formatting Review. Review the current "
+                                "source and mark formatting Review OK again."
+                            ),
+                        }
+                    )
         if submission.page_count and submission.page_count > setting.page_limit:
             if submission.has_valid_page_limit_exception:
                 if include_allowed:

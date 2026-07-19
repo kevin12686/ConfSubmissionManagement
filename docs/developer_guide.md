@@ -255,7 +255,10 @@ rewrite `extracted_authors` while preparing the display list.
   check in the central export path.
 - Formatting `Review OK` must persist the SHA-256 of the selected publication
   source in `source_hash`. Source replacement clears it. Readiness compares the
-  current source bytes with that hash, and a missing Corrected PDF/source is a
+  current source bytes with that hash only after Formatting status is
+  `review_ok`. Pending/Needs Edit records are blocked by `Formatting Not Review
+  OK`; an empty hash is expected before review and must not create a duplicate
+  `Source Review Hash Missing` issue. A missing Corrected PDF/source is a
   blocker rather than permission to fall back to Original.
 - Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
 - Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.

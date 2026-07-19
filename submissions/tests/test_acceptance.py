@@ -3227,6 +3227,24 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         )
         self.assertEqual(publication_readiness_rows(), [])
 
+    def test_pending_format_review_does_not_report_missing_source_review_hash(self):
+        self.make_master_paper("P001", "Pending Source Review", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Pending Source Review",
+            extracted_title="Pending Source Review",
+            format_status="pending",
+            source_hash="",
+        )
+
+        categories = {row["category"] for row in publication_readiness_rows()}
+
+        self.assertIn("Formatting Not Review OK", categories)
+        self.assertNotIn("Source Review Hash Missing", categories)
+        self.assertNotIn("Source Changed After Review", categories)
+        self.assert_publication_blocked("Formatting Not Review OK")
+
     def test_missing_corrected_files_never_fall_back_to_original_files(self):
         self.make_master_paper("P001", "No Silent Fallback", "Ada")
         submission = self.make_final_submission(

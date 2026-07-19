@@ -134,9 +134,11 @@ Final export also fingerprints publication-critical database state before
 loading the snapshot and after ZIP assembly. A concurrent editor change to
 Paper Master, submissions, settings, author rows, or author waivers deletes the
 partial output and requires a fresh export. Publication source bytes are bound
-to Formatting Review by `source_hash`; missing or changed source hashes block
-export. A configured Corrected PDF/source that is missing never falls back to
-the Original file.
+to a completed Formatting Review by `source_hash`. A Pending or Needs Edit
+Formatting status is blocked by `Formatting Not Review OK` and is not also
+reported as a missing review hash. Once status is Review OK, a missing or
+changed source hash is a Critical integrity blocker. A configured Corrected
+PDF/source that is missing never falls back to the Original file.
 
 Error Report keeps duplicate categories and blocker messages unchanged in the
 readiness/report services. Its HTML worklist uses a compact duplicate-group

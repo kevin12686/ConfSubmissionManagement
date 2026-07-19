@@ -254,7 +254,9 @@ Common blockers:
 - Missing active final for a Paper Master record.
 - Invalid or unverified Paper ID.
 - Missing PDF/source, including a selected Corrected file that is no longer on disk.
-- Source review hash missing, or source bytes changed after Formatting Review.
+- Formatting review Pending/Needs Edit.
+- Source review hash missing after Review OK, or source bytes changed after
+  Formatting Review.
 - PDF not processed.
 - Page count outside limits without allowed exception.
 - Title/author review not OK.
@@ -270,9 +272,12 @@ generated package. Confirm that no external synchronization or editor is
 replacing files, run Process PDFs again, clear all resulting blockers, and
 export a new final package.
 
-For `Source Review Hash Missing` or `Source Changed After Review`, inspect the
-current source in Formatting Review and save `Review OK` again. Do not copy a
-hash from another record or restore an older status directly in the database.
+Before Formatting Review is complete, Error Report should show only
+`Formatting Not Review OK`; an empty source review hash is expected at that
+stage. For `Source Review Hash Missing` on a record already marked Review OK, or
+for `Source Changed After Review`, inspect the current source in Formatting
+Review and save `Review OK` again. Do not copy a hash from another record or
+restore an older status directly in the database.
 
 ### Need an intermediate package anyway
 

@@ -304,6 +304,10 @@ Use `/reports/` for exports.
   must be opened in Formatting Review and saved as `Review OK` again. If a
   Corrected PDF/source is selected but missing, restore or replace it; the
   system will not silently publish the Original file.
+- Pending or Needs Edit Formatting records do not have a completed source-review
+  hash yet. Error Report tracks them as `Formatting Not Review OK`; `Source
+  Review Hash Missing` is reserved for records already marked Review OK whose
+  integrity binding is unexpectedly absent.
 
 ## Backup, Cleanup, And Clear Database
 
