@@ -85,8 +85,7 @@ from submissions.services.organized_list import (
     ORGANIZED_LIST_SORT_OPTIONS,
     organized_list_rows,
 )
-from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
-from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.pdf_processor import hydrate_processed_pdf_rows
 from submissions.services.title_author_extraction import (
     extract_active_title_authors,
     extract_title_author_for_submission,
@@ -147,6 +146,7 @@ def process_pdfs_view(request):
             exact_submission_id=(
                 focused_submission.pk if focused_submission else None
             ),
+            include_thumbnails=False,
         )
     )
     page = paginate_worklist(
@@ -156,7 +156,7 @@ def process_pdfs_view(request):
         indicator_id="process-preview-loading",
         force_all=bool(focused_submission),
     )
-    context["processed_rows"] = page.items
+    context["processed_rows"] = hydrate_processed_pdf_rows(page.items)
     context["pagination"] = page
     if focused_submission:
         in_scope = any(

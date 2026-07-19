@@ -234,6 +234,7 @@ def final_submission_list(request):
         return redirect(request.get_full_path())
     q = _search_query(request)
     current_filter = request.GET.get("filter", "all")
+    current_sort = request.GET.get("sort", "paper_id_asc")
     return render(
         request,
         "submissions/final_submission_list.html",
@@ -241,6 +242,7 @@ def final_submission_list(request):
             q,
             _score_badge_level,
             current_filter,
+            current_sort,
             page_builder=lambda items: paginate_worklist(
                 request,
                 items,

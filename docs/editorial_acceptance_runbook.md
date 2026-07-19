@@ -61,11 +61,12 @@ Create Final Submission records and files:
     explanation and that opening any focused GET leaves all review and active
     flags unchanged.
 16. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
-17. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
-18. Resolve all blockers and export the final publication package.
-19. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
-20. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return.
-21. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.
+17. Exercise Paper Master List and Final Submission sorting before and after search. Confirm natural ID order (`P2` before `P10`, Final `2` before `10`), pagination preserves the selected sort, Final Submission tabs retain it, and Old Versions tabs match the shared worklist tab design.
+18. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
+19. Resolve all blockers and export the final publication package.
+20. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
+21. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return.
+22. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.
 
 ## Acceptance Checks
 
@@ -86,10 +87,32 @@ Create Final Submission records and files:
 - UI-only GET requests must leave publication ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness blocker categories byte-for-byte/logically unchanged.
 - Old Versions classifies inactive records as Replaced, Discarded, or Other inactive; Not Publishing appears only as a secondary flag.
 - Error Report separates Critical, Medium, and Info items.
+- Error Report duplicate rows show a compact matching-record count; opening
+  `Show matching records` must return the complete duplicate group without
+  changing any database or file state. Verify this on a numbered page and with
+  Page size `All`.
 - Allowed exceptions do not block final export while their approved value still matches the current value.
+- After loading Dashboard readiness once, replace a publication PDF outside
+  the app and confirm readiness and Final Publication Package both require PDF
+  processing again. A warmed content-hash cache must never hide the change.
+- Replace a publication PDF/source after readiness inspection but before ZIP
+  entry reading and confirm final export fails, records a failed audit event,
+  and leaves no partial ZIP/manifest.
+- Create two distinct Paper IDs/titles that sanitize to the same publication
+  base filename. Confirm Error Report and Organized List both flag the
+  collision and final export does not create a ZIP.
 - Draft publication package is clearly marked and contains a warnings CSV.
 - Final publication package contains one PDF/source pair per publishable Paper Master record and no replaced, discarded, or Not Publishing records.
 - Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
+- Formatting Review `Review OK` stores the current publication source hash.
+  Replacing that source externally, clearing the hash, or deleting a selected
+  Corrected PDF/source must block final export; no Original fallback is allowed
+  while a Corrected file is selected.
+- Change Paper Master, active/Not Publishing state, review status, or settings
+  from a second editor request while final export is assembling. Confirm the
+  export fails and removes all partial outputs.
+- Duplicate CJK, Greek, and canonically equivalent accented publication titles
+  must appear as duplicate-title blockers.
 - Final publication manifest contains publication fields only; editorial notes are not included.
 - System State ZIP restore remaps managed files into local `data/` folders and does not leave old absolute paths.
 - Audit Log records critical user/system actions as JSON Lines in `data/logs/audit.log`.

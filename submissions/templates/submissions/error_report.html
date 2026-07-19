@@ -50,7 +50,7 @@
                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
                 >
                     {{ section.label }}
-                    <span class="badge cfm-tab-count text-bg-{{ section.level }}">{{ section.count }}</span>
+                    <span class="badge cfm-tab-count text-bg-{{ section.level }}">{{ section.total_count }}</span>
                 </button>
             </li>
         {% endfor %}
@@ -92,7 +92,21 @@
                                                 <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
                                                 <td>{{ row.paper_id|default:"--" }}</td>
                                                 <td>{{ row.final_submission_id|default:"--" }}</td>
-                                                <td>{{ row.message }}</td>
+                                                <td>
+                                                    {{ row.message }}
+                                                    {% if row.duplicate_detail %}
+                                                        <div class="mt-2">
+                                                            <a
+                                                                class="btn btn-sm btn-outline-secondary"
+                                                                href="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
+                                                                hx-get="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
+                                                                hx-target="#duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"
+                                                                hx-swap="innerHTML"
+                                                            >Show {{ row.duplicate_detail.other_count }} matching record{{ row.duplicate_detail.other_count|pluralize }}</a>
+                                                        </div>
+                                                        <div id="duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"></div>
+                                                    {% endif %}
+                                                </td>
                                             </tr>
                                         {% endfor %}
                                         </tbody>

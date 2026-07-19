@@ -32,7 +32,9 @@ from submissions.services.checks import (
     error_report_severity_sections,
     error_report_sections,
     filter_error_report_rows,
+    hydrate_author_count_rows,
     reset_author_number_exception,
+    sort_error_report_rows,
 )
 from submissions.services.crosscheck import (
     CROSSCHECK_RESULT_TEMPLATE_COLUMNS,
@@ -82,6 +84,7 @@ from submissions.services.file_manager import (
     resolve_folder,
     sanitize_filename_part,
 )
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.organized_list import (
     ORGANIZED_LIST_FILTER_OPTIONS,
     ORGANIZED_LIST_SORT_OPTIONS,
@@ -89,6 +92,8 @@ from submissions.services.organized_list import (
 )
 from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.publication_read import PublicationReadContext
+from submissions.services.version_history import hydrate_old_version_rows
 from submissions.services.title_author_extraction import (
     extract_active_title_authors,
     extract_title_author_for_submission,
@@ -161,9 +166,15 @@ def active_versions(request):
 
 
 def old_versions(request):
-    context = old_versions_context(request.GET.get("filter", "all"))
+    context = old_versions_context(
+        request.GET.get("filter", "all"),
+        hydrate=False,
+    )
     page = paginate_worklist(request, context["rows"])
-    context["rows"] = page.items
+    context["rows"] = hydrate_old_version_rows(
+        page.items,
+        inspection=FileInspectionContext(),
+    )
     context["pagination"] = page
     return render(
         request,
@@ -173,20 +184,40 @@ def old_versions(request):
 
 
 def error_report(request):
-    rows = error_report_rows()
+    publication_context = PublicationReadContext.load()
+    author_rows = author_count_rows(
+        context=publication_context,
+        include_file_links=False,
+    )
+    rows = error_report_rows(
+        context=publication_context,
+        author_rows=author_rows,
+        compact_duplicate_messages=True,
+    )
     rows, current_area, area_label = filter_error_report_rows(
         rows, request.GET.get("area", "")
     )
+    rows = sort_error_report_rows(rows)
     summary_sections = error_report_severity_sections(rows)
     page = paginate_worklist(request, rows)
     displayed_rows = list(page.items)
+    severity_sections = error_report_severity_sections(displayed_rows)
+    total_by_severity = {
+        section["severity"]: section["count"]
+        for section in summary_sections
+    }
+    for section in severity_sections:
+        section["total_count"] = total_by_severity.get(
+            section["severity"],
+            section["count"],
+        )
     return render(
         request,
         "submissions/error_report.html",
         {
             "rows": displayed_rows,
             "sections": error_report_sections(displayed_rows),
-            "severity_sections": error_report_severity_sections(displayed_rows),
+            "severity_sections": severity_sections,
             "severity_summary_sections": summary_sections,
             "current_area": current_area,
             "area_label": area_label,
@@ -205,7 +236,11 @@ def author_count(request):
         current_filter = "all"
     if current_sort not in valid_sorts:
         current_sort = "attention"
-    all_rows = author_count_rows()
+    publication_context = PublicationReadContext.load()
+    all_rows = author_count_rows(
+        context=publication_context,
+        include_file_links=False,
+    )
     if q:
         lowered_query = q.casefold()
         all_rows = [
@@ -273,11 +308,15 @@ def author_count(request):
         hx_target="#author-count-worklist",
         indicator_id="author-count-loading",
     )
+    displayed_rows = hydrate_author_count_rows(
+        page.items,
+        context=publication_context,
+    )
     return render(
         request,
         "submissions/author_count.html",
         {
-            "rows": page.items,
+            "rows": displayed_rows,
             "q": q,
             "current_filter": current_filter,
             "current_sort": current_sort,

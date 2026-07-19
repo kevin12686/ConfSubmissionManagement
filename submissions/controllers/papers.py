@@ -131,10 +131,11 @@ def _search_query(request):
 
 def initial_paper_list(request):
     q = _search_query(request)
-    context = paper_master_list_context(q)
-    page = paginate_worklist(request, context["papers"])
-    context["papers"] = page.items
-    context["pagination"] = page
+    context = paper_master_list_context(
+        q,
+        request.GET.get("sort", "paper_id_asc"),
+        page_builder=lambda items: paginate_worklist(request, items),
+    )
     return render(
         request,
         "submissions/initial_paper_list.html",

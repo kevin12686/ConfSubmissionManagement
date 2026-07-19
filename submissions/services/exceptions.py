@@ -17,6 +17,7 @@ from submissions.services.checks import (
     single_percent_over_threshold,
 )
 from submissions.services.file_manager import publication_pdf_info
+from submissions.services.publication_read import PublicationReadContext
 
 
 EXCEPTION_FILTER_OPTIONS = [
@@ -94,18 +95,39 @@ def exception_status_level(status):
     }.get(status, "secondary")
 
 
-def _append_submission_exception_rows(rows, submission, setting):
-    publication_pdf = publication_pdf_info(submission)
-    status = page_exception_status(submission, setting)
-    if status:
+def _append_submission_exception_rows(
+    rows,
+    submission,
+    setting,
+    *,
+    context=None,
+    hydrate=True,
+):
+    page_status = page_exception_status(submission, setting)
+    author_status = author_number_exception_status(submission, setting)
+    plagiarism_status = plagiarism_percent_exception_status(submission, setting)
+    single_status = single_percent_exception_status(submission, setting)
+    if not any(
+        [page_status, author_status, plagiarism_status, single_status]
+    ):
+        return
+    publication_pdf = (
+        publication_pdf_info(
+            submission,
+            context.file_inspection if context else None,
+        )
+        if hydrate
+        else None
+    )
+    if page_status:
         rows.append(
             {
                 "key": f"page:{submission.pk}",
                 "type": "page",
                 "type_label": "Page count",
-                "status": status,
-                "status_label": exception_status_label(status),
-                "status_level": exception_status_level(status),
+                "status": page_status,
+                "status_label": exception_status_label(page_status),
+                "status_level": exception_status_level(page_status),
                 "submission": submission,
                 "paper_id": submission.paper_id_filled,
                 "final_submission_id": submission.final_submission_id,
@@ -120,17 +142,16 @@ def _append_submission_exception_rows(rows, submission, setting):
             }
         )
 
-    status = author_number_exception_status(submission, setting)
-    if status:
+    if author_status:
         count = author_number_count(submission)
         rows.append(
             {
                 "key": f"author_number:{submission.pk}",
                 "type": "author_number",
                 "type_label": "Authors in paper",
-                "status": status,
-                "status_label": exception_status_label(status),
-                "status_level": exception_status_level(status),
+                "status": author_status,
+                "status_label": exception_status_label(author_status),
+                "status_level": exception_status_level(author_status),
                 "submission": submission,
                 "paper_id": submission.paper_id_filled,
                 "final_submission_id": submission.final_submission_id,
@@ -145,16 +166,15 @@ def _append_submission_exception_rows(rows, submission, setting):
             }
         )
 
-    status = plagiarism_percent_exception_status(submission, setting)
-    if status:
+    if plagiarism_status:
         rows.append(
             {
                 "key": f"plagiarism_percent:{submission.pk}",
                 "type": "plagiarism_percent",
                 "type_label": "Plagiarism %",
-                "status": status,
-                "status_label": exception_status_label(status),
-                "status_level": exception_status_level(status),
+                "status": plagiarism_status,
+                "status_label": exception_status_label(plagiarism_status),
+                "status_level": exception_status_level(plagiarism_status),
                 "submission": submission,
                 "paper_id": submission.paper_id_filled,
                 "final_submission_id": submission.final_submission_id,
@@ -169,16 +189,15 @@ def _append_submission_exception_rows(rows, submission, setting):
             }
         )
 
-    status = single_percent_exception_status(submission, setting)
-    if status:
+    if single_status:
         rows.append(
             {
                 "key": f"single_percent:{submission.pk}",
                 "type": "single_percent",
                 "type_label": "Single %",
-                "status": status,
-                "status_label": exception_status_label(status),
-                "status_level": exception_status_level(status),
+                "status": single_status,
+                "status_label": exception_status_label(single_status),
+                "status_level": exception_status_level(single_status),
                 "submission": submission,
                 "paper_id": submission.paper_id_filled,
                 "final_submission_id": submission.final_submission_id,
@@ -203,19 +222,36 @@ def exception_rows_for_submission(submission, setting=None):
     return rows
 
 
-def exception_rows(status_filter="not_allowed"):
-    setting = AppSetting.load()
+def exception_rows(
+    status_filter="not_allowed",
+    *,
+    context=None,
+    hydrate=True,
+):
+    context = context or PublicationReadContext.load()
+    setting = context.settings
     rows = []
-    active = FinalSubmission.objects.filter(
-        active_version=True,
-        excluded_from_publication=False,
-        discarded=False,
-    ).order_by("paper_id_filled", "final_submission_id")
+    active = sorted(
+        context.publishable_submissions,
+        key=lambda submission: (
+            submission.paper_id_filled,
+            submission.final_submission_id,
+        ),
+    )
 
     for submission in active:
-        _append_submission_exception_rows(rows, submission, setting)
+        _append_submission_exception_rows(
+            rows,
+            submission,
+            setting,
+            context=context,
+            hydrate=hydrate,
+        )
 
-    for author_row in author_count_rows():
+    for author_row in author_count_rows(
+        context=context,
+        include_file_links=False,
+    ):
         if not author_row["over_limit"]:
             continue
         waiver = author_row["waiver"]
@@ -256,13 +292,31 @@ def exception_rows(status_filter="not_allowed"):
 
 def exception_counts(rows=None):
     if rows is None:
-        rows, _status_filter = exception_rows("all")
+        rows, _status_filter = exception_rows("all", hydrate=False)
     return {
         "not_allowed": sum(1 for row in rows if row["status"] == "not_allowed"),
         "allowed": sum(1 for row in rows if row["status"] == "allowed"),
         "stale": sum(1 for row in rows if row["status"] == "stale"),
         "all": len(rows),
     }
+
+
+def hydrate_exception_rows(rows, *, context):
+    hydrated = []
+    for row in rows:
+        if row.get("submission") and not row.get("publication_pdf"):
+            hydrated.append(
+                {
+                    **row,
+                    "publication_pdf": publication_pdf_info(
+                        row["submission"],
+                        context.file_inspection,
+                    ),
+                }
+            )
+        else:
+            hydrated.append(row)
+    return hydrated
 
 
 def approve_exception(row, reason):

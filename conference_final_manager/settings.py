@@ -5,8 +5,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.6.0"
-STATE_ARCHIVE_VERSION = 2
+APP_VERSION = "1.7.1"
+STATE_ARCHIVE_VERSION = 3
 
 
 def _env_bool(name, default):

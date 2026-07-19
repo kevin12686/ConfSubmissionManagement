@@ -23,13 +23,31 @@
 </div>
 {% include "submissions/includes/note_summary.html" %}
 <div class="row g-3 mb-3 align-items-stretch">
-    <div class="col-lg-5">
-        <form method="get" class="cfm-filter-panel h-100 cfm-inline-control">
-            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search papers">
-            <button class="btn btn-outline-secondary">Search</button>
+    <div class="col-lg-6">
+        <form method="get" class="cfm-filter-panel h-100">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label" for="paper-master-search">Search</label>
+                    <input id="paper-master-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Paper ID, title, authors, notes">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="paper-master-sort">Sort</label>
+                    <select id="paper-master-sort" class="form-select" name="sort">
+                        {% for option in sort_options %}
+                            <option value="{{ option.value }}" {% if option.value == current_sort %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button class="btn btn-outline-secondary">Apply</button>
+                </div>
+            </div>
+            {% if q or current_sort != "paper_id_asc" %}
+                <div class="mt-2"><a class="small" href="{% url 'submissions:initial_paper_list' %}">Reset search and sort</a></div>
+            {% endif %}
         </form>
     </div>
-    <div class="col-lg-7">
+    <div class="col-lg-6">
         <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_initial_papers' %}" class="cfm-filter-panel h-100">
             {% csrf_token %}
             <div class="d-flex flex-wrap gap-2 align-items-end">

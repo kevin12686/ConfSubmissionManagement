@@ -1,0 +1,18 @@
+{% extends "submissions/base.html" %}
+{% block title %}Publication Duplicate Details{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Publication Duplicate Details</h1>
+        <div class="cfm-page-subtitle">Read-only records matching this publication blocker.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-dark" href="{% url 'submissions:error_report' %}">Back to Error Report</a>
+    </div>
+</div>
+<div class="card cfm-review-card">
+    <div class="card-body">
+        {% include "submissions/partials/publication_duplicate_details.html" %}
+    </div>
+</div>
+{% endblock %}

@@ -91,6 +91,7 @@ def create_final_submission(root, **overrides):
             media_source.write_bytes(current_source.read_bytes())
             values["source_file"] = f"source_submissions/{media_source.name}"
             values.setdefault("source_original_file_name", current_source.name)
+            values.setdefault("source_hash", _file_hash(media_source))
     values.setdefault(
         "title_author_review_status",
         "review_ok" if values.get("title_author_verified") else "pending",

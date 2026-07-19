@@ -1,3 +1,16 @@
+import re
+
+
+def natural_text_key(value):
+    """Return a case-insensitive key that keeps numeric ID chunks in numeric order."""
+    parts = re.split(r"(\d+)", str(value or ""))
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in parts
+        if part
+    )
+
+
 def clean_note_text(value):
     if value is None:
         return ""

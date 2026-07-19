@@ -32,11 +32,12 @@
     </div>
 </div>
 
-<ul class="nav nav-tabs mb-3">
+<ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
             <a class="nav-link {% if current_filter == option.value %}active{% endif %}" href="?filter={{ option.value }}">
-                {{ option.label }} <span class="badge text-bg-light text-dark">{{ option.count }}</span>
+                {{ option.label }}
+                <span class="badge text-bg-{% if option.value == current_filter %}primary{% else %}secondary{% endif %}">{{ option.count }}</span>
             </a>
         </li>
     {% endfor %}

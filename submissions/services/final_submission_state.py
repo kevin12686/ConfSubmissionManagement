@@ -73,6 +73,7 @@ STATE_DOMAINS = (
             StateField("formatted_source_uploaded_at", "formatted_source_uploaded_at"),
             StateField("page_count", "page_count"),
             StateField("pdf_hash", "pdf_hash"),
+            StateField("source_hash", "source_hash"),
             StateField("thumbnail_folder", "thumbnail_folder"),
             StateField("thumbnail_status", "thumbnail_status"),
             StateField("thumbnail_message", "thumbnail_message"),

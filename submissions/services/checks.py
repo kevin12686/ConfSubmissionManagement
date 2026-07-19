@@ -1,11 +1,9 @@
-import hashlib
 import re
 import string
+import unicodedata
 from collections import defaultdict
-from pathlib import Path
 
 from django.db import transaction
-from django.db.models import Count, Q
 
 from submissions.models import (
     AppSetting,
@@ -18,9 +16,11 @@ from submissions.services.file_manager import (
     active_pdf_needs_processing,
     corrected_pdf_needs_processing,
     pdf_available_for_processing,
+    publication_file_base_name,
     publication_pdf_info,
     publication_source_info,
 )
+from submissions.services.publication_read import PublicationReadContext
 
 
 ERROR_GROUPS = {
@@ -41,8 +41,12 @@ ERROR_GROUPS = {
         "level": "warning",
         "categories": {
             "Missing PDF",
+            "Missing Corrected PDF",
             "Corrected PDF Not Processed",
             "Missing Source File",
+            "Missing Corrected Source",
+            "Source Review Hash Missing",
+            "Source Changed After Review",
             "PDF Not Processed",
             "Page Limit Exceeded",
             "Below Page Minimum",
@@ -87,6 +91,7 @@ ERROR_GROUPS = {
             "Duplicate Publication Title",
             "Duplicate Publication PDF",
             "Duplicate Publication Source",
+            "Duplicate Publication Filename",
         },
     },
     "Version Tracking": {
@@ -125,6 +130,10 @@ ERROR_CATEGORY_SEVERITY = {
     "Missing PDF": "critical",
     "Corrected PDF Not Processed": "critical",
     "Missing Source File": "critical",
+    "Missing Corrected PDF": "critical",
+    "Missing Corrected Source": "critical",
+    "Source Review Hash Missing": "critical",
+    "Source Changed After Review": "critical",
     "PDF Not Processed": "critical",
     "Page Limit Exceeded": "critical",
     "Below Page Minimum": "critical",
@@ -138,6 +147,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Duplicate Publication Title": "critical",
     "Duplicate Publication PDF": "critical",
     "Duplicate Publication Source": "critical",
+    "Duplicate Publication Filename": "critical",
     "Final Title / Paper Master Title Mismatch": "medium",
     "Missing Extracted Title": "medium",
     "Missing Extracted Authors": "medium",
@@ -168,8 +178,12 @@ ERROR_REPORT_AREA_CATEGORIES = {
     },
     "files": {
         "Missing PDF",
+        "Missing Corrected PDF",
         "Corrected PDF Not Processed",
         "Missing Source File",
+        "Missing Corrected Source",
+        "Source Review Hash Missing",
+        "Source Changed After Review",
         "PDF Not Processed",
         "Page Limit Exceeded",
         "Below Page Minimum",
@@ -415,6 +429,35 @@ def error_report_severity_sections(rows):
     return sections
 
 
+def sort_error_report_rows(rows):
+    severity_order = {
+        key: value["order"]
+        for key, value in ERROR_SEVERITY_CONFIG.items()
+    }
+    group_order = {
+        group: index
+        for index, group in enumerate(ERROR_GROUP_ORDER)
+    }
+    return sorted(
+        rows,
+        key=lambda row: (
+            severity_order.get(
+                row.get("severity")
+                or _error_severity_for_category(row["category"]),
+                len(severity_order),
+            ),
+            group_order.get(
+                row.get("group")
+                or _error_group_for_category(row["category"]),
+                len(group_order),
+            ),
+            str(row.get("paper_id") or "").casefold(),
+            str(row.get("final_submission_id") or "").casefold(),
+            row["category"],
+        ),
+    )
+
+
 def filter_error_report_rows(rows, area=""):
     categories = ERROR_REPORT_AREA_CATEGORIES.get(area)
     if not categories:
@@ -443,53 +486,61 @@ def clean_identifier(value):
 
 
 def _normalize_publication_title(value):
-    text = (value or "").lower()
-    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    text = "".join(character if character.isalnum() else " " for character in text)
     return re.sub(r"\s+", " ", text).strip()
-
-
-def _file_hash(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _submission_label(submission):
     return f"{submission.paper_id_filled or 'No Paper ID'} / Final {submission.final_submission_id}"
 
 
-def _has_any_pdf_file(submission):
+def _has_any_pdf_file(submission, inspection):
     return bool(
-        (submission.formatted_pdf_file and Path(submission.formatted_pdf_file.path).exists())
-        or (submission.pdf_file and Path(submission.pdf_file.path).exists())
+        (
+            submission.formatted_pdf_file
+            and inspection.exists(submission.formatted_pdf_file.path)
+        )
+        or (submission.pdf_file and inspection.exists(submission.pdf_file.path))
     )
 
 
-def publication_duplicate_groups():
+def publication_duplicate_groups(context=None, *, strict_hash=False):
+    context = context or PublicationReadContext.load()
     title_groups = defaultdict(list)
     pdf_groups = defaultdict(list)
     source_groups = defaultdict(list)
 
-    valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
-    for submission in FinalSubmission.objects.filter(
-        active_version=True,
-        excluded_from_publication=False,
-        discarded=False,
-        paper_id_filled__in=valid_ids,
-    ):
+    for submission in context.master_submissions:
         title_key = _normalize_publication_title(submission.extracted_title)
         if title_key:
             title_groups[title_key].append(submission)
 
-        pdf_info = publication_pdf_info(submission)
+        pdf_info = publication_pdf_info(
+            submission,
+            context.file_inspection,
+            include_url=False,
+        )
         if pdf_info["exists"]:
-            pdf_groups[_file_hash(pdf_info["path"])].append(submission)
+            pdf_groups[
+                context.file_inspection.sha256(
+                    pdf_info["path"],
+                    fresh=strict_hash,
+                )
+            ].append(submission)
 
-        source_info = publication_source_info(submission)
+        source_info = publication_source_info(
+            submission,
+            context.file_inspection,
+            include_url=False,
+        )
         if source_info["exists"]:
-            source_groups[_file_hash(source_info["path"])].append(submission)
+            source_groups[
+                context.file_inspection.sha256(
+                    source_info["path"],
+                    fresh=strict_hash,
+                )
+            ].append(submission)
 
     groups = []
     for kind, category, label, source in [
@@ -512,70 +563,170 @@ def publication_duplicate_groups():
     return groups
 
 
-def publication_duplicate_rows():
+def publication_duplicate_rows(
+    context=None,
+    *,
+    strict_hash=False,
+    compact_messages=False,
+):
     rows = []
-    for group in publication_duplicate_groups():
+    for group in publication_duplicate_groups(context, strict_hash=strict_hash):
         labels = [_submission_label(submission) for submission in group["submissions"]]
         for index, submission in enumerate(group["submissions"]):
-            other_labels = labels[:index] + labels[index + 1 :]
+            if compact_messages:
+                other_count = len(labels) - 1
+                message = (
+                    f"{group['label']} with {other_count} other publication "
+                    f"record{'s' if other_count != 1 else ''}. "
+                    f"Key: {group['key_summary']}."
+                )
+            else:
+                other_labels = labels[:index] + labels[index + 1 :]
+                message = (
+                    f"{group['label']} with {', '.join(other_labels)}. "
+                    f"Key: {group['key_summary']}."
+                )
             rows.append(
                 {
                     "category": group["category"],
                     "paper_id": submission.paper_id_filled,
                     "final_submission_id": submission.final_submission_id,
-                    "message": (
-                        f"{group['label']} with {', '.join(other_labels)}. "
-                        f"Key: {group['key_summary']}."
+                    "message": message,
+                    "duplicate_detail": (
+                        {
+                            "kind": group["kind"],
+                            "key": group["key"],
+                            "submission_id": submission.pk,
+                            "other_count": len(labels) - 1,
+                        }
+                        if compact_messages
+                        else None
                     ),
                 }
             )
     return rows
 
 
-def publication_duplicate_map():
+def publication_filename_collision_groups(context=None):
+    context = context or PublicationReadContext.load()
+    groups = defaultdict(list)
+    for submission in context.master_submissions:
+        base_name = publication_file_base_name(
+            submission.paper_id_filled,
+            submission.extracted_title,
+            context.settings.title_words_for_filename,
+        )
+        groups[base_name.casefold()].append((base_name, submission))
+
+    return [
+        {
+            "base_name": items[0][0],
+            "submissions": [submission for _name, submission in items],
+        }
+        for items in groups.values()
+        if len(items) > 1
+    ]
+
+
+def publication_filename_collision_rows(context=None):
+    rows = []
+    for group in publication_filename_collision_groups(context):
+        labels = [_submission_label(submission) for submission in group["submissions"]]
+        for index, submission in enumerate(group["submissions"]):
+            other_labels = labels[:index] + labels[index + 1 :]
+            rows.append(
+                {
+                    "category": "Duplicate Publication Filename",
+                    "paper_id": submission.paper_id_filled,
+                    "final_submission_id": submission.final_submission_id,
+                    "message": (
+                        f'Publication filename "{group["base_name"]}" conflicts with '
+                        f"{', '.join(other_labels)} after Paper ID/title sanitization."
+                    ),
+                }
+            )
+    return rows
+
+
+def publication_duplicate_detail(kind, key, submission_id, *, context=None):
+    context = context or PublicationReadContext.load()
+    for group in publication_duplicate_groups(context):
+        if group["kind"] != kind or group["key"] != key:
+            continue
+        target = next(
+            (
+                submission
+                for submission in group["submissions"]
+                if submission.pk == submission_id
+            ),
+            None,
+        )
+        if target is None:
+            return None
+        other_labels = [
+            _submission_label(submission)
+            for submission in group["submissions"]
+            if submission.pk != submission_id
+        ]
+        return {
+            "label": group["label"],
+            "key_summary": group["key_summary"],
+            "other_labels": other_labels,
+            "message": (
+                f"{group['label']} with {', '.join(other_labels)}. "
+                f"Key: {group['key_summary']}."
+            ),
+        }
+    return None
+
+
+def publication_duplicate_map(context=None):
+    context = context or PublicationReadContext.load()
     duplicates = defaultdict(list)
-    for group in publication_duplicate_groups():
+    for group in publication_duplicate_groups(context):
         for submission in group["submissions"]:
             duplicates[submission.pk].append(group["label"])
+    for group in publication_filename_collision_groups(context):
+        for submission in group["submissions"]:
+            duplicates[submission.pk].append("Duplicate publication filename")
     return duplicates
 
 
-def active_master_submission_map():
-    valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
-    submissions = FinalSubmission.objects.filter(
-        active_version=True,
-        excluded_from_publication=False,
-        discarded=False,
-        paper_id_filled__in=valid_ids,
-    )
-    return {submission.paper_id_filled: submission for submission in submissions}
+def active_master_submission_map(context=None):
+    context = context or PublicationReadContext.load()
+    return {
+        submission.paper_id_filled: submission
+        for submission in context.master_submissions
+    }
 
 
-def publication_readiness_rows(include_allowed=False):
-    setting = AppSetting.load()
+def publication_readiness_rows(
+    include_allowed=False,
+    *,
+    context=None,
+    author_rows=None,
+    strict_hash=False,
+    compact_duplicate_messages=False,
+):
+    context = context or PublicationReadContext.load()
+    setting = context.settings
     rows = []
-    valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
-    active_valid_submissions = FinalSubmission.objects.filter(
-        active_version=True,
-        excluded_from_publication=False,
-        discarded=False,
-        paper_id_filled__in=valid_ids,
-    )
-    duplicate_active_groups = (
-        active_valid_submissions.values("paper_id_filled")
-        .annotate(active_count=Count("id"))
-        .filter(active_count__gt=1)
-    )
-    for group in duplicate_active_groups:
+    valid_ids = context.valid_paper_ids
+    active_valid_submissions = context.master_submissions
+    active_groups = defaultdict(list)
+    for submission in context.active_submissions:
+        if submission.paper_id_filled in valid_ids:
+            active_groups[submission.paper_id_filled].append(submission)
+    for paper_id, submissions in active_groups.items():
+        if len(submissions) <= 1:
+            continue
         finals = ", ".join(
-            active_valid_submissions.filter(paper_id_filled=group["paper_id_filled"])
-            .order_by("final_submission_id")
-            .values_list("final_submission_id", flat=True)
+            sorted(submission.final_submission_id for submission in submissions)
         )
         rows.append(
             {
                 "category": "Multiple Active Final Submissions",
-                "paper_id": group["paper_id_filled"],
+                "paper_id": paper_id,
                 "final_submission_id": finals,
                 "message": (
                     "More than one active final submission exists for this Paper ID. "
@@ -583,15 +734,8 @@ def publication_readiness_rows(include_allowed=False):
                 ),
             }
         )
-    active_by_paper = active_master_submission_map()
-    excluded_paper_ids = set(
-        FinalSubmission.objects.filter(
-            active_version=True,
-            excluded_from_publication=True,
-            discarded=False,
-            paper_id_filled__in=valid_ids,
-        ).values_list("paper_id_filled", flat=True)
-    )
+    active_by_paper = active_master_submission_map(context)
+    excluded_paper_ids = context.excluded_paper_ids
 
     from submissions.services.editor_uploads import editor_conflict_details
 
@@ -609,14 +753,7 @@ def publication_readiness_rows(include_allowed=False):
             }
         )
 
-    for submission in (
-        FinalSubmission.objects.filter(
-            active_version=True,
-            excluded_from_publication=False,
-            discarded=False,
-        )
-        .exclude(paper_id_filled__in=valid_ids)
-    ):
+    for submission in context.unmatched_submissions:
         rows.append(
             {
                 "category": "Unclassified Final Not In Master",
@@ -626,7 +763,7 @@ def publication_readiness_rows(include_allowed=False):
             }
         )
 
-    for paper in InitialPaper.objects.all():
+    for paper in context.papers:
         if paper.paper_id in excluded_paper_ids:
             continue
         submission = active_by_paper.get(paper.paper_id)
@@ -642,8 +779,16 @@ def publication_readiness_rows(include_allowed=False):
             continue
 
         label = f"{submission.final_submission_id} / {submission.paper_id_filled or 'No Paper ID'}"
-        publication_pdf = publication_pdf_info(submission)
-        publication_source = publication_source_info(submission)
+        publication_pdf = publication_pdf_info(
+            submission,
+            context.file_inspection,
+            include_url=False,
+        )
+        publication_source = publication_source_info(
+            submission,
+            context.file_inspection,
+            include_url=False,
+        )
 
         paper_id_verified = paper_id_effectively_verified(submission, paper)
         if not paper_id_verified:
@@ -668,7 +813,20 @@ def publication_readiness_rows(include_allowed=False):
                     ),
                 }
             )
-        if not _has_any_pdf_file(submission):
+        if submission.formatted_pdf_file and not publication_pdf["exists"]:
+            rows.append(
+                {
+                    "category": "Missing Corrected PDF",
+                    "paper_id": submission.paper_id_filled,
+                    "final_submission_id": submission.final_submission_id,
+                    "message": (
+                        "A corrected PDF is selected for publication but its file "
+                        "is missing. Restore or replace it; the original PDF will "
+                        "not be used as a fallback."
+                    ),
+                }
+            )
+        elif not _has_any_pdf_file(submission, context.file_inspection):
             rows.append(
                 {
                     "category": "Missing PDF",
@@ -677,7 +835,11 @@ def publication_readiness_rows(include_allowed=False):
                     "message": f"No PDF file is attached for {label}.",
                 }
             )
-        elif active_pdf_needs_processing(submission):
+        elif active_pdf_needs_processing(
+            submission,
+            context.file_inspection,
+            fresh_hash=strict_hash,
+        ):
             rows.append(
                 {
                     "category": "PDF Not Processed",
@@ -688,8 +850,12 @@ def publication_readiness_rows(include_allowed=False):
             )
         if (
             submission.formatted_pdf_file
-            and Path(submission.formatted_pdf_file.path).exists()
-            and corrected_pdf_needs_processing(submission)
+            and context.file_inspection.exists(submission.formatted_pdf_file.path)
+            and corrected_pdf_needs_processing(
+                submission,
+                context.file_inspection,
+                fresh_hash=strict_hash,
+            )
         ):
             rows.append(
                 {
@@ -699,7 +865,20 @@ def publication_readiness_rows(include_allowed=False):
                     "message": "A corrected PDF exists but page count/hash need to be refreshed by running Process PDFs.",
                 }
             )
-        if not publication_source["exists"]:
+        if submission.formatted_source_file and not publication_source["exists"]:
+            rows.append(
+                {
+                    "category": "Missing Corrected Source",
+                    "paper_id": submission.paper_id_filled,
+                    "final_submission_id": submission.final_submission_id,
+                    "message": (
+                        "A corrected source is selected for publication but its "
+                        "file is missing. Restore or replace it; the original "
+                        "source will not be used as a fallback."
+                    ),
+                }
+            )
+        elif not publication_source["exists"]:
             rows.append(
                 {
                     "category": "Missing Source File",
@@ -708,6 +887,39 @@ def publication_readiness_rows(include_allowed=False):
                     "message": f"No source file is attached for {label}.",
                 }
             )
+        elif not submission.source_hash:
+            rows.append(
+                {
+                    "category": "Source Review Hash Missing",
+                    "paper_id": submission.paper_id_filled,
+                    "final_submission_id": submission.final_submission_id,
+                    "message": (
+                        "The publication source is not bound to a completed "
+                        "Formatting Review. Mark formatting Review OK again."
+                    ),
+                }
+            )
+        else:
+            try:
+                current_source_hash = context.file_inspection.sha256(
+                    publication_source["path"],
+                    fresh=strict_hash,
+                )
+            except Exception:
+                current_source_hash = ""
+            if current_source_hash != submission.source_hash:
+                rows.append(
+                    {
+                        "category": "Source Changed After Review",
+                        "paper_id": submission.paper_id_filled,
+                        "final_submission_id": submission.final_submission_id,
+                        "message": (
+                            "The publication source bytes differ from the source "
+                            "approved in Formatting Review. Review the current "
+                            "source and mark formatting Review OK again."
+                        ),
+                    }
+                )
         if submission.page_count and submission.page_count > setting.page_limit:
             if submission.has_valid_page_limit_exception:
                 if include_allowed:
@@ -957,8 +1169,20 @@ def publication_readiness_rows(include_allowed=False):
                     }
                 )
 
-    rows.extend(publication_duplicate_rows())
-    for row in author_count_rows():
+    rows.extend(
+        publication_duplicate_rows(
+            context,
+            strict_hash=strict_hash,
+            compact_messages=compact_duplicate_messages,
+        )
+    )
+    rows.extend(publication_filename_collision_rows(context))
+    if author_rows is None:
+        author_rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
+    for row in author_rows:
         if row["over_limit"]:
             if row["waiver_valid"]:
                 if include_allowed:
@@ -1115,8 +1339,9 @@ def rebuild_paper_authors():
     return len(rows)
 
 
-def author_count_rows():
-    setting = AppSetting.load()
+def author_count_rows(*, context=None, include_file_links=True):
+    context = context or PublicationReadContext.load()
+    setting = context.settings
     authors = list(
         PaperAuthor.objects.select_related("final_submission").order_by(
             "normalized_author_name", "id"
@@ -1133,13 +1358,15 @@ def author_count_rows():
     }
     all_paper_ids = {author.paper_id for author in authors if author.paper_id}
     active_submission_by_paper_id = {}
-    for submission in FinalSubmission.objects.filter(
-        active_version=True,
-        discarded=False,
-        excluded_from_publication=False,
-        paper_id_filled__in=all_paper_ids,
-    ).order_by("paper_id_filled", "-updated_at", "-pk"):
-        active_submission_by_paper_id.setdefault(submission.paper_id_filled, submission)
+    for submission in context.publishable_submissions:
+        if submission.paper_id_filled not in all_paper_ids:
+            continue
+        current = active_submission_by_paper_id.get(submission.paper_id_filled)
+        if current is None or (submission.updated_at, submission.pk) > (
+            current.updated_at,
+            current.pk,
+        ):
+            active_submission_by_paper_id[submission.paper_id_filled] = submission
     rows = []
     for normalized_name, author_group in grouped.items():
         display_names = []
@@ -1148,24 +1375,6 @@ def author_count_rows():
                 display_names.append(author.author_name)
         display_name = "; ".join(display_names)
         paper_ids = sorted({author.paper_id for author in author_group if author.paper_id})
-        paper_links = []
-        for paper_id in paper_ids:
-            submission = active_submission_by_paper_id.get(paper_id)
-            pdf_info = publication_pdf_info(submission) if submission else {
-                "url": "",
-                "label": "No PDF",
-                "source": "missing",
-                "exists": False,
-            }
-            paper_links.append(
-                {
-                    "paper_id": paper_id,
-                    "url": pdf_info["url"] if pdf_info["exists"] else "",
-                    "label": pdf_info["label"],
-                    "source": pdf_info["source"],
-                    "exists": pdf_info["exists"],
-                }
-            )
         paper_count = len(paper_ids)
         over_limit = paper_count > setting.author_paper_limit
         waiver = waivers.get(normalized_name)
@@ -1185,7 +1394,8 @@ def author_count_rows():
                 "publication_paper_count": paper_count,
                 "paper_count": paper_count,
                 "paper_ids": ", ".join(paper_ids),
-                "paper_links": paper_links,
+                "paper_links": [],
+                "_paper_ids": tuple(paper_ids),
                 "duplicate_author_papers": ", ".join(sorted(set(duplicate_papers))),
                 "status": "Allowed" if over_limit and waiver_valid else ("Over limit" if over_limit else "OK"),
                 "over_limit": over_limit,
@@ -1196,48 +1406,98 @@ def author_count_rows():
                 "waiver_approved_count": waiver.approved_publication_paper_count if waiver else None,
             }
         )
-    return sorted(rows, key=lambda row: (-row["paper_count"], row["normalized_author_name"]))
+    rows = sorted(
+        rows,
+        key=lambda row: (-row["paper_count"], row["normalized_author_name"]),
+    )
+    if include_file_links:
+        return hydrate_author_count_rows(
+            rows,
+            context=context,
+            active_submission_by_paper_id=active_submission_by_paper_id,
+        )
+    return rows
 
 
-def invalid_paper_id_submissions():
-    valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
+def hydrate_author_count_rows(
+    rows,
+    *,
+    context=None,
+    active_submission_by_paper_id=None,
+):
+    context = context or PublicationReadContext.load()
+    if active_submission_by_paper_id is None:
+        active_submission_by_paper_id = {}
+        for submission in context.publishable_submissions:
+            current = active_submission_by_paper_id.get(submission.paper_id_filled)
+            if current is None or (submission.updated_at, submission.pk) > (
+                current.updated_at,
+                current.pk,
+            ):
+                active_submission_by_paper_id[submission.paper_id_filled] = submission
+    hydrated = []
+    for row in rows:
+        paper_links = []
+        for paper_id in row.get("_paper_ids", ()):
+            submission = active_submission_by_paper_id.get(paper_id)
+            pdf_info = (
+                publication_pdf_info(submission, context.file_inspection)
+                if submission
+                else {
+                    "url": "",
+                    "label": "No PDF",
+                    "source": "missing",
+                    "exists": False,
+                }
+            )
+            paper_links.append(
+                {
+                    "paper_id": paper_id,
+                    "url": pdf_info["url"] if pdf_info["exists"] else "",
+                    "label": pdf_info["label"],
+                    "source": pdf_info["source"],
+                    "exists": pdf_info["exists"],
+                }
+            )
+        hydrated.append(
+            {
+                **{key: value for key, value in row.items() if key != "_paper_ids"},
+                "paper_links": paper_links,
+            }
+        )
+    return hydrated
+
+
+def invalid_paper_id_submissions(context=None):
+    context = context or PublicationReadContext.load()
+    valid_ids = context.valid_paper_ids
     return [
         submission
-        for submission in FinalSubmission.objects.filter(
-            active_version=True,
-            excluded_from_publication=False,
-            discarded=False,
-        )
-        if not submission.paper_id_filled or submission.paper_id_filled not in valid_ids
+        for submission in context.publishable_submissions
+        if not submission.paper_id_filled
+        or submission.paper_id_filled not in valid_ids
     ]
 
 
-def dashboard_counts():
-    setting = AppSetting.load()
-    active = FinalSubmission.objects.filter(
-        active_version=True, excluded_from_publication=False, discarded=False
-    )
-    author_rows = author_count_rows()
+def dashboard_counts(*, context=None, author_rows=None):
+    context = context or PublicationReadContext.load()
+    setting = context.settings
+    active = context.publishable_submissions
+    if author_rows is None:
+        author_rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
     active_paper_ids = set(
-        FinalSubmission.objects.filter(
-            active_version=True,
-            excluded_from_publication=False,
-            discarded=False,
-        )
-        .exclude(paper_id_filled="")
-        .values_list("paper_id_filled", flat=True)
+        submission.paper_id_filled
+        for submission in active
+        if submission.paper_id_filled
     )
-    excluded_paper_ids = set(
-        FinalSubmission.objects.filter(
-            active_version=True,
-            excluded_from_publication=True,
-            discarded=False,
-        )
-        .exclude(paper_id_filled="")
-        .values_list("paper_id_filled", flat=True)
+    excluded_paper_ids = context.excluded_paper_ids
+    valid_ids = context.valid_paper_ids
+    unclassified_not_in_master = sum(
+        1 for submission in active if submission.paper_id_filled not in valid_ids
     )
-    valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
-    unclassified_not_in_master = active.exclude(paper_id_filled__in=valid_ids).count()
     plagiarism_over_threshold = sum(
         1
         for submission in active
@@ -1282,12 +1542,18 @@ def dashboard_counts():
             and not has_valid_single_percent_exception(submission, setting)
         )
     )
-    format_pending = active.filter(format_status="pending").count()
-    format_needs_edit = active.filter(format_status="needs_edit").count()
-    corrected_pdf_processing_needed = sum(
-        1 for submission in active if active_pdf_needs_processing(submission)
+    format_pending = sum(
+        1 for submission in active if submission.format_status == "pending"
     )
-    master_by_id = {paper.paper_id: paper for paper in InitialPaper.objects.all()}
+    format_needs_edit = sum(
+        1 for submission in active if submission.format_status == "needs_edit"
+    )
+    corrected_pdf_processing_needed = sum(
+        1
+        for submission in active
+        if active_pdf_needs_processing(submission, context.file_inspection)
+    )
+    master_by_id = context.paper_by_id
     unverified_paper_ids = sum(
         1
         for submission in active
@@ -1354,10 +1620,12 @@ def dashboard_counts():
     from submissions.services.editor_uploads import editor_conflict_count
 
     return {
-        "total_papers": InitialPaper.objects.count(),
+        "total_papers": len(context.papers),
         "total_final_submissions": FinalSubmission.objects.count(),
-        "active_final_versions": active.count(),
-        "publication_candidates": active.filter(paper_id_filled__in=valid_ids).count(),
+        "active_final_versions": len(active),
+        "publication_candidates": sum(
+            1 for submission in active if submission.paper_id_filled in valid_ids
+        ),
         "unverified_paper_ids": unverified_paper_ids,
         "title_mismatches": title_mismatches,
         "verified_title_differences": verified_title_differences,
@@ -1366,14 +1634,18 @@ def dashboard_counts():
             duplicate_submission=True,
             discarded=False,
         ).count(),
-        "excluded_from_publication": FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=True, discarded=False
-        ).count(),
+        "excluded_from_publication": sum(
+            1
+            for submission in context.active_submissions
+            if submission.excluded_from_publication
+        ),
         "unclassified_not_in_master": unclassified_not_in_master,
-        "invalid_paper_ids": len(invalid_paper_id_submissions()),
-        "missing_final_submissions": InitialPaper.objects.exclude(
-            paper_id__in=active_paper_ids | excluded_paper_ids
-        ).count(),
+        "invalid_paper_ids": len(invalid_paper_id_submissions(context)),
+        "missing_final_submissions": sum(
+            1
+            for paper in context.papers
+            if paper.paper_id not in active_paper_ids | excluded_paper_ids
+        ),
         "page_limit_errors": sum(
             1
             for submission in active
@@ -1389,28 +1661,53 @@ def dashboard_counts():
             and not submission.has_valid_page_limit_exception
         ),
         "missing_pdfs": sum(
-            1 for submission in active if not pdf_available_for_processing(submission)
+            1
+            for submission in active
+            if not pdf_available_for_processing(
+                submission,
+                context.file_inspection,
+            )
         ),
         "authors_over_limit": sum(
             1 for row in author_rows if row["over_limit"] and not row["waiver_valid"]
         ),
-        "missing_title_author_extraction": active.filter(
-            Q(extracted_title="") | Q(extracted_authors="")
-        ).count(),
-        "title_author_pending": active.filter(title_author_review_status="pending").count(),
-        "title_author_red_flag": active.filter(title_author_review_status="red_flag").count(),
-        "title_author_review_ok": active.filter(title_author_review_status="review_ok").count(),
-        "unverified_title_author_extraction": active.exclude(extracted_title="")
-        .exclude(extracted_authors="")
-        .exclude(title_author_review_status="review_ok")
-        .count(),
+        "missing_title_author_extraction": sum(
+            1
+            for submission in active
+            if not submission.extracted_title or not submission.extracted_authors
+        ),
+        "title_author_pending": sum(
+            1
+            for submission in active
+            if submission.title_author_review_status == "pending"
+        ),
+        "title_author_red_flag": sum(
+            1
+            for submission in active
+            if submission.title_author_review_status == "red_flag"
+        ),
+        "title_author_review_ok": sum(
+            1
+            for submission in active
+            if submission.title_author_review_status == "review_ok"
+        ),
+        "unverified_title_author_extraction": sum(
+            1
+            for submission in active
+            if submission.extracted_title
+            and submission.extracted_authors
+            and submission.title_author_review_status != "review_ok"
+        ),
         "unverified_extracted_title_match": 0,
         "title_author_attention_papers": title_author_attention_papers,
         "papers_over_author_number_limit": papers_over_author_number_limit,
         "duplicate_author_papers": duplicate_author_papers,
-        "missing_plagiarism_result": active.filter(
-            Q(similarity_score__isnull=True) | Q(single_similarity_score__isnull=True)
-        ).count(),
+        "missing_plagiarism_result": sum(
+            1
+            for submission in active
+            if submission.similarity_score is None
+            or submission.single_similarity_score is None
+        ),
         "plagiarism_over_threshold": plagiarism_over_threshold,
         "single_over_threshold": single_over_threshold,
         "plagiarism_threshold_issue_papers": plagiarism_threshold_issue_papers,
@@ -1425,8 +1722,24 @@ def dashboard_counts():
     }
 
 
-def error_report_rows():
-    rows = publication_readiness_rows(include_allowed=True)
+def error_report_rows(
+    *,
+    context=None,
+    author_rows=None,
+    compact_duplicate_messages=False,
+):
+    context = context or PublicationReadContext.load()
+    if author_rows is None:
+        author_rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
+    rows = publication_readiness_rows(
+        include_allowed=True,
+        context=context,
+        author_rows=author_rows,
+        compact_duplicate_messages=compact_duplicate_messages,
+    )
     for submission in FinalSubmission.objects.filter(
         title_author_source="manual_override",
         discarded=False,

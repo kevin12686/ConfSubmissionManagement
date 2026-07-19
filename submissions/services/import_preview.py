@@ -689,6 +689,7 @@ def _reset_pdf_dependent_state(submission, processing_message="PDF changed; need
     submission.page_count = None
     reset_page_limit_exception(submission)
     submission.pdf_hash = ""
+    submission.source_hash = ""
     submission.thumbnail_folder = ""
     submission.thumbnail_status = ""
     submission.thumbnail_message = ""
@@ -721,6 +722,7 @@ def _reset_pdf_dependent_state(submission, processing_message="PDF changed; need
 
 
 def _reset_source_dependent_state(submission):
+    submission.source_hash = ""
     submission.format_status = "pending"
     _clear_title_author_manual_override(submission)
     submission.title_author_review_status = "pending"

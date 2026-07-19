@@ -117,6 +117,20 @@ normal Django GET URLs. If assets are missing after deployment, confirm
 that startup completed `collectstatic`; WhiteNoise serves the resulting
 `STATIC_ROOT`.
 
+### First readiness load after restart is slower
+
+Dashboard readiness, Error Report, and publication duplicate checks must read
+the current publication files. The first request after restarting the Python
+process computes content hashes; later requests can reuse a hash only while
+the file's device, inode, size, modification time, and change time are
+unchanged. Worklist filters and normal pagination still inspect only the
+necessary scope and hydrate only visible rows.
+
+If repeated requests remain slow, check whether media is on a high-latency
+filesystem or Docker bind mount and confirm the files are not being rewritten
+continuously. Do not work around the delay by forcing a publication package:
+final export performs a strict fresh validation.
+
 ### Upload drop zone summary looks wrong
 
 The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.
@@ -231,15 +245,26 @@ Common blockers:
 
 - Missing active final for a Paper Master record.
 - Invalid or unverified Paper ID.
-- Missing PDF or source.
+- Missing PDF/source, including a selected Corrected file that is no longer on disk.
+- Source review hash missing, or source bytes changed after Formatting Review.
 - PDF not processed.
 - Page count outside limits without allowed exception.
 - Title/author review not OK.
 - Formatting not Review OK.
 - Missing plagiarism scores, or over-threshold plagiarism scores without valid allowed exceptions.
 - Duplicate publication title/PDF/source.
+- Duplicate publication filename after Paper ID/title sanitization.
 - Unresolved duplicate author.
 - Start2/Editor conflict.
+
+If export reports that a file changed during inspection, do not use an older
+generated package. Confirm that no external synchronization or editor is
+replacing files, run Process PDFs again, clear all resulting blockers, and
+export a new final package.
+
+For `Source Review Hash Missing` or `Source Changed After Review`, inspect the
+current source in Formatting Review and save `Review OK` again. Do not copy a
+hash from another record or restore an older status directly in the database.
 
 ### Need an intermediate package anyway
 

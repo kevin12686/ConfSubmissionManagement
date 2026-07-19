@@ -1,4 +1,3 @@
-from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.checks import (
     author_number_count,
     duplicate_authors_in_paper,
@@ -24,6 +23,7 @@ from submissions.services.file_manager import (
     publication_pdf_info,
     publication_source_info,
 )
+from submissions.services.publication_read import PublicationReadContext
 from submissions.services.verification import normalize_title, text_diff_html, titles_identical
 
 
@@ -58,10 +58,11 @@ ORGANIZED_LIST_SORT_OPTIONS = [
 ]
 
 
-def _page_status(submission, settings_obj):
+def _page_status(submission, settings_obj, publication_pdf=None):
     if not submission:
         return "No final", "danger"
-    if not publication_pdf_info(submission)["exists"]:
+    publication_pdf = publication_pdf or publication_pdf_info(submission)
+    if not publication_pdf["exists"]:
         return "No PDF", "danger"
     if submission.processing_status == "error":
         return "PDF error", "danger"
@@ -183,10 +184,25 @@ def _legacy_plagiarism_status(submission):
     return submission.get_plagiarism_status_display(), "secondary"
 
 
-def _source_status(submission):
+def _source_status(submission, source_info=None, inspection=None):
     if not submission:
         return "", "secondary"
-    source_info = publication_source_info(submission)
+    inspection = inspection or FileInspectionContext()
+    source_info = source_info or publication_source_info(
+        submission,
+        inspection,
+    )
+    if not source_info["exists"]:
+        if source_info["source"] == "corrected_missing":
+            return "Corrected missing", "danger"
+        return "No source", "danger"
+    if not submission.source_hash:
+        return "Review source", "danger"
+    try:
+        if inspection.sha256(source_info["path"]) != submission.source_hash:
+            return "Changed after review", "danger"
+    except Exception:
+        return "Source unreadable", "danger"
     if source_info["source"] == "corrected":
         return "Corrected", "success" if submission.format_status == "review_ok" else "warning"
     if source_info["source"] == "original":
@@ -215,7 +231,7 @@ def _extraction_status(submission):
     return f"No extracted {missing[0]}", "danger"
 
 
-def _author_count_status(submission, settings_obj):
+def _author_count_status(submission, settings_obj, *, include_display_items=True):
     if not submission or not submission.extracted_authors:
         return {
             "author_count": None,
@@ -237,10 +253,14 @@ def _author_count_status(submission, settings_obj):
     return {
         "author_count": author_count,
         "author_count_label": f"{author_count} author{'s' if author_count != 1 else ''}",
-        "author_display_items": [
-            {"order": index, "name": author_name}
-            for index, author_name in enumerate(author_names, start=1)
-        ],
+        "author_display_items": (
+            [
+                {"order": index, "name": author_name}
+                for index, author_name in enumerate(author_names, start=1)
+            ]
+            if include_display_items
+            else []
+        ),
         "author_count_level": "info"
         if over_limit and waiver_valid
         else ("warning" if exception_status == "stale" else ("danger" if over_limit or unresolved_duplicate_authors else "secondary")),
@@ -254,7 +274,7 @@ def _author_count_status(submission, settings_obj):
     }
 
 
-def _title_check(paper, submission):
+def _title_check(paper, submission, *, include_diff=True):
     master_title = paper.title if paper else ""
     final_title = submission.final_submission_title if submission else ""
     extracted_title = submission.extracted_title if submission else ""
@@ -276,7 +296,12 @@ def _title_check(paper, submission):
 
     comparisons = []
     for label, reference_title in [("Master", master_title), ("Final", final_title)]:
-        comparison = _title_comparison(label, reference_title, extracted_title)
+        comparison = _title_comparison(
+            label,
+            reference_title,
+            extracted_title,
+            include_diff=include_diff,
+        )
         comparisons.append(comparison)
         if comparison["status"] == "hard":
             badges.append({"label": f"{label} title text differs", "level": "warning"})
@@ -300,7 +325,7 @@ def _title_check(paper, submission):
     }
 
 
-def _title_comparison(label, reference_title, extracted_title):
+def _title_comparison(label, reference_title, extracted_title, *, include_diff=True):
     if not reference_title or not extracted_title:
         status = "missing"
     elif reference_title.strip() == extracted_title.strip():
@@ -313,9 +338,11 @@ def _title_comparison(label, reference_title, extracted_title):
         "label": label,
         "reference_title": reference_title,
         "status": status,
-        "diff_html": text_diff_html(reference_title, extracted_title)
-        if reference_title and extracted_title
-        else "",
+        "diff_html": (
+            text_diff_html(reference_title, extracted_title)
+            if include_diff and reference_title and extracted_title
+            else ""
+        ),
     }
 
 
@@ -646,49 +673,81 @@ def organized_list_rows(
     current_filter="all",
     current_sort="needs_attention",
     exact_paper_id="",
+    *,
+    context=None,
+    hydrate=True,
 ):
-    settings_obj = AppSetting.load()
+    context = context or PublicationReadContext.load()
+    settings_obj = context.settings
     debug_pdf_context = PublicationDebugPdfContext.from_settings(settings_obj)
-    papers = list(InitialPaper.objects.all())
+    papers = list(context.papers)
     valid_paper_ids = {paper.paper_id for paper in papers}
-    duplicate_map = publication_duplicate_map()
+    duplicate_map = publication_duplicate_map(context)
     conflict_paper_ids = set(editor_conflict_paper_ids())
-    active_submissions = (
-        FinalSubmission.objects.filter(
-            active_version=True,
-            discarded=False,
-            excluded_from_publication=False,
-        )
-        .order_by("paper_id_filled", "-created_at", "-final_submission_id")
+    active_submissions = sorted(
+        context.publishable_submissions,
+        key=lambda submission: submission.final_submission_id,
+        reverse=True,
     )
+    active_submissions.sort(
+        key=lambda submission: submission.created_at,
+        reverse=True,
+    )
+    active_submissions.sort(key=lambda submission: submission.paper_id_filled)
     active_by_paper_id = {}
     for submission in active_submissions:
         active_by_paper_id.setdefault(submission.paper_id_filled, submission)
-    excluded_paper_ids = set(
-        FinalSubmission.objects.filter(
-            active_version=True,
-            discarded=False,
-            excluded_from_publication=True,
-            paper_id_filled__in=valid_paper_ids,
-        ).values_list("paper_id_filled", flat=True)
-    )
+    excluded_paper_ids = context.excluded_paper_ids
 
     rows = []
     for paper in papers:
         if paper.paper_id in excluded_paper_ids:
             continue
         submission = active_by_paper_id.get(paper.paper_id)
-        page_label, page_level = _page_status(submission, settings_obj)
+        publication_pdf = (
+            publication_pdf_info(
+                submission,
+                context.file_inspection,
+                include_url=hydrate,
+            )
+            if submission
+            else None
+        )
+        publication_source = (
+            publication_source_info(
+                submission,
+                context.file_inspection,
+                include_url=hydrate,
+            )
+            if submission
+            else None
+        )
+        page_label, page_level = _page_status(
+            submission,
+            settings_obj,
+            publication_pdf,
+        )
         verify_label, verify_level = _verification_status(submission, paper)
         plagiarism_label, plagiarism_level = _plagiarism_status(submission, settings_obj)
-        source_label, source_level = _source_status(submission)
+        source_label, source_level = _source_status(
+            submission,
+            publication_source,
+            context.file_inspection,
+        )
         extraction_label, extraction_level = _extraction_status(submission)
-        author_status = _author_count_status(submission, settings_obj)
-        publication_pdf = publication_pdf_info(submission) if submission else None
-        publication_source = publication_source_info(submission) if submission else None
+        author_status = _author_count_status(
+            submission,
+            settings_obj,
+            include_display_items=hydrate,
+        )
         debug_pdf = (
-            publication_debug_pdf_info(submission, paper, debug_pdf_context)
-            if submission
+            publication_debug_pdf_info(
+                submission,
+                paper,
+                debug_pdf_context,
+                context.file_inspection,
+            )
+            if submission and hydrate
             else None
         )
         rows.append(
@@ -701,10 +760,17 @@ def organized_list_rows(
                 "debug_pdf": debug_pdf,
                 "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
                 "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
-                "needs_processing_after_formatting": active_pdf_needs_processing(submission)
+                "needs_processing_after_formatting": active_pdf_needs_processing(
+                    submission,
+                    context.file_inspection,
+                )
                 if submission
                 else False,
-                "title_check": _title_check(paper, submission),
+                "title_check": _title_check(
+                    paper,
+                    submission,
+                    include_diff=hydrate,
+                ),
                 "page_label": page_label,
                 "page_level": page_level,
                 "verify_label": verify_label,
@@ -732,8 +798,10 @@ def organized_list_rows(
                     submission, settings_obj
                 ),
                 **_plagiarism_exception_summary(submission, settings_obj),
-                "exception_panel_sections": _exception_panel_sections(
-                    submission, settings_obj
+                "exception_panel_sections": (
+                    _exception_panel_sections(submission, settings_obj)
+                    if hydrate
+                    else []
                 ),
                 "source_label": source_label,
                 "source_level": source_level,
@@ -748,16 +816,42 @@ def organized_list_rows(
             continue
         if submission.paper_id_filled in valid_paper_ids:
             continue
-        page_label, page_level = _page_status(submission, settings_obj)
+        publication_pdf = publication_pdf_info(
+            submission,
+            context.file_inspection,
+            include_url=hydrate,
+        )
+        publication_source = publication_source_info(
+            submission,
+            context.file_inspection,
+            include_url=hydrate,
+        )
+        page_label, page_level = _page_status(
+            submission,
+            settings_obj,
+            publication_pdf,
+        )
         verify_label, verify_level = _verification_status(submission)
         plagiarism_label, plagiarism_level = _plagiarism_status(submission, settings_obj)
-        source_label, source_level = _source_status(submission)
+        source_label, source_level = _source_status(
+            submission,
+            publication_source,
+            context.file_inspection,
+        )
         extraction_label, extraction_level = _extraction_status(submission)
-        author_status = _author_count_status(submission, settings_obj)
-        publication_pdf = publication_pdf_info(submission)
-        publication_source = publication_source_info(submission)
-        debug_pdf = publication_debug_pdf_info(
-            submission, context=debug_pdf_context
+        author_status = _author_count_status(
+            submission,
+            settings_obj,
+            include_display_items=hydrate,
+        )
+        debug_pdf = (
+            publication_debug_pdf_info(
+                submission,
+                context=debug_pdf_context,
+                inspection=context.file_inspection,
+            )
+            if hydrate
+            else None
         )
         rows.append(
             {
@@ -769,8 +863,15 @@ def organized_list_rows(
                 "debug_pdf": debug_pdf,
                 "duplicate_badges": duplicate_map.get(submission.pk, []),
                 "version_conflict": submission.paper_id_filled in conflict_paper_ids,
-                "needs_processing_after_formatting": active_pdf_needs_processing(submission),
-                "title_check": _title_check(None, submission),
+                "needs_processing_after_formatting": active_pdf_needs_processing(
+                    submission,
+                    context.file_inspection,
+                ),
+                "title_check": _title_check(
+                    None,
+                    submission,
+                    include_diff=hydrate,
+                ),
                 "page_label": page_label,
                 "page_level": page_level,
                 "verify_label": verify_label,
@@ -791,8 +892,10 @@ def organized_list_rows(
                     submission, settings_obj
                 ),
                 **_plagiarism_exception_summary(submission, settings_obj),
-                "exception_panel_sections": _exception_panel_sections(
-                    submission, settings_obj
+                "exception_panel_sections": (
+                    _exception_panel_sections(submission, settings_obj)
+                    if hydrate
+                    else []
                 ),
                 "source_label": source_label,
                 "source_level": source_level,
@@ -861,9 +964,11 @@ def organized_list_rows(
             1 for row in filtered_rows if row["submission"] and row.get("unresolved_duplicate_authors")
         ),
         "version_conflicts": sum(1 for row in filtered_rows if row.get("version_conflict")),
-        "excluded_from_publication": FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=True, discarded=False
-        ).count(),
+        "excluded_from_publication": sum(
+            1
+            for submission in context.active_submissions
+            if submission.excluded_from_publication
+        ),
         "needs_process_pdfs": len(needs_process_rows),
         "needs_process_pdf_labels": [
             f"{_row_paper_id(row) or 'No Paper ID'} / Final {row['submission'].final_submission_id}"
@@ -908,3 +1013,49 @@ def organized_list_rows(
         },
     ]
     return filtered_rows, summary, settings_obj, current_filter, current_sort
+
+
+def hydrate_organized_list_rows(rows, *, settings_obj, context):
+    debug_pdf_context = PublicationDebugPdfContext.from_settings(settings_obj)
+    hydrated = []
+    for row in rows:
+        submission = row["submission"]
+        if not submission:
+            hydrated.append(row)
+            continue
+        paper = row["paper"]
+        publication_pdf = publication_pdf_info(
+            submission,
+            context.file_inspection,
+        )
+        publication_source = publication_source_info(
+            submission,
+            context.file_inspection,
+        )
+        source_label, source_level = _source_status(
+            submission,
+            publication_source,
+            context.file_inspection,
+        )
+        hydrated.append(
+            {
+                **row,
+                "publication_pdf": publication_pdf,
+                "publication_source": publication_source,
+                "debug_pdf": publication_debug_pdf_info(
+                    submission,
+                    paper,
+                    debug_pdf_context,
+                    context.file_inspection,
+                ),
+                "title_check": _title_check(paper, submission),
+                "exception_panel_sections": _exception_panel_sections(
+                    submission,
+                    settings_obj,
+                ),
+                "source_label": source_label,
+                "source_level": source_level,
+                **_author_count_status(submission, settings_obj),
+            }
+        )
+    return hydrated

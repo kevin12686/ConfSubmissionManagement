@@ -97,8 +97,53 @@ Large worklists use the shared `WorklistPage` boundary. The complete lightweight
 scope is classified and sorted first, then the selected `50 / 100 / 200` page
 is hydrated with file checks, previews, suggestions, and diffs. `page_size=all`
 hydrates the complete filtered result and is the explicit compatibility path
-for full-list inspection. Request-scoped file/configuration snapshots prevent
-row-level settings queries without changing publication source resolution.
+for full-list inspection. Organized List, Process PDFs, Author Count,
+Exceptions, and Old Versions expose separate lightweight-selection and
+display-hydration functions; controllers must paginate between those two
+steps.
+
+Paper Master List and Final Submissions apply validated server-side sort keys
+before `WorklistPage` pagination. Natural identifier ordering is shared through
+`natural_text_key()`. Worklist tabs use the common `cfm-tabs` component, so
+active state, count badges, and spacing remain consistent across reports and
+review queues.
+
+`PublicationReadContext` is the request-scoped read boundary for Paper Master,
+active Final Submissions, settings, and filesystem inspection. Dashboard
+counts, publication readiness, duplicate detection, Error Report, and global
+workflow alerts reuse this context rather than loading independent publication
+scopes. It is immutable request data, not a publication cache, and GET requests
+do not persist derived state.
+
+`FileInspectionContext` reuses request-local filesystem observations for normal
+reads. SHA-256 results may be reused across requests only when device, inode,
+size, mtime, and ctime all match. A strict fresh hash re-stats the path even
+inside an existing context, and hashing verifies the signature again after
+reading, so a file changed during inspection is rejected.
+
+Final Publication Package export keeps the same `PublicationReadContext` from
+readiness validation through manifest construction and ZIP assembly. PDF/source
+entries are written from `FileInspectionContext.read_snapshot_bytes()`, which
+rejects a path whose full filesystem signature changed after inspection.
+Export also blocks when Paper ID/title sanitization would produce the same
+case-insensitive ZIP base name for more than one publication record. Therefore
+validated files cannot be silently replaced or overwritten by a later path
+read or duplicate archive entry.
+
+Final export also fingerprints publication-critical database state before
+loading the snapshot and after ZIP assembly. A concurrent editor change to
+Paper Master, submissions, settings, author rows, or author waivers deletes the
+partial output and requires a fresh export. Publication source bytes are bound
+to Formatting Review by `source_hash`; missing or changed source hashes block
+export. A configured Corrected PDF/source that is missing never falls back to
+the Original file.
+
+Error Report keeps duplicate categories and blocker messages unchanged in the
+readiness/report services. Its HTML worklist uses a compact duplicate-group
+summary and a read-only HTMX detail endpoint for the full matching-record list,
+preventing `page_size=all` from repeating an O(n) group description in every
+row. Rows are sorted by severity before pagination, tab badges retain full-list
+totals, and the detail endpoint has a complete non-HTMX fallback page.
 
 Final Submission and Paper Master upload zones are presentation helpers only. File extension/hash validation and preview/apply remain server-owned. The browser may summarize selected files or remove them before submit, but cannot classify publication files or bypass import preview.
 

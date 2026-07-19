@@ -8,14 +8,19 @@ from pathlib import Path
 import fitz
 from django.conf import settings as django_settings
 from django.core.files import File
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, Count, IntegerField, Value, When
 from django.db.models import Q
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
-from submissions.services.file_manager import publication_pdf_info, sanitize_filename_part
+from submissions.services.file_inspection import FileInspectionContext
+from submissions.services.file_manager import (
+    publication_pdf_info,
+    publication_source_info,
+    sanitize_filename_part,
+)
 from submissions.services.import_export import classify_uploaded_file
 from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
@@ -273,6 +278,23 @@ def _save_preview_upload(file_obj, token_root, prefix):
     return {"path": str(path), "original_name": original_name}
 
 
+def _formatting_queryset(query=""):
+    submissions = FinalSubmission.objects.filter(
+        active_version=True,
+        discarded=False,
+        excluded_from_publication=False,
+        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+    )
+    if query:
+        submissions = submissions.filter(
+            Q(final_submission_id__icontains=query)
+            | Q(paper_id_filled__icontains=query)
+            | Q(final_submission_title__icontains=query)
+            | Q(final_submission_authors__icontains=query)
+        )
+    return submissions
+
+
 def formatting_rows(query="", status_filter="needs_attention"):
     status_order = Case(
         When(format_status="pending", then=Value(0)),
@@ -281,19 +303,7 @@ def formatting_rows(query="", status_filter="needs_attention"):
         default=Value(3),
         output_field=IntegerField(),
     )
-    submissions = FinalSubmission.objects.filter(
-        active_version=True,
-        discarded=False,
-        excluded_from_publication=False,
-        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
-    ).annotate(status_order=status_order)
-    if query:
-        submissions = submissions.filter(
-            Q(final_submission_id__icontains=query)
-            | Q(paper_id_filled__icontains=query)
-            | Q(final_submission_title__icontains=query)
-            | Q(final_submission_authors__icontains=query)
-        )
+    submissions = _formatting_queryset(query).annotate(status_order=status_order)
     if status_filter == "pending":
         submissions = submissions.filter(format_status="pending")
     elif status_filter == "needs_edit":
@@ -320,14 +330,41 @@ def formatting_rows(query="", status_filter="needs_attention"):
 
 
 def formatting_filter_counts(query=""):
-    return {
-        option["value"]: formatting_rows(query, option["value"]).count()
-        for option in FORMAT_FILTER_OPTIONS
-    }
+    empty_pdf = Q(formatted_pdf_file__isnull=True) | Q(formatted_pdf_file="")
+    empty_source = Q(formatted_source_file__isnull=True) | Q(
+        formatted_source_file=""
+    )
+    return _formatting_queryset(query).aggregate(
+        needs_attention=Count(
+            "pk",
+            filter=~Q(format_status="review_ok"),
+        ),
+        pending=Count("pk", filter=Q(format_status="pending")),
+        needs_edit=Count("pk", filter=Q(format_status="needs_edit")),
+        review_ok=Count("pk", filter=Q(format_status="review_ok")),
+        review_ok_no_edit=Count(
+            "pk",
+            filter=Q(format_status="review_ok") & empty_pdf & empty_source,
+        ),
+        edited=Count(
+            "pk",
+            filter=~empty_pdf | ~empty_source,
+        ),
+        all=Count("pk"),
+    )
 
 
-def formatting_preview_info(submission):
-    publication_pdf = publication_pdf_info(submission)
+def formatting_preview_info(
+    submission,
+    *,
+    inspection=None,
+    publication_pdf=None,
+):
+    inspection = inspection or FileInspectionContext()
+    publication_pdf = publication_pdf or publication_pdf_info(
+        submission,
+        inspection,
+    )
     if not publication_pdf["exists"]:
         return {
             "exists": False,
@@ -339,9 +376,12 @@ def formatting_preview_info(submission):
 
     pdf_path = Path(publication_pdf["path"])
     try:
-        stat = pdf_path.stat()
+        status = inspection.status(pdf_path)
         signature = hashlib.sha256(
-            f"{pdf_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}".encode("utf-8")
+            (
+                f"{pdf_path.resolve()}:"
+                f"{status.signature}"
+            ).encode("utf-8")
         ).hexdigest()[:16]
         preview_root = django_settings.MEDIA_ROOT / "format_previews"
         preview_root.mkdir(parents=True, exist_ok=True)
@@ -425,6 +465,25 @@ def update_formatting_submission(submission, cleaned_data):
     if has_new_corrected_file and previous_status == "review_ok":
         submission.format_status = "pending"
 
+    if submission.format_status == "review_ok":
+        inspection = FileInspectionContext()
+        source_info = publication_source_info(
+            submission,
+            inspection,
+            include_url=False,
+        )
+        if not source_info["exists"]:
+            raise ValueError(
+                "Formatting cannot be marked Review OK without the selected "
+                "publication source file."
+            )
+        submission.source_hash = inspection.sha256(
+            source_info["path"],
+            fresh=True,
+        )
+    else:
+        submission.source_hash = ""
+
     submission.save()
     audit_success(
         "formatting_update",
@@ -440,7 +499,10 @@ def update_formatting_submission(submission, cleaned_data):
             "corrected_pdf": getattr(corrected_pdf, "name", "") if corrected_pdf else "",
             "corrected_source": getattr(corrected_source, "name", "") if corrected_source else "",
         },
-        after={"format_status": submission.format_status},
+        after={
+            "format_status": submission.format_status,
+            "source_hash": submission.source_hash,
+        },
     )
     return submission
 

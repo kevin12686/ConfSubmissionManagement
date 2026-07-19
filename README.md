@@ -159,6 +159,23 @@ time plus Single Paper Mode. Process PDFs keeps every page thumbnail for each
 paper on the current page expanded. Organized List separates publication
 blockers from tracked information and keeps stable table widths.
 
+Paper Master List and Final Submissions provide server-side Sort controls next
+to Search. Paper ID and Final ID options use natural numeric ordering, so `P2`
+and Final ID `2` appear before `P10` and `10`. Final Submission tabs preserve
+the selected sort and search context.
+
+Publication-wide read pages share one request snapshot for Paper Master,
+active submissions, settings, and file status. Repeated PDF/source hashes are
+reused only while the complete filesystem signature is unchanged; final
+publication export performs strict fresh validation and writes the exact
+validated file snapshot. Final and draft exports block unresolved active-version
+ambiguity and sanitized ZIP filename collisions instead of allowing duplicate
+entries, reject concurrent publication-state changes, and require Formatting
+Review to bind the exact source bytes. A selected
+Corrected file that is missing never falls back to Original. Error Report keeps
+large duplicate groups compact and loads the full matching-record list on
+demand, including when Page size is `All`.
+
 The UI uses locally pinned Tabler 1.4.0 and HTMX 2.0.10. Worklist GETs,
 pagination, Dashboard readiness, and global workflow alerts load through
 server-rendered endpoints; normal worklist URLs remain directly usable.
@@ -190,12 +207,12 @@ For each Paper ID, active version selection currently works this way:
 
 Publication-facing PDF resolution uses this priority:
 
-1. Corrected PDF, if uploaded and present.
+1. Corrected PDF, if selected. If its file is missing, publication is blocked.
 2. Original PDF for the active submission, if present.
 
 Publication-facing source resolution uses this priority:
 
-1. Corrected source, if uploaded and present.
+1. Corrected source, if selected. If its file is missing, publication is blocked.
 2. Original source for the active submission, if present.
 
 `data/publication_pdf_debug/` is a generated inspection folder created by Process PDFs or Settings > Sync Debug PDFs. It is not the source of truth. Publication ZIPs, CrossCheck ZIPs, duplicate checks, and publication links read the active submission's Corrected PDF or Original PDF directly, not the debug copy.

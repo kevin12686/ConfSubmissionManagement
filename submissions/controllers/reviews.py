@@ -48,6 +48,7 @@ from submissions.services.exceptions import (
     approve_exception,
     exception_counts,
     exception_rows,
+    hydrate_exception_rows,
     remove_exception,
 )
 from submissions.services.import_export import (
@@ -90,13 +91,16 @@ from submissions.services.file_manager import (
     resolve_folder,
     sanitize_filename_part,
 )
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.organized_list import (
     ORGANIZED_LIST_FILTER_OPTIONS,
     ORGANIZED_LIST_SORT_OPTIONS,
+    hydrate_organized_list_rows,
     organized_list_rows,
 )
 from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
+from submissions.services.publication_read import PublicationReadContext
 from submissions.services.title_author_extraction import (
     ManualOverrideError,
     apply_title_author_manual_override,
@@ -243,11 +247,14 @@ def organized_list(request):
         view_mode = "checklist"
     current_filter = request.GET.get("filter", "all") if view_mode == "checklist" else "all"
     current_sort = request.GET.get("sort", "needs_attention") if view_mode == "checklist" else "paper_id_asc"
+    publication_context = PublicationReadContext.load()
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q,
         current_filter,
         current_sort,
         exact_paper_id=exact_paper_id,
+        context=publication_context,
+        hydrate=False,
     )
     if view_mode == "compact":
         rows = [
@@ -262,7 +269,11 @@ def organized_list(request):
         indicator_id="organized-loading",
         force_all=bool(exact_paper_id),
     )
-    rows = page.items
+    rows = hydrate_organized_list_rows(
+        page.items,
+        settings_obj=settings_obj,
+        context=publication_context,
+    )
     note_summary = paper_note_summary()
     focused_context = None
     if exact_paper_id:
@@ -789,19 +800,39 @@ def formatting(request):
         force_all=mode == "single" or explicit_focus,
     )
     all_submissions = page.items
-    rows = [
-        {
-            "submission": submission,
-            "form": FormattingUploadForm(submission=submission),
-            "publication_pdf": publication_pdf_info(submission),
-            "publication_source": publication_source_info(submission),
-            "preview": formatting_preview_info(submission),
-            "needs_processing_after_formatting": corrected_pdf_needs_processing(submission),
-            "original_source_type_label": original_source_type_label(submission),
-            "corrected_source_type_label": corrected_source_type_label(submission),
-        }
-        for submission in all_submissions
-    ]
+    file_inspection = FileInspectionContext()
+    rows = []
+    for submission in all_submissions:
+        publication_pdf = publication_pdf_info(
+            submission,
+            file_inspection,
+        )
+        rows.append(
+            {
+                "submission": submission,
+                "form": FormattingUploadForm(submission=submission),
+                "publication_pdf": publication_pdf,
+                "publication_source": publication_source_info(
+                    submission,
+                    file_inspection,
+                ),
+                "preview": formatting_preview_info(
+                    submission,
+                    inspection=file_inspection,
+                    publication_pdf=publication_pdf,
+                ),
+                "needs_processing_after_formatting": corrected_pdf_needs_processing(
+                    submission,
+                    file_inspection,
+                ),
+                "original_source_type_label": original_source_type_label(
+                    submission
+                ),
+                "corrected_source_type_label": corrected_source_type_label(
+                    submission
+                ),
+            }
+        )
     filter_counts = formatting_filter_counts(q)
     filter_options = [
         {**option, "count": filter_counts.get(option["value"], 0)}
@@ -988,7 +1019,12 @@ def exceptions_center(request):
     q = request.GET.get("q", "").strip()
     current_type = request.GET.get("type", "all")
     focused_key = request.GET.get("exception_key", "").strip()
-    all_rows, _resolved_filter = exception_rows("all")
+    publication_context = PublicationReadContext.load()
+    all_rows, _resolved_filter = exception_rows(
+        "all",
+        context=publication_context,
+        hydrate=False,
+    )
     valid_filters = {option["value"] for option in EXCEPTION_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "not_allowed"
@@ -1035,7 +1071,12 @@ def exceptions_center(request):
 
     if request.method == "POST":
         rebuild_paper_authors()
-        all_rows, _ = exception_rows("all")
+        publication_context = PublicationReadContext.load()
+        all_rows, _ = exception_rows(
+            "all",
+            context=publication_context,
+            hydrate=False,
+        )
         exception_key = request.POST.get("exception_key", "")
         action = request.POST.get("action")
         row = next((item for item in all_rows if item["key"] == exception_key), None)
@@ -1065,7 +1106,10 @@ def exceptions_center(request):
         indicator_id="exceptions-loading",
         force_all=bool(focused_key),
     )
-    rows = page.items
+    rows = hydrate_exception_rows(
+        page.items,
+        context=publication_context,
+    )
     focused_context = None
     if focused_key:
         focused_row = rows[0] if rows else None

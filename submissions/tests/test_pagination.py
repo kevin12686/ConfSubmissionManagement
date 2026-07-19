@@ -6,6 +6,10 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from submissions.application.pagination import paginate_worklist
+from submissions.application.selectors import (
+    _sort_final_submission_rows,
+    _sort_paper_master_rows,
+)
 from submissions.models import FinalSubmission, InitialPaper, PaperAuthor
 from submissions.services.editor_uploads import editor_conflict_details
 from submissions.services.final_submission_state import (
@@ -128,6 +132,30 @@ class WorklistPaginationViewTests(TestCase):
             [f"P{index:04d}" for index in range(1, 206)],
         )
         self.assertContains(all_rows, "All")
+
+    def test_natural_sort_queries_only_load_sort_keys_before_pagination(self):
+        with CaptureQueriesContext(connection) as paper_queries:
+            paper_ids = _sort_paper_master_rows(
+                InitialPaper.objects.all(),
+                "paper_id_asc",
+            )
+        with CaptureQueriesContext(connection) as final_queries:
+            submission_ids = _sort_final_submission_rows(
+                FinalSubmission.objects.all(),
+                "final_id_asc",
+            )
+
+        self.assertEqual(len(paper_ids), 205)
+        self.assertEqual(len(submission_ids), 205)
+        self.assertEqual(len(paper_queries), 1)
+        self.assertEqual(len(final_queries), 1)
+        paper_sql = paper_queries[0]["sql"].lower()
+        final_sql = final_queries[0]["sql"].lower()
+        self.assertNotIn("authors", paper_sql)
+        self.assertNotIn("notes", paper_sql)
+        self.assertNotIn("extracted_authors", final_sql)
+        self.assertNotIn("processing_message", final_sql)
+        self.assertNotIn("plagiarism_report_path", final_sql)
 
     def test_second_page_starts_after_the_first_page_without_overlap(self):
         url = reverse("submissions:initial_paper_list")
@@ -297,6 +325,109 @@ class WorklistPaginationViewTests(TestCase):
         self.assertEqual(len(response.context["rows"]), 50)
         self.assertEqual(title_diff.call_count, 50)
         self.assertEqual(author_diff.call_count, 50)
+
+    def test_organized_details_are_hydrated_only_for_displayed_page(self):
+        with patch(
+            "submissions.services.organized_list.text_diff_html",
+            return_value="diff",
+        ) as title_diff:
+            response = self.client.get(
+                reverse("submissions:organized_list"),
+                {"page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 50)
+        self.assertEqual(title_diff.call_count, 100)
+
+    def test_process_thumbnails_are_hydrated_only_for_displayed_page(self):
+        with patch(
+            "submissions.services.pdf_processor.thumbnail_urls",
+            return_value=[],
+        ) as thumbnails:
+            response = self.client.get(
+                reverse("submissions:process"),
+                {"filter": "all", "page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["processed_rows"]), 50)
+        self.assertEqual(thumbnails.call_count, 50)
+
+    def test_author_pdf_links_are_hydrated_only_for_displayed_page(self):
+        with patch(
+            "submissions.services.checks.publication_pdf_info",
+            return_value={
+                "url": "",
+                "label": "No PDF",
+                "source": "missing",
+                "exists": False,
+            },
+        ) as publication_pdf:
+            response = self.client.get(
+                reverse("submissions:author_count"),
+                {"page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 50)
+        self.assertEqual(publication_pdf.call_count, 50)
+
+    def test_exception_pdf_links_are_hydrated_only_for_displayed_page(self):
+        submissions = list(FinalSubmission.objects.all())
+        for submission in submissions:
+            submission.page_count = 20
+        bulk_update_submissions(submissions, ["page_count"])
+
+        with patch(
+            "submissions.services.exceptions.publication_pdf_info",
+            return_value={
+                "url": "",
+                "label": "No PDF",
+                "source": "missing",
+                "exists": False,
+            },
+        ) as publication_pdf:
+            response = self.client.get(
+                reverse("submissions:exceptions_center"),
+                {"page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 50)
+        self.assertEqual(publication_pdf.call_count, 50)
+
+    def test_old_version_pdf_links_are_hydrated_only_for_displayed_page(self):
+        old_submissions = FinalSubmission.objects.bulk_create(
+            [
+                FinalSubmission(
+                    final_submission_id=f"OLD-PAGE-{index:04d}",
+                    paper_id_filled=f"P{index:04d}",
+                    active_version=False,
+                    duplicate_submission=True,
+                )
+                for index in range(1, 206)
+            ]
+        )
+        bulk_sync_submission_state_records(old_submissions)
+
+        with patch(
+            "submissions.services.version_history.publication_pdf_info",
+            return_value={
+                "url": "",
+                "label": "No PDF",
+                "source": "missing",
+                "exists": False,
+            },
+        ) as publication_pdf:
+            response = self.client.get(
+                reverse("submissions:old_versions"),
+                {"page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 50)
+        self.assertEqual(publication_pdf.call_count, 50)
 
     def test_editor_conflict_snapshot_query_count_does_not_scale_per_paper(self):
         editor_submissions = FinalSubmission.objects.bulk_create(

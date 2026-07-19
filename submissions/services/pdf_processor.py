@@ -167,8 +167,61 @@ PDF_PROCESSING_UPDATE_FIELDS = [
     "thumbnail_message",
 ]
 
+PDF_CONTENT_RESET_UPDATE_FIELDS = [
+    "page_limit_exception_approved",
+    "page_limit_exception_reason",
+    "page_limit_exception_page_count",
+    "page_limit_exception_approved_at",
+    "source_hash",
+    "extracted_title",
+    "extracted_authors",
+    "title_author_source",
+    "title_author_imported_at",
+    "title_author_extraction_status",
+    "title_author_extraction_message",
+    "title_author_verification_image",
+    "title_author_manual_override_reason",
+    "title_author_manual_override_at",
+    "title_author_review_status",
+    "title_author_verified",
+    "title_author_verified_at",
+    "duplicate_author_review_status",
+    "duplicate_author_review_notes",
+    "duplicate_author_reviewed_at",
+    "author_number_exception_approved",
+    "author_number_exception_reason",
+    "author_number_exception_author_count",
+    "author_number_exception_approved_at",
+    "extracted_title_verified",
+    "extracted_title_auto_verify_blocked",
+    "extracted_title_verified_at",
+    "extracted_title_match_status",
+    "extracted_title_match_score",
+    "extracted_title_match_message",
+    "plagiarism_status",
+    "similarity_score",
+    "single_similarity_score",
+    "plagiarism_percent_exception_approved",
+    "plagiarism_percent_exception_reason",
+    "plagiarism_percent_exception_approved_score",
+    "plagiarism_percent_exception_approved_at",
+    "single_percent_exception_approved",
+    "single_percent_exception_reason",
+    "single_percent_exception_approved_score",
+    "single_percent_exception_approved_at",
+    "plagiarism_report_path",
+    "plagiarism_report_stale",
+    "plagiarism_imported_at",
+    "format_status",
+]
+
+PDF_PROCESSING_PERSIST_FIELDS = list(
+    dict.fromkeys(PDF_PROCESSING_UPDATE_FIELDS + PDF_CONTENT_RESET_UPDATE_FIELDS)
+)
+
 
 def process_submission_pdf(submission, force=False, *, save=True):
+    submission._pdf_content_integrity_reset = False
     path = source_pdf_path(submission)
     if not path:
         submission.processing_status = "error"
@@ -186,6 +239,10 @@ def process_submission_pdf(submission, force=False, *, save=True):
     try:
         previous_page_count = submission.page_count
         new_hash = calculate_pdf_hash(path)
+        content_changed_outside_workflow = bool(
+            submission.pdf_hash
+            and submission.pdf_hash != new_hash
+        )
         if (
             not force
             and submission.processing_status == "processed"
@@ -194,6 +251,15 @@ def process_submission_pdf(submission, force=False, *, save=True):
             and _thumbnail_folder_ready(submission)
         ):
             return None
+        if content_changed_outside_workflow:
+            from submissions.services.import_preview import _reset_pdf_dependent_state
+
+            _reset_pdf_dependent_state(
+                submission,
+                "PDF content changed outside the upload workflow; all dependent "
+                "reviews were reset before processing.",
+            )
+            submission._pdf_content_integrity_reset = True
         new_page_count = calculate_page_count(path)
         if previous_page_count != new_page_count:
             reset_page_limit_exception(submission)
@@ -207,7 +273,7 @@ def process_submission_pdf(submission, force=False, *, save=True):
         submission.thumbnail_message = "PDF thumbnails generated."
         if save:
             submission.save(
-                update_fields=PDF_PROCESSING_UPDATE_FIELDS + ["updated_at"]
+                update_fields=PDF_PROCESSING_PERSIST_FIELDS + ["updated_at"]
             )
         return True
     except Exception as exc:
@@ -240,6 +306,7 @@ def process_all_pdfs(force=False):
         processed = 0
         skipped = 0
         errors = 0
+        integrity_resets = 0
         error_rows = []
         publication_submissions = FinalSubmission.objects.filter(
             active_version=True,
@@ -255,7 +322,7 @@ def process_all_pdfs(force=False):
             if updates:
                 bulk_update_submissions(
                     updates,
-                    PDF_PROCESSING_UPDATE_FIELDS,
+                    PDF_PROCESSING_PERSIST_FIELDS,
                 )
 
         try:
@@ -267,6 +334,8 @@ def process_all_pdfs(force=False):
                 )
                 if result is True:
                     processed += 1
+                    if submission._pdf_content_integrity_reset:
+                        integrity_resets += 1
                     pending_updates.append(submission)
                 elif result is None:
                     skipped += 1
@@ -285,11 +354,15 @@ def process_all_pdfs(force=False):
                     flush_pending_updates()
         finally:
             flush_pending_updates()
+        from submissions.services.checks import rebuild_paper_authors
+
+        rebuild_paper_authors()
         debug_result = sync_debug_publication_files()
         result = {
             "processed": processed,
             "skipped": skipped,
             "errors": errors,
+            "integrity_resets": integrity_resets,
             "error_rows": error_rows,
             "debug_synced": debug_result["synced_count"],
             "debug_skipped": debug_result["skipped_count"],
@@ -302,6 +375,7 @@ def process_all_pdfs(force=False):
                 "processed": processed,
                 "skipped": skipped,
                 "errors": errors,
+                "integrity_resets": integrity_resets,
                 "debug_synced": debug_result["synced_count"],
                 "debug_skipped": debug_result["skipped_count"],
                 "force": force,
@@ -315,21 +389,49 @@ def process_all_pdfs(force=False):
         raise
 
 
-def processed_pdf_rows(limit=None):
+def processed_pdf_rows(
+    limit=None,
+    *,
+    submissions=None,
+    include_thumbnails=True,
+):
     rows = []
-    submissions = FinalSubmission.objects.filter(
-        active_version=True,
-        discarded=False,
-        excluded_from_publication=False,
-        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
-    ).order_by("paper_id_filled", "final_submission_id")
-    if limit is not None:
-        submissions = submissions[:limit]
+    if submissions is None:
+        submissions = FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+            excluded_from_publication=False,
+            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+        ).order_by("paper_id_filled", "final_submission_id")
+        if limit is not None:
+            submissions = submissions[:limit]
+    else:
+        submissions = sorted(
+            submissions,
+            key=lambda submission: (
+                submission.paper_id_filled,
+                submission.final_submission_id,
+            ),
+        )
+        if limit is not None:
+            submissions = submissions[:limit]
     for submission in submissions:
         rows.append(
             {
                 "submission": submission,
-                "thumbnail_urls": thumbnail_urls(submission),
+                "thumbnail_urls": (
+                    thumbnail_urls(submission) if include_thumbnails else []
+                ),
             }
         )
     return rows
+
+
+def hydrate_processed_pdf_rows(rows):
+    return [
+        {
+            **row,
+            "thumbnail_urls": thumbnail_urls(row["submission"]),
+        }
+        for row in rows
+    ]

@@ -1,4 +1,5 @@
 import csv
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -24,6 +25,7 @@ from submissions.services.file_manager import (
 )
 from submissions.services.import_export import submissions_to_frame
 from submissions.services.audit import audit_blocked, audit_failure, audit_success
+from submissions.services.publication_read import PublicationReadContext
 from submissions.services.version_history import old_version_rows
 
 
@@ -31,6 +33,12 @@ class PublicationPackageBlocked(ValueError):
     def __init__(self, message, blockers=None):
         super().__init__(message)
         self.blockers = blockers or []
+
+
+_DRAFT_UNSAFE_CATEGORIES = {
+    "Multiple Active Final Submissions",
+    "Duplicate Publication Filename",
+}
 
 
 def _timestamp():
@@ -277,10 +285,17 @@ def _publication_warning_rows(readiness_blockers, skipped_rows):
 
 
 def export_publication_package(force=False):
+    generated_paths = []
     try:
         rebuild_paper_authors()
-        settings_obj = AppSetting.load()
-        papers = list(InitialPaper.objects.all().order_by("paper_id"))
+        publication_context = PublicationReadContext.load(
+            require_stable_database=True
+        )
+        settings_obj = publication_context.settings
+        papers = sorted(
+            publication_context.papers,
+            key=lambda paper: paper.paper_id,
+        )
         if not papers:
             exc = PublicationPackageBlocked(
                 "Publication package blocked because the Paper Master List is empty."
@@ -288,7 +303,32 @@ def export_publication_package(force=False):
             audit_blocked("publication_package_export", str(exc), result_counts={"force": force})
             raise exc
 
-        readiness_blockers = publication_readiness_rows()
+        readiness_blockers = publication_readiness_rows(
+            context=publication_context,
+            strict_hash=True,
+        )
+        draft_unsafe_blockers = [
+            row
+            for row in readiness_blockers
+            if row.get("category") in _DRAFT_UNSAFE_CATEGORIES
+        ]
+        if force and draft_unsafe_blockers:
+            preview = _readiness_blocker_preview(draft_unsafe_blockers)
+            exc = PublicationPackageBlocked(
+                "Draft publication package blocked because unresolved version or "
+                f"filename ambiguity could select the wrong file: {preview}",
+                blockers=draft_unsafe_blockers,
+            )
+            audit_blocked(
+                "publication_package_export",
+                str(exc),
+                result_counts={
+                    "force": force,
+                    "blockers": len(draft_unsafe_blockers),
+                },
+                extra={"blockers": draft_unsafe_blockers[:20]},
+            )
+            raise exc
         if readiness_blockers and not force:
             preview = _readiness_blocker_preview(readiness_blockers)
             exc = PublicationPackageBlocked(
@@ -304,7 +344,7 @@ def export_publication_package(force=False):
             )
             raise exc
 
-        active_by_paper = active_master_submission_map()
+        active_by_paper = active_master_submission_map(publication_context)
         package_items = []
         skipped_rows = []
         for paper in papers:
@@ -320,8 +360,14 @@ def export_publication_package(force=False):
                         }
                     )
                 continue
-            pdf_info = publication_pdf_info(submission)
-            source_info = publication_source_info(submission)
+            pdf_info = publication_pdf_info(
+                submission,
+                publication_context.file_inspection,
+            )
+            source_info = publication_source_info(
+                submission,
+                publication_context.file_inspection,
+            )
             if force and not pdf_info["exists"]:
                 skipped_rows.append(
                     {
@@ -372,6 +418,9 @@ def export_publication_package(force=False):
         manifest_path = reports_folder / manifest_name
         warnings_name = f"publication_package_warnings_{timestamp}.csv"
         warnings_path = reports_folder / warnings_name
+        generated_paths.extend([zip_path, manifest_path])
+        if force:
+            generated_paths.append(warnings_path)
 
         manifest_rows = []
         for submission, _pdf_info, _source_info in package_items:
@@ -424,11 +473,40 @@ def export_publication_package(force=False):
                     submission.extracted_title,
                     settings_obj.title_words_for_filename,
                 )
-                package.write(pdf_info["path"], arcname=f"PDF/{base_name}.pdf")
+                pdf_bytes = publication_context.file_inspection.read_snapshot_bytes(
+                    pdf_info["path"]
+                )
+                if (
+                    not force
+                    and hashlib.sha256(pdf_bytes).hexdigest() != submission.pdf_hash
+                ):
+                    raise ValueError(
+                        "Publication PDF changed after readiness validation for "
+                        f"{submission.paper_id_filled} / Final "
+                        f"{submission.final_submission_id}."
+                    )
+                package.writestr(f"PDF/{base_name}.pdf", pdf_bytes)
                 source_path = Path(source_info["path"])
                 source_extension = source_path.suffix or ".source"
-                package.write(source_path, arcname=f"Source/{base_name}{source_extension}")
+                source_bytes = publication_context.file_inspection.read_snapshot_bytes(
+                    source_path
+                )
+                if (
+                    not force
+                    and hashlib.sha256(source_bytes).hexdigest()
+                    != submission.source_hash
+                ):
+                    raise ValueError(
+                        "Publication source changed after formatting review for "
+                        f"{submission.paper_id_filled} / Final "
+                        f"{submission.final_submission_id}."
+                    )
+                package.writestr(
+                    f"Source/{base_name}{source_extension}",
+                    source_bytes,
+                )
 
+        publication_context.assert_database_unchanged()
         audit_success(
             "publication_package_export",
             "Publication package exported.",
@@ -445,6 +523,11 @@ def export_publication_package(force=False):
     except PublicationPackageBlocked:
         raise
     except Exception as exc:
+        for path in generated_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
         audit_failure(
             "publication_package_export",
             exc,

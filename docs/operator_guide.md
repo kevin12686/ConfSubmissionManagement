@@ -84,6 +84,12 @@ tools and should not be used as proof that a particular Final ID was selected.
 
 Author Count supports author/Paper ID search, attention/over-limit/duplicate/allowed filters, and paper-count/name sorting. Exceptions supports search plus status and exception-type filters. Title/Author keeps Workflow and Tracked views separate. Verify Paper IDs preserves filter/search URLs. State-changing buttons still perform full audited server requests.
 
+Paper Master List can be sorted by Paper ID, Master Title, Accept Status, or
+recent update. Final Submissions can be sorted by Paper ID, Final ID, upload
+date, Final Title, or current-version state. ID sorting is natural rather than
+plain text sorting (`P2` precedes `P10`), and Final Submission tabs retain the
+current search and sort selection.
+
 Status colors are consistent across pages: red means a blocker or dangerous action, amber needs manual attention, blue is tracked information, green means the named review is complete, and gray is inactive/history. Primary text uses deep ink on muted work surfaces; labels and supporting text use a darker blue-gray instead of low-contrast gray. Compact pill-shaped labels report status, file origin, counts, or categories and are not controls. Action buttons are taller rectangular controls with stronger borders and visible hover states. Every label also includes text, so color is never the only status signal.
 
 Tables use one uniform row surface with clear horizontal separators. Zebra striping is intentionally disabled across the application; hovering a row provides the only temporary row highlight. Details, exception, note, and discard panels therefore cannot disrupt row coloring. Organized List keeps routine counts and file-origin information neutral, reserves muted green for completed editorial reviews, and marks blocking rows with a red left edge instead of replacing the entire row background.
@@ -97,6 +103,12 @@ respond faster because file checks, previews, suggestions, and text diffs are
 prepared only for visible rows. Dashboard readiness and global workflow alerts
 load just after the page shell, but remain server-calculated from the same
 rules used by publication export.
+
+Duplicate-title, PDF, or source rows in Error Report show a compact group
+summary. Use `Show matching records` to load the complete list for that row.
+This is a read-only detail view; it does not change the duplicate blocker,
+publication scope, or final-package result. The same control remains available
+when Page size is `All`.
 
 Technical values such as paths, action names, and expanded Audit Log JSON use dark monospace text on a muted light surface. If any expanded detail shows light text on a light background, treat it as a display defect rather than an indication that the log data is missing.
 
@@ -138,6 +150,8 @@ Use Discard when a specific version should not be used. Discard keeps the record
 Use Not Publishing when the paper should not be published at all, such as unpaid, withdrawn, or intentionally excluded.
 
 Old Versions is version history. Not Publishing is a publication decision.
+Old Versions uses the same tab treatment and active-count styling as the other
+editorial worklists.
 
 ## Final Publication Version Rules
 
@@ -281,6 +295,15 @@ Use `/reports/` for exports.
 - Draft Publication Package ZIP can be downloaded after warnings. It may skip missing files and includes a warnings CSV.
 - Final package manifest contains ID, extracted title, extracted authors, author number, page number, Plagiarism %, and Single %. It does not include editorial notes.
 - Final and draft package PDFs use the publication-facing priority above: Corrected PDF, then Original PDF. They do not read the publication debug folder or legacy active-final/current-file paths.
+- Draft export can carry ordinary readiness warnings, but it still blocks when one Paper ID has multiple active finals or when sanitized ZIP filenames collide; those conditions cannot select an unambiguous file.
+- Final export blocks if two records would receive the same sanitized ZIP
+  filename, or if a selected PDF/source changes after the readiness inspection.
+  Resolve the Error Report item or reprocess the changed PDF before retrying.
+- Formatting Review binds `Review OK` to the exact publication source bytes.
+  After upgrading to archive format 3, existing ready records without this hash
+  must be opened in Formatting Review and saved as `Review OK` again. If a
+  Corrected PDF/source is selected but missing, restore or replace it; the
+  system will not silently publish the Original file.
 
 ## Backup, Cleanup, And Clear Database
 

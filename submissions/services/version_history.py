@@ -1,4 +1,5 @@
 from submissions.models import FinalSubmission
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.file_manager import publication_pdf_info
 
 
@@ -21,7 +22,13 @@ def _active_replacements():
     }
 
 
-def classify_old_version(submission, active_by_paper=None):
+def classify_old_version(
+    submission,
+    active_by_paper=None,
+    *,
+    inspection=None,
+    hydrate=True,
+):
     active_by_paper = active_by_paper if active_by_paper is not None else _active_replacements()
     replacement = active_by_paper.get(submission.paper_id_filled)
     if replacement and replacement.pk == submission.pk:
@@ -74,18 +81,47 @@ def classify_old_version(submission, active_by_paper=None):
         "origin_label": origin_label,
         "origin_class": origin_class,
         "active_replacement": replacement,
-        "publication_pdf": publication_pdf_info(submission),
+        "publication_pdf": (
+            publication_pdf_info(submission, inspection)
+            if hydrate
+            else None
+        ),
         "not_publishing_flag": submission.excluded_from_publication,
         "note_items": note_items,
         "note_summary": note_summary,
     }
 
 
-def old_version_rows(queryset=None):
+def old_version_rows(queryset=None, *, inspection=None, hydrate=True):
     queryset = queryset if queryset is not None else FinalSubmission.objects.filter(active_version=False)
     submissions = list(queryset.order_by("paper_id_filled", "final_submission_id"))
     active_by_paper = _active_replacements()
-    return [classify_old_version(submission, active_by_paper) for submission in submissions]
+    inspection = inspection or FileInspectionContext()
+    return [
+        classify_old_version(
+            submission,
+            active_by_paper,
+            inspection=inspection,
+            hydrate=hydrate,
+        )
+        for submission in submissions
+    ]
+
+
+def hydrate_old_version_rows(rows, *, inspection=None):
+    inspection = inspection or FileInspectionContext()
+    return [
+        {
+            **row,
+            "publication_pdf": publication_pdf_info(
+                row["submission"],
+                inspection,
+            ),
+        }
+        if not row.get("publication_pdf")
+        else row
+        for row in rows
+    ]
 
 
 def old_version_counts(rows):

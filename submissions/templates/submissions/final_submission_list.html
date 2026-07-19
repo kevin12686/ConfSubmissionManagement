@@ -56,19 +56,34 @@
 	<ul class="nav nav-tabs cfm-tabs">
 	    {% for option in filter_options %}
 	        <li class="nav-item">
-	            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}"
-	               hx-get="?filter={{ option.value }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading">
+	            <a class="nav-link {% if option.value == current_filter %}active{% endif %}" href="?filter={{ option.value }}&sort={{ current_sort }}{% if q %}&q={{ q|urlencode }}{% endif %}"
+	               hx-get="?filter={{ option.value }}&sort={{ current_sort }}{% if q %}&q={{ q|urlencode }}{% endif %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading">
 	                {{ option.label }}
 	                <span class="badge text-bg-{% if option.value == current_filter %}primary{% else %}secondary{% endif %}">{{ option.count }}</span>
 	            </a>
 	        </li>
 	    {% endfor %}
 	</ul>
-	<form method="get" class="cfm-filter-panel d-flex flex-wrap gap-2" hx-get="{% url 'submissions:final_submission_list' %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading" hx-disabled-elt="button, input">
+	<form method="get" class="cfm-filter-panel" hx-get="{% url 'submissions:final_submission_list' %}" hx-target="#final-submission-worklist" hx-select="#final-submission-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#final-submission-loading" hx-disabled-elt="button, input, select">
 	    <input type="hidden" name="filter" value="{{ current_filter }}">
-	    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search final ID, Paper ID, title, authors, or status">
-	    <button class="btn btn-outline-secondary">Search</button>
-	    {% if q %}<a class="btn btn-outline-secondary" href="?filter={{ current_filter }}">Clear</a>{% endif %}
+        <div class="row g-2 align-items-end">
+            <div class="col-lg-6">
+                <label class="form-label" for="final-submission-search">Search</label>
+	            <input id="final-submission-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Final ID, Paper ID, title, authors, or status">
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label" for="final-submission-sort">Sort</label>
+                <select id="final-submission-sort" class="form-select" name="sort">
+                    {% for option in sort_options %}
+                        <option value="{{ option.value }}" {% if option.value == current_sort %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-2 d-flex gap-2">
+	            <button class="btn btn-outline-secondary flex-fill">Apply</button>
+	            {% if q or current_sort != "paper_id_asc" %}<a class="btn btn-outline-secondary" href="?filter={{ current_filter }}">Reset</a>{% endif %}
+            </div>
+        </div>
 	    {% include "submissions/partials/loading_indicator.html" with indicator_id="final-submission-loading" message="Updating submissions..." %}
 	</form>
 	<details class="small text-muted border rounded px-2 py-1 mb-3">

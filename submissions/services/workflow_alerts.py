@@ -3,6 +3,7 @@ from django.db import OperationalError, ProgrammingError
 
 from submissions.services.editor_uploads import editor_conflict_count
 from submissions.services.file_manager import active_pdfs_needing_processing
+from submissions.services.publication_read import PublicationReadContext
 
 
 WORKFLOW_ALERT_CACHE_KEY = "submissions:workflow-alerts:v1"
@@ -14,8 +15,14 @@ def workflow_alert_counts():
     if cached is not None:
         return cached
     try:
+        context = PublicationReadContext.load()
         counts = {
-            "active_pdfs_need_processing": len(active_pdfs_needing_processing()),
+            "active_pdfs_need_processing": len(
+                active_pdfs_needing_processing(
+                    context.file_inspection,
+                    submissions=context.master_submissions,
+                )
+            ),
             "start2_editor_conflicts": editor_conflict_count(),
         }
     except (OperationalError, ProgrammingError):

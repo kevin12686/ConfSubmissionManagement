@@ -170,6 +170,37 @@ rewrite `extracted_authors` while preparing the display list.
 - Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.
 - Worklist GET filters/search/pagination are progressively enhanced with pinned local HTMX. Every worklist URL must remain a valid normal GET, preserve URL query state, and render its named container; never move service decisions into HTMX event handlers.
 - Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `50`, `100`, `200`, and `all`, with 100 as the default. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result.
+- Paper Master and Final Submission list sorting is defined in
+  `submissions/application/selectors.py`; templates only submit the selected
+  `sort` value. Identifier sorts use `natural_text_key()` so numeric chunks are
+  ordered numerically. Search, filter tabs, sorting, and pagination must retain
+  one another's GET parameters.
+- Worklist tabs use `nav nav-tabs cfm-tabs` and the shared active/inactive count
+  badge treatment. Do not create page-specific tab styling.
+- Worklists with expensive row details must expose separate lightweight row
+  selection and hydration functions. Controllers paginate between them. Do not
+  call PDF previews, thumbnail enumeration, publication links, exception
+  panels, or text diff builders while classifying rows that will not be shown.
+- Publication-wide read pages share
+  `submissions.services.publication_read.PublicationReadContext`. Pass its
+  `FileInspectionContext` through publication-facing helpers so a path is
+  inspected once per request. Do not replace this explicit request context
+  with module globals, controller-specific caches, or database writes from GET.
+- Cross-request SHA-256 reuse is valid only through `FileInspectionContext`,
+  whose cache key includes the complete stat signature and whose reader
+  verifies that signature after hashing. Final publication export uses strict
+  fresh hashing. UI caches and compact Error Report messages must never feed
+  export decisions.
+- Final publication export must reuse one `PublicationReadContext` for
+  readiness, active submission selection, manifest data, and file selection.
+  Write ZIP entries from `FileInspectionContext.read_snapshot_bytes()`, not a
+  later `ZipFile.write(path)` call. Keep the sanitized, case-insensitive
+  publication filename collision check and the start/end database fingerprint
+  check in the central export path.
+- Formatting `Review OK` must persist the SHA-256 of the selected publication
+  source in `source_hash`. Source replacement clears it. Readiness compares the
+  current source bytes with that hash, and a missing Corrected PDF/source is a
+  blocker rather than permission to fall back to Original.
 - Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
 - Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.
 - Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.
@@ -251,11 +282,19 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Review reset flags.
 - Publication readiness and export blocking.
 - File priority or publication package output.
+- File replacement between readiness and ZIP writing, and sanitized ZIP
+  filename collisions.
 - System State export/restore.
 - Storage cleanup policy.
 - Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
+- Pagination performance coverage should assert expensive helper call counts,
+  not wall-clock thresholds: normal pages must hydrate only the selected page,
+  while `page_size=all` hydrates the complete filtered result.
+- Natural sorting may load IDs and sort keys before pagination, but must not
+  materialize full Paper Master or Final Submission rows until the page is
+  selected.
 
 Title-upload safeguards must use `build_title_guard_context()` and the shared
 `includes/title_guard_comparison.html` partial. Do not create separate three-column
@@ -286,4 +325,7 @@ Before release:
 3. Confirm `README.md` points to new or changed docs.
 4. Export a System State ZIP and verify manifest version fields.
 5. If publication export changed, test both final and draft package paths.
+   Draft export may include ordinary readiness warnings, but structural ambiguity
+   (`Multiple Active Final Submissions` or `Duplicate Publication Filename`) must
+   fail closed rather than selecting or overwriting a file.
 6. Commit code, migrations, templates, docs, and sample data together when they describe one user-facing change.

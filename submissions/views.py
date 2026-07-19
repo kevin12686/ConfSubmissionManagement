@@ -45,4 +45,4 @@ from .controllers.integrations import (
     system_state,
 )
 from .controllers.settings import app_settings, clear_database, grobid_health_check
-from .controllers.ui import workflow_alerts
+from .controllers.ui import publication_duplicate_details, workflow_alerts

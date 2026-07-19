@@ -4,6 +4,7 @@ import hashlib
 import io
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import zipfile
@@ -49,7 +50,16 @@ from submissions.services.checks import (
     split_authors,
 )
 from submissions.services.file_manager import publication_pdf_info, publication_source_info
-from submissions.services.formatting import update_formatting_submission
+from submissions.services.file_inspection import (
+    FileChangedDuringInspection,
+    FileInspectionContext,
+    clear_file_hash_cache,
+)
+from submissions.services.formatting import (
+    formatting_filter_counts,
+    formatting_preview_info,
+    update_formatting_submission,
+)
 from submissions.services.exceptions import approve_exception, exception_rows
 from submissions.services.import_export import (
     MASTER_SHEET_NAME,
@@ -73,6 +83,8 @@ from submissions.services.editor_uploads import (
 )
 from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions, process_all_pdfs
+from submissions.services import publication_read
+from submissions.services.publication_read import PublicationReadContext
 from submissions.services.reports import (
     author_count_frame,
     export_active_versions,
@@ -289,6 +301,10 @@ class EditorialAcceptanceTestCase(TestCase):
                 media_source.write_bytes(current_source_path.read_bytes())
                 values["source_file"] = f"source_submissions/{media_source.name}"
                 values.setdefault("source_original_file_name", current_source_path.name)
+                values.setdefault(
+                    "source_hash",
+                    hashlib.sha256(media_source.read_bytes()).hexdigest(),
+                )
         if "title_author_review_status" not in overrides:
             values["title_author_review_status"] = (
                 "review_ok" if values.get("title_author_verified") else "pending"
@@ -312,6 +328,12 @@ class EditorialAcceptanceTestCase(TestCase):
         submission.processing_status = "processed"
         submission.processing_message = "Ready."
         submission.pdf_hash = calculate_pdf_hash(pdf_info["path"]) if pdf_info["exists"] else "ready-hash"
+        source_info = publication_source_info(submission)
+        submission.source_hash = (
+            hashlib.sha256(Path(source_info["path"]).read_bytes()).hexdigest()
+            if source_info["exists"]
+            else ""
+        )
         submission.thumbnail_folder = str(thumbnail_folder)
         submission.thumbnail_status = "processed"
         submission.paper_id_verified = True
@@ -870,6 +892,8 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             title_author_review_status="review_ok",
             title_author_verified=True,
         )
+        reviewed_source_hash = submission.source_hash
+        self.assertTrue(reviewed_source_hash)
         PaperAuthor.objects.create(
             final_submission=submission,
             paper_id="R001",
@@ -925,6 +949,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         self.assertTrue(Path(restored.current_file_path).exists())
         self.assertEqual(Path(restored.current_file_path).read_bytes(), b"publication pdf")
         self.assertTrue(Path(restored.source_current_file_path).exists())
+        self.assertEqual(restored.source_hash, reviewed_source_hash)
         self.assertTrue(Path(restored.plagiarism_report_path).exists())
         self.assertTrue(Path(restored.title_author_verification_image).exists())
         self.assertEqual(
@@ -959,7 +984,10 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         self.assertEqual(manifest["app_name"], "Conference Final Manager")
         self.assertEqual(manifest["app_version"], django_settings.APP_VERSION)
         self.assertGreaterEqual(manifest["artifact_counts"]["audit_logs"], 1)
-        self.assertEqual(manifest["state_archive_version"], 2)
+        self.assertEqual(
+            manifest["state_archive_version"],
+            django_settings.STATE_ARCHIVE_VERSION,
+        )
         self.assertNotIn(str(self.root), archive_text)
         self.assertNotIn("/var/", archive_text)
         self.assertNotIn("/private/var/", archive_text)
@@ -1815,8 +1843,15 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         self.assertFalse(submission.extracted_title_verified)
         verify_title_author(submission)
         verify_extracted_title(submission)
-        submission.format_status = "review_ok"
-        submission.save(update_fields=["format_status"])
+        update_formatting_submission(
+            submission,
+            {
+                "corrected_pdf": None,
+                "corrected_source": None,
+                "format_status": "review_ok",
+                "format_notes": "Corrected source reviewed.",
+            },
+        )
 
         zip_path = export_publication_package()
         self.assert_zip_contains_manifest_pdf_source(
@@ -2469,6 +2504,182 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
 
         self.assert_publication_blocked("Corrected PDF Not Processed")
 
+    def test_cached_hash_never_hides_a_changed_publication_pdf(self):
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+        )
+        self.assertEqual(publication_readiness_rows(), [])
+        clear_file_hash_cache()
+        self.assertEqual(publication_readiness_rows(), [])
+
+        pdf_path = Path(publication_pdf_info(submission)["path"])
+        original = pdf_path.read_bytes()
+        previous_stat = pdf_path.stat()
+        changed = bytes([original[0] ^ 1]) + original[1:]
+        pdf_path.write_bytes(changed)
+        os.utime(
+            pdf_path,
+            ns=(previous_stat.st_atime_ns, previous_stat.st_mtime_ns),
+        )
+
+        categories = {
+            row["category"] for row in publication_readiness_rows()
+        }
+        self.assertIn("PDF Not Processed", categories)
+        self.assert_publication_blocked("PDF Not Processed")
+
+    def test_source_changed_after_format_review_blocks_publication(self):
+        self.make_master_paper("P001", "Source Integrity", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Source Integrity",
+            extracted_title="Source Integrity",
+        )
+        self.assertEqual(publication_readiness_rows(), [])
+        source_path = Path(publication_source_info(submission)["path"])
+        original_stat = source_path.stat()
+        original = source_path.read_bytes()
+        changed = bytes([original[0] ^ 1]) + original[1:]
+        source_path.write_bytes(changed)
+        os.utime(
+            source_path,
+            ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+        )
+
+        categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertIn("Source Changed After Review", categories)
+        organized_rows, summary, _settings, _filter, _sort = organized_list_rows()
+        source_row = next(
+            row for row in organized_rows
+            if row["submission"].pk == submission.pk
+        )
+        self.assertEqual(source_row["source_label"], "Changed after review")
+        self.assertEqual(source_row["source_level"], "danger")
+        self.assertEqual(summary["source_issues"], 1)
+        self.assert_publication_blocked("Source Changed After Review")
+
+    def test_source_without_review_hash_blocks_publication(self):
+        self.make_master_paper("P001", "Source Review Binding", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Source Review Binding",
+            extracted_title="Source Review Binding",
+            source_hash="",
+        )
+
+        self.assert_publication_blocked("Source Review Hash Missing")
+        update_formatting_submission(
+            submission,
+            {
+                "corrected_pdf": None,
+                "corrected_source": None,
+                "format_status": "review_ok",
+                "format_notes": "Current source reviewed.",
+            },
+        )
+        submission.refresh_from_db()
+
+        source_path = Path(publication_source_info(submission)["path"])
+        self.assertEqual(
+            submission.source_hash,
+            hashlib.sha256(source_path.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(publication_readiness_rows(), [])
+
+    def test_missing_corrected_files_never_fall_back_to_original_files(self):
+        self.make_master_paper("P001", "No Silent Fallback", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="No Silent Fallback",
+            extracted_title="No Silent Fallback",
+        )
+        submission.formatted_pdf_file.save(
+            "corrected.pdf",
+            ContentFile(b"corrected pdf"),
+            save=False,
+        )
+        submission.formatted_source_file.save(
+            "corrected.docx",
+            ContentFile(b"corrected source"),
+            save=False,
+        )
+        submission.save()
+        Path(submission.formatted_pdf_file.path).unlink()
+        Path(submission.formatted_source_file.path).unlink()
+
+        pdf_info = publication_pdf_info(submission)
+        source_info = publication_source_info(submission)
+        self.assertFalse(pdf_info["exists"])
+        self.assertEqual(pdf_info["source"], "corrected_missing")
+        self.assertFalse(source_info["exists"])
+        self.assertEqual(source_info["source"], "corrected_missing")
+        categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertIn("Missing Corrected PDF", categories)
+        self.assertIn("Missing Corrected Source", categories)
+        self.assert_publication_blocked("Missing Corrected PDF")
+
+    def test_process_pdfs_resets_reviews_when_processed_pdf_was_replaced_externally(self):
+        import fitz
+
+        settings_obj = AppSetting.load()
+        settings_obj.page_minimum = 1
+        settings_obj.save(update_fields=["page_minimum"])
+        original_path = self.root / "original-valid.pdf"
+        original_document = fitz.open()
+        original_page = original_document.new_page()
+        original_page.insert_text((72, 72), "Original reviewed publication")
+        original_document.save(original_path)
+        original_document.close()
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Ready Paper",
+            extracted_title="Ready Paper",
+            current_file_path=str(original_path),
+            page_count=1,
+        )
+        self.assertEqual(publication_readiness_rows(), [])
+
+        replacement_path = self.root / "replacement-valid.pdf"
+        replacement_document = fitz.open()
+        replacement_page = replacement_document.new_page()
+        replacement_page.insert_text((72, 72), "Different unreviewed publication")
+        replacement_document.save(replacement_path)
+        replacement_document.close()
+        publication_path = Path(publication_pdf_info(submission)["path"])
+        publication_path.write_bytes(replacement_path.read_bytes())
+
+        self.assert_publication_blocked("PDF Not Processed")
+        result = process_all_pdfs()
+        submission.refresh_from_db()
+
+        self.assertEqual(result["integrity_resets"], 1)
+        self.assertEqual(submission.processing_status, "processed")
+        self.assertEqual(submission.page_count, 1)
+        self.assertEqual(submission.pdf_hash, calculate_pdf_hash(publication_path))
+        self.assertEqual(submission.extracted_title, "")
+        self.assertEqual(submission.extracted_authors, "")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+        self.assertFalse(submission.extracted_title_verified)
+        self.assertEqual(submission.format_status, "pending")
+        self.assertIsNone(submission.similarity_score)
+        self.assertIsNone(submission.single_similarity_score)
+        self.assertFalse(PaperAuthor.objects.filter(final_submission=submission).exists())
+        categories = {row["category"] for row in publication_readiness_rows()}
+        self.assertIn("Missing Extracted Title", categories)
+        self.assertIn("Formatting Not Review OK", categories)
+        self.assertIn("Missing Plagiarism Result", categories)
+        self.assert_publication_blocked("Missing Extracted Title")
+
     def test_multiple_active_finals_for_same_paper_block_publication(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
         self.make_final_submission(final_submission_id="10", paper_id_filled="P001")
@@ -2481,6 +2692,36 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             source_current_file_path=str(self.make_source_file("second-active.docx", b"second active source")),
         )
 
+        self.assert_publication_blocked("Multiple Active Final Submissions")
+        with self.assertRaisesMessage(
+            ValueError,
+            "unresolved version or filename ambiguity",
+        ):
+            export_publication_package(force=True)
+
+    def test_publishable_and_not_publishing_active_finals_still_block_and_remain_visible(self):
+        self.make_master_paper("P001", "Ready Paper", "Ada")
+        included = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+        )
+        excluded = self.make_final_submission(
+            final_submission_id="11",
+            paper_id_filled="P001",
+        )
+        excluded.excluded_from_publication = True
+        excluded.save(
+            update_fields=["excluded_from_publication", "updated_at"]
+        )
+
+        rows = publication_readiness_rows()
+        self.assertIn(
+            "Multiple Active Final Submissions",
+            {row["category"] for row in rows},
+        )
+        organized_rows, _summary, _settings, _filter, _sort = organized_list_rows()
+        self.assertEqual(len(organized_rows), 1)
+        self.assertEqual(organized_rows[0]["submission"].pk, included.pk)
         self.assert_publication_blocked("Multiple Active Final Submissions")
 
     def test_numeric_author_entered_id_resolves_only_when_title_matches(self):
@@ -3084,6 +3325,119 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
         self.assertTrue(publication_duplicate_map())
         self.assert_publication_blocked("Duplicate Publication Title")
 
+    def test_error_report_loads_full_duplicate_group_details_on_demand(self):
+        for paper_id, final_id in [("P001", "1"), ("P002", "2")]:
+            self.make_master_paper(paper_id, "Duplicate Title", "Ada")
+            self.make_final_submission(
+                final_submission_id=final_id,
+                paper_id_filled=paper_id,
+                final_submission_title="Duplicate Title",
+                extracted_title="Duplicate Title",
+            )
+
+        report = self.client.get(reverse("submissions:error_report"))
+        self.assertContains(report, "Show 1 matching record")
+
+        detail = self.client.get(
+            reverse("submissions:publication_duplicate_details"),
+            {
+                "kind": "title",
+                "key": "duplicate title",
+                "submission_id": FinalSubmission.objects.get(
+                    final_submission_id="1"
+                ).pk,
+            },
+        )
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(
+            detail,
+            "Duplicate title with P002 / Final 2. Key: duplicate ti.",
+        )
+        self.assertContains(detail, "Back to Error Report")
+
+        partial = self.client.get(
+            reverse("submissions:publication_duplicate_details"),
+            {
+                "kind": "title",
+                "key": "duplicate title",
+                "submission_id": FinalSubmission.objects.get(
+                    final_submission_id="1"
+                ).pk,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertContains(
+            partial,
+            "Duplicate title with P002 / Final 2. Key: duplicate ti.",
+        )
+        self.assertNotContains(partial, "Back to Error Report")
+
+    def test_error_report_paginates_in_severity_order_and_keeps_total_badges(self):
+        rows = [
+            {
+                "category": "Unverified Paper ID",
+                "paper_id": f"P{index:03d}",
+                "final_submission_id": str(index),
+                "message": "Critical issue.",
+            }
+            for index in range(101)
+        ]
+        rows.extend(
+            {
+                "category": "Formatting Not Review OK",
+                "paper_id": f"M{index:03d}",
+                "final_submission_id": str(index),
+                "message": "Medium issue.",
+            }
+            for index in range(2)
+        )
+        rows.append(
+            {
+                "category": "Replaced Final Submission",
+                "paper_id": "I001",
+                "final_submission_id": "1",
+                "message": "Informational issue.",
+            }
+        )
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            first = self.client.get(
+                reverse("submissions:error_report"),
+                {"page": 1, "page_size": 50},
+            )
+            second = self.client.get(
+                reverse("submissions:error_report"),
+                {"page": 2, "page_size": 50},
+            )
+            third = self.client.get(
+                reverse("submissions:error_report"),
+                {"page": 3, "page_size": 50},
+            )
+
+        self.assertTrue(
+            all(row["severity"] == "critical" for row in first.context["rows"])
+        )
+        self.assertTrue(
+            all(row["severity"] == "critical" for row in second.context["rows"])
+        )
+        self.assertEqual(
+            [row["severity"] for row in third.context["rows"]],
+            ["critical", "medium", "medium", "info"],
+        )
+        total_counts = {
+            section["severity"]: section["total_count"]
+            for section in first.context["severity_sections"]
+        }
+        self.assertEqual(
+            total_counts,
+            {"critical": 101, "medium": 2, "info": 1},
+        )
+
     def test_replaced_old_duplicate_file_does_not_create_publication_duplicate(self):
         self.make_master_paper("P001", "Current One", "Ada")
         self.make_master_paper("P002", "Current Two", "Alan")
@@ -3103,6 +3457,86 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
 
         categories = {row["category"] for row in publication_readiness_rows()}
         self.assertNotIn("Duplicate Publication PDF", categories)
+
+    def test_unicode_equivalent_titles_block_as_publication_duplicates(self):
+        title_pairs = [
+            ("深度學習", "深度學習"),
+            ("Μάθηση", "Μάθηση"),
+            ("Café Systems", "Cafe\u0301 Systems"),
+        ]
+        for case_index, (first_title, second_title) in enumerate(
+            title_pairs,
+            start=1,
+        ):
+            with self.subTest(first_title=first_title):
+                InitialPaper.objects.all().delete()
+                FinalSubmission.objects.all().delete()
+                for paper_id, final_id, title in [
+                    (f"U{case_index}A", f"{case_index}1", first_title),
+                    (f"U{case_index}B", f"{case_index}2", second_title),
+                ]:
+                    self.make_master_paper(paper_id, title, "Ada")
+                    self.make_final_submission(
+                        final_submission_id=final_id,
+                        paper_id_filled=paper_id,
+                        start2_paper_id_raw=paper_id,
+                        final_submission_title=title,
+                        extracted_title=title,
+                    )
+
+                categories = {
+                    row["category"]
+                    for row in publication_readiness_rows()
+                }
+                self.assertIn("Duplicate Publication Title", categories)
+                self.assert_publication_blocked("Duplicate Publication Title")
+
+    def test_sanitized_publication_filename_collision_blocks_export_and_marks_organized_list(self):
+        settings_obj = AppSetting.load()
+        shared_prefix = " ".join(
+            f"Shared{index}"
+            for index in range(1, settings_obj.title_words_for_filename + 1)
+        )
+        for paper_id, final_id, suffix in [
+            ("P/1", "1", "Alpha"),
+            ("P:1", "2", "Beta"),
+        ]:
+            title = f"{shared_prefix} {suffix}"
+            self.make_master_paper(paper_id, title, "Ada")
+            self.make_final_submission(
+                final_submission_id=final_id,
+                paper_id_filled=paper_id,
+                start2_paper_id_raw=paper_id,
+                final_submission_title=title,
+                extracted_title=title,
+            )
+
+        rows = publication_readiness_rows()
+        self.assertEqual(
+            sum(row["category"] == "Duplicate Publication Filename" for row in rows),
+            2,
+        )
+        duplicate_map = publication_duplicate_map()
+        self.assertEqual(len(duplicate_map), 2)
+        self.assertTrue(
+            all(
+                "Duplicate publication filename" in labels
+                for labels in duplicate_map.values()
+            )
+        )
+        organized_rows, _summary, _settings, _filter, _sort = organized_list_rows()
+        self.assertTrue(
+            all(
+                "Duplicate publication filename" in row["duplicate_badges"]
+                for row in organized_rows
+            )
+        )
+        self.assert_publication_blocked("Duplicate Publication Filename")
+        with self.assertRaisesMessage(
+            ValueError,
+            "unresolved version or filename ambiguity",
+        ):
+            export_publication_package(force=True)
 
 
 class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
@@ -3197,6 +3631,141 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
         self.assertIn("publication_package_", event["file_changes"]["zip_path"])
         self.assertIn("publication_manifest_", event["file_changes"]["manifest_path"])
         self.assertNotIn(str(self.root), json.dumps(event, ensure_ascii=False))
+
+    def test_package_rejects_file_changed_after_readiness_and_removes_partial_outputs(self):
+        self.make_master_paper("P001", "Snapshot Safe Publication", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Snapshot Safe Publication",
+            extracted_title="Snapshot Safe Publication",
+        )
+        pdf_path = Path(publication_pdf_info(submission)["path"])
+        original_read_snapshot_bytes = FileInspectionContext.read_snapshot_bytes
+        mutated = False
+
+        def change_pdf_before_snapshot(context, path):
+            nonlocal mutated
+            if not mutated and Path(path) == pdf_path:
+                mutated = True
+                pdf_path.write_bytes(pdf_path.read_bytes() + b" changed")
+            return original_read_snapshot_bytes(context, path)
+
+        reports_folder = Path(AppSetting.load().reports_folder)
+        before_outputs = set(reports_folder.glob("publication_*"))
+        with patch.object(
+            FileInspectionContext,
+            "read_snapshot_bytes",
+            new=change_pdf_before_snapshot,
+        ):
+            with self.assertRaises(FileChangedDuringInspection):
+                export_publication_package()
+
+        self.assertTrue(mutated)
+        self.assertEqual(set(reports_folder.glob("publication_*")), before_outputs)
+        event = self.latest_audit_event("publication_package_export")
+        self.assertEqual(event["status"], "failed")
+
+    def test_package_rejects_database_state_changed_after_readiness(self):
+        self.make_master_paper("P001", "Concurrent Editorial Change", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Concurrent Editorial Change",
+            extracted_title="Concurrent Editorial Change",
+        )
+        original_read_snapshot_bytes = FileInspectionContext.read_snapshot_bytes
+        changed = False
+
+        def change_state_before_snapshot(context, path):
+            nonlocal changed
+            if not changed:
+                changed = True
+                FinalSubmission.objects.filter(pk=submission.pk).update(
+                    title_author_review_status="pending",
+                    title_author_verified=False,
+                    updated_at=timezone.now(),
+                )
+            return original_read_snapshot_bytes(context, path)
+
+        reports_folder = Path(AppSetting.load().reports_folder)
+        before_outputs = set(reports_folder.glob("publication_*"))
+        with patch.object(
+            FileInspectionContext,
+            "read_snapshot_bytes",
+            new=change_state_before_snapshot,
+        ):
+            with self.assertRaisesMessage(
+                RuntimeError,
+                "Publication workflow state changed during export",
+            ):
+                export_publication_package()
+
+        self.assertTrue(changed)
+        self.assertEqual(set(reports_folder.glob("publication_*")), before_outputs)
+        submission.refresh_from_db()
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assert_publication_blocked("Unverified Title/Author Extraction")
+        event = self.latest_audit_event("publication_package_export")
+        self.assertEqual(event["status"], "blocked")
+
+    def test_strict_context_retries_if_settings_change_during_snapshot_load(self):
+        settings_obj = AppSetting.load()
+        self.assertNotEqual(settings_obj.page_limit, 7)
+        original_signature = publication_read.publication_database_signature
+        signature_calls = 0
+
+        def change_settings_before_first_post_load_signature():
+            nonlocal signature_calls
+            signature_calls += 1
+            if signature_calls == 2:
+                AppSetting.objects.filter(pk=1).update(page_limit=7)
+            return original_signature()
+
+        with patch.object(
+            publication_read,
+            "publication_database_signature",
+            side_effect=change_settings_before_first_post_load_signature,
+        ):
+            context = PublicationReadContext.load(
+                require_stable_database=True
+            )
+
+        self.assertGreaterEqual(signature_calls, 4)
+        self.assertEqual(context.settings.page_limit, 7)
+        context.assert_database_unchanged()
+
+    def test_formatting_preview_cache_key_uses_full_file_signature(self):
+        self.make_master_paper("P001", "Preview Integrity", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Preview Integrity",
+            extracted_title="Preview Integrity",
+        )
+        pdf_path = Path(publication_pdf_info(submission)["path"])
+
+        def write_preview(source, target):
+            Path(target).write_bytes(Path(source).read_bytes())
+
+        with patch(
+            "submissions.services.formatting._render_first_page_upper_half",
+            side_effect=write_preview,
+        ):
+            first = formatting_preview_info(submission)
+            previous_stat = pdf_path.stat()
+            original = pdf_path.read_bytes()
+            changed_bytes = bytes([original[0] ^ 1]) + original[1:]
+            pdf_path.write_bytes(changed_bytes)
+            os.utime(
+                pdf_path,
+                ns=(previous_stat.st_atime_ns, previous_stat.st_mtime_ns),
+            )
+            second = formatting_preview_info(submission)
+
+        self.assertNotEqual(first["path"], second["path"])
+        self.assertEqual(Path(first["path"]).read_bytes(), original)
+        self.assertEqual(Path(second["path"]).read_bytes(), changed_bytes)
 
     def test_paginated_ui_gets_do_not_change_publication_scope_state_or_package_bytes(self):
         for index in range(1, 106):
@@ -4500,9 +5069,17 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         verify_title_author(submission)
         verify_extracted_title(submission)
-        submission.format_status = "review_ok"
+        update_formatting_submission(
+            submission,
+            {
+                "corrected_pdf": None,
+                "corrected_source": None,
+                "format_status": "review_ok",
+                "format_notes": "Current files reviewed.",
+            },
+        )
         submission.plagiarism_report_stale = False
-        submission.save(update_fields=["format_status", "plagiarism_report_stale"])
+        submission.save(update_fields=["plagiarism_report_stale"])
 
         response = self.client.post(reverse("submissions:export_reports"), {"action": "publication_package"})
         self.assertEqual(response.status_code, 200)
@@ -4592,6 +5169,19 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         source_edited.formatted_source_file.save("corrected_source.docx", ContentFile(b"fixed"), save=True)
         pdf_edited.formatted_pdf_file.save("corrected_pdf.pdf", ContentFile(b"%PDF fixed"), save=True)
+
+        self.assertEqual(
+            formatting_filter_counts(),
+            {
+                "needs_attention": 1,
+                "pending": 1,
+                "needs_edit": 0,
+                "review_ok": 3,
+                "review_ok_no_edit": 1,
+                "edited": 2,
+                "all": 4,
+            },
+        )
 
         response = self.client.get(
             reverse("submissions:formatting"),
@@ -7052,8 +7642,15 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         corrected_source.refresh_from_db()
         verify_title_author(corrected_source)
         verify_extracted_title(corrected_source)
-        corrected_source.format_status = "review_ok"
-        corrected_source.save(update_fields=["format_status"])
+        update_formatting_submission(
+            corrected_source,
+            {
+                "corrected_pdf": None,
+                "corrected_source": None,
+                "format_status": "review_ok",
+                "format_notes": "Corrected source reviewed.",
+            },
+        )
         excluded = self.make_final_submission(
             final_submission_id="40",
             paper_id_filled="NOTMASTER",
@@ -7494,3 +8091,76 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
             },
             before,
         )
+
+
+class MasterAndFinalListSortingTests(EditorialAcceptanceTestCase):
+    def test_paper_master_sort_uses_natural_paper_id_order(self):
+        self.make_master_paper("P10", "Alpha", "Ada")
+        self.make_master_paper("P2", "Zulu", "Grace")
+
+        ascending = self.client.get(
+            reverse("submissions:initial_paper_list"),
+            {"sort": "paper_id_asc", "page_size": "all"},
+        )
+        descending = self.client.get(
+            reverse("submissions:initial_paper_list"),
+            {"sort": "paper_id_desc", "page_size": "all"},
+        )
+
+        self.assertEqual(
+            [paper.paper_id for paper in ascending.context["papers"]],
+            ["P2", "P10"],
+        )
+        self.assertEqual(
+            [paper.paper_id for paper in descending.context["papers"]],
+            ["P10", "P2"],
+        )
+        self.assertEqual(ascending.context["current_sort"], "paper_id_asc")
+        self.assertContains(ascending, 'id="paper-master-sort"')
+
+    def test_final_submission_sort_uses_natural_final_id_order_and_preserves_tab_sort(self):
+        self.make_master_paper("P001", "First", "Ada")
+        self.make_master_paper("P002", "Second", "Grace")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="First",
+        )
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Second",
+        )
+
+        response = self.client.get(
+            reverse("submissions:final_submission_list"),
+            {"sort": "final_id_asc", "page_size": "all"},
+        )
+
+        self.assertEqual(
+            [item.final_submission_id for item in response.context["submissions"]],
+            ["2", "10"],
+        )
+        self.assertEqual(response.context["current_sort"], "final_id_asc")
+        self.assertContains(response, "sort=final_id_asc")
+        self.assertContains(response, 'id="final-submission-sort"')
+
+    def test_invalid_sort_values_fall_back_to_stable_defaults(self):
+        master = self.client.get(
+            reverse("submissions:initial_paper_list"), {"sort": "unknown"}
+        )
+        final = self.client.get(
+            reverse("submissions:final_submission_list"), {"sort": "unknown"}
+        )
+
+        self.assertEqual(master.context["current_sort"], "paper_id_asc")
+        self.assertEqual(final.context["current_sort"], "paper_id_asc")
+
+    def test_old_versions_use_shared_tab_design(self):
+        response = self.client.get(
+            reverse("submissions:old_versions"), {"filter": "discarded"}
+        )
+
+        self.assertContains(response, 'class="nav nav-tabs cfm-tabs"')
+        self.assertContains(response, "filter=discarded")
+        self.assertContains(response, "text-bg-primary")

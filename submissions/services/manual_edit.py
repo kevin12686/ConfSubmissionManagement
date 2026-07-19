@@ -99,6 +99,7 @@ def _audit_fields_for_change(changed_fields, pdf_changed, source_changed, report
                 "processing_status",
                 "processing_message",
                 "pdf_hash",
+                "source_hash",
                 "thumbnail_folder",
                 "thumbnail_status",
                 "extracted_title",
@@ -126,6 +127,7 @@ def _audit_fields_for_change(changed_fields, pdf_changed, source_changed, report
             {
                 "source_current_file_path",
                 "source_original_file_name",
+                "source_hash",
                 "title_author_review_status",
                 "title_author_verified",
                 "extracted_title_verified",
