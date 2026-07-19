@@ -63,7 +63,9 @@ Create Final Submission records and files:
 16. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
 17. Exercise Paper Master List and Final Submission sorting before and after search. Confirm natural ID order (`P2` before `P10`, Final `2` before `10`), pagination preserves the selected sort, Final Submission tabs retain it, and Old Versions tabs match the shared worklist tab design.
 18. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
-19. Resolve all blockers and export the final publication package.
+19. Resolve all blockers and export the final publication package. Request it
+    with gzip accepted and confirm the response remains `application/zip`, has
+    `Content-Length`, has no `Content-Encoding: gzip`, and opens normally.
 20. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
 21. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return. Point Reports temporarily at a shared external test folder and confirm Clear Database preserves it. Simulate a database-reset failure and confirm staged publication files are restored with the records.
 22. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.

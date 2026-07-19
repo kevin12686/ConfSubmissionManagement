@@ -54,7 +54,10 @@ assets into `STATIC_ROOT`; WhiteNoise serves that directory without requiring a
 separate proxy. It defaults to one worker and four threads to avoid
 multi-process SQLite write contention. `SMS_WEB_WORKERS`, `SMS_WEB_THREADS`,
 and `SMS_WEB_TIMEOUT` are runtime overrides; keep one worker with SQLite. This
-does not change publication file selection rules.
+does not change publication file selection rules. Dynamic response gzip uses
+`SelectiveGZipMiddleware`: only the explicit HTML/text/JSON/JavaScript/XML MIME
+allowlist is compressed. Binary and unknown MIME types must bypass gzip so
+download responses such as publication ZIPs retain their `Content-Length`.
 
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
 existing Compose `web` container created from this checkout. It reads Docker

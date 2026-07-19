@@ -1,5 +1,4 @@
 import csv
-import gzip
 import hashlib
 import io
 import importlib.util
@@ -4492,7 +4491,7 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
             after_package = Path(export_publication_package()).read_bytes()
         self.assertEqual(zip_snapshot(after_package), zip_snapshot(before_package))
 
-    def test_gzip_middleware_preserves_downloadable_publication_zip(self):
+    def test_gzip_middleware_bypasses_downloadable_publication_zip(self):
         self.make_master_paper("P001", "GZip Safe Publication", "Ada")
         self.make_final_submission(
             final_submission_id="1",
@@ -4510,10 +4509,12 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Encoding"], "gzip")
+        self.assertNotIn("Content-Encoding", response)
+        self.assertIn("Content-Length", response)
         self.assertIn("publication_package_", response["Content-Disposition"])
-        decoded = gzip.decompress(b"".join(response.streaming_content))
-        with zipfile.ZipFile(io.BytesIO(decoded)) as archive:
+        payload = b"".join(response.streaming_content)
+        self.assertEqual(int(response["Content-Length"]), len(payload))
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
             self.assertIn("PDF/P001-GZip Safe Publication.pdf", archive.namelist())
             self.assertIn("Source/P001-GZip Safe Publication.docx", archive.namelist())
 

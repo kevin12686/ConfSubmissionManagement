@@ -131,6 +131,14 @@ filesystem or Docker bind mount and confirm the files are not being rewritten
 continuously. Do not work around the delay by forcing a publication package:
 final export performs a strict fresh validation.
 
+### Publication ZIP download stalls through a proxy or tunnel
+
+Publication ZIP responses should include `Content-Type: application/zip` and
+`Content-Length`, without `Content-Encoding: gzip`. The application deliberately
+does not recompress ZIP, PDF, image, Office, or unknown binary responses. If the
+headers still show gzip, rebuild/restart the deployment from the current code
+and confirm the proxy or tunnel is not independently compressing the response.
+
 ### Upload drop zone summary looks wrong
 
 The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.

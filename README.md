@@ -363,4 +363,6 @@ in the Compose project named volume. `SMS_DATA_DIR` receives the separately
 verified raw host mirror. One worker avoids multi-process SQLite write
 contention; `SMS_WEB_THREADS` and `SMS_WEB_TIMEOUT` may be overridden for a
 deployment. Startup also collects the pinned local UI assets, and WhiteNoise
-serves them through Gunicorn without a separate web server.
+serves them through Gunicorn without a separate web server. Dynamic response
+compression is limited to an explicit HTML/text/JSON/JavaScript/XML allowlist;
+ZIP, PDF, image, Office, and unknown binary responses are not recompressed.

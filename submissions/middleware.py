@@ -1,7 +1,34 @@
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db import OperationalError, ProgrammingError
+from django.middleware.gzip import GZipMiddleware
 from django.utils import timezone
+
+
+GZIP_CONTENT_TYPES = frozenset(
+    {
+        "text/html",
+        "text/plain",
+        "text/css",
+        "text/csv",
+        "text/javascript",
+        "application/json",
+        "application/ld+json",
+        "application/javascript",
+        "application/xml",
+        "application/xhtml+xml",
+        "application/rss+xml",
+        "application/atom+xml",
+    }
+)
+
+
+class SelectiveGZipMiddleware(GZipMiddleware):
+    def process_response(self, request, response):
+        content_type = response.get("Content-Type", "").partition(";")[0]
+        if content_type.strip().lower() not in GZIP_CONTENT_TYPES:
+            return response
+        return super().process_response(request, response)
 
 
 class AppTimezoneMiddleware:

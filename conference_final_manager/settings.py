@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 STATE_ARCHIVE_VERSION = 3
 
 
@@ -50,7 +50,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.middleware.gzip.GZipMiddleware",
+    "submissions.middleware.SelectiveGZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "submissions.middleware.AppTimezoneMiddleware",
     "django.middleware.common.CommonMiddleware",
