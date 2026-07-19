@@ -1,3 +1,4 @@
+import struct
 from pathlib import Path
 
 from django.conf import settings as django_settings
@@ -15,6 +16,7 @@ from submissions.services.grobid_extractor import (
     extract_header_with_grobid,
     is_grobid_service_unavailable_error,
 )
+from submissions.services.title_author_verification import generate_verification_image
 from submissions.services.verification import text_diff_html, title_similarity, titles_identical
 
 TITLE_AUTHOR_REVIEW_STATUSES = {"pending", "red_flag", "review_ok"}
@@ -75,102 +77,30 @@ def verification_image_url(submission):
     return f"{django_settings.MEDIA_URL}{relative_path.as_posix()}?v={version}"
 
 
+def verification_image_dimensions(submission):
+    image_path = Path(submission.title_author_verification_image or "")
+    if not image_path.exists():
+        return None
+    try:
+        with image_path.open("rb") as image_file:
+            header = image_file.read(24)
+        if header[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        width, height = struct.unpack(">II", header[16:24])
+        return {"width": width, "height": height}
+    except (OSError, struct.error):
+        return None
+
+
 def generate_text_verification_image(pdf_path, extracted_title, extracted_authors, source_label, target_dir):
-    import fitz
-
-    pdf_path = Path(pdf_path)
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    source_slug = sanitize_filename_part(source_label).lower() or "extraction"
-    output_path = target_dir / f"{pdf_path.stem}-{source_slug}.png"
-    missing_authors = []
-
-    with fitz.open(pdf_path) as document:
-        if not document.page_count:
-            raise ValueError("PDF has no pages.")
-        page = document[0]
-        page_rect = page.rect
-        clip = fitz.Rect(
-            page_rect.x0,
-            page_rect.y0,
-            page_rect.x1,
-            page_rect.y0 + (page_rect.height / 3),
-        )
-
-        if extracted_title:
-            _highlight_matches(page, extracted_title, clip, color=(1, 1, 0))
-
-        for author in split_authors(extracted_authors):
-            if not _highlight_matches(page, author, clip, color=(0, 1, 0)):
-                missing_authors.append(author)
-
-        _add_extraction_overlay(page, pdf_path.name, extracted_title, extracted_authors, source_label, clip)
-        page.set_cropbox(clip)
-        pixmap = page.get_pixmap(dpi=300, alpha=False)
-        pixmap.save(output_path)
-    return output_path, missing_authors
-
-
-def _highlight_matches(page, text, clip, color):
-    matches = page.search_for(text, clip=clip)
-    for match in matches:
-        annotation = page.add_highlight_annot(match)
-        annotation.set_colors(stroke=color)
-        annotation.update()
-    return bool(matches)
-
-
-def _add_extraction_overlay(page, filename, title, authors, source_label, clip):
-    import fitz
-
-    anchor = _extraction_overlay_anchor(page, title, clip)
-    title_rect = anchor
-    author_rect = anchor + fitz.Rect(0, 24, 0, 28)
-    page.add_freetext_annot(
-        title_rect,
-        title or "Missing extracted title",
-        fontsize=9,
-        text_color=(0, 0, 1),
-        align=fitz.TEXT_ALIGN_CENTER,
+    return generate_verification_image(
+        pdf_path,
+        extracted_title,
+        extracted_authors,
+        source_label,
+        target_dir,
+        split_authors(extracted_authors),
     )
-    page.add_freetext_annot(
-        author_rect,
-        authors or "Missing extracted authors",
-        fontsize=9,
-        text_color=(1, 0, 0),
-        align=fitz.TEXT_ALIGN_CENTER,
-    )
-    page.add_freetext_annot(
-        fitz.Rect(15, 30, 100, 45),
-        filename,
-        fontsize=7,
-        text_color=(0, 0, 0),
-        align=fitz.TEXT_ALIGN_CENTER,
-    )
-    source_rect = fitz.Rect(15, 8, 100, 28)
-    source_annot = page.add_freetext_annot(
-        source_rect,
-        source_label.upper(),
-        fontsize=9,
-        text_color=(1, 0, 0),
-        align=fitz.TEXT_ALIGN_CENTER,
-    )
-    source_annot.set_border(width=0.75)
-    source_annot.update()
-
-
-def _extraction_overlay_anchor(page, title, clip):
-    import fitz
-
-    title_matches = page.search_for(title, clip=clip, quads=True) if title else []
-    if title_matches and title_matches[0].rect.x1 - title_matches[0].rect.x0 > 300:
-        rect = title_matches[0].rect + fitz.Rect(0, -42, 0, -12)
-        if rect.x0 < 70:
-            rect.x0 = 70
-        if rect.y0 < 12:
-            rect = fitz.Rect(70, 20, 570, 48)
-        return rect
-    return fitz.Rect(70, 20, 570, 48)
 
 
 def extract_title_author_for_submission(submission, refresh_author_cache=True):
@@ -204,18 +134,25 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
 
     try:
         title, authors, author_count = get_title_author(
-            str(pdf_path), verify=True, verify_folder=str(target_dir)
+            str(pdf_path), verify=False, verify_folder=str(target_dir)
         )
-        image_path = target_dir / f"{Path(pdf_path).name}.png"
+        image_path, missing_authors = generate_text_verification_image(
+            pdf_path,
+            title,
+            authors,
+            "BUILT-IN",
+            target_dir,
+        )
 
         submission.extracted_title = title or ""
         submission.extracted_authors = authors or ""
         submission.title_author_source = "built_in_extractor"
         submission.title_author_imported_at = timezone.now()
         submission.title_author_extraction_status = "extracted"
-        submission.title_author_extraction_message = (
-            f"Extracted title, authors, and {author_count} author name(s)."
-        )
+        message = f"Extracted title, authors, and {author_count} author name(s)."
+        if missing_authors:
+            message += " Some extracted authors could not be highlighted on first page."
+        submission.title_author_extraction_message = message
         submission.title_author_verification_image = str(image_path) if image_path.exists() else ""
         submission.title_author_manual_override_reason = ""
         submission.title_author_manual_override_at = None
@@ -929,6 +866,11 @@ def title_author_extraction_rows(
                     if include_display_details
                     else ""
                 ),
+                "image_dimensions": (
+                    verification_image_dimensions(submission)
+                    if include_display_details
+                    else None
+                ),
                 "has_extraction": has_extraction,
                 "grobid_suspicious": is_grobid_suspicious(submission),
                 "needs_verification": needs_verification,
@@ -951,6 +893,7 @@ def hydrate_title_author_extraction_rows(rows):
                 **row,
                 "publication_pdf": publication_pdf_info(submission),
                 "image_url": verification_image_url(submission),
+                "image_dimensions": verification_image_dimensions(submission),
                 "title_match": evaluate_extracted_title_match(
                     submission,
                     save=False,

@@ -179,6 +179,13 @@ Use Title/Author Review:
 
 Verification image URLs include a file-modification cache buster so a newly generated built-in or GROBID image should replace the previous browser image immediately.
 
+Built-in, GROBID, and Manual Override now use the same verification layout. The
+header is separate from the PDF evidence and expands for long titles or author
+lists. Numbered authors in the header correspond to separate green
+outline/underline regions in the PDF. If a single person appears as two
+numbered entries or two adjacent boxes, the extracted author list was split
+incorrectly even when all text was found.
+
 ### GROBID fallback cannot connect
 
 GROBID is optional and disabled by default. If enabled, confirm the API URL in Settings points to a trusted local/internal service such as `http://localhost:8070` or your lab server. Settings shows a green/red health indicator using the GROBID `/api/isalive` endpoint; the indicator refreshes as you edit the URL or timeout, before the settings are saved. The Title/Author page also checks API health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction aborts before processing rows, so unavailable service does not create extraction errors for every paper. If the service drops during a batch, the batch stops at that point; completed rows remain saved and the current/unprocessed rows are counted as skipped. The app calls `/api/processHeaderDocument` for extraction and does not send PDFs to a cloud service unless you configure a cloud URL yourself. Connection, timeout, HTTP, or TEI parsing failures are logged and shown as messages, but they do not overwrite existing extracted title/authors.

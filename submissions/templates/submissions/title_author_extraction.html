@@ -219,8 +219,8 @@
                                 src="{{ row.image_url }}"
                                 class="img-fluid border rounded bg-light cfm-verification-image"
                                 alt="Title and author verification image"
-                                width="2550"
-                                height="1100"
+                                width="{{ row.image_dimensions.width|default:2550 }}"
+                                height="{{ row.image_dimensions.height|default:1100 }}"
                                 loading="lazy"
                                 decoding="async"
                             >

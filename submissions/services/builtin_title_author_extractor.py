@@ -1,5 +1,4 @@
 import math
-import os
 import re
 
 import pymupdf
@@ -138,71 +137,18 @@ def get_title_author(f, verify=True, verify_folder="verification"):
     # extract author names for verify
     author_list = author.replace(", and ", ", ").replace(" and ", ", ").split(", ")
 
+    doc.close()
+
     if verify:
+        from submissions.services.title_author_verification import generate_verification_image
 
-        # only show the first 1/3 of the page
-        crop_r = pymupdf.Rect(0, 0, doc[0].rect.x1, doc[0].rect.y1 / 3)
-
-        # title highlight
-        for each in title_lines:
-            r = page.search_for(each, clip=crop_r, quads=True)
-            if r:
-                anot = page.add_highlight_annot(r[0])
-                anot = page.add_underline_annot(r[0])
-                anot.set_colors(stroke=(0, 0, 1))
-                anot.update()
-
-        # author highlight
-        for each in author_list:
-            r = page.search_for(each, clip=crop_r, quads=True)
-            if r:
-                anot = page.add_highlight_annot(r[0])
-                anot.set_colors(stroke=(0, 1, 0))
-                anot.update()
-                anot = page.add_squiggly_annot(r[0])
-
-        # location of title & author print
-        r = page.search_for(title_lines[0], clip=crop_r, quads=True)
-        if r and r[0].rect.x1 - r[0].rect.x0 > 300:
-            r = r[0].rect + pymupdf.Rect(0, -40, 0, -15)
-            if r.x0 < 70:
-                r.x0 = 70
-        else:
-            r = pymupdf.Rect(70, 20, 570, 40)
-
-        # print title
-        page.add_freetext_annot(
-            r,
+        generate_verification_image(
+            f,
             title,
-            fontsize=9,
-            text_color=(0, 0, 1),
-            align=pymupdf.TEXT_ALIGN_CENTER,
-        )
-
-        # print author
-        page.add_freetext_annot(
-            r + pymupdf.Rect(0, 22, 0, 22),
             author,
-            fontsize=9,
-            text_color=(1, 0, 0),
-            align=pymupdf.TEXT_ALIGN_CENTER,
+            "BUILT-IN",
+            verify_folder,
+            author_list,
         )
-
-        # stamp and filename
-        page.add_freetext_annot(
-            pymupdf.Rect(15, 30, 70, 45),
-            os.path.basename(f),
-            fontsize=7,
-            text_color=(0, 0, 0),
-            align=pymupdf.TEXT_ALIGN_CENTER,
-        )
-        annot = page.add_stamp_annot(pymupdf.Rect(15, 10, 70, 30), stamp=7)  # stamp
-        annot.set_colors(stroke=(1, 0, 0))
-        annot.update()
-
-        # crop the page
-        doc[0].set_cropbox(crop_r)
-        # save as image
-        doc[0].get_pixmap(dpi=300).save(os.path.join(verify_folder, os.path.basename(f)) + ".png")
 
     return title, author, len(author_list)

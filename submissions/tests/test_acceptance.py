@@ -123,6 +123,7 @@ from submissions.services.title_author_extraction import (
     is_grobid_suspicious,
     unverify_extracted_title,
     unverify_title_author,
+    verification_image_dimensions,
     verification_image_url,
     verify_extracted_title,
     verify_title_author,
@@ -6855,6 +6856,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         page = document.new_page()
         page.insert_text((120, 100), "GROBID Visual Paper", fontsize=18)
         page.insert_text((120, 140), "Ada Lovelace and Alan Turing", fontsize=12)
+        source_page_height = page.rect.height
         document.save(pdf_path)
         document.close()
 
@@ -6869,6 +6871,39 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(output_path.name, "grobid_visual-grobid.png")
         self.assertTrue(output_path.exists())
         self.assertEqual(missing_authors, [])
+        output_pixmap = fitz.Pixmap(output_path)
+        source_crop_height = int((source_page_height / 3) * (300 / 72))
+        self.assertGreater(output_pixmap.height, source_crop_height)
+        submission = self.make_final_submission(final_submission_id="GROBIDVIS")
+        submission.title_author_verification_image = str(output_path)
+        self.assertEqual(
+            verification_image_dimensions(submission),
+            {"width": output_pixmap.width, "height": output_pixmap.height},
+        )
+
+    def test_verification_image_layout_keeps_long_header_content_separate(self):
+        from submissions.services.title_author_verification import _build_header_layout
+
+        layout = _build_header_layout(
+            360,
+            "EDITOR-PAPER-WITH-A-VERY-LONG-FILENAME_file_Submit_PDF.pdf",
+            (
+                "A Very Long Extracted Title That Must Wrap Without Covering "
+                "The Author Evidence Or The PDF Content Below"
+            ),
+            [
+                "First Long Author Name",
+                "Second Long Author Name",
+                "Third Long Author Name",
+                "Fourth Long Author Name",
+            ],
+            "MANUAL OVERRIDE",
+        )
+
+        self.assertGreater(layout["title_label_top"], layout["filename_top"])
+        self.assertGreater(layout["authors_label_top"], layout["title_top"])
+        self.assertGreater(layout["height"], layout["authors_top"])
+        self.assertGreater(len(layout["title_lines"]), 1)
 
     def test_grobid_success_resets_review_flags_and_creates_verification_image(self):
         settings_obj = AppSetting.load()
@@ -6944,14 +6979,22 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         def fake_get_title_author(pdf_path, verify=False, verify_folder=""):
-            image_path = Path(verify_folder) / f"{Path(pdf_path).name}.png"
+            self.assertFalse(verify)
+            return "Built In Title", "Ada Lovelace and Alan Turing", 2
+
+        def fake_image(_pdf_path, _title, _authors, source_label, target_dir):
+            self.assertEqual(source_label, "BUILT-IN")
+            image_path = Path(target_dir) / "built-in.png"
             image_path.parent.mkdir(parents=True, exist_ok=True)
             image_path.write_bytes(b"image")
-            return "Built In Title", "Ada Lovelace and Alan Turing", 2
+            return image_path, []
 
         with patch(
             "submissions.services.title_author_extraction.get_title_author",
             side_effect=fake_get_title_author,
+        ), patch(
+            "submissions.services.title_author_extraction.generate_text_verification_image",
+            side_effect=fake_image,
         ):
             self.assertTrue(extract_title_author_for_submission(submission))
 
