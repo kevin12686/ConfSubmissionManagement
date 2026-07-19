@@ -7,7 +7,10 @@ from submissions.models import AppSetting
 
 def global_workflow_alerts(request):
     try:
-        conference_name = AppSetting.load().conference_name.strip() or "Local Conference"
+        conference_name = (
+            AppSetting.read().conference_name.strip()
+            or "Local Conference"
+        )
     except (OperationalError, ProgrammingError):
         conference_name = "Local Conference"
 

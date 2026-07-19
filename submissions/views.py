@@ -44,5 +44,10 @@ from .controllers.integrations import (
     integration,
     system_state,
 )
-from .controllers.settings import app_settings, clear_database, grobid_health_check
+from .controllers.settings import (
+    app_settings,
+    clear_database,
+    grobid_health_check,
+    storage_inventory_panel,
+)
 from .controllers.ui import publication_duplicate_details, workflow_alerts

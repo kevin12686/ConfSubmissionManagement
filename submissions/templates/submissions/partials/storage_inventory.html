@@ -1,0 +1,216 @@
+<div id="storage-management-panel" class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center gap-3">
+        <span class="fw-semibold">Storage Management</span>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'submissions:storage_inventory_panel' %}"
+           hx-get="{% url 'submissions:storage_inventory_panel' %}"
+           hx-target="#storage-management-panel"
+           hx-swap="outerHTML"
+           hx-indicator="#storage-inventory-loading">Refresh</a>
+    </div>
+    <div class="card-body">
+        <div id="storage-inventory-loading" class="htmx-indicator small text-muted mb-3">
+            Refreshing storage inventory...
+        </div>
+        {% if storage_inventory.scan_errors %}
+            <div class="alert alert-danger cfm-alert-stack">
+                <div class="fw-semibold">Storage scan incomplete</div>
+                <div class="small mb-2">Cleanup preview is disabled until every managed folder can be read.</div>
+                <ul class="small mb-0">
+                    {% for row in storage_inventory.scan_errors|slice:":12" %}
+                        <li><code>{{ row.path }}</code>: {{ row.error }}{% if row.message %} - {{ row.message }}{% endif %}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-3 mb-3">
+            <div>
+                <div class="text-muted small">Tracked size</div>
+                <div class="h5 mb-0">{{ storage_inventory.total_size_label }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Tracked files</div>
+                <div class="h5 mb-0">{{ storage_inventory.total_file_count }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Missing DB references</div>
+                <div class="h5 mb-0">{{ storage_inventory.missing_references|length }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Default cleanup candidates</div>
+                <div class="h5 mb-0">{{ storage_inventory.cleanup_candidates|length }}</div>
+            </div>
+            <div>
+                <div class="text-muted small">Report/export cleanup candidates</div>
+                <div class="h5 mb-0">{{ storage_inventory.report_export_cleanup_candidates|length }}</div>
+            </div>
+        </div>
+
+        <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th class="text-end">Files</th>
+                        <th class="text-end">Size</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in storage_inventory.categories %}
+                        <tr>
+                            <td>{{ category.label }}</td>
+                            <td class="text-end">{{ category.count }}</td>
+                            <td class="text-end">{{ category.size_label }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3" class="text-muted">No managed files found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if storage_inventory.missing_references %}
+            <div class="alert alert-warning cfm-alert-stack">
+                <div class="fw-semibold mb-2">Missing file references</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Submission</th>
+                                <th>Role</th>
+                                <th>Path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_inventory.missing_references|slice:":12" %}
+                                <tr>
+                                    <td>{{ row.final_submission_id }}{% if row.paper_id %} / {{ row.paper_id }}{% endif %}</td>
+                                    <td>{{ row.role }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if storage_inventory.missing_references|length > 12 %}
+                    <div class="small text-muted mt-2">Showing first 12 of {{ storage_inventory.missing_references|length }} missing references.</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <div class="row g-3 align-items-start">
+            <div class="col-lg-6">
+                <form method="post" action="{% url 'submissions:settings' %}" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="sync_publication_debug">
+                    <div class="fw-semibold">Sync publication PDF debug folder</div>
+                    <p class="small text-muted mb-3">Rebuild inspection-only PDF copies from the same corrected/original files used by publication exports. This does not decide the final publication version.</p>
+                    <button class="btn btn-outline-primary">Sync Debug PDFs</button>
+                </form>
+            </div>
+            <div class="col-lg-6">
+                <form method="post" action="{% url 'submissions:settings' %}" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview_storage_cleanup">
+                    <input type="hidden" name="cleanup_policy" value="generated_cache_or_orphan_output">
+                    <div class="fw-semibold">Preview conservative cleanup</div>
+                    <p class="small text-muted mb-3">Default cleanup only selects unreferenced generated cache. Publication debug/output folders, referenced thumbnails, and previews are kept.</p>
+                    <button class="btn btn-outline-secondary"{% if storage_inventory.scan_errors %} disabled{% endif %}>Create Cleanup Preview</button>
+                </form>
+            </div>
+            <div class="col-lg-6">
+                <form method="post" action="{% url 'submissions:settings' %}" class="border rounded p-3 h-100">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview_storage_cleanup">
+                    <input type="hidden" name="cleanup_policy" value="generated_reports_exports">
+                    <div class="fw-semibold">Preview generated reports/exports cleanup</div>
+                    <p class="small text-muted mb-3">Deletes generated Excel/ZIP downloads and external upload packages that can be recreated. Plagiarism report PDFs and system state backups are kept.</p>
+                    <button class="btn btn-outline-secondary"{% if storage_inventory.scan_errors %} disabled{% endif %}>Create Reports/Exports Cleanup Preview</button>
+                </form>
+            </div>
+        </div>
+
+        {% if storage_cleanup_preview_error %}
+            <div class="alert alert-warning cfm-alert-stack mt-3 mb-0">
+                {{ storage_cleanup_preview_error }}
+            </div>
+        {% endif %}
+
+        {% if storage_cleanup_preview %}
+            <div class="border rounded p-3 mt-3">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <div class="fw-semibold">Cleanup Preview</div>
+                        <div class="small text-muted">Policy: {{ storage_cleanup_preview.policy_label }}</div>
+                        <div class="small text-muted">{{ storage_cleanup_preview.file_count }} files selected, {{ storage_cleanup_preview.total_size_label }} total. No files have been deleted.</div>
+                    </div>
+                </div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Reason</th>
+                                <th>Path</th>
+                                <th class="text-end">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_cleanup_preview.files|slice:":25" %}
+                                <tr>
+                                    <td>{{ row.reason }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                    <td class="text-end">{{ row.size_label }}</td>
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="3" class="text-muted">No default cleanup candidates.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if storage_cleanup_preview.files|length > 25 %}
+                    <div class="small text-muted mb-3">Showing first 25 of {{ storage_cleanup_preview.files|length }} files.</div>
+                {% endif %}
+                {% if storage_cleanup_preview.file_count %}
+                    <form method="post" action="{% url 'submissions:settings' %}" class="row g-2 align-items-end">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="apply_storage_cleanup">
+                        <input type="hidden" name="cleanup_token" value="{{ storage_cleanup_preview.token }}">
+                        <div class="col-md-8">
+                            <label class="form-label" for="cleanup-confirmation">Type {{ storage_cleanup_confirmation_text }} to confirm</label>
+                            <input id="cleanup-confirmation" class="form-control" name="cleanup_confirmation" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-warning w-100">Apply Cleanup</button>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if storage_inventory.large_files %}
+            <details class="mt-3">
+                <summary class="fw-semibold">Largest managed files</summary>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Path</th>
+                                <th class="text-end">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in storage_inventory.large_files %}
+                                <tr>
+                                    <td>{{ row.category }}</td>
+                                    <td><code class="small">{{ row.path }}</code></td>
+                                    <td class="text-end">{{ row.size_label }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        {% endif %}
+    </div>
+</div>

@@ -337,8 +337,28 @@ Use Storage Management in Settings for preview-first cleanup:
 
 - Conservative cleanup keeps referenced thumbnails/previews and publication debug or legacy output folders. It only selects unreferenced generated cache.
 - Generated reports/exports cleanup removes regenerated Excel/ZIP download artifacts.
+- Cleanup skips files that changed after Preview and protects System State,
+  import/restore preview, extraction, plagiarism-report, and managed-media
+  folders even when a Reports folder setting overlaps them.
+- If any managed folder is unreadable, Storage Management reports the path and
+  disables cleanup preview instead of treating the unreadable tree as empty.
+  Apply performs the same complete-scan check again before deleting anything.
+- After Apply, verify both the deleted and kept counts. A kept count means a
+  file changed, became referenced/protected, or could not be removed; review
+  Audit Log and create a fresh preview before retrying.
+
+The Settings form appears before Storage Management finishes scanning the
+configured folders. The panel fills in separately and can be rescanned with
+Refresh. GROBID status is also checked after the page opens. On Docker bind
+mounts, these background panel requests may take longer than the form itself,
+but they do not delay editing or saving Settings. Without JavaScript, Open
+Storage Management loads the same controls as a complete page.
 
 Clear Database wipes records and managed files so the app can start a new conference. Use it only after downloading a System State ZIP if the current work must be preserved.
+It recursively clears only application-owned `data`/media locations. Configured
+absolute folders outside those roots are preserved to avoid deleting unrelated
+shared files. Clear Database stages managed files first; if the database reset
+fails, it restores them instead of leaving records that point to deleted files.
 
 Clear Database preserves the current audit log by default. Check `Also archive and clear audit log` only when you intentionally want a fresh log for a new environment. When checked, the app moves the current file into `data/logs/archive/` and starts a new `audit.log`.
 

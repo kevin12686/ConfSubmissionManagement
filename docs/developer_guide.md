@@ -147,6 +147,28 @@ Put reusable workflow behavior in services:
 
 Do not put processing or integration logic directly in views.
 
+Storage inventory code must preserve the request boundary in
+`storage_inventory.py`: collect database references once, scan each managed
+root once, and classify from the resulting index and file records. Do not add
+per-file database queries, per-reference filesystem walks, or repeated path
+`stat()` calls. Treat directory references and exact file references
+explicitly. Overlapping roots must use the documented category protection
+priority; never use first-seen/last-seen iteration order to decide whether a
+publication-managed file is generated cache. Cleanup apply must recheck both
+current database references, current policy classification, and the previewed
+filesystem identity. Report-folder cleanup must preserve known
+non-regenerable managed subtrees even if folder settings overlap. The Settings
+controller must not synchronously build the inventory
+or contact GROBID; those operations belong to their separate UI/JSON
+endpoints. Read-only middleware, context processors, Settings GET, and storage
+inventory must use `AppSetting.read()`; `AppSetting.load()` is reserved for
+workflows that are allowed to persist the default singleton.
+
+Clear Database filesystem staging, rollback, and quarantine disposal belong to
+`storage_inventory.py`. The Settings controller owns confirmation, the atomic
+database reset, user messages, and audit orchestration; it must not recursively
+delete configured folders directly.
+
 ## Final Submission Write Rules
 
 `FinalSubmission` remains the compatibility source of truth while five
@@ -317,6 +339,8 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   filename collisions.
 - System State export/restore.
 - Storage cleanup policy.
+- Storage inventory exact-file and referenced-directory protection, including
+  the fresh reference check between cleanup preview and apply.
 - Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
@@ -326,6 +350,11 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Natural sorting may load IDs and sort keys before pagination, but must not
   materialize full Paper Master or Final Submission rows until the page is
   selected.
+- Settings performance coverage must assert that its main request does not call
+  `build_storage_inventory()` or `check_grobid_api()`. Storage scale benchmarks
+  should use generated fixtures outside the committed test suite; functional
+  tests should assert call boundaries and cleanup behavior rather than
+  machine-dependent wall-clock limits.
 
 Title-upload safeguards must use `build_title_guard_context()` and the shared
 `includes/title_guard_comparison.html` partial. Do not create separate three-column

@@ -8,7 +8,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote
 from unittest.mock import patch
@@ -20,6 +20,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
+from django.db.models.query import QuerySet
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -108,6 +109,7 @@ from submissions.services.storage_inventory import (
     CLEANUP_CONFIRMATION_TEXT,
     apply_storage_cleanup,
     build_storage_inventory,
+    build_storage_reference_index,
     preview_storage_cleanup,
     repair_publication_paths,
     sync_publication_pdf_debug_folder,
@@ -185,7 +187,7 @@ class EditorialAcceptanceTestCase(TestCase):
         )
         self.storage_cleanup_patcher = patch(
             "submissions.services.storage_inventory.cleanup_preview_root",
-            lambda: self.storage_cleanup_root,
+            lambda create=True: self.storage_cleanup_root,
         )
         self.audit_root_patcher = patch(
             "submissions.services.audit.audit_log_root",
@@ -415,6 +417,14 @@ class EditorialAcceptanceTestCase(TestCase):
 
 
 class StorageManagementTests(EditorialAcceptanceTestCase):
+    def setUp(self):
+        super().setUp()
+        self.base_dir_override = override_settings(
+            BASE_DIR=self.root,
+        )
+        self.base_dir_override.enable()
+        self.addCleanup(self.base_dir_override.disable)
+
     def test_audit_log_jsonl_view_and_download_are_available(self):
         write_audit_event(
             action="unit_test_event",
@@ -474,6 +484,12 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
     def test_clear_database_wipes_app_state_settings_and_managed_files(self):
         settings_obj = AppSetting.load()
         settings_obj.conference_name = "Conference To Wipe"
+        settings_obj.reports_folder = str(
+            self.root / "data" / "reports"
+        )
+        settings_obj.active_final_folder = str(
+            self.root / "data" / "active"
+        )
         settings_obj.save()
         self.make_master_paper(paper_id="W001")
         submission = self.make_final_submission(final_submission_id="9901", paper_id_filled="W001")
@@ -493,8 +509,8 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
             approved_at=timezone.now(),
         )
         managed_files = [
-            self.root / "reports" / "report.xlsx",
-            self.root / "active" / "active.pdf",
+            self.root / "data" / "reports" / "report.xlsx",
+            self.root / "data" / "active" / "active.pdf",
             self.media_root / "format_previews" / "preview.png",
             self.root / "data" / "system_state_backups" / "backup.zip",
             self.root / "data" / "storage_cleanup_previews" / "cleanup.json",
@@ -525,6 +541,84 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertEqual(AppSetting.load().reports_folder, "data/reports")
         for path in managed_files:
             self.assertFalse(path.exists(), f"{path} should be removed by full wipe")
+
+    def test_clear_database_preserves_external_configured_folder(self):
+        shared_folder = self.root / "shared-editor-files"
+        unrelated_file = shared_folder / "do-not-delete.txt"
+        unrelated_file.parent.mkdir(parents=True)
+        unrelated_file.write_bytes(b"editor-owned file")
+        settings_obj = AppSetting.load()
+        settings_obj.reports_folder = str(shared_folder)
+        settings_obj.save(update_fields=["reports_folder"])
+        self.make_master_paper("EXT1")
+        self.make_final_submission(
+            final_submission_id="EXT1",
+            paper_id_filled="EXT1",
+        )
+
+        with override_settings(
+            BASE_DIR=self.root,
+            MEDIA_ROOT=self.media_root,
+        ):
+            response = self.client.post(
+                reverse("submissions:clear_database"),
+                {"confirmation": "CLEAR DATABASE"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(InitialPaper.objects.count(), 0)
+        self.assertEqual(FinalSubmission.objects.count(), 0)
+        self.assertTrue(unrelated_file.exists())
+        self.assertEqual(
+            unrelated_file.read_bytes(),
+            b"editor-owned file",
+        )
+        self.assertContains(
+            response,
+            "configured external folder(s) were preserved",
+        )
+
+    def test_clear_database_restores_files_when_database_delete_fails(self):
+        self.make_master_paper("ROLLBACK1")
+        submission = self.make_final_submission(
+            final_submission_id="ROLLBACK1",
+            paper_id_filled="ROLLBACK1",
+        )
+        publication_input = Path(submission.pdf_file.path)
+        before_bytes = publication_input.read_bytes()
+        original_delete = QuerySet.delete
+
+        def fail_paper_delete(queryset):
+            if queryset.model is InitialPaper:
+                raise RuntimeError("injected database failure")
+            return original_delete(queryset)
+
+        with override_settings(
+            BASE_DIR=self.root,
+            MEDIA_ROOT=self.media_root,
+        ), patch.object(
+            QuerySet,
+            "delete",
+            new=fail_paper_delete,
+        ):
+            response = self.client.post(
+                reverse("submissions:clear_database"),
+                {"confirmation": "CLEAR DATABASE"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(InitialPaper.objects.count(), 1)
+        self.assertEqual(FinalSubmission.objects.count(), 1)
+        self.assertTrue(publication_input.exists())
+        self.assertEqual(publication_input.read_bytes(), before_bytes)
+        self.assertContains(
+            response,
+            "Database changes were rolled back",
+        )
+        event = self.latest_audit_event("clear_database_apply")
+        self.assertEqual(event["status"], "failed")
 
     def test_clear_database_preserves_audit_log_by_default(self):
         write_audit_event(
@@ -604,7 +698,9 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         )
 
     def test_storage_cleanup_preview_and_apply_are_conservative(self):
-        response = self.client.get(reverse("submissions:settings"))
+        response = self.client.get(
+            reverse("submissions:storage_inventory_panel")
+        )
         self.assertContains(response, "Preview conservative cleanup")
         self.assertContains(response, "Preview generated reports/exports cleanup")
         self.assertContains(response, "referenced thumbnails, and previews are kept")
@@ -648,26 +744,566 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertTrue(corrected_path.exists())
         self.assertTrue(referenced_thumbnail.exists())
 
-    def test_settings_shows_integrated_grobid_health_indicator(self):
+    def test_storage_cleanup_apply_rechecks_referenced_cache_directories(self):
+        submission = self.make_final_submission(
+            final_submission_id="8102-REFRESH",
+            paper_id_filled="S002",
+        )
+        cache_file = (
+            self.media_root
+            / "pdf_thumbnails"
+            / "new-reference"
+            / "nested"
+            / "page-1.png"
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"cache")
+
+        preview = preview_storage_cleanup()
+        selected_paths = {
+            Path(row["path"]).resolve() for row in preview["files"]
+        }
+        self.assertIn(cache_file.resolve(), selected_paths)
+
+        submission.thumbnail_folder = str(
+            self.media_root / "pdf_thumbnails" / "new-reference"
+        )
+        submission.save(update_fields=["thumbnail_folder", "updated_at"])
+        reference_index = build_storage_reference_index()
+        self.assertTrue(reference_index.is_referenced(cache_file))
+
+        result = apply_storage_cleanup(
+            preview["token"],
+            CLEANUP_CONFIRMATION_TEXT,
+        )
+
+        self.assertTrue(cache_file.exists())
+        self.assertEqual(result["deleted_count"], 0)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn("now referenced", result["skipped"][0]["message"])
+
+    def test_storage_cleanup_apply_skips_file_replaced_after_preview(self):
+        cache_file = (
+            self.media_root
+            / "format_previews"
+            / "replaced-after-preview.png"
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"old cache")
+        preview = preview_storage_cleanup()
+
+        cache_file.unlink()
+        cache_file.write_bytes(b"new important cache")
+        result = apply_storage_cleanup(
+            preview["token"],
+            CLEANUP_CONFIRMATION_TEXT,
+        )
+
+        self.assertTrue(cache_file.exists())
+        self.assertEqual(cache_file.read_bytes(), b"new important cache")
+        self.assertEqual(result["deleted_count"], 0)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn("changed after preview", result["skipped"][0]["message"])
+
+    def test_storage_cleanup_apply_rechecks_category_after_folder_change(self):
+        cache_file = (
+            self.media_root
+            / "format_previews"
+            / "becomes-report.zip"
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"same publication bytes")
+        preview = preview_storage_cleanup()
+        self.assertIn(
+            cache_file.resolve(),
+            {
+                Path(row["path"]).resolve()
+                for row in preview["files"]
+            },
+        )
+
+        settings_obj = AppSetting.load()
+        settings_obj.reports_folder = str(cache_file.parent)
+        settings_obj.save(update_fields=["reports_folder"])
+        result = apply_storage_cleanup(
+            preview["token"],
+            CLEANUP_CONFIRMATION_TEXT,
+        )
+
+        self.assertTrue(cache_file.exists())
+        self.assertEqual(result["deleted_count"], 0)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn("no longer eligible", result["skipped"][0]["message"])
+
+    def test_storage_references_use_identity_on_case_insensitive_filesystem(self):
+        tree_actual = self.media_root / "pdf_thumbnails" / "MixedCase"
+        tree_actual.mkdir(parents=True)
+        tree_file = tree_actual / "page-1.png"
+        tree_file.write_bytes(b"thumbnail")
+        tree_alternate = tree_actual.with_name("mixedcase")
+        exact_actual = (
+            self.media_root
+            / "title_author_verification"
+            / "ExactCase.png"
+        )
+        exact_actual.parent.mkdir(parents=True)
+        exact_actual.write_bytes(b"verification")
+        exact_alternate = exact_actual.with_name("exactcase.png")
+        try:
+            same_tree = tree_actual.samefile(tree_alternate)
+            same_exact = exact_actual.samefile(exact_alternate)
+        except OSError:
+            same_tree = False
+            same_exact = False
+        if not (same_tree and same_exact):
+            self.skipTest("Filesystem is case-sensitive.")
+
+        submission = self.make_final_submission(
+            final_submission_id="CASE-REF",
+            paper_id_filled="CASE",
+        )
+        submission.thumbnail_folder = str(tree_alternate)
+        submission.title_author_verification_image = str(
+            exact_alternate
+        )
+        submission.save(
+            update_fields=[
+                "thumbnail_folder",
+                "title_author_verification_image",
+                "updated_at",
+            ]
+        )
+
+        reference_index = build_storage_reference_index()
+        inventory = build_storage_inventory()
+        cleanup_paths = {
+            Path(row["path"]).resolve()
+            for row in inventory["cleanup_candidates"]
+        }
+
+        self.assertTrue(reference_index.is_referenced(tree_file))
+        self.assertTrue(reference_index.is_referenced(exact_actual))
+        self.assertNotIn(tree_file.resolve(), cleanup_paths)
+        self.assertNotIn(exact_actual.resolve(), cleanup_paths)
+
+    def test_storage_cleanup_continues_and_audits_unlink_failure(self):
+        first = self.media_root / "format_previews" / "a-delete.png"
+        second = self.media_root / "format_previews" / "b-keep.png"
+        first.parent.mkdir(parents=True, exist_ok=True)
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        preview = preview_storage_cleanup()
+        original_unlink = Path.unlink
+
+        def fail_second(path, *args, **kwargs):
+            if Path(path).resolve() == second.resolve():
+                raise PermissionError("read only")
+            return original_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", new=fail_second):
+            result = apply_storage_cleanup(
+                preview["token"],
+                CLEANUP_CONFIRMATION_TEXT,
+            )
+
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        self.assertEqual(result["deleted_count"], 1)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn("could not be deleted", result["skipped"][0]["message"])
+        event = self.latest_audit_event("storage_cleanup_apply")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(event["result_counts"]["deleted_count"], 1)
+        self.assertEqual(event["result_counts"]["skipped_count"], 1)
+
+    def test_storage_cleanup_view_reports_skipped_candidates(self):
+        cache_file = (
+            self.media_root
+            / "format_previews"
+            / "changed-before-view-apply.png"
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"previewed")
+        preview = preview_storage_cleanup()
+        cache_file.unlink()
+        cache_file.write_bytes(b"replacement")
+
+        response = self.client.post(
+            reverse("submissions:settings"),
+            {
+                "action": "apply_storage_cleanup",
+                "cleanup_token": preview["token"],
+                "cleanup_confirmation": CLEANUP_CONFIRMATION_TEXT,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(cache_file.exists())
+        self.assertContains(response, "Kept 1 candidate file.")
+        self.assertContains(response, "Review Audit Log")
+
+    def test_unreadable_storage_root_is_reported_and_blocks_preview(self):
+        denied_root = self.media_root / "format_previews"
+        denied_root.mkdir(parents=True, exist_ok=True)
+        original_scandir = os.scandir
+
+        def deny_target(path):
+            if Path(path).resolve() == denied_root.resolve():
+                raise PermissionError("permission denied")
+            return original_scandir(path)
+
+        with patch(
+            "submissions.services.storage_inventory.os.scandir",
+            side_effect=deny_target,
+        ):
+            inventory = build_storage_inventory()
+            with self.assertRaisesMessage(
+                ValueError,
+                "could not be fully scanned",
+            ):
+                preview_storage_cleanup()
+            response = self.client.get(
+                reverse("submissions:storage_inventory_panel")
+            )
+
+        self.assertEqual(len(inventory["scan_errors"]), 1)
+        self.assertEqual(
+            inventory["scan_errors"][0]["error"],
+            "PermissionError",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Storage scan incomplete")
+        self.assertContains(response, "Cleanup preview is disabled")
+        event = self.latest_audit_event("storage_cleanup_preview")
+        self.assertEqual(event["status"], "failed")
+
+    def test_cleanup_apply_fails_closed_if_scan_becomes_unreadable(self):
+        denied_root = self.media_root / "format_previews"
+        cache_file = denied_root / "keep-on-incomplete-scan.png"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"keep")
+        preview = preview_storage_cleanup()
+        original_scandir = os.scandir
+
+        def deny_target(path):
+            if Path(path).resolve() == denied_root.resolve():
+                raise PermissionError("permission denied")
+            return original_scandir(path)
+
+        with patch(
+            "submissions.services.storage_inventory.os.scandir",
+            side_effect=deny_target,
+        ), self.assertRaisesMessage(
+            ValueError,
+            "could not be fully scanned",
+        ):
+            apply_storage_cleanup(
+                preview["token"],
+                CLEANUP_CONFIRMATION_TEXT,
+            )
+
+        self.assertTrue(cache_file.exists())
+        event = self.latest_audit_event("storage_cleanup_apply")
+        self.assertEqual(event["status"], "failed")
+
+    def test_cleanup_housekeeping_failure_does_not_hide_deleted_files(self):
+        cache_file = (
+            self.media_root
+            / "format_previews"
+            / "delete-before-housekeeping.png"
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(b"cache")
+        preview = preview_storage_cleanup()
+
+        with patch(
+            "submissions.services.storage_inventory."
+            "_remove_empty_generated_cache_dirs",
+            side_effect=PermissionError("directory is busy"),
+        ):
+            result = apply_storage_cleanup(
+                preview["token"],
+                CLEANUP_CONFIRMATION_TEXT,
+            )
+
+        self.assertFalse(cache_file.exists())
+        self.assertEqual(result["deleted_count"], 1)
+        self.assertEqual(result["maintenance_warning_count"], 1)
+        event = self.latest_audit_event("storage_cleanup_apply")
+        self.assertEqual(event["status"], "success")
+        self.assertEqual(
+            event["result_counts"]["maintenance_warning_count"],
+            1,
+        )
+
+    def test_storage_cleanup_refreshes_references_during_batch(self):
+        first = (
+            self.media_root
+            / "format_previews"
+            / "a-first"
+            / "preview.png"
+        )
+        second = (
+            self.media_root
+            / "format_previews"
+            / "b-second"
+            / "preview.png"
+        )
+        for path in (first, second):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(path.parent.name.encode("ascii"))
+        submission = self.make_final_submission(
+            final_submission_id="MID-BATCH",
+            paper_id_filled="MID",
+        )
+        preview = preview_storage_cleanup()
+        call_count = 0
+
+        def change_token():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 3:
+                submission.thumbnail_folder = str(second.parent)
+                submission.save(
+                    update_fields=[
+                        "thumbnail_folder",
+                        "updated_at",
+                    ]
+                )
+                return 2
+            return 1
+
+        with patch(
+            "submissions.services.storage_inventory._database_change_token",
+            side_effect=change_token,
+        ):
+            result = apply_storage_cleanup(
+                preview["token"],
+                CLEANUP_CONFIRMATION_TEXT,
+            )
+
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        self.assertEqual(result["deleted_count"], 1)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn(
+            "now referenced",
+            result["skipped"][0]["message"],
+        )
+
+    def test_report_cleanup_protects_backup_and_preview_subtrees(self):
+        settings_obj = AppSetting.load()
+        settings_obj.reports_folder = str(self.root / "data")
+        settings_obj.save(update_fields=["reports_folder"])
+        generated_report = self.root / "data" / "reports" / "generated.zip"
+        system_backup = (
+            self.root
+            / "data"
+            / "system_state_backups"
+            / "system-state.zip"
+        )
+        import_workbook = (
+            self.root
+            / "data"
+            / "import_previews"
+            / "pending-import.xlsx"
+        )
+        for path in (generated_report, system_backup, import_workbook):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(path.name.encode("ascii"))
+
+        with override_settings(BASE_DIR=self.root):
+            preview = preview_storage_cleanup(
+                "generated_reports_exports"
+            )
+            selected_paths = {
+                Path(row["path"]).resolve()
+                for row in preview["files"]
+            }
+            self.assertIn(generated_report.resolve(), selected_paths)
+            self.assertNotIn(system_backup.resolve(), selected_paths)
+            self.assertNotIn(import_workbook.resolve(), selected_paths)
+            result = apply_storage_cleanup(
+                preview["token"],
+                CLEANUP_CONFIRMATION_TEXT,
+            )
+
+        self.assertEqual(result["deleted_count"], 1)
+        self.assertFalse(generated_report.exists())
+        self.assertTrue(system_backup.exists())
+        self.assertTrue(import_workbook.exists())
+
+    def test_conservative_cleanup_protects_reports_nested_in_cache_root(self):
+        settings_obj = AppSetting.load()
+        reports_root = (
+            self.media_root
+            / "format_previews"
+            / "nested-reports"
+        )
+        settings_obj.reports_folder = str(reports_root)
+        settings_obj.save(update_fields=["reports_folder"])
+        publication_package = reports_root / "publication_package.zip"
+        publication_package.parent.mkdir(parents=True, exist_ok=True)
+        publication_package.write_bytes(b"publication package")
+
+        inventory = build_storage_inventory()
+        cleanup_paths = {
+            Path(row["path"]).resolve()
+            for row in inventory["cleanup_candidates"]
+        }
+        preview = preview_storage_cleanup()
+
+        self.assertNotIn(publication_package.resolve(), cleanup_paths)
+        self.assertNotIn(
+            publication_package.resolve(),
+            {
+                Path(row["path"]).resolve()
+                for row in preview["files"]
+            },
+        )
+        result = apply_storage_cleanup(
+            preview["token"],
+            CLEANUP_CONFIRMATION_TEXT,
+        )
+        self.assertEqual(result["deleted_count"], 0)
+        self.assertTrue(publication_package.exists())
+
+    def test_settings_defers_storage_inventory_and_grobid_health(self):
         with patch(
             "submissions.controllers.settings.check_grobid_api",
-            return_value={
-                "available": True,
-                "level": "success",
-                "label": "Available",
-                "message": "GROBID API is reachable.",
-            },
-        ) as mocked_check:
-            response = self.client.get(reverse("submissions:settings"))
+        ) as mocked_grobid, patch(
+            "submissions.controllers.settings.build_storage_inventory",
+        ) as mocked_inventory:
+            response = self.client.get(
+                reverse("submissions:settings")
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Title/Author extraction fallback")
         self.assertContains(response, "GROBID API URL")
         self.assertContains(response, reverse("submissions:grobid_health_check"))
+        self.assertContains(
+            response,
+            reverse("submissions:storage_inventory_panel"),
+        )
         self.assertContains(response, "data-grobid-health-message")
-        self.assertContains(response, "Available")
-        self.assertContains(response, "GROBID API is reachable.")
-        mocked_check.assert_called_once()
+        self.assertContains(response, "Not checked")
+        self.assertContains(response, "Loading storage inventory")
+        self.assertContains(response, "runHealthCheck();")
+        mocked_grobid.assert_not_called()
+        mocked_inventory.assert_not_called()
+
+    def test_settings_and_storage_get_do_not_create_settings_row(self):
+        AppSetting.objects.all().delete()
+
+        settings_response = self.client.get(
+            reverse("submissions:settings")
+        )
+        storage_response = self.client.get(
+            reverse("submissions:storage_inventory_panel")
+        )
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertEqual(storage_response.status_code, 200)
+        self.assertEqual(AppSetting.objects.count(), 0)
+
+    def test_storage_inventory_panel_renders_inventory(self):
+        response = self.client.get(
+            reverse("submissions:storage_inventory_panel")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(
+            response,
+            "submissions/storage_inventory.html",
+        )
+        self.assertContains(response, "Storage Management")
+        self.assertContains(response, "Tracked files")
+        self.assertContains(response, "Preview conservative cleanup")
+        self.assertContains(response, "Back to Settings")
+
+        htmx_response = self.client.get(
+            reverse("submissions:storage_inventory_panel"),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(htmx_response.status_code, 200)
+        self.assertTemplateUsed(
+            htmx_response,
+            "submissions/partials/storage_inventory.html",
+        )
+        self.assertNotContains(htmx_response, "Back to Settings")
+
+    def test_settings_cleanup_preview_is_loaded_by_storage_panel(self):
+        response = self.client.post(
+            reverse("submissions:settings"),
+            {
+                "action": "preview_storage_cleanup",
+                "cleanup_policy": "generated_cache_or_orphan_output",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        preview_token = response.context[
+            "storage_cleanup_preview_token"
+        ]
+        self.assertTrue(preview_token)
+        self.assertContains(response, f"preview_token={preview_token}")
+        self.assertContains(
+            response,
+            (
+                f'href="{reverse("submissions:storage_inventory_panel")}'
+                f'?preview_token={preview_token}"'
+            ),
+        )
+
+        panel_response = self.client.get(
+            reverse("submissions:storage_inventory_panel"),
+            {"preview_token": preview_token},
+        )
+
+        self.assertEqual(panel_response.status_code, 200)
+        self.assertContains(panel_response, "Cleanup Preview")
+        self.assertContains(panel_response, "No files have been deleted")
+
+    def test_storage_inventory_panel_rejects_invalid_preview_token_cleanly(self):
+        response = self.client.get(
+            reverse("submissions:storage_inventory_panel"),
+            {"preview_token": "x" * 500},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Invalid cleanup preview token")
+
+    def test_creating_cleanup_preview_purges_only_expired_tokens(self):
+        active = preview_storage_cleanup()
+        expired_token = "a" * 32
+        expired_path = (
+            self.storage_cleanup_root / f"{expired_token}.json"
+        )
+        expired_path.write_text(
+            json.dumps(
+                {
+                    "token": expired_token,
+                    "policy": "generated_cache_or_orphan_output",
+                    "expires_at": (
+                        timezone.now() - timedelta(seconds=1)
+                    ).isoformat(),
+                    "files": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        preview_storage_cleanup()
+
+        self.assertFalse(expired_path.exists())
+        self.assertTrue(
+            (
+                self.storage_cleanup_root
+                / f"{active['token']}.json"
+            ).exists()
+        )
 
     def test_grobid_health_check_endpoint_uses_unsaved_form_url(self):
         with patch(
@@ -3827,6 +4463,8 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
             (reverse("submissions:dashboard"), {}),
             (reverse("submissions:dashboard_summary"), {}),
             (reverse("submissions:workflow_alerts"), {}),
+            (reverse("submissions:settings"), {}),
+            (reverse("submissions:storage_inventory_panel"), {}),
         ]
         for url, params in ui_requests:
             response = self.client.get(url, params)

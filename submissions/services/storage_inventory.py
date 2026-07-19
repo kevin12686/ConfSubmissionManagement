@@ -1,13 +1,16 @@
 import csv
 import hashlib
 import json
+import os
+import re
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings as django_settings
+from django.db import connection
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
@@ -37,18 +40,94 @@ POLICY_LABELS = {
     "generated_cache_or_orphan_output": "Conservative cleanup",
     "generated_reports_exports": "Generated reports/exports cleanup",
 }
+STORAGE_CATEGORY_PROTECTION_PRIORITY = {
+    "generated_cache": 0,
+    "managed_output": 1,
+    "reports_backups": 2,
+    "canonical_original": 3,
+    "corrected": 3,
+}
+
+
 @dataclass(frozen=True)
 class StoragePathRef:
     path: Path
     category: str
     role: str
     protected: bool = True
+    scope: str = "exact"
 
 
-def cleanup_preview_root():
+@dataclass(frozen=True)
+class StorageReferenceIndex:
+    exact_path_keys: frozenset
+    tree_path_keys: frozenset
+    exact_file_identities: frozenset
+    tree_directory_identities: frozenset
+    missing_references: tuple
+
+    def is_referenced(self, path):
+        return self.contains_canonical(_canonical_path(path))
+
+    def contains_canonical(self, path):
+        key = _path_key(path)
+        if key in self.exact_path_keys:
+            return True
+        if any(
+            _path_key(parent) in self.tree_path_keys
+            for parent in (path, *path.parents)
+        ):
+            return True
+        identity = _existing_identity(path)
+        if identity and identity in self.exact_file_identities:
+            return True
+        return any(
+            parent_identity in self.tree_directory_identities
+            for parent_identity in (
+                _existing_identity(parent)
+                for parent in (path, *path.parents)
+            )
+            if parent_identity
+        )
+
+
+@dataclass(frozen=True)
+class StorageFileRecord:
+    path: Path
+    path_key: str
+    category: str
+    size: int
+    signature: tuple
+
+
+def cleanup_preview_root(*, create=True):
     root = django_settings.BASE_DIR / "data" / "storage_cleanup_previews"
-    root.mkdir(parents=True, exist_ok=True)
+    if create:
+        root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _purge_expired_cleanup_previews(now=None):
+    now = now or timezone.now()
+    for path in cleanup_preview_root().glob("*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            expires_at = parse_datetime(
+                str(payload.get("expires_at", ""))
+            )
+            if expires_at is not None and timezone.is_naive(expires_at):
+                expires_at = timezone.make_aware(
+                    expires_at,
+                    timezone.get_current_timezone(),
+                )
+            if expires_at is not None and expires_at >= now:
+                continue
+        except (OSError, TypeError, json.JSONDecodeError):
+            pass
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 def _format_size(size):
@@ -64,8 +143,47 @@ def _path_size(path):
     return path.stat().st_size if path.exists() and path.is_file() else 0
 
 
-def _safe_path(path):
-    return str(Path(path).resolve())
+def _canonical_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _path_key(path):
+    return os.path.normcase(os.fspath(path))
+
+
+def _stat_signature(stat):
+    return (
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_mode,
+        stat.st_size,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+
+
+def _current_file_signature(path):
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return _stat_signature(stat)
+
+
+def _database_change_token():
+    if connection.vendor != "sqlite":
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA data_version")
+        return cursor.fetchone()[0]
+
+
+def _existing_identity(path):
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino)
 
 
 def _filefield_path(field_file):
@@ -126,6 +244,7 @@ def _managed_roots(settings_obj):
             _configured_folder(settings_obj.active_final_folder),
             _configured_folder(settings_obj.old_versions_folder),
             django_settings.BASE_DIR / "data" / "crosscheck_upload",
+            django_settings.BASE_DIR / "data" / "plagiarism_upload",
         ],
         "reports_backups": [
             _configured_folder(settings_obj.reports_folder),
@@ -147,44 +266,289 @@ def _cleanup_report_export_roots(settings_obj):
     ]
 
 
-def _iter_files(root):
-    if not root.exists():
+def _report_cleanup_protected_roots(settings_obj):
+    return [
+        Path(django_settings.MEDIA_ROOT),
+        _configured_folder(settings_obj.plagiarism_reports_folder),
+        _configured_folder(settings_obj.extraction_results_folder),
+        django_settings.BASE_DIR / "data" / "import_previews",
+        django_settings.BASE_DIR / "data" / "storage_cleanup_previews",
+        django_settings.BASE_DIR / "data" / "system_state_backups",
+        django_settings.BASE_DIR / "data" / "system_state_restore_previews",
+        django_settings.BASE_DIR / "data" / "restored_external",
+        django_settings.BASE_DIR / "data" / "restored_external_folders",
+    ]
+
+
+def _path_is_within(path, root):
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _application_data_clear_candidates(
+    settings_obj,
+    default_folder_values,
+):
+    folders = {
+        Path(django_settings.MEDIA_ROOT),
+        Path("data") / "media",
+        Path("data") / "crosscheck_upload",
+        Path("data") / "publication_pdf_debug",
+        Path("data") / "import_previews",
+        Path("data") / "storage_cleanup_previews",
+        Path("data") / "system_state_backups",
+        Path("data") / "system_state_restore_previews",
+        Path("data") / "restored_external",
+        Path("data") / "restored_external_folders",
+        resolve_folder(settings_obj.incoming_folder),
+        resolve_folder(settings_obj.active_final_folder),
+        resolve_folder(settings_obj.publication_pdf_debug_folder),
+        resolve_folder(settings_obj.old_versions_folder),
+        resolve_folder(settings_obj.reports_folder),
+        resolve_folder(settings_obj.extraction_results_folder),
+        resolve_folder(settings_obj.plagiarism_reports_folder),
+    }
+    folders.update(Path(value) for value in default_folder_values)
+    return {
+        (
+            folder
+            if folder.is_absolute()
+            else django_settings.BASE_DIR / folder
+        ).expanduser().resolve(strict=False)
+        for folder in folders
+    }
+
+
+def stage_application_data_clear(
+    settings_obj,
+    default_folder_values,
+):
+    base_data_root = (
+        django_settings.BASE_DIR / "data"
+    ).resolve(strict=False)
+    media_root = Path(django_settings.MEDIA_ROOT).resolve(strict=False)
+    trusted_roots = (base_data_root, media_root)
+    candidates = _application_data_clear_candidates(
+        settings_obj,
+        default_folder_values,
+    )
+    trusted = sorted(
+        {
+            folder
+            for folder in candidates
+            if any(
+                _path_is_within(folder, root)
+                for root in trusted_roots
+            )
+        },
+        key=lambda path: (len(path.parts), str(path)),
+    )
+    selected = []
+    for folder in trusted:
+        if any(
+            _path_is_within(folder, parent)
+            for parent in selected
+        ):
+            continue
+        selected.append(folder)
+
+    skipped_external = sorted(
+        str(folder)
+        for folder in candidates
+        if folder.exists()
+        and not any(
+            _path_is_within(folder, root)
+            for root in trusted_roots
+        )
+    )
+    token = uuid.uuid4().hex
+    staged = []
+    try:
+        for index, folder in enumerate(selected):
+            if not folder.exists() or not folder.is_dir():
+                continue
+            quarantine = (
+                folder.parent
+                / f".cfm-clear-{token}-{index}-{folder.name}"
+            )
+            quarantine.mkdir(parents=False, exist_ok=False)
+            row = {
+                "folder": folder,
+                "quarantine": quarantine,
+                "removed": 0,
+            }
+            staged.append(row)
+            for child in list(folder.iterdir()):
+                child.replace(quarantine / child.name)
+                row["removed"] += 1
+    except Exception:
+        restore_staged_application_data(staged)
+        raise
+    return {
+        "staged": staged,
+        "skipped_external": skipped_external,
+    }
+
+
+def restore_staged_application_data(staged):
+    for row in reversed(staged):
+        folder = row["folder"]
+        quarantine = row["quarantine"]
+        folder.mkdir(parents=True, exist_ok=True)
+        if quarantine.exists():
+            for child in list(quarantine.iterdir()):
+                child.replace(folder / child.name)
+            quarantine.rmdir()
+
+
+def discard_staged_application_data(staged):
+    retained = []
+    for row in staged:
+        quarantine = row["quarantine"]
+        try:
+            shutil.rmtree(quarantine)
+        except OSError as exc:
+            retained.append(
+                {
+                    "path": str(quarantine),
+                    "error": exc.__class__.__name__,
+                }
+            )
+    return retained
+
+
+def _append_scan_error(scan_errors, root, path, exc):
+    if scan_errors is None:
         return
-    if root.is_file():
-        yield root
+    scan_errors.append(
+        {
+            "root": str(_canonical_path(root)),
+            "path": str(_canonical_path(path)),
+            "error": exc.__class__.__name__,
+            "message": str(exc),
+        }
+    )
+
+
+def _iter_file_records(root, category, scan_errors=None):
+    root = Path(root)
+    try:
+        if root.is_file():
+            stat = root.stat()
+            canonical = _canonical_path(root)
+            yield StorageFileRecord(
+                path=canonical,
+                path_key=_path_key(canonical),
+                category=category,
+                size=stat.st_size,
+                signature=_stat_signature(stat),
+            )
+            return
+        if not root.exists():
+            return
+    except FileNotFoundError:
         return
-    for path in root.rglob("*"):
-        if path.is_file():
-            yield path
+    except OSError as exc:
+        _append_scan_error(scan_errors, root, root, exc)
+        return
+
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        try:
+            entries = os.scandir(current)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _append_scan_error(scan_errors, root, current, exc)
+            continue
+        with entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
+                        continue
+                    if not entry.is_file(follow_symlinks=True):
+                        continue
+                    stat = entry.stat(follow_symlinks=True)
+                    canonical = _canonical_path(entry.path)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    _append_scan_error(
+                        scan_errors,
+                        root,
+                        entry.path,
+                        exc,
+                    )
+                    continue
+                yield StorageFileRecord(
+                    path=canonical,
+                    path_key=_path_key(canonical),
+                    category=category,
+                    size=stat.st_size,
+                    signature=_stat_signature(stat),
+                )
 
 
 def _collect_referenced_paths():
     refs = {}
     missing = []
-    for submission in FinalSubmission.objects.all():
+    submissions = FinalSubmission.objects.only(
+        "final_submission_id",
+        "paper_id_filled",
+        "pdf_file",
+        "source_file",
+        "formatted_pdf_file",
+        "formatted_source_file",
+        "current_file_path",
+        "source_current_file_path",
+        "thumbnail_folder",
+        "title_author_verification_image",
+        "plagiarism_report_path",
+    )
+    for submission in submissions:
         submission_label = (
             f"Final {submission.final_submission_id} / "
             f"{submission.paper_id_filled or 'No Paper ID'}"
         )
         candidates = [
-            ("canonical_original", "Original PDF", _filefield_path(submission.pdf_file)),
-            ("canonical_original", "Original source", _filefield_path(submission.source_file)),
-            ("corrected", "Corrected PDF", _filefield_path(submission.formatted_pdf_file)),
-            ("corrected", "Corrected source", _filefield_path(submission.formatted_source_file)),
-            ("managed_output", "Legacy processed PDF path", _text_path(submission.current_file_path)),
-            ("managed_output", "Legacy current source path", _text_path(submission.source_current_file_path)),
-            ("generated_cache", "PDF thumbnails", _text_path(submission.thumbnail_folder)),
+            ("canonical_original", "Original PDF", _filefield_path(submission.pdf_file), "exact"),
+            ("canonical_original", "Original source", _filefield_path(submission.source_file), "exact"),
+            ("corrected", "Corrected PDF", _filefield_path(submission.formatted_pdf_file), "exact"),
+            ("corrected", "Corrected source", _filefield_path(submission.formatted_source_file), "exact"),
+            ("managed_output", "Legacy processed PDF path", _text_path(submission.current_file_path), "exact"),
+            ("managed_output", "Legacy current source path", _text_path(submission.source_current_file_path), "exact"),
+            ("generated_cache", "PDF thumbnails", _text_path(submission.thumbnail_folder), "tree"),
             (
                 "generated_cache",
                 "Title/author verification image",
                 _text_path(submission.title_author_verification_image),
+                "exact",
             ),
-            ("reports_backups", "Plagiarism report", _text_path(submission.plagiarism_report_path)),
+            ("reports_backups", "Plagiarism report", _text_path(submission.plagiarism_report_path), "exact"),
         ]
-        for category, role, path in candidates:
+        for category, role, path, scope in candidates:
             if not path:
                 continue
-            refs[_safe_path(path)] = StoragePathRef(path.resolve(), category, role)
+            canonical = _canonical_path(path)
+            key = _path_key(canonical)
+            existing = refs.get(key)
+            effective_scope = (
+                "tree"
+                if scope == "tree"
+                or (existing and existing.scope == "tree")
+                else "exact"
+            )
+            refs[key] = StoragePathRef(
+                canonical,
+                category,
+                role,
+                scope=effective_scope,
+            )
             if not path.exists():
                 missing.append(
                     {
@@ -200,132 +564,270 @@ def _collect_referenced_paths():
     return refs, missing
 
 
-def build_storage_inventory():
-    settings_obj = AppSetting.load()
-    roots = _managed_roots(settings_obj)
-    managed_output_cleanup_roots = _cleanup_managed_output_roots(settings_obj)
-    refs, missing_refs = _collect_referenced_paths()
-    categories = {}
-    all_files = {}
-    for category, root_list in roots.items():
-        total_size = 0
-        total_count = 0
-        for root in root_list:
-            for path in _iter_files(root) or []:
-                resolved = path.resolve()
-                all_files[_safe_path(resolved)] = {"path": resolved, "category": category}
-                total_size += _path_size(resolved)
-                total_count += 1
-        labels = {
-            "canonical_original": "Canonical originals",
-            "corrected": "Corrected files",
-            "generated_cache": "Generated cache",
-            "managed_output": "Managed outputs",
-            "reports_backups": "Reports and backups",
-        }
-        categories[category] = _category_row(
-            category,
-            labels.get(category, category.replace("_", " ").title()),
-            total_size,
-            total_count,
+def build_storage_reference_index():
+    refs, missing_references = _collect_referenced_paths()
+    exact_path_keys = frozenset(
+        key for key, ref in refs.items() if ref.scope == "exact"
+    )
+    tree_path_keys = frozenset(
+        key for key, ref in refs.items() if ref.scope == "tree"
+    )
+    exact_file_identities = frozenset(
+        identity
+        for identity in (
+            _existing_identity(ref.path)
+            for ref in refs.values()
+            if ref.scope == "exact"
+        )
+        if identity
+    )
+    tree_directory_identities = frozenset(
+        identity
+        for identity in (
+            _existing_identity(ref.path)
+            for ref in refs.values()
+            if ref.scope == "tree"
+        )
+        if identity
+    )
+    return StorageReferenceIndex(
+        exact_path_keys=exact_path_keys,
+        tree_path_keys=tree_path_keys,
+        exact_file_identities=exact_file_identities,
+        tree_directory_identities=tree_directory_identities,
+        missing_references=tuple(missing_references),
+    )
+
+
+class StorageInventoryBuilder:
+    CATEGORY_LABELS = {
+        "canonical_original": "Canonical originals",
+        "corrected": "Corrected files",
+        "generated_cache": "Generated cache",
+        "managed_output": "Managed outputs",
+        "reports_backups": "Reports and backups",
+    }
+
+    def __init__(self, settings_obj=None, reference_index=None):
+        self.settings_obj = settings_obj or AppSetting.read()
+        self.reference_index = (
+            reference_index or build_storage_reference_index()
         )
 
-    orphaned = []
-    cleanup_candidates = []
-    for key, file_info in sorted(all_files.items()):
-        path = file_info["path"]
-        category = file_info["category"]
-        referenced = key in refs or _file_is_under_referenced_cache_path(path, refs)
-        if not referenced:
-            orphaned.append(
-                {
-                    "path": str(path),
-                    "category": category,
-                    "size": _path_size(path),
-                    "size_label": _format_size(_path_size(path)),
-                    "reason": "Not referenced by database records.",
-                }
-            )
-        if category == "generated_cache" and not referenced:
-            cleanup_candidates.append(
-                {
-                    "path": str(path),
-                    "category": category,
-                    "size": _path_size(path),
-                    "size_label": _format_size(_path_size(path)),
-                    "reason": "Generated cache can be regenerated.",
-                }
-            )
-        elif (
-            category == "managed_output"
-            and not referenced
-            and any(_relative_to(path, root) for root in managed_output_cleanup_roots)
-        ):
-            cleanup_candidates.append(
-                {
-                    "path": str(path),
-                    "category": category,
-                    "size": _path_size(path),
-                    "size_label": _format_size(_path_size(path)),
-                    "reason": "Orphaned active/old publication output is not referenced by database records.",
-                }
-            )
+    def build(self):
+        roots = _managed_roots(self.settings_obj)
+        managed_output_cleanup_roots = tuple(
+            _canonical_path(root)
+            for root in _cleanup_managed_output_roots(self.settings_obj)
+        )
+        all_files = {}
+        scan_cache = {}
+        scan_errors = []
+        for category, root_list in roots.items():
+            for root in root_list:
+                root_key = _path_key(_canonical_path(root))
+                scanned_records = scan_cache.get(root_key)
+                if scanned_records is None:
+                    scanned_records = tuple(
+                        _iter_file_records(
+                            root,
+                            category,
+                            scan_errors,
+                        )
+                        or ()
+                    )
+                    scan_cache[root_key] = scanned_records
+                for scanned_record in scanned_records:
+                    record = (
+                        scanned_record
+                        if scanned_record.category == category
+                        else replace(scanned_record, category=category)
+                    )
+                    existing = all_files.get(record.path_key)
+                    if (
+                        existing is None
+                        or STORAGE_CATEGORY_PROTECTION_PRIORITY.get(
+                            record.category,
+                            1,
+                        )
+                        > STORAGE_CATEGORY_PROTECTION_PRIORITY.get(
+                            existing.category,
+                            1,
+                        )
+                    ):
+                        all_files[record.path_key] = record
 
-    large_files = sorted(
-        [
-            {
-                "path": str(info["path"]),
-                "category": info["category"],
-                "size": _path_size(info["path"]),
-                "size_label": _format_size(_path_size(info["path"])),
-            }
-            for info in all_files.values()
-        ],
-        key=lambda row: row["size"],
-        reverse=True,
-    )[:20]
+        categories = [
+            _category_row(
+                category,
+                self.CATEGORY_LABELS.get(
+                    category,
+                    category.replace("_", " ").title(),
+                ),
+                sum(
+                    record.size
+                    for record in all_files.values()
+                    if record.category == category
+                ),
+                sum(
+                    1
+                    for record in all_files.values()
+                    if record.category == category
+                ),
+            )
+            for category in roots
+        ]
+
+        orphaned = []
+        cleanup_candidates = []
+        for record in sorted(
+            all_files.values(),
+            key=lambda item: item.path_key,
+        ):
+            referenced = self.reference_index.contains_canonical(record.path)
+            if not referenced:
+                orphaned.append(
+                    _inventory_file_row(
+                        record,
+                        "Not referenced by database records.",
+                    )
+                )
+            if record.category == "generated_cache" and not referenced:
+                cleanup_candidates.append(
+                    _inventory_file_row(
+                        record,
+                        "Generated cache can be regenerated.",
+                    )
+                )
+            elif (
+                record.category == "managed_output"
+                and not referenced
+                and any(
+                    _relative_to(record.path, root)
+                    for root in managed_output_cleanup_roots
+                )
+            ):
+                cleanup_candidates.append(
+                    _inventory_file_row(
+                        record,
+                        (
+                            "Orphaned active/old publication output is not "
+                            "referenced by database records."
+                        ),
+                    )
+                )
+
+        large_files = sorted(
+            [
+                {
+                    "path": str(record.path),
+                    "category": record.category,
+                    "size": record.size,
+                    "size_label": _format_size(record.size),
+                }
+                for record in all_files.values()
+            ],
+            key=lambda row: row["size"],
+            reverse=True,
+        )[:20]
+        unique_total_size = sum(
+            record.size for record in all_files.values()
+        )
+        return {
+            "categories": categories,
+            "missing_references": list(
+                self.reference_index.missing_references
+            ),
+            "orphaned_files": orphaned,
+            "cleanup_candidates": cleanup_candidates,
+            "report_export_cleanup_candidates": (
+                _report_export_cleanup_candidates(
+                    self.settings_obj,
+                    all_files.values(),
+                )
+            ),
+            "large_files": large_files,
+            "scan_errors": scan_errors,
+            "total_size": unique_total_size,
+            "total_size_label": _format_size(unique_total_size),
+            "total_file_count": len(all_files),
+        }
+
+
+def _inventory_file_row(record, reason):
     return {
-        "categories": list(categories.values()),
-        "missing_references": missing_refs,
-        "orphaned_files": orphaned,
-        "cleanup_candidates": cleanup_candidates,
-        "report_export_cleanup_candidates": _report_export_cleanup_candidates(settings_obj),
-        "large_files": large_files,
-        "total_size": sum(row["size"] for row in categories.values()),
-        "total_size_label": _format_size(sum(row["size"] for row in categories.values())),
-        "total_file_count": sum(row["count"] for row in categories.values()),
+        "path": str(record.path),
+        "category": record.category,
+        "size": record.size,
+        "size_label": _format_size(record.size),
+        "signature": list(record.signature),
+        "reason": reason,
     }
 
 
-def _file_is_under_referenced_cache_path(path, refs):
-    for ref in refs.values():
-        if ref.category != "generated_cache" or not ref.path.exists() or not ref.path.is_dir():
-            continue
-        if _relative_to(path, ref.path):
-            return True
-    return False
+def build_storage_inventory():
+    return StorageInventoryBuilder().build()
 
 
-def _report_export_cleanup_candidates(settings_obj):
+def _report_export_cleanup_candidates(settings_obj, records):
     candidates = []
-    for root in _cleanup_report_export_roots(settings_obj):
-        for path in _iter_files(root) or []:
-            if root == _configured_folder(settings_obj.reports_folder) and path.suffix.lower() not in REPORT_EXPORT_EXTENSIONS:
-                continue
-            candidates.append(
-                {
-                    "path": str(path.resolve()),
-                    "category": "report_export",
-                    "size": _path_size(path),
-                    "size_label": _format_size(_path_size(path)),
-                    "reason": "Generated report/export download can be regenerated.",
-                }
-            )
+    reports_root = _canonical_path(
+        _configured_folder(settings_obj.reports_folder)
+    )
+    external_upload_roots = tuple(
+        _canonical_path(root)
+        for root in _cleanup_report_export_roots(settings_obj)[1:]
+    )
+    protected_roots = tuple(
+        _canonical_path(root)
+        for root in _report_cleanup_protected_roots(settings_obj)
+    )
+    for record in sorted(records, key=lambda item: item.path_key):
+        if any(_relative_to(record.path, root) for root in protected_roots):
+            continue
+        in_external_upload = any(
+            _relative_to(record.path, root)
+            for root in external_upload_roots
+        )
+        in_reports = _relative_to(record.path, reports_root)
+        if not in_external_upload and not (
+            in_reports
+            and record.path.suffix.lower() in REPORT_EXPORT_EXTENSIONS
+        ):
+            continue
+        candidates.append(
+            {
+                "path": str(record.path),
+                "category": "report_export",
+                "size": record.size,
+                "size_label": _format_size(record.size),
+                "signature": list(record.signature),
+                "reason": (
+                    "Generated report/export download can be regenerated."
+                ),
+            }
+        )
     return candidates
 
 
 def preview_storage_cleanup(policy="generated_cache_or_orphan_output"):
+    _purge_expired_cleanup_previews()
     inventory = build_storage_inventory()
+    if inventory["scan_errors"]:
+        exc = ValueError(
+            "Storage cleanup preview blocked because one or more managed "
+            "folders could not be fully scanned."
+        )
+        audit_failure(
+            "storage_cleanup_preview",
+            exc,
+            "Storage cleanup preview failed closed.",
+            result_counts={
+                "scan_errors": len(inventory["scan_errors"]),
+            },
+            extra={"scan_errors": inventory["scan_errors"][:20]},
+        )
+        raise exc
     if policy == "generated_reports_exports":
         candidates = inventory["report_export_cleanup_candidates"]
     else:
@@ -360,13 +862,25 @@ def preview_storage_cleanup(policy="generated_cache_or_orphan_output"):
 
 def load_storage_cleanup_preview(token):
     token = str(token or "").strip()
-    if not token or "/" in token or "\\" in token:
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
         raise ValueError("Invalid cleanup preview token.")
-    path = cleanup_preview_root() / f"{token}.json"
+    path = cleanup_preview_root(create=False) / f"{token}.json"
     if not path.exists():
         raise ValueError("Cleanup preview not found. Create a new preview.")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    expires_at = parse_datetime(payload["expires_at"])
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("token") != token
+            or not isinstance(payload.get("files"), list)
+            or payload.get("policy") not in POLICY_LABELS
+        ):
+            raise ValueError
+        expires_at = parse_datetime(payload.get("expires_at", ""))
+    except (OSError, TypeError, json.JSONDecodeError, ValueError):
+        raise ValueError(
+            "Cleanup preview is invalid. Create a new preview."
+        ) from None
     if expires_at is None:
         raise ValueError("Cleanup preview is invalid. Create a new preview.")
     if timezone.is_naive(expires_at):
@@ -389,6 +903,11 @@ def _deletable_path(path, category=None):
         )
     if category == "report_export":
         settings_obj = AppSetting.load()
+        if any(
+            _relative_to(resolved, root)
+            for root in _report_cleanup_protected_roots(settings_obj)
+        ):
+            return False
         reports_root = _configured_folder(settings_obj.reports_folder).resolve()
         if _relative_to(resolved, reports_root):
             return resolved.suffix.lower() in REPORT_EXPORT_EXTENSIONS
@@ -413,32 +932,163 @@ def apply_storage_cleanup(token, confirmation):
         if confirmation != CLEANUP_CONFIRMATION_TEXT:
             raise ValueError(f'Type "{CLEANUP_CONFIRMATION_TEXT}" to confirm cleanup.')
         payload = load_storage_cleanup_preview(token)
-        current_refs, _missing = _collect_referenced_paths()
+        current_reference_index = build_storage_reference_index()
+        current_inventory = StorageInventoryBuilder(
+            reference_index=current_reference_index,
+        ).build()
+        if current_inventory["scan_errors"]:
+            raise ValueError(
+                "Storage cleanup blocked because one or more managed folders "
+                "could not be fully scanned."
+            )
+        current_candidates = (
+            current_inventory["report_export_cleanup_candidates"]
+            if payload["policy"] == "generated_reports_exports"
+            else current_inventory["cleanup_candidates"]
+        )
+        current_candidate_keys = {
+            _path_key(_canonical_path(row["path"]))
+            for row in current_candidates
+        }
+        database_change_token = _database_change_token()
         deleted = []
         skipped = []
-        for row in payload["files"]:
+        maintenance_warnings = []
+        for index, row in enumerate(payload["files"]):
+            latest_change_token = _database_change_token()
+            if latest_change_token != database_change_token:
+                current_reference_index = (
+                    build_storage_reference_index()
+                )
+                current_inventory = StorageInventoryBuilder(
+                    reference_index=current_reference_index,
+                ).build()
+                if current_inventory["scan_errors"]:
+                    skipped.extend(
+                        {
+                            **remaining,
+                            "message": (
+                                "Storage scan became incomplete during cleanup. "
+                                "The file was kept."
+                            ),
+                        }
+                        for remaining in payload["files"][index:]
+                    )
+                    break
+                current_candidates = (
+                    current_inventory[
+                        "report_export_cleanup_candidates"
+                    ]
+                    if payload["policy"]
+                    == "generated_reports_exports"
+                    else current_inventory["cleanup_candidates"]
+                )
+                current_candidate_keys = {
+                    _path_key(_canonical_path(candidate["path"]))
+                    for candidate in current_candidates
+                }
+                database_change_token = latest_change_token
             path = Path(row["path"])
+            if current_reference_index.is_referenced(path):
+                skipped.append(
+                    {
+                        **row,
+                        "message": (
+                            "Path is now referenced by a database record."
+                        ),
+                    }
+                )
+                continue
+            if (
+                _path_key(_canonical_path(path))
+                not in current_candidate_keys
+            ):
+                skipped.append(
+                    {
+                        **row,
+                        "message": (
+                            "Path is no longer eligible under the current "
+                            "cleanup policy or folder settings."
+                        ),
+                    }
+                )
+                continue
             if not _deletable_path(path, row.get("category")):
                 skipped.append({**row, "message": "Path is outside cleanup-approved folders."})
-                continue
-            if _safe_path(path) in current_refs:
-                skipped.append({**row, "message": "Path is now referenced by a database record."})
                 continue
             if not path.exists():
                 skipped.append({**row, "message": "File no longer exists."})
                 continue
-            size = _path_size(path)
-            path.unlink()
+            current_signature = _current_file_signature(path)
+            expected_signature = tuple(row.get("signature") or ())
+            if (
+                current_signature is None
+                or current_signature != expected_signature
+            ):
+                skipped.append(
+                    {
+                        **row,
+                        "message": (
+                            "File changed after preview. Create a new cleanup "
+                            "preview before deleting it."
+                        ),
+                    }
+                )
+                continue
+            size = current_signature[3]
+            try:
+                path.unlink()
+            except OSError as exc:
+                skipped.append(
+                    {
+                        **row,
+                        "message": (
+                            "File could not be deleted and was kept: "
+                            f"{exc.__class__.__name__}."
+                        ),
+                    }
+                )
+                continue
             deleted.append({**row, "size": size, "size_label": _format_size(size)})
-        preview_path = cleanup_preview_root() / f"{payload['token']}.json"
-        preview_path.unlink(missing_ok=True)
-        _remove_empty_generated_cache_dirs()
-        _remove_empty_managed_output_dirs()
+        preview_path = (
+            cleanup_preview_root(create=False)
+            / f"{payload['token']}.json"
+        )
+        try:
+            preview_path.unlink(missing_ok=True)
+        except OSError as exc:
+            maintenance_warnings.append(
+                {
+                    "operation": "remove_cleanup_preview",
+                    "error": exc.__class__.__name__,
+                }
+            )
+        for operation, cleanup in (
+            (
+                "remove_empty_generated_cache_dirs",
+                _remove_empty_generated_cache_dirs,
+            ),
+            (
+                "remove_empty_managed_output_dirs",
+                _remove_empty_managed_output_dirs,
+            ),
+        ):
+            try:
+                cleanup()
+            except OSError as exc:
+                maintenance_warnings.append(
+                    {
+                        "operation": operation,
+                        "error": exc.__class__.__name__,
+                    }
+                )
         result = {
             "deleted": deleted,
             "skipped": skipped,
+            "maintenance_warnings": maintenance_warnings,
             "deleted_count": len(deleted),
             "skipped_count": len(skipped),
+            "maintenance_warning_count": len(maintenance_warnings),
             "deleted_size": sum(row["size"] for row in deleted),
             "deleted_size_label": _format_size(sum(row["size"] for row in deleted)),
         }
@@ -448,9 +1098,16 @@ def apply_storage_cleanup(token, confirmation):
             result_counts={
                 "deleted_count": result["deleted_count"],
                 "skipped_count": result["skipped_count"],
+                "maintenance_warning_count": result[
+                    "maintenance_warning_count"
+                ],
                 "deleted_size": result["deleted_size"],
             },
-            file_changes={"deleted": deleted[:20], "skipped": skipped[:20]},
+            file_changes={
+                "deleted": deleted[:20],
+                "skipped": skipped[:20],
+                "maintenance_warnings": maintenance_warnings,
+            },
         )
         return result
     except Exception as exc:

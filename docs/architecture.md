@@ -215,6 +215,58 @@ Storage cleanup is split by risk:
 - Generated reports/exports cleanup removes regenerated Excel/ZIP downloads and external upload packages.
 - Original uploads, corrected uploads, plagiarism report PDFs, system state backups, and referenced thumbnails/previews are retained.
 
+`submissions/services/storage_inventory.py` builds one request-scoped
+`StorageReferenceIndex` from the path fields needed by the inventory. Exact file
+references use normalized canonical-path set lookup. Directory references such
+as `thumbnail_folder` use a separate tree-path set and parent lookup, so every
+file below a referenced directory remains protected. Existing references also
+carry device/inode identity as a fallback, preventing case-only path spelling
+differences on macOS from turning the same file into an orphan. The filesystem is scanned
+once into immutable file records containing canonical path, category, and size;
+inventory classification then uses those records without repeated `stat()` or
+database queries. This keeps inventory work proportional to database references
+plus managed files instead of comparing every file with every reference.
+When configured roots overlap, category assignment uses an explicit protection
+priority: canonical/corrected files and reports/backups outrank managed output,
+and every publication-managed category outranks generated cache. Classification
+must never depend on dictionary or root iteration order. Category and total
+counts use that single primary classification, so overlapping roots do not
+double-count one file.
+Cleanup previews also bind each candidate to its filesystem identity. Apply
+skips a candidate if the path now resolves to a different file, even when it is
+still unreferenced, and rebuilds current classification so folder-setting
+changes cannot turn a newly protected file into a stale cleanup target. Known
+non-regenerable subtrees such as System State backups,
+import/restore previews, extraction results, plagiarism reports, and managed
+media remain protected if a configurable Reports folder overlaps them.
+Per-file filesystem deletion errors are recorded as skipped items so a batch
+never returns an opaque 500 after partially succeeding.
+During a long SQLite cleanup batch, `PRAGMA data_version` is checked before
+each candidate. A commit from another editor request rebuilds the reference
+index and current candidate classification before deletion continues.
+Unreadable managed roots are returned as explicit scan errors. Inventory still
+renders the readable results, but cleanup preview fails closed until the scan is
+complete. Apply also requires a complete fresh scan before deleting its first
+candidate. Files that cannot be deleted are kept and counted in the UI/audit;
+preview-file or empty-directory housekeeping failures are audited without
+turning already completed candidate processing into an opaque server error.
+Creating a cleanup preview removes expired or malformed temporary preview JSON
+files while retaining every unexpired token.
+
+The Settings form does not build this inventory during its main request.
+Storage Management is loaded from `/ui/storage-inventory/` after the page opens,
+and GROBID health uses its existing JSON endpoint. The inventory is not cached
+across requests because paths and bind-mounted files may change independently
+of Django. Cleanup preview builds a current inventory, and cleanup apply builds
+a fresh reference index before deleting anything; a file newly referenced
+after preview is skipped.
+The storage endpoint renders only the panel for HTMX requests and a complete
+base-layout page for ordinary GET/no-JavaScript navigation.
+Settings, middleware context, and storage inventory use a non-persisting
+default settings object when the singleton row does not exist. Read-only GETs
+therefore do not initialize database state; the row is created only by a write
+workflow or explicit reset.
+
 Plagiarism exceptions are per FinalSubmission publication-version decisions. `Plagiarism %` and `Single %` exceptions are approved separately, require a reason, and are valid only while the current score still matches the approved score. They affect readiness/export blocking but do not change the score itself or the final package manifest.
 
 Organized List exposes row-level exception panels for page count, authors-in-paper, plagiarism scores, and duplicate-author review. Those panels reuse the same exception service rows and approve/remove commands as Exceptions Center. Author paper-count exceptions remain author-level records and are not attached to a single Organized List row.
@@ -230,6 +282,14 @@ Use `submissions/services/audit.py` for all audit writes. Do not open-write the 
 System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens are still excluded.
 
 Clear Database writes `clear_database_requested` first. If the audit-clear checkbox is selected, it archives the current log, creates a new log with `audit_log_archived_and_cleared`, and then writes `clear_database_applied` after the wipe succeeds.
+
+Clear Database never recursively empties arbitrary configured absolute folders.
+Only app-owned paths below `BASE_DIR/data` or the configured application
+`MEDIA_ROOT` are staged. Staging uses same-filesystem sibling directories; the
+database transaction runs while those files remain recoverable, failed database
+deletes restore them, and successful commits then remove the staged content.
+Existing configured external folders are preserved and reported in the result
+and audit event.
 
 ## Versioning
 

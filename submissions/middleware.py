@@ -12,7 +12,7 @@ class AppTimezoneMiddleware:
         try:
             from submissions.models import AppSetting
 
-            zone_name = AppSetting.load().time_zone
+            zone_name = AppSetting.read().time_zone
             timezone.activate(ZoneInfo(zone_name))
         except (OperationalError, ProgrammingError, ZoneInfoNotFoundError):
             timezone.activate(ZoneInfo("America/Chicago"))

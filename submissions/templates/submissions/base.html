@@ -1452,19 +1452,32 @@
 <script src="{% static 'submissions/vendor/htmx-2.0.10.min.js' %}"></script>
 <script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>
 <script>
+let cfmFullPageNavigationPending = false;
+
+function cfmShowHtmxRequestError() {
+    if (cfmFullPageNavigationPending) return;
+    document.getElementById("htmx-request-error")?.classList.remove("d-none");
+}
+
 document.body.addEventListener("htmx:beforeRequest", function () {
     document.getElementById("htmx-request-error")?.classList.add("d-none");
 });
-document.body.addEventListener("htmx:responseError", function () {
-    document.getElementById("htmx-request-error")?.classList.remove("d-none");
+document.body.addEventListener("htmx:responseError", cfmShowHtmxRequestError);
+document.body.addEventListener("htmx:sendError", cfmShowHtmxRequestError);
+window.addEventListener("pagehide", function () {
+    cfmFullPageNavigationPending = true;
 });
-document.body.addEventListener("htmx:sendError", function () {
-    document.getElementById("htmx-request-error")?.classList.remove("d-none");
+window.addEventListener("pageshow", function () {
+    cfmFullPageNavigationPending = false;
+    document.getElementById("htmx-request-error")?.classList.add("d-none");
 });
 
 document.addEventListener("submit", function (event) {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement) || form.method.toLowerCase() !== "post") return;
+    const htmxManaged = form.matches("[hx-post], [data-hx-post]")
+        || form.closest("[hx-boost='true'], [data-hx-boost='true']");
+    if (!htmxManaged) cfmFullPageNavigationPending = true;
     if (form.dataset.cfmSubmitting === "true") {
         event.preventDefault();
         return;

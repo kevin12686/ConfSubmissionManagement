@@ -237,200 +237,29 @@
     </div>
 </form>
 
-<div class="card mt-4">
+{% if storage_repair_result %}
+    <div class="alert alert-info cfm-alert-stack mt-4 mb-0">
+        Synced {{ storage_repair_result.synced_count }} publication debug PDFs.
+        {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} Paper Master records without an active publication PDF.{% endif %}
+        {% if storage_repair_result.manifest_path %}<div class="small mt-1">Manifest: <code>{{ storage_repair_result.manifest_path }}</code></div>{% endif %}
+    </div>
+{% endif %}
+
+<div id="storage-management-panel"
+     class="card mt-4"
+     hx-get="{% url 'submissions:storage_inventory_panel' %}{% if storage_cleanup_preview_token %}?preview_token={{ storage_cleanup_preview_token|urlencode }}{% endif %}"
+     hx-trigger="load"
+     hx-swap="outerHTML">
     <div class="card-header fw-semibold">Storage Management</div>
     <div class="card-body">
-        <div class="d-flex flex-wrap gap-3 mb-3">
-            <div>
-                <div class="text-muted small">Tracked size</div>
-                <div class="h5 mb-0">{{ storage_inventory.total_size_label }}</div>
-            </div>
-            <div>
-                <div class="text-muted small">Tracked files</div>
-                <div class="h5 mb-0">{{ storage_inventory.total_file_count }}</div>
-            </div>
-            <div>
-                <div class="text-muted small">Missing DB references</div>
-                <div class="h5 mb-0">{{ storage_inventory.missing_references|length }}</div>
-            </div>
-            <div>
-                <div class="text-muted small">Default cleanup candidates</div>
-                <div class="h5 mb-0">{{ storage_inventory.cleanup_candidates|length }}</div>
-            </div>
-            <div>
-                <div class="text-muted small">Report/export cleanup candidates</div>
-                <div class="h5 mb-0">{{ storage_inventory.report_export_cleanup_candidates|length }}</div>
-            </div>
+        <div class="d-flex align-items-center gap-2 text-muted" role="status">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <span>Loading storage inventory...</span>
         </div>
-
-        <div class="table-responsive mb-3">
-            <table class="table table-sm align-middle">
-                <thead>
-                    <tr>
-                        <th>Category</th>
-                        <th class="text-end">Files</th>
-                        <th class="text-end">Size</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for category in storage_inventory.categories %}
-                        <tr>
-                            <td>{{ category.label }}</td>
-                            <td class="text-end">{{ category.count }}</td>
-                            <td class="text-end">{{ category.size_label }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="3" class="text-muted">No managed files found.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        {% if storage_inventory.missing_references %}
-            <div class="alert alert-warning cfm-alert-stack">
-                <div class="fw-semibold mb-2">Missing file references</div>
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead>
-                            <tr>
-                                <th>Submission</th>
-                                <th>Role</th>
-                                <th>Path</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in storage_inventory.missing_references|slice:":12" %}
-                                <tr>
-                                    <td>{{ row.final_submission_id }}{% if row.paper_id %} / {{ row.paper_id }}{% endif %}</td>
-                                    <td>{{ row.role }}</td>
-                                    <td><code class="small">{{ row.path }}</code></td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% if storage_inventory.missing_references|length > 12 %}
-                    <div class="small text-muted mt-2">Showing first 12 of {{ storage_inventory.missing_references|length }} missing references.</div>
-                {% endif %}
-            </div>
-        {% endif %}
-
-        <div class="row g-3 align-items-start">
-            <div class="col-lg-6">
-                <form method="post" class="border rounded p-3 h-100">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="sync_publication_debug">
-                    <div class="fw-semibold">Sync publication PDF debug folder</div>
-                    <p class="small text-muted mb-3">Rebuild inspection-only PDF copies from the same corrected/original files used by publication exports. This does not decide the final publication version.</p>
-                    <button class="btn btn-outline-primary">Sync Debug PDFs</button>
-                </form>
-            </div>
-            <div class="col-lg-6">
-                <form method="post" class="border rounded p-3 h-100">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="preview_storage_cleanup">
-                    <input type="hidden" name="cleanup_policy" value="generated_cache_or_orphan_output">
-                    <div class="fw-semibold">Preview conservative cleanup</div>
-                    <p class="small text-muted mb-3">Default cleanup only selects unreferenced generated cache. Publication debug/output folders, referenced thumbnails, and previews are kept.</p>
-                    <button class="btn btn-outline-secondary">Create Cleanup Preview</button>
-                </form>
-            </div>
-            <div class="col-lg-6">
-                <form method="post" class="border rounded p-3 h-100">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="preview_storage_cleanup">
-                    <input type="hidden" name="cleanup_policy" value="generated_reports_exports">
-                    <div class="fw-semibold">Preview generated reports/exports cleanup</div>
-                    <p class="small text-muted mb-3">Deletes generated Excel/ZIP downloads and external upload packages that can be recreated. Plagiarism report PDFs and system state backups are kept.</p>
-                    <button class="btn btn-outline-secondary">Create Reports/Exports Cleanup Preview</button>
-                </form>
-            </div>
-        </div>
-
-        {% if storage_repair_result %}
-            <div class="alert alert-info cfm-alert-stack mt-3 mb-0">
-                Synced {{ storage_repair_result.synced_count }} publication debug PDFs.
-                {% if storage_repair_result.skipped_count %}Skipped {{ storage_repair_result.skipped_count }} Paper Master records without an active publication PDF.{% endif %}
-                {% if storage_repair_result.manifest_path %}<div class="small mt-1">Manifest: <code>{{ storage_repair_result.manifest_path }}</code></div>{% endif %}
-            </div>
-        {% endif %}
-
-        {% if storage_cleanup_preview %}
-            <div class="border rounded p-3 mt-3">
-                <div class="d-flex justify-content-between align-items-start gap-3">
-                    <div>
-                        <div class="fw-semibold">Cleanup Preview</div>
-                        <div class="small text-muted">Policy: {{ storage_cleanup_preview.policy_label }}</div>
-                        <div class="small text-muted">{{ storage_cleanup_preview.file_count }} files selected, {{ storage_cleanup_preview.total_size_label }} total. No files have been deleted.</div>
-                    </div>
-                </div>
-                <div class="table-responsive mt-3">
-                    <table class="table table-sm align-middle">
-                        <thead>
-                            <tr>
-                                <th>Reason</th>
-                                <th>Path</th>
-                                <th class="text-end">Size</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in storage_cleanup_preview.files|slice:":25" %}
-                                <tr>
-                                    <td>{{ row.reason }}</td>
-                                    <td><code class="small">{{ row.path }}</code></td>
-                                    <td class="text-end">{{ row.size_label }}</td>
-                                </tr>
-                            {% empty %}
-                                <tr><td colspan="3" class="text-muted">No default cleanup candidates.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% if storage_cleanup_preview.files|length > 25 %}
-                    <div class="small text-muted mb-3">Showing first 25 of {{ storage_cleanup_preview.files|length }} files.</div>
-                {% endif %}
-                {% if storage_cleanup_preview.file_count %}
-                    <form method="post" class="row g-2 align-items-end">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="apply_storage_cleanup">
-                        <input type="hidden" name="cleanup_token" value="{{ storage_cleanup_preview.token }}">
-                        <div class="col-md-8">
-                            <label class="form-label" for="cleanup-confirmation">Type {{ storage_cleanup_confirmation_text }} to confirm</label>
-                            <input id="cleanup-confirmation" class="form-control" name="cleanup_confirmation" autocomplete="off">
-                        </div>
-                        <div class="col-md-4">
-                            <button class="btn btn-warning w-100">Apply Cleanup</button>
-                        </div>
-                    </form>
-                {% endif %}
-            </div>
-        {% endif %}
-
-        {% if storage_inventory.large_files %}
-            <details class="mt-3">
-                <summary class="fw-semibold">Largest managed files</summary>
-                <div class="table-responsive mt-2">
-                    <table class="table table-sm align-middle">
-                        <thead>
-                            <tr>
-                                <th>Category</th>
-                                <th>Path</th>
-                                <th class="text-end">Size</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in storage_inventory.large_files %}
-                                <tr>
-                                    <td>{{ row.category }}</td>
-                                    <td><code class="small">{{ row.path }}</code></td>
-                                    <td class="text-end">{{ row.size_label }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </details>
-        {% endif %}
+        <noscript>
+            <a class="btn btn-sm btn-outline-secondary mt-3"
+               href="{% url 'submissions:storage_inventory_panel' %}{% if storage_cleanup_preview_token %}?preview_token={{ storage_cleanup_preview_token|urlencode }}{% endif %}">Open Storage Management</a>
+        </noscript>
     </div>
 </div>
 
@@ -440,6 +269,7 @@
         <h2 class="h5">Clear Database and Files</h2>
         <p class="text-muted">
             Removes all Paper Master records, Final Submissions, verification states, exceptions, author count rows, settings, conference name, storage previews, system-state backups, uploaded files, reports, CrossCheck exports, and processing outputs.
+            App-owned data folders are staged and removed only after the database transaction succeeds. Configured folders outside the app data/media roots are preserved rather than recursively emptied.
             After wiping, settings are recreated with defaults so the app can start a completely new conference.
             Download a System State ZIP from Integrations first if you need to restore this conference later.
         </p>
@@ -562,6 +392,7 @@
             timeoutInput.addEventListener("input", scheduleHealthCheck);
             timeoutInput.addEventListener("change", scheduleHealthCheck);
         }
+        runHealthCheck();
     })();
 </script>
 <style>

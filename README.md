@@ -280,7 +280,7 @@ Legacy fields such as `current_file_path`, `source_current_file_path`, `active_f
 - `/reports/active-versions/` legacy Publication Candidates URL; redirects to Organized List `Compact candidates`
 - `/integrations/crosscheck/` Plagiarism / CrossCheck
 - `/integrations/system-state/` System Backup / Restore
-- `/settings/` Settings and Storage Management
+- `/settings/` Settings and asynchronously loaded Storage Management
 
 ## Templates
 
@@ -322,6 +322,11 @@ The app stores local data under `data/` by default:
 - `data/media/pdf_thumbnails/`, `data/media/format_previews/`, `data/media/title_author_verification/`: generated UI/review artifacts used by Process PDFs, Formatting Review, and Title/Author Review.
 
 Folder paths can be changed in Settings. System State ZIPs include referenced review artifacts such as title/author verification images, page thumbnails, and format previews, while excluding temporary preview tokens. System State restore remaps managed paths into the current computer's local project folder instead of preserving old absolute paths.
+
+Settings renders its editable fields immediately. Storage Management scans the
+configured folders in a separate panel request, and the optional GROBID health
+check also runs after the page opens. A slow bind mount or unavailable GROBID
+service therefore does not block the Settings form.
 
 ## Audit Log
 

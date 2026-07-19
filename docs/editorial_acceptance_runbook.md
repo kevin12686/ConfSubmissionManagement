@@ -36,7 +36,7 @@ Create Final Submission records and files:
 
 ## Manual Workflow
 
-1. Configure Settings, including conference name, page limits, author limits, plagiarism thresholds, timezone, folders, and active-version rule.
+1. Configure Settings, including conference name, page limits, author limits, plagiarism thresholds, timezone, folders, and active-version rule. Confirm the editable form appears without waiting for Storage Management or GROBID, then confirm the storage panel and health status fill in separately. Refresh Storage Management and verify its counts remain stable without changing any records. Create a cleanup preview, replace one candidate at the same path, and confirm Apply skips it as changed; an overlapping Reports folder must not select System State or import/restore preview files.
 2. Import the Paper Master List and verify preview sorting places changed/new rows above unchanged rows.
 3. Import Final Submission metadata and upload matching PDF/source files. Confirm preview sorting places mapping/file/reset issues above unchanged rows.
 3a. Use `Add Final Submission` to create one record manually. Confirm matching Paper Master title evaluation, uploaded PDF/source paths, Pending processing/review state, active/replaced version recalculation, and a `final_submission_manual_create` audit event. Submit an invalid form and confirm no record is created.
@@ -65,7 +65,7 @@ Create Final Submission records and files:
 18. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
 19. Resolve all blockers and export the final publication package.
 20. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
-21. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return.
+21. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return. Point Reports temporarily at a shared external test folder and confirm Clear Database preserves it. Simulate a database-reset failure and confirm staged publication files are restored with the records.
 22. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.
 
 ## Acceptance Checks

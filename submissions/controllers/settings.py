@@ -1,7 +1,6 @@
 import csv
 import uuid
 import logging
-import shutil
 from pathlib import Path
 
 from django.contrib import messages
@@ -81,7 +80,11 @@ from submissions.services.storage_inventory import (
     CLEANUP_CONFIRMATION_TEXT,
     apply_storage_cleanup,
     build_storage_inventory,
+    discard_staged_application_data,
+    load_storage_cleanup_preview,
     preview_storage_cleanup,
+    restore_staged_application_data,
+    stage_application_data_clear,
     sync_publication_pdf_debug_folder,
 )
 from submissions.services.formatting import (
@@ -146,60 +149,24 @@ DEFAULT_FOLDER_SETTINGS = {
     "plagiarism_reports_folder": "data/plagiarism_reports",
 }
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
-def _clear_folder_contents(folder):
-    folder.mkdir(parents=True, exist_ok=True)
-    removed = 0
-    for child in folder.iterdir():
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-        removed += 1
-    return removed
 
 
-def _clear_data_files(settings_obj):
-    folders = {
-        Path(django_settings.MEDIA_ROOT),
-        Path("data") / "media",
-        Path("data") / "crosscheck_upload",
-        Path("data") / "publication_pdf_debug",
-        Path("data") / "import_previews",
-        Path("data") / "storage_cleanup_previews",
-        Path("data") / "system_state_backups",
-        Path("data") / "system_state_restore_previews",
-        Path("data") / "restored_external",
-        Path("data") / "restored_external_folders",
-        resolve_folder(settings_obj.incoming_folder),
-        resolve_folder(settings_obj.active_final_folder),
-        resolve_folder(settings_obj.publication_pdf_debug_folder),
-        resolve_folder(settings_obj.old_versions_folder),
-        resolve_folder(settings_obj.reports_folder),
-        resolve_folder(settings_obj.extraction_results_folder),
-        resolve_folder(settings_obj.plagiarism_reports_folder),
-    }
-    for default_folder in DEFAULT_FOLDER_SETTINGS.values():
-        folders.add(Path(default_folder))
-    folders = {folder if folder.is_absolute() else django_settings.BASE_DIR / folder for folder in folders}
-    cleared = []
-    for folder in sorted(folders, key=lambda path: str(path)):
-        if not folder.exists():
-            folder.mkdir(parents=True, exist_ok=True)
-        removed = _clear_folder_contents(folder)
-        cleared.append({"folder": str(folder), "removed": removed})
-    return cleared
 def app_settings(request):
-    settings_obj = AppSetting.load()
+    settings_obj = AppSetting.read()
     old_active_version_rule = settings_obj.active_version_rule
     active_version_change_report = request.session.pop("active_version_change_report", None)
     active_version_rule_preview = request.session.get("active_version_rule_preview")
-    storage_cleanup_preview = None
-    storage_cleanup_result = None
+    storage_cleanup_preview_token = ""
     storage_repair_result = None
     if request.method == "POST" and request.POST.get("action") == "reset_folders":
         for field_name, default_value in DEFAULT_FOLDER_SETTINGS.items():
             setattr(settings_obj, field_name, default_value)
-        settings_obj.save(update_fields=list(DEFAULT_FOLDER_SETTINGS))
+        if settings_obj._state.adding:
+            settings_obj.save()
+        else:
+            settings_obj.save(
+                update_fields=list(DEFAULT_FOLDER_SETTINGS)
+            )
         audit_success(
             "settings_reset_folders",
             "Folder paths reset to defaults.",
@@ -211,30 +178,64 @@ def app_settings(request):
 
     if request.method == "POST" and request.POST.get("action") == "preview_storage_cleanup":
         cleanup_policy = request.POST.get("cleanup_policy", "generated_cache_or_orphan_output")
-        storage_cleanup_preview = preview_storage_cleanup(cleanup_policy)
-        messages.info(
-            request,
-            (
-                f"{storage_cleanup_preview['policy_label']} preview created for {storage_cleanup_preview['file_count']} files "
-                f"({storage_cleanup_preview['total_size_label']}). Nothing was deleted."
-            ),
-        )
+        try:
+            cleanup_preview = preview_storage_cleanup(cleanup_policy)
+            storage_cleanup_preview_token = cleanup_preview["token"]
+            messages.info(
+                request,
+                (
+                    f"{cleanup_preview['policy_label']} preview created for {cleanup_preview['file_count']} files "
+                    f"({cleanup_preview['total_size_label']}). Nothing was deleted."
+                ),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
 
     if request.method == "POST" and request.POST.get("action") == "apply_storage_cleanup":
         try:
-            storage_cleanup_result = apply_storage_cleanup(
+            cleanup_result = apply_storage_cleanup(
                 request.POST.get("cleanup_token", ""),
                 request.POST.get("cleanup_confirmation", "").strip(),
             )
-            messages.success(
-                request,
-                (
-                    f"Deleted {storage_cleanup_result['deleted_count']} files "
-                    f"({storage_cleanup_result['deleted_size_label']})."
-                ),
+            summary = (
+                f"Deleted {cleanup_result['deleted_count']} files "
+                f"({cleanup_result['deleted_size_label']})."
             )
+            if (
+                cleanup_result["skipped_count"]
+                or cleanup_result["maintenance_warning_count"]
+            ):
+                details = []
+                if cleanup_result["skipped_count"]:
+                    skipped_label = (
+                        "file"
+                        if cleanup_result["skipped_count"] == 1
+                        else "files"
+                    )
+                    details.append(
+                        f"Kept {cleanup_result['skipped_count']} candidate "
+                        f"{skipped_label}."
+                    )
+                if cleanup_result["maintenance_warning_count"]:
+                    details.append(
+                        "Cleanup housekeeping could not fully finish."
+                    )
+                messages.warning(
+                    request,
+                    (
+                        f"{summary} {' '.join(details)} "
+                        "Review Audit Log and create a new "
+                        "preview before retrying."
+                    ),
+                )
+            else:
+                messages.success(request, summary)
             return redirect("submissions:settings")
         except ValueError as exc:
+            storage_cleanup_preview_token = request.POST.get(
+                "cleanup_token",
+                "",
+            ).strip()
             messages.error(request, str(exc))
 
     if request.method == "POST" and request.POST.get("action") == "sync_publication_debug":
@@ -362,11 +363,12 @@ def app_settings(request):
         return redirect("submissions:settings")
     active_version_rule_preview = request.session.get("active_version_rule_preview")
     folder_warnings = _folder_path_warnings(settings_obj)
-    storage_inventory = build_storage_inventory()
-    grobid_status = check_grobid_api(
-        settings_obj.grobid_api_url,
-        min(settings_obj.grobid_timeout_seconds or 2, 2),
-    )
+    grobid_status = {
+        "available": None,
+        "level": "secondary",
+        "label": "Not checked",
+        "message": "GROBID health is checked after Settings opens.",
+    }
     return render(
         request,
         "submissions/settings.html",
@@ -374,14 +376,37 @@ def app_settings(request):
             "form": form,
             "folder_warnings": folder_warnings,
             "has_folder_warnings": any(folder_warnings.values()),
-            "storage_inventory": storage_inventory,
-            "storage_cleanup_preview": storage_cleanup_preview,
-            "storage_cleanup_result": storage_cleanup_result,
-            "storage_cleanup_confirmation_text": CLEANUP_CONFIRMATION_TEXT,
+            "storage_cleanup_preview_token": storage_cleanup_preview_token,
             "storage_repair_result": storage_repair_result,
             "active_version_change_report": active_version_change_report,
             "active_version_rule_preview": active_version_rule_preview,
             "grobid_status": grobid_status,
+        },
+    )
+
+
+def storage_inventory_panel(request):
+    preview = None
+    preview_error = ""
+    preview_token = request.GET.get("preview_token", "").strip()
+    if preview_token:
+        try:
+            preview = load_storage_cleanup_preview(preview_token)
+        except ValueError as exc:
+            preview_error = str(exc)
+    template_name = (
+        "submissions/partials/storage_inventory.html"
+        if request.headers.get("HX-Request") == "true"
+        else "submissions/storage_inventory.html"
+    )
+    return render(
+        request,
+        template_name,
+        {
+            "storage_inventory": build_storage_inventory(),
+            "storage_cleanup_preview": preview,
+            "storage_cleanup_preview_error": preview_error,
+            "storage_cleanup_confirmation_text": CLEANUP_CONFIRMATION_TEXT,
         },
     )
 
@@ -530,23 +555,101 @@ def clear_database(request):
         "papers": InitialPaper.objects.count(),
     }
     settings_obj = AppSetting.load()
+    staged_result = None
+    try:
+        staged_result = stage_application_data_clear(
+            settings_obj,
+            DEFAULT_FOLDER_SETTINGS.values(),
+        )
+        with transaction.atomic():
+            PaperAuthor.objects.all().delete()
+            AuthorLimitWaiver.objects.all().delete()
+            FinalSubmissionIdentityState.objects.all().delete()
+            FinalSubmissionFileState.objects.all().delete()
+            FinalSubmissionReviewState.objects.all().delete()
+            FinalSubmissionPublicationState.objects.all().delete()
+            FinalSubmissionPlagiarismState.objects.all().delete()
+            FinalSubmission.objects.all().delete()
+            InitialPaper.objects.all().delete()
+            AppSetting.objects.all().delete()
+            AppSetting.load()
+    except Exception as exc:
+        restore_error = None
+        if staged_result:
+            try:
+                restore_staged_application_data(
+                    staged_result["staged"]
+                )
+            except Exception as restore_exc:
+                restore_error = restore_exc
+                logger.exception(
+                    "Clear Database rollback could not restore staged files."
+                )
+        recovery_paths = (
+            [
+                str(row["quarantine"])
+                for row in staged_result["staged"]
+                if row["quarantine"].exists()
+            ]
+            if staged_result
+            else []
+        )
+        audit_failure(
+            "clear_database_apply",
+            exc,
+            (
+                "Clear Database failed; database changes were rolled back "
+                "but one or more staged folders require manual recovery."
+                if restore_error
+                else "Clear Database failed; database changes were rolled "
+                "back and staged files were restored."
+            ),
+            request=request,
+            file_changes={
+                "recovery_paths": recovery_paths,
+                "restore_error": (
+                    str(restore_error) if restore_error else ""
+                ),
+            },
+        )
+        if restore_error:
+            messages.error(
+                request,
+                "Clear Database failed and database changes were rolled "
+                "back, but some staged files require manual recovery. Do "
+                "not continue publication work; review Audit Log.",
+            )
+        else:
+            messages.error(
+                request,
+                "Clear Database failed. Database changes were rolled back "
+                "and managed files were restored. Review the Audit Log.",
+            )
+        return redirect("submissions:settings")
+
+    retained_quarantines = discard_staged_application_data(
+        staged_result["staged"]
+    )
+    removed_items = sum(
+        row["removed"] for row in staged_result["staged"]
+    )
     archived_audit_path = None
+    audit_archive_error = ""
     if clear_audit_log:
-        archived_audit_path = archive_and_clear_audit_log("clear_database")
-    cleared_folders = _clear_data_files(settings_obj)
-    removed_items = sum(row["removed"] for row in cleared_folders)
-    with transaction.atomic():
-        PaperAuthor.objects.all().delete()
-        AuthorLimitWaiver.objects.all().delete()
-        FinalSubmissionIdentityState.objects.all().delete()
-        FinalSubmissionFileState.objects.all().delete()
-        FinalSubmissionReviewState.objects.all().delete()
-        FinalSubmissionPublicationState.objects.all().delete()
-        FinalSubmissionPlagiarismState.objects.all().delete()
-        FinalSubmission.objects.all().delete()
-        InitialPaper.objects.all().delete()
-        AppSetting.objects.all().delete()
-        AppSetting.load()
+        try:
+            archived_audit_path = archive_and_clear_audit_log(
+                "clear_database"
+            )
+        except Exception as exc:
+            audit_archive_error = str(exc)
+            logger.exception(
+                "Clear Database succeeded but audit archival failed."
+            )
+            messages.warning(
+                request,
+                "Database and managed files were cleared, but the Audit Log "
+                "could not be archived. Review the current log.",
+            )
 
     messages.success(
         request,
@@ -559,6 +662,23 @@ def clear_database(request):
         f"{removed_items} file/folder items removed. "
         "Settings and conference name were reset to defaults.",
     )
+    if staged_result["skipped_external"]:
+        messages.warning(
+            request,
+            (
+                f"{len(staged_result['skipped_external'])} configured external "
+                "folder(s) were preserved because Clear Database does not "
+                "recursively delete shared external locations."
+            ),
+        )
+    if retained_quarantines:
+        messages.warning(
+            request,
+            (
+                f"{len(retained_quarantines)} staged folder(s) could not be "
+                "removed. Their recovery paths are recorded in Audit Log."
+            ),
+        )
     audit_success(
         "clear_database_applied",
         "System wiped clean.",
@@ -567,6 +687,11 @@ def clear_database(request):
         file_changes={
             "audit_log_archived": bool(archived_audit_path),
             "audit_archive_path": str(archived_audit_path) if archived_audit_path else "",
+            "preserved_external_folders": staged_result[
+                "skipped_external"
+            ],
+            "retained_quarantines": retained_quarantines,
+            "audit_archive_error": audit_archive_error,
         },
     )
     return redirect("submissions:dashboard")

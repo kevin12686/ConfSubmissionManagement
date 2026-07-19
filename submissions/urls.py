@@ -9,6 +9,11 @@ urlpatterns = [
     path("ui/workflow-alerts/", views.workflow_alerts, name="workflow_alerts"),
     path("ui/dashboard-summary/", views.dashboard_summary, name="dashboard_summary"),
     path(
+        "ui/storage-inventory/",
+        views.storage_inventory_panel,
+        name="storage_inventory_panel",
+    ),
+    path(
         "ui/publication-duplicate-details/",
         views.publication_duplicate_details,
         name="publication_duplicate_details",

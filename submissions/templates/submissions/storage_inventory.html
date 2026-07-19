@@ -1,0 +1,12 @@
+{% extends "submissions/base.html" %}
+{% block title %}Storage Management{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Storage Management</h1>
+        <div class="cfm-page-subtitle">Inspect managed files and apply preview-first cleanup.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'submissions:settings' %}">Back to Settings</a>
+</div>
+{% include "submissions/partials/storage_inventory.html" %}
+{% endblock %}

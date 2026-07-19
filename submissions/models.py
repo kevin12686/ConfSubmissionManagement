@@ -596,3 +596,7 @@ class AppSetting(models.Model):
     def load(cls):
         obj, _created = cls.objects.get_or_create(pk=1)
         return obj
+
+    @classmethod
+    def read(cls):
+        return cls.objects.filter(pk=1).first() or cls(pk=1)

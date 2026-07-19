@@ -306,6 +306,16 @@ It does not remove original uploads, corrected files, plagiarism report PDFs, Sy
 
 Conservative cleanup selects only unreferenced generated cache. It does not select publication debug, legacy active-final, or old-version output folders. Review the preview before Apply and stop if any candidate looks like a real upload or review artifact.
 
+### Storage Management keeps showing Loading
+
+Settings loads Storage Management separately so a large or slow Docker bind
+mount cannot block the editable form. Wait for the panel request to finish or
+use Refresh. If it repeatedly fails, check the global request error shown by
+the page, confirm the configured folders are readable inside the container,
+and compare the container paths with the mounted data directory. The scan reads
+metadata but does not change files. Cleanup still requires a preview and typed
+confirmation.
+
 ### Thumbnails or previews are missing
 
 Run Process PDFs for page thumbnails. Run Title/Author Review extraction for verification images. Referenced thumbnails and previews are not removed by conservative cleanup.
@@ -362,3 +372,9 @@ volume with the normal Compose command after resolving the problem. Do not add
 Download a System State ZIP first if the current work must be preserved. Then use Settings > Clear Database. This wipes database records and managed files so the app starts a new conference environment.
 
 Clear Database preserves `data/logs/audit.log` by default. Check `Also archive and clear audit log` only if the new environment should start with a fresh log; the old log will be moved to `data/logs/archive/`.
+
+Configured folders outside the application `data` and media roots are reported
+but preserved. This prevents a shared absolute Reports, extraction, plagiarism,
+incoming, or output folder from being recursively erased. Remove an external
+folder manually only after confirming that every file in it belongs to the
+conference.
