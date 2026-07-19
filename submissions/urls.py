@@ -44,6 +44,11 @@ urlpatterns = [
     path("submissions/import/", views.import_final_submissions_view, name="import_final_submissions"),
     path("processing/pdfs/", views.process_pdfs_view, name="process"),
     path("reviews/title-authors/", views.title_author_extraction, name="title_author_extraction"),
+    path(
+        "reviews/title-authors/<int:pk>/manual-override-form/",
+        views.title_author_manual_override_form,
+        name="title_author_manual_override_form",
+    ),
     path("reviews/formatting/", views.formatting, name="formatting"),
     path("reviews/paper-ids/", views.verify_paper_ids, name="verify_paper_ids"),
     path("reviews/not-publishing/", views.not_publishing_list, name="not_publishing_list"),

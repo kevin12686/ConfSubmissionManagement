@@ -215,7 +215,15 @@
                 <div class="col-lg-7">
                     {% if row.image_url %}
                         <a href="{{ row.image_url }}" target="_blank" rel="noopener">
-                            <img src="{{ row.image_url }}" class="img-fluid border rounded bg-light" alt="Title and author verification image">
+                            <img
+                                src="{{ row.image_url }}"
+                                class="img-fluid border rounded bg-light cfm-verification-image"
+                                alt="Title and author verification image"
+                                width="2550"
+                                height="1100"
+                                loading="lazy"
+                                decoding="async"
+                            >
                         </a>
                     {% else %}
                         <div class="border rounded p-4 text-muted bg-light">No verification image yet.</div>
@@ -249,7 +257,18 @@
                             <div class="small text-warning-emphasis mt-1">GROBID re-extract resets review status.</div>
                         {% endif %}
                     {% endif %}
-                    <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#manual-override-{{ item.pk }}" aria-expanded="false" aria-controls="manual-override-{{ item.pk }}">
+                    <button
+                        class="btn btn-sm btn-outline-warning"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#manual-override-{{ item.pk }}"
+                        aria-expanded="false"
+                        aria-controls="manual-override-{{ item.pk }}"
+                        hx-get="{% url 'submissions:title_author_manual_override_form' item.pk %}"
+                        hx-target="#manual-override-body-{{ item.pk }}"
+                        hx-swap="innerHTML"
+                        hx-trigger="click once"
+                    >
                         Manual override
                     </button>
                 </div>
@@ -280,35 +299,15 @@
                 </div>
             </div>
             <div class="collapse mt-3" id="manual-override-{{ item.pk }}">
-                <div class="border rounded bg-light p-3 cfm-manual-override-panel">
-                    <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
-                        <span class="badge text-bg-warning">Manual override</span>
-                        <span class="fw-semibold">Exception workflow</span>
+                <div
+                    id="manual-override-body-{{ item.pk }}"
+                    class="border rounded bg-light p-3 cfm-manual-override-panel"
+                    aria-live="polite"
+                >
+                    <div class="d-flex align-items-center gap-2 text-muted">
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span>Loading manual override form...</span>
                     </div>
-                    <div class="form-text mb-3">
-                        Use this only when formatting fixes and extraction retries cannot produce acceptable title/authors.
-                        Saving here resets Title/Author Review and records the reason in the audit log.
-                    </div>
-                    <form method="post" class="row g-3">
-                        {% csrf_token %}
-                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
-                        <div class="col-lg-6">
-                            <label class="form-label" for="manual-title-{{ item.pk }}">Extracted Title</label>
-                            <textarea id="manual-title-{{ item.pk }}" class="form-control" name="manual_extracted_title" rows="3">{{ item.extracted_title }}</textarea>
-                        </div>
-                        <div class="col-lg-6">
-                            <label class="form-label" for="manual-authors-{{ item.pk }}">Extracted Authors</label>
-                            <textarea id="manual-authors-{{ item.pk }}" class="form-control" name="manual_extracted_authors" rows="3">{{ item.extracted_authors }}</textarea>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label" for="manual-reason-{{ item.pk }}">Reason required</label>
-                            <textarea id="manual-reason-{{ item.pk }}" class="form-control" name="manual_override_reason" rows="3" required>{{ item.title_author_manual_override_reason }}</textarea>
-                        </div>
-                        <div class="col-12 d-flex flex-wrap gap-2">
-                            <button class="btn btn-warning" name="action" value="manual_override">Save manual override</button>
-                            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#manual-override-{{ item.pk }}">Cancel</button>
-                        </div>
-                    </form>
                 </div>
             </div>
         </div>
@@ -335,6 +334,12 @@
     .cfm-manual-override-panel {
         border-color: var(--cfm-warning-border) !important;
         box-shadow: inset 4px 0 0 var(--cfm-warning-strong);
+        min-height: 3.5rem;
+    }
+    .cfm-verification-image {
+        display: block;
+        height: auto;
+        width: 100%;
     }
     .action-group {
         min-width: 220px;

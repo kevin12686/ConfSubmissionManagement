@@ -1,0 +1,28 @@
+<div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+    <span class="badge text-bg-warning">Manual override</span>
+    <span class="fw-semibold">Exception workflow</span>
+</div>
+<div class="form-text mb-3">
+    Use this only when formatting fixes and extraction retries cannot produce acceptable title/authors.
+    Saving here resets Title/Author Review and records the reason in the audit log.
+</div>
+<form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+    <div class="col-lg-6">
+        <label class="form-label" for="manual-title-{{ submission.pk }}">Extracted Title</label>
+        <textarea id="manual-title-{{ submission.pk }}" class="form-control" name="manual_extracted_title" rows="3">{{ submission.extracted_title }}</textarea>
+    </div>
+    <div class="col-lg-6">
+        <label class="form-label" for="manual-authors-{{ submission.pk }}">Extracted Authors</label>
+        <textarea id="manual-authors-{{ submission.pk }}" class="form-control" name="manual_extracted_authors" rows="3">{{ submission.extracted_authors }}</textarea>
+    </div>
+    <div class="col-12">
+        <label class="form-label" for="manual-reason-{{ submission.pk }}">Reason required</label>
+        <textarea id="manual-reason-{{ submission.pk }}" class="form-control" name="manual_override_reason" rows="3" required>{{ submission.title_author_manual_override_reason }}</textarea>
+    </div>
+    <div class="col-12 d-flex flex-wrap gap-2">
+        <button class="btn btn-warning" name="action" value="manual_override">Save manual override</button>
+        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#manual-override-{{ submission.pk }}">Cancel</button>
+    </div>
+</form>

@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
+from django.views.decorators.http import require_GET
 
 from submissions.forms import (
     AppSettingForm,
@@ -472,6 +473,18 @@ def verify_paper_ids(request):
             "pagination": page,
         },
     )
+
+
+@require_GET
+def title_author_manual_override_form(request, pk):
+    submission = get_object_or_404(FinalSubmission, pk=pk)
+    return render(
+        request,
+        "submissions/partials/title_author_manual_override_form.html",
+        {"submission": submission},
+    )
+
+
 def title_author_extraction(request):
     q = _search_query(request)
     current_filter = request.GET.get("filter", "needs_verification")

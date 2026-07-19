@@ -316,6 +316,12 @@ GROBID actions run an `/api/isalive` health check before extraction. Single-row 
 
 Manual title/author override is implemented as a first-class exception workflow in the title/author service, not as ordinary Final Submission editing. It writes `title_author_source=manual_override`, stores a required reason/time, creates a new verification image when a PDF is available, resets review-dependent flags, and logs before/after values. Re-extraction or PDF/source changes clear manual override metadata.
 
+The Title/Author worklist keeps its large verification images lazy-loaded and
+reserves their generated `2550 x 1100` aspect ratio to avoid unnecessary image
+decode and layout work. Manual Override forms are loaded from a read-only HTMX
+partial only when an editor expands that action; the state-changing submission
+still posts through the audited Title/Author controller and service.
+
 ## Regression Gate
 
 Run these checks before merging or handing off changes:

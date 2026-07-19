@@ -25,6 +25,7 @@ from .controllers.reviews import (
     not_publishing_list,
     organized_list,
     title_author_extraction,
+    title_author_manual_override_form,
     verify_paper_ids,
 )
 from .controllers.processing import process_pdfs_view

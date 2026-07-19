@@ -6758,8 +6758,19 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         self.assertContains(response, "Manual override")
-        self.assertContains(response, "Exception workflow")
-        self.assertContains(response, "Reason required")
+        self.assertContains(response, "Loading manual override form...")
+        self.assertNotContains(response, "Exception workflow")
+        self.assertNotContains(response, "Reason required")
+
+        partial = self.client.get(
+            reverse(
+                "submissions:title_author_manual_override_form",
+                args=[submission.pk],
+            )
+        )
+        self.assertContains(partial, "Exception workflow")
+        self.assertContains(partial, "Reason required")
+        self.assertContains(partial, "Existing override.")
 
     def test_title_author_page_filters_manual_override_rows(self):
         self.make_master_paper("P001", "Manual", "Ada")
@@ -7188,6 +7199,60 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertContains(response, "GROBID re-extract")
         self.assertContains(response, "GROBID re-extract resets review status.")
+
+    def test_title_author_page_lazy_loads_images_and_manual_override_form(self):
+        self.make_master_paper("P001", "Deferred Review Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="DEFER1",
+            paper_id_filled="P001",
+            extracted_title="Deferred Review Paper",
+            extracted_authors="Ada Lovelace",
+            title_author_manual_override_reason="Existing editorial reason",
+        )
+        image_path = (
+            self.media_root
+            / "title_author_verification"
+            / "DEFER1"
+            / "DEFER1.png"
+        )
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_bytes(b"verification image")
+        submission.title_author_verification_image = str(image_path)
+        submission.save(update_fields=["title_author_verification_image", "updated_at"])
+
+        response = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "all", "q": "DEFER1"},
+        )
+
+        self.assertContains(response, 'loading="lazy"')
+        self.assertContains(response, 'decoding="async"')
+        self.assertContains(response, 'width="2550"')
+        self.assertContains(response, 'height="1100"')
+        self.assertContains(
+            response,
+            reverse(
+                "submissions:title_author_manual_override_form",
+                args=[submission.pk],
+            ),
+        )
+        self.assertNotContains(response, 'name="manual_extracted_title"')
+        self.assertNotContains(response, 'name="manual_extracted_authors"')
+        self.assertNotContains(response, 'name="manual_override_reason"')
+
+        partial = self.client.get(
+            reverse(
+                "submissions:title_author_manual_override_form",
+                args=[submission.pk],
+            )
+        )
+
+        self.assertEqual(partial.status_code, 200)
+        self.assertContains(partial, 'name="manual_extracted_title"')
+        self.assertContains(partial, "Deferred Review Paper")
+        self.assertContains(partial, 'name="manual_extracted_authors"')
+        self.assertContains(partial, "Ada Lovelace")
+        self.assertContains(partial, "Existing editorial reason")
 
     def test_title_author_page_emphasizes_title_match_check(self):
         self.make_master_paper("P001", "Bridging Disciplines", "Ada")
