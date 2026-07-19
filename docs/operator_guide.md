@@ -236,14 +236,16 @@ The built-in extractor is the default path. Settings can enable an optional GROB
 Manual override is an exception path for cases where extracted title/authors must be corrected without editing the PDF/source. Use the row-level `Manual override` action on the Title/Author page, enter the corrected extracted title/authors, and record a required reason. Manual override resets Title/Author Review to Pending, recalculates extracted-title match, writes an audit event, and appears as an Info item in Error Report. Final Submission edit does not silently edit extracted title/authors; use the Title/Author workflow so the reason and review reset are recorded.
 
 All three result sources use one verification-image renderer. The image has a
-separate header for the review-sample label, extraction source, filename,
-wrapped extracted title, and numbered author legend. This header grows when
-the title is long or the author list is large, so none of that text is placed
-over the PDF. The PDF evidence below marks title text in yellow with a blue
-underline and gives every parsed author an independent green box and
-underline. Compare the `A1`, `A2`, and later legend entries with those
-boundaries; two adjacent boxes can reveal that one person's name was
-incorrectly parsed as two authors.
+header for the review-sample label, extraction source, filename, wrapped
+extracted title, and numbered author legend. The renderer first confirms how
+much visibly blank space exists above the PDF title, places the header in that
+space, and adds only the extra height still required. Small top/bottom padding
+and a safety gap before the first PDF content are always retained. If a logo,
+line, image, or text occupies the top area, the renderer expands rather than
+covering it. The PDF evidence marks title text in yellow with a blue underline
+and gives every parsed author an independent green box and underline. Compare
+the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
+boxes can reveal that one person's name was incorrectly parsed as two authors.
 
 ## Formatting Review
 

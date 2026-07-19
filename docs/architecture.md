@@ -320,8 +320,12 @@ Metadata extraction and evidence rendering are deliberately separate.
 `builtin_title_author_extractor.py` keeps the established built-in metadata
 heuristics. Built-in, GROBID, and Manual Override all pass their resulting
 title/authors to `title_author_verification.py`, which is the only verification
-renderer. It creates a dynamically sized header above, never over, the first
-page evidence. Normalized word-sequence fallback matching tolerates
+renderer. It uses a conservative grayscale scan of the rendered first-page
+upper area to measure genuinely blank top space. The dynamically sized header
+uses that space first and shifts the source page down only by the remaining
+required height. A fixed safety gap keeps the header away from the first
+non-white PDF content; uncertain or occupied space is never reused. Normalized
+word-sequence fallback matching tolerates
 punctuation/spacing differences when locating text without changing the stored
 extraction. Title evidence uses yellow marking plus blue underlines; each
 parsed author receives an independent green outline/underline and a numbered

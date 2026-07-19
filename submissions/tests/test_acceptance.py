@@ -6882,7 +6882,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
     def test_verification_image_layout_keeps_long_header_content_separate(self):
-        from submissions.services.title_author_verification import _build_header_layout
+        from submissions.services.title_author_verification import (
+            HEADER_TO_CONTENT_MARGIN,
+            _build_header_layout,
+            _source_offset,
+        )
 
         layout = _build_header_layout(
             360,
@@ -6904,6 +6908,48 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertGreater(layout["authors_label_top"], layout["title_top"])
         self.assertGreater(layout["height"], layout["authors_top"])
         self.assertGreater(len(layout["title_lines"]), 1)
+        source_offset = _source_offset(layout["height"], 80)
+        self.assertGreaterEqual(
+            source_offset + 80,
+            layout["height"] + HEADER_TO_CONTENT_MARGIN,
+        )
+
+    def test_verification_image_reuses_safe_pdf_top_whitespace(self):
+        import fitz
+
+        def create_pdf(path, title_y, author_y):
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, title_y), "Whitespace Review Paper", fontsize=18)
+            page.insert_text((72, author_y), "Ada Lovelace and Alan Turing", fontsize=12)
+            document.save(path)
+            document.close()
+
+        crowded_pdf = self.root / "crowded_verification.pdf"
+        spacious_pdf = self.root / "spacious_verification.pdf"
+        create_pdf(crowded_pdf, 28, 56)
+        create_pdf(spacious_pdf, 220, 252)
+
+        crowded_output, crowded_missing = generate_text_verification_image(
+            crowded_pdf,
+            "Whitespace Review Paper",
+            "Ada Lovelace and Alan Turing",
+            "GROBID",
+            self.media_root / "title_author_verification" / "CROWDED",
+        )
+        spacious_output, spacious_missing = generate_text_verification_image(
+            spacious_pdf,
+            "Whitespace Review Paper",
+            "Ada Lovelace and Alan Turing",
+            "GROBID",
+            self.media_root / "title_author_verification" / "SPACIOUS",
+        )
+
+        self.assertEqual(crowded_missing, [])
+        self.assertEqual(spacious_missing, [])
+        crowded_pixmap = fitz.Pixmap(crowded_output)
+        spacious_pixmap = fitz.Pixmap(spacious_output)
+        self.assertLess(spacious_pixmap.height, crowded_pixmap.height)
 
     def test_grobid_success_resets_review_flags_and_creates_verification_image(self):
         settings_obj = AppSetting.load()

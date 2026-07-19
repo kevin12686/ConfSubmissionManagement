@@ -180,8 +180,10 @@ Use Title/Author Review:
 Verification image URLs include a file-modification cache buster so a newly generated built-in or GROBID image should replace the previous browser image immediately.
 
 Built-in, GROBID, and Manual Override now use the same verification layout. The
-header is separate from the PDF evidence and expands for long titles or author
-lists. Numbered authors in the header correspond to separate green
+header reuses only confirmed blank space above the PDF title and expands
+upward for the remainder. It always keeps a small safety gap from the first
+visible PDF content; a top logo, line, image, or text forces additional
+expansion rather than being covered. Numbered authors in the header correspond to separate green
 outline/underline regions in the PDF. If a single person appears as two
 numbered entries or two adjacent boxes, the extracted author list was split
 incorrectly even when all text was found.

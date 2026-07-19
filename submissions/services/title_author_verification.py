@@ -5,14 +5,16 @@ from pathlib import Path
 import fitz
 
 
-HEADER_PADDING = 14
-HEADER_GAP = 8
+HEADER_PADDING = 10
+HEADER_GAP = 6
+HEADER_TO_CONTENT_MARGIN = 8
 BODY_FONT_SIZE = 9
 BODY_LINE_HEIGHT = 12
 LABEL_FONT_SIZE = 7
 AUTHOR_BADGE_WIDTH = 24
 DEFAULT_CONTENT_FRACTION = 1 / 3
 MAX_CONTENT_FRACTION = 0.60
+BLANK_PIXEL_THRESHOLD = 252
 
 
 def generate_verification_image(
@@ -61,27 +63,29 @@ def generate_verification_image(
             source_label,
         )
         header_height = header_layout["height"]
+        top_blank_height = _safe_top_blank_height(source_page, source_clip)
+        source_offset = _source_offset(header_height, top_blank_height)
 
         output_document = fitz.open()
         try:
             output_page = output_document.new_page(
                 width=source_rect.width,
-                height=header_height + source_clip.height,
+                height=source_offset + source_clip.height,
             )
-            _draw_header(output_page, header_layout, source_rect.width)
             output_page.show_pdf_page(
                 fitz.Rect(
                     0,
-                    header_height,
+                    source_offset,
                     source_rect.width,
-                    header_height + source_clip.height,
+                    source_offset + source_clip.height,
                 ),
                 source_document,
                 0,
                 clip=source_clip,
             )
-            _draw_title_evidence(output_page, title_rects, header_height, source_clip)
-            _draw_author_evidence(output_page, author_rects, header_height, source_clip)
+            _draw_header(output_page, header_layout, source_rect.width)
+            _draw_title_evidence(output_page, title_rects, source_offset, source_clip)
+            _draw_author_evidence(output_page, author_rects, source_offset, source_clip)
 
             pixmap = output_page.get_pixmap(dpi=300, alpha=False)
             pixmap.save(output_path)
@@ -94,6 +98,31 @@ def generate_verification_image(
 def _safe_source_slug(value):
     slug = re.sub(r"[^A-Za-z0-9.-]+", "_", str(value or "").strip()).strip("._")
     return slug.lower() or "extraction"
+
+
+def _safe_top_blank_height(page, clip):
+    """Return the visibly blank top band using a conservative grayscale scan."""
+    pixmap = page.get_pixmap(
+        matrix=fitz.Matrix(1, 1),
+        colorspace=fitz.csGRAY,
+        alpha=False,
+        annots=True,
+        clip=clip,
+    )
+    samples = pixmap.samples
+    for row_index in range(pixmap.height):
+        start = row_index * pixmap.stride
+        row = samples[start : start + pixmap.width]
+        if row and min(row) < BLANK_PIXEL_THRESHOLD:
+            return row_index * (clip.height / pixmap.height)
+    return clip.height
+
+
+def _source_offset(header_height, top_blank_height):
+    return max(
+        0,
+        header_height + HEADER_TO_CONTENT_MARGIN - top_blank_height,
+    )
 
 
 def _content_clip(source_rect, title_rects, author_rect_groups):
@@ -273,9 +302,9 @@ def _draw_lines(page, lines, x, top, font_size, color):
         )
 
 
-def _draw_title_evidence(page, rects, header_height, source_clip):
+def _draw_title_evidence(page, rects, source_offset, source_clip):
     for source_rect in rects:
-        rect = _translated_rect(source_rect, header_height, source_clip)
+        rect = _translated_rect(source_rect, source_offset, source_clip)
         page.draw_rect(
             rect,
             color=None,
@@ -292,10 +321,10 @@ def _draw_title_evidence(page, rects, header_height, source_clip):
         )
 
 
-def _draw_author_evidence(page, author_rect_groups, header_height, source_clip):
+def _draw_author_evidence(page, author_rect_groups, source_offset, source_clip):
     for rects in author_rect_groups:
         for source_rect in rects:
-            rect = _translated_rect(source_rect, header_height, source_clip)
+            rect = _translated_rect(source_rect, source_offset, source_clip)
             page.draw_rect(
                 rect,
                 color=(0.05, 0.45, 0.20),
@@ -313,12 +342,12 @@ def _draw_author_evidence(page, author_rect_groups, header_height, source_clip):
             )
 
 
-def _translated_rect(source_rect, header_height, source_clip):
+def _translated_rect(source_rect, source_offset, source_clip):
     return fitz.Rect(
         source_rect.x0 - source_clip.x0,
-        header_height + source_rect.y0 - source_clip.y0,
+        source_offset + source_rect.y0 - source_clip.y0,
         source_rect.x1 - source_clip.x0,
-        header_height + source_rect.y1 - source_clip.y0,
+        source_offset + source_rect.y1 - source_clip.y0,
     )
 
 
