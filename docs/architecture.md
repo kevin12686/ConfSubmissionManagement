@@ -198,6 +198,15 @@ Legacy `current_file_path`, `source_current_file_path`, `active_final_folder`, a
 
 Managed files live under the project `data/` tree by default. Database fields may store file paths, but System State export/restore must remap managed paths into the receiving project folder. The snapshot includes referenced review artifacts such as title/author verification images, PDF thumbnails, and format previews because they preserve manual review context.
 
+Docker deployments mount a Compose project-scoped named volume at `/app/data`.
+The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
+mirror maintained by the Docker backup script. Migration and backup use
+verified two-phase synchronization: an online pre-copy followed by a brief
+graceful stop for the final database/file-consistent sync. Mirror promotion
+occurs only after SHA256 comparison and SQLite integrity validation, and the
+previous complete mirror is retained. This operational mirror does not change
+System State archive structure or publication-facing file resolution.
+
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 
 Storage cleanup is split by risk:

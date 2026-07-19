@@ -51,7 +51,7 @@ Create one environment file per conference:
 cp .env.example .env.conference-a
 ```
 
-Edit `.env.conference-a` so each conference has a distinct port and data folder:
+Edit `.env.conference-a` so each conference has a distinct port and host mirror:
 
 ```env
 SMS_PORT=8001
@@ -76,10 +76,39 @@ cp .env.example .env.conference-b
 docker compose --env-file .env.conference-b -p sms-conf-b up -d --build
 ```
 
-In Docker, the SQLite database is stored at
-`SMS_DATA_DIR/db.sqlite3`, and managed article files, reports, audit logs,
-previews, and exports are stored under the same `SMS_DATA_DIR` folder. Back up
-that folder before moving or archiving a conference.
+Docker runs the SQLite database and managed files from a Compose
+project-scoped named volume. `SMS_DATA_DIR` is the host mirror destination; it
+keeps the same directly usable `db.sqlite3`, media, reports, audit logs,
+previews, and export layout as the former bind mount.
+
+For an existing bind-mounted Docker installation, pull this version and migrate
+all instances before using the normal rebuild command:
+
+```bash
+python3 scripts/migrate_docker_data_volumes.py --dry-run
+python3 scripts/migrate_docker_data_volumes.py
+```
+
+The migration scans all Compose `web` containers from this checkout, pre-copies
+each live host data folder into its new named volume, briefly stops that
+instance for a verified final sync, and recreates it. It processes conferences
+one at a time and leaves the original host folder unchanged as the first
+rollback copy.
+
+Refresh every named-volume instance's raw host mirror with:
+
+```bash
+python3 scripts/backup_docker_instances.py --dry-run
+python3 scripts/backup_docker_instances.py
+```
+
+The backup command discovers all current instances automatically; no env file
+arguments are required. It performs a verified online pre-sync, gracefully
+stops one running instance for the final consistent SQLite/file sync, validates
+the copied database, promotes the staging folder, and restarts the instance.
+The prior complete mirror is retained beside `SMS_DATA_DIR` with the
+`.backup-previous` suffix. The host mirror can be mounted directly if rollback
+is required.
 
 To update after pulling a new version:
 
@@ -105,6 +134,18 @@ The source checkout is bind-mounted into the container, so a plain restart is
 often enough for code-only changes. Use `up -d --build` for the normal update
 path because it also refreshes the image when `requirements.txt` or Docker
 setup changes.
+
+To temporarily run a conference from its latest host mirror instead of the
+named volume:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bind.yml \
+  --env-file .env.conference-a -p sms-conf-a up -d --build
+```
+
+Return to the named volume by running the normal Compose command without
+`docker-compose.bind.yml`. Do not run `docker compose down -v`; `-v` deletes the
+conference named volume.
 
 By default Docker binds the app to `127.0.0.1`. If another computer must access
 the app over a trusted local network, set `SMS_BIND_HOST=0.0.0.0` and add the
@@ -313,7 +354,8 @@ Development sanity checks:
 
 Docker startup uses Gunicorn with one worker and four threads by default, runs
 the same Django application, and stores its SQLite database and managed files
-in the bind-mounted `SMS_DATA_DIR` folder. One worker avoids multi-process
-SQLite write contention; `SMS_WEB_THREADS` and `SMS_WEB_TIMEOUT` may be
-overridden for a deployment. Startup also collects the pinned local UI assets,
-and WhiteNoise serves them through Gunicorn without a separate web server.
+in the Compose project named volume. `SMS_DATA_DIR` receives the separately
+verified raw host mirror. One worker avoids multi-process SQLite write
+contention; `SMS_WEB_THREADS` and `SMS_WEB_TIMEOUT` may be overridden for a
+deployment. Startup also collects the pinned local UI assets, and WhiteNoise
+serves them through Gunicorn without a separate web server.

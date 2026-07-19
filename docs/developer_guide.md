@@ -21,7 +21,9 @@ macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windo
 
 Docker support is intended for local/operator deployments, not as a hardened
 internet-facing service. The container provides the Python/Django runtime while
-the repository checkout and conference data stay bind-mounted on the host.
+the repository checkout stays bind-mounted on the host. Conference runtime data
+uses a Compose project-scoped named volume to avoid Docker Desktop bind-mount
+I/O overhead.
 
 Use one env file and one compose project name per conference:
 
@@ -33,8 +35,8 @@ docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
 Important settings:
 
 - `SMS_PORT`: host port for the instance.
-- `SMS_DATA_DIR`: host folder mounted to `/app/data`; it contains
-  `db.sqlite3`, media uploads, reports, audit logs, previews, and exports.
+- `SMS_DATA_DIR`: raw host mirror destination. The mirror contains directly
+  usable `db.sqlite3`, media uploads, reports, audit logs, previews, and exports.
 - `SMS_BIND_HOST`: defaults to `127.0.0.1`; set `0.0.0.0` only for trusted LAN
   access.
 - `SMS_ALLOWED_HOSTS`: add the LAN hostname or IP when exposing beyond
@@ -56,9 +58,38 @@ does not change publication file selection rules.
 
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
 existing Compose `web` container created from this checkout. It reads Docker
-labels, the published host port, the `/app/data` bind mount, and SMS environment
-variables from the existing container, then runs `docker compose up -d --build`
-with the same project name. Use `--dry-run` to inspect the inferred settings.
+labels, the published host port, the `/app/data` bind or named-volume mount, and
+SMS environment variables from the existing container, then runs
+`docker compose up -d --build` with the same project name. Use `--dry-run` to
+inspect the inferred settings.
+
+Existing bind-mounted instances must be migrated with
+`scripts/migrate_docker_data_volumes.py`. The migration builds the current
+image, resolves the Compose project volume name, performs an online verified
+pre-copy, gracefully stops one instance, performs the final verified sync,
+checks SQLite integrity, and recreates the instance. On failure it starts the
+old container or recreates it with `docker-compose.bind.yml`. It never deletes
+the original host data folder.
+
+`scripts/backup_docker_instances.py` discovers every named-volume instance for
+the current checkout. It pre-syncs raw data to a sibling staging folder while
+the app remains available, then briefly stops a running container for the final
+consistent sync. A baseline hash manifest lets the final phase avoid rereading
+unchanged host files. The script validates SQLite before promoting the mirror,
+retains the previous complete mirror, always attempts to restore the original
+running state, logs results beside the host mirrors, and returns nonzero if any
+project fails. Bind-mounted instances are reported as already host-backed.
+
+Both data scripts use `runtime/.docker-data-operation.lock` to prevent migration
+and scheduled backup overlap. Locks older than 12 hours are treated as stale.
+They support repeatable `--project`, `--dry-run`, and `--stop-timeout` options.
+The transfer helper rejects symlinks, removes stale destination entries, copies
+through per-file temporary paths, verifies SHA256 content, and runs SQLite
+`PRAGMA integrity_check`.
+
+The raw host mirror is an operational rollback copy, separate from portable
+System State ZIPs. `docker-compose.bind.yml` mounts that mirror at `/app/data`
+for rollback. Never use `docker compose down -v` during normal operation.
 
 ## Regression Commands
 
@@ -68,7 +99,7 @@ Run these before finishing code changes:
 .venv/bin/python manage.py check
 .venv/bin/python manage.py makemigrations --check --dry-run
 .venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py
+.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
 ```
 
 For documentation-only changes, run at least:

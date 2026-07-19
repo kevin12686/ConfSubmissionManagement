@@ -309,6 +309,28 @@ Use `/reports/` for exports.
 
 Download a System State ZIP before moving machines, archiving work, or clearing data. The snapshot includes settings, conference name, database workflow state, managed PDFs/source files, plagiarism reports, title/author verification images, page thumbnails, and format previews. Temporary import/restore/upload preview tokens are not included.
 
+For Docker deployments, runtime data is stored in a project-scoped named
+volume. `SMS_DATA_DIR` is a separate raw host mirror with the same directly
+usable `db.sqlite3` and managed-file layout. After upgrading an older
+bind-mounted installation, run
+`python scripts/migrate_docker_data_volumes.py --dry-run` and then the same
+command without `--dry-run`. The migration handles every conference from the
+current checkout one at a time and preserves the old host folder.
+
+Run `python scripts/backup_docker_instances.py` manually or schedule it from the
+host. The command discovers all current conference instances, prepares most of
+the mirror while each app remains available, briefly stops and restarts one
+running instance for a consistent final copy, validates SQLite, and preserves
+the prior mirror with a `.backup-previous` suffix. In Windows Task Scheduler,
+set the project folder as `Start in`, use the installed Python launcher or
+Python executable as the program, and use
+`scripts\backup_docker_instances.py` as the argument. Docker Desktop must be
+running under an account that the scheduled task can access.
+
+The raw mirror is intended for immediate Docker rollback; the System State ZIP
+remains the portable, versioned application backup. Never use
+`docker compose down -v`, because `-v` deletes the active conference volume.
+
 System State ZIPs include `data/logs/audit.log` and archived audit logs, so restored systems keep the same action trail.
 
 Use Storage Management in Settings for preview-first cleanup:

@@ -16,11 +16,15 @@ from pathlib import Path
 SERVICE_NAME = "web"
 APP_DATA_DESTINATION = "/app/data"
 APP_PORT = "8000/tcp"
+BACKUP_DIR_LABEL = "com.conferencefinalmanager.host-data-dir"
 ENV_KEYS = (
     "SMS_SECRET_KEY",
     "SMS_DEBUG",
     "SMS_ALLOWED_HOSTS",
     "SMS_RUN_MIGRATIONS",
+    "SMS_WEB_WORKERS",
+    "SMS_WEB_THREADS",
+    "SMS_WEB_TIMEOUT",
 )
 
 
@@ -109,12 +113,28 @@ def matching_instances(
 
 
 def instance_from_container(container: dict, project: str) -> dict | None:
-    data_dir = data_mount_source(container)
+    mount = data_mount(container)
     port_binding = first_port_binding(container)
-    if not data_dir or not port_binding:
+    if not mount or not port_binding:
         name = container.get("Name", "").lstrip("/") or container.get("Id", "")[:12]
         print(
             f"Skipping {name}: could not infer {APP_DATA_DESTINATION} mount or port.",
+            file=sys.stderr,
+        )
+        return None
+    mount_type = mount.get("Type") or (
+        "volume" if mount.get("Name") else "bind"
+    )
+    labels = container.get("Config", {}).get("Labels", {}) or {}
+    data_dir = (
+        mount.get("Source", "")
+        if mount_type == "bind"
+        else labels.get(BACKUP_DIR_LABEL, "")
+    )
+    if not data_dir:
+        name = container.get("Name", "").lstrip("/") or container.get("Id", "")[:12]
+        print(
+            f"Skipping {name}: could not infer the host backup directory.",
             file=sys.stderr,
         )
         return None
@@ -123,6 +143,10 @@ def instance_from_container(container: dict, project: str) -> dict | None:
         "project": project,
         "name": container.get("Name", "").lstrip("/"),
         "running": bool(container.get("State", {}).get("Running")),
+        "mount_type": mount_type,
+        "volume_name": mount.get("Name") or (
+            mount.get("Source", "") if mount_type == "volume" else ""
+        ),
         "sms_bind_host": port_binding.get("HostIp") or "0.0.0.0",
         "sms_port": port_binding.get("HostPort", ""),
         "sms_data_dir": data_dir,
@@ -130,11 +154,15 @@ def instance_from_container(container: dict, project: str) -> dict | None:
     }
 
 
-def data_mount_source(container: dict) -> str:
+def data_mount(container: dict) -> dict:
     for mount in container.get("Mounts", []):
         if mount.get("Destination") == APP_DATA_DESTINATION:
-            return mount.get("Source", "")
-    return ""
+            return mount
+    return {}
+
+
+def data_mount_source(container: dict) -> str:
+    return data_mount(container).get("Source", "")
 
 
 def first_port_binding(container: dict) -> dict:
@@ -174,6 +202,8 @@ def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
         "--build",
     ]
     print(f"Project: {instance['project']} ({instance['name']})")
+    if instance.get("mount_type") == "volume":
+        print(f"  SMS_DATA_VOLUME={instance.get('volume_name', '')}")
     for key in sorted(env_values):
         display_value = "***" if key == "SMS_SECRET_KEY" else env_values[key]
         print(f"  {key}={display_value}")

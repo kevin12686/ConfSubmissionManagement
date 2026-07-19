@@ -320,6 +320,43 @@ The ZIP was created by a different state archive version. Use the matching app v
 
 System State restore should remap managed files into this project's `data/` tree. If a path still points to another machine or a temp folder, do not continue publishing from that state. Export a fresh System State ZIP from the original machine and restore again.
 
+### Docker raw-data migration or backup cannot find instances
+
+Run the script from the same repository checkout that created the containers.
+The scanner matches the Compose project working-directory label and `web`
+service label. Docker Desktop must be running, and a Windows scheduled task
+must run under an account with Docker access. Use `--dry-run` before migration
+or after changing a schedule.
+
+### Docker backup reports a lock or interrupted swap
+
+Migration and raw-data backup share
+`runtime/.docker-data-operation.lock`. Do not remove it while either script is
+running. If the process was terminated, locks older than 12 hours are cleared
+automatically. A `.backup-swap` directory means promotion was interrupted. The
+script restores it automatically only when the main host mirror is absent; if
+both exist, preserve both and inspect them before retrying.
+
+The backup writes and verifies a staging mirror before promotion. A failed sync
+does not replace the current host mirror, and the script attempts to restart
+every container that was running when backup began. Check
+`.sms-docker-backup-history.jsonl` beside the configured conference data
+folders for per-project results.
+
+### Need to run Docker from the host mirror
+
+Stop any active backup, then apply `docker-compose.bind.yml` with the same env
+file and project name:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bind.yml \
+  --env-file .env.conference-a -p sms-conf-a up -d --build
+```
+
+The override mounts `SMS_DATA_DIR` directly at `/app/data`. Return to the named
+volume with the normal Compose command after resolving the problem. Do not add
+`-v` to `docker compose down`.
+
 ### Need a completely clean conference
 
 Download a System State ZIP first if the current work must be preserved. Then use Settings > Clear Database. This wipes database records and managed files so the app starts a new conference environment.

@@ -6,6 +6,10 @@ __pycache__/
 !.env.example
 db.sqlite3
 runtime/
+*.backup-next/
+*.backup-previous/
+*.backup-swap/
+.sms-docker-backup-history.jsonl
 data/media/
 data/storage_cleanup_previews/
 data/system_state_backups/
