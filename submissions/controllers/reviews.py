@@ -108,6 +108,7 @@ from submissions.services.title_author_extraction import (
     filter_title_author_extraction_rows,
     grobid_availability_status,
     grobid_unavailable_message,
+    hydrate_title_author_extraction_rows,
     set_title_author_review_status,
     title_author_extraction_rows,
     unverify_title_author,
@@ -129,6 +130,7 @@ from submissions.application.selectors import (
     focused_submission_context,
     paper_note_summary,
 )
+from submissions.application.pagination import paginate_worklist
 
 
 logger = logging.getLogger("submissions.views")
@@ -253,6 +255,14 @@ def organized_list(request):
             for row in rows
             if row["row_type"] == "master" and row["submission"]
         ]
+    page = paginate_worklist(
+        request,
+        rows,
+        hx_target="#organized-worklist",
+        indicator_id="organized-loading",
+        force_all=bool(exact_paper_id),
+    )
+    rows = page.items
     note_summary = paper_note_summary()
     focused_context = None
     if exact_paper_id:
@@ -312,6 +322,7 @@ def organized_list(request):
             "note_count": len(note_summary),
             "focused_context": focused_context,
             "exact_paper_id": exact_paper_id,
+            "pagination": page,
         },
     )
 def verify_paper_ids(request):
@@ -406,8 +417,15 @@ def verify_paper_ids(request):
     else:
         current_filter = "all"
         rows = all_rows
-    rows = hydrate_verification_rows(
+    page = paginate_worklist(
+        request,
         rows,
+        hx_target="#verify-paper-id-worklist",
+        indicator_id="verify-paper-id-loading",
+        force_all=bool(focused_submission),
+    )
+    rows = hydrate_verification_rows(
+        page.items,
         paper_candidates=paper_candidates,
         initial_paper_by_id=initial_paper_by_id,
     )
@@ -440,6 +458,7 @@ def verify_paper_ids(request):
             "filter_options": filter_options,
             "filter_counts": counts,
             "focused_context": focused_context,
+            "pagination": page,
         },
     )
 def title_author_extraction(request):
@@ -585,7 +604,11 @@ def title_author_extraction(request):
         {"value": "errors", "label": "Extraction Errors", "tab_label": "Errors", "badge_level": "danger", "group": "tracked"},
         {"value": "manual_override", "label": "Manual Override", "tab_label": "Manual Override", "badge_level": "warning", "group": "tracked"},
     ]
-    all_title_author_rows = title_author_extraction_rows(q, "all")
+    all_title_author_rows = title_author_extraction_rows(
+        q,
+        "all",
+        include_display_details=False,
+    )
     if focused_submission:
         all_title_author_rows = [
             row
@@ -593,6 +616,14 @@ def title_author_extraction(request):
             if row["submission"].pk == focused_submission.pk
         ]
     rows = filter_title_author_extraction_rows(all_title_author_rows, current_filter)
+    page = paginate_worklist(
+        request,
+        rows,
+        hx_target="#title-author-worklist",
+        indicator_id="title-author-loading",
+        force_all=bool(focused_submission),
+    )
+    rows = hydrate_title_author_extraction_rows(page.items)
     settings_obj = AppSetting.load()
     grobid_status = (
         grobid_availability_status(settings_obj)
@@ -660,6 +691,7 @@ def title_author_extraction(request):
                 else ""
             ),
             "focused_context": focused_context,
+            "pagination": page,
         },
     )
 
@@ -739,15 +771,24 @@ def formatting(request):
     if explicit_focus:
         q = ""
         current_filter = "all"
-    all_submissions = list(formatting_rows(q, current_filter))
+    all_submissions = formatting_rows(q, current_filter)
     single_navigation = None
     if mode == "single":
+        all_submissions = list(all_submissions)
         current_submission = next(
             (submission for submission in all_submissions if str(submission.pk) == str(requested_id)),
             None if requested_id else (all_submissions[0] if all_submissions else None),
         )
         all_submissions = [current_submission] if current_submission else []
         single_navigation = formatting_single_navigation(current_submission, q, current_filter)
+    page = paginate_worklist(
+        request,
+        all_submissions,
+        hx_target="#formatting-worklist",
+        indicator_id="formatting-loading",
+        force_all=mode == "single" or explicit_focus,
+    )
+    all_submissions = page.items
     rows = [
         {
             "submission": submission,
@@ -806,6 +847,7 @@ def formatting(request):
             "single_navigation": single_navigation,
             "formatting_confirmation": formatting_confirmation,
             "focused_context": focused_context,
+            "pagination": page,
         },
     )
 
@@ -1016,6 +1058,14 @@ def exceptions_center(request):
         {**option, "count": counts.get(option["value"], 0)}
         for option in EXCEPTION_FILTER_OPTIONS
     ]
+    page = paginate_worklist(
+        request,
+        rows,
+        hx_target="#exceptions-worklist",
+        indicator_id="exceptions-loading",
+        force_all=bool(focused_key),
+    )
+    rows = page.items
     focused_context = None
     if focused_key:
         focused_row = rows[0] if rows else None
@@ -1073,5 +1123,6 @@ def exceptions_center(request):
             "type_options": type_options,
             "focused_context": focused_context,
             "focused_key": focused_key,
+            "pagination": page,
         },
     )

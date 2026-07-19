@@ -28,6 +28,7 @@
     <div class="col-lg-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill">Apply</button>{% if q or current_filter != "all" or current_sort != "attention" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:author_count' %}">Reset</a>{% endif %}</div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="author-count-loading" message="Updating author list..." %}
 </form>
+{% include "submissions/partials/worklist_pagination.html" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky">
         <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>

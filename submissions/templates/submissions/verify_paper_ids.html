@@ -70,6 +70,7 @@
     <mark class="diff-delete">red</mark> characters present in Initial text but missing from Final text.
 </div>
 
+{% include "submissions/partials/worklist_pagination.html" %}
 <div class="vstack gap-3">
     {% for row in rows %}
         <div class="card cfm-review-card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">

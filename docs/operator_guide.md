@@ -90,6 +90,14 @@ Tables use one uniform row surface with clear horizontal separators. Zebra strip
 
 Typography is centralized for long editorial sessions. Normal page and table text uses 15px type with increased line height, supporting text has a fixed 13px minimum, and status pills use 12px type. Nested `small` elements do not shrink further. Muted text is reserved for supporting metadata and remains dark enough to read against the work surfaces.
 
+Large worklists default to 100 rows and provide `50 / 100 / 200 / All`.
+Filters and sorting apply to the complete result before pagination. Use `All`
+when every matching record must be compared together; routine numbered pages
+respond faster because file checks, previews, suggestions, and text diffs are
+prepared only for visible rows. Dashboard readiness and global workflow alerts
+load just after the page shell, but remain server-calculated from the same
+rules used by publication export.
+
 Technical values such as paths, action names, and expanded Audit Log JSON use dark monospace text on a muted light surface. If any expanded detail shows light text on a light background, treat it as a display defect rather than an indication that the log data is missing.
 
 ## Import Workflow

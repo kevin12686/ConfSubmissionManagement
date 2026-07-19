@@ -135,6 +135,7 @@
 {% endif %}
 
 <div id="formatting-queue">
+{% include "submissions/partials/worklist_pagination.html" %}
 {% for row in rows %}
     {% with item=row.submission form=row.form %}
     <div class="card cfm-review-card">

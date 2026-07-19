@@ -1,4 +1,4 @@
-from .controllers.dashboard import dashboard
+from .controllers.dashboard import dashboard, dashboard_summary
 from .controllers.papers import (
     import_initial_papers_view,
     initial_paper_delete,
@@ -45,3 +45,4 @@ from .controllers.integrations import (
     system_state,
 )
 from .controllers.settings import app_settings, clear_database, grobid_health_check
+from .controllers.ui import workflow_alerts

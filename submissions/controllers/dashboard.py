@@ -335,8 +335,12 @@ def _dashboard_context(counts, readiness_rows):
 
 
 def dashboard(request):
+    return render(request, "submissions/dashboard.html")
+
+
+def dashboard_summary(request):
     return render(
         request,
-        "submissions/dashboard.html",
+        "submissions/partials/dashboard_summary.html",
         dashboard_context(_dashboard_context),
     )

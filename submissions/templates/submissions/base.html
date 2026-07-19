@@ -1427,30 +1427,10 @@
     <div id="htmx-request-error" class="alert alert-danger border cfm-attention d-none" role="alert">
         The partial page update failed. No workflow state was changed. Retry the action or refresh the page.
     </div>
-    {% if global_workflow_alerts.active_pdfs_need_processing %}
-        <div class="alert alert-danger border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-center" role="alert">
-            <div>
-                <strong>Process PDFs needed:</strong>
-                {{ global_workflow_alerts.active_pdfs_need_processing }} active PDF{{ global_workflow_alerts.active_pdfs_need_processing|pluralize }} have not been processed or need page count/hash refresh.
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-sm btn-danger" href="{% url 'submissions:process' %}">Run Process PDFs</a>
-                <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">View PDF Issues</a>
-            </div>
-        </div>
-    {% endif %}
-    {% if global_workflow_alerts.start2_editor_conflicts %}
-        <div class="alert alert-warning border cfm-attention d-flex flex-wrap gap-2 justify-content-between align-items-center" role="alert">
-            <div>
-                <strong>Start2/Editor version decision needed:</strong>
-                {{ global_workflow_alerts.start2_editor_conflicts }} paper{{ global_workflow_alerts.start2_editor_conflicts|pluralize }} have both Start2 and Editor-uploaded versions. Editor upload is currently prioritized; discard one side before final export.
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-sm btn-warning" href="{% url 'submissions:final_submission_list' %}?filter=version_conflicts">Review Final Versions</a>
-                <a class="btn btn-sm btn-outline-warning" href="{% url 'submissions:organized_list' %}?filter=needs_attention">Open Organized List</a>
-            </div>
-        </div>
-    {% endif %}
+    <div id="global-workflow-alerts"
+         hx-get="{% url 'submissions:workflow_alerts' %}"
+         hx-trigger="load"
+         hx-swap="outerHTML"></div>
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">

@@ -55,6 +55,7 @@
 </form>
 {% endif %}
 
+{% include "submissions/partials/worklist_pagination.html" %}
 <div class="vstack gap-3">
     {% for row in rows %}
         <div class="card cfm-review-card border-{{ row.status_level }}">

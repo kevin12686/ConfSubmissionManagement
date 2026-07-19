@@ -752,7 +752,12 @@ def set_title_author_review_status(submission, status):
     )
 
 
-def evaluate_extracted_title_match(submission, save=True, apply=True):
+def evaluate_extracted_title_match(
+    submission,
+    save=True,
+    apply=True,
+    include_diff=True,
+):
     final_title = submission.final_submission_title or ""
     extracted_title = submission.extracted_title or ""
     score = title_similarity(final_title, extracted_title)
@@ -818,7 +823,9 @@ def evaluate_extracted_title_match(submission, save=True, apply=True):
         "is_verified": is_verified,
         "verified_with_diff": bool(is_verified and not is_identical),
         "needs_verification": bool(extracted_title and final_title and not is_verified),
-        "diff_html": text_diff_html(final_title, extracted_title),
+        "diff_html": (
+            text_diff_html(final_title, extracted_title) if include_diff else ""
+        ),
     }
 
 
@@ -873,7 +880,11 @@ def unverify_extracted_title(submission):
     )
 
 
-def title_author_extraction_rows(query="", status_filter="needs_verification"):
+def title_author_extraction_rows(
+    query="",
+    status_filter="needs_verification",
+    include_display_details=True,
+):
     submissions = publication_review_submissions().order_by(
         "paper_id_filled", "final_submission_id"
     )
@@ -890,7 +901,12 @@ def title_author_extraction_rows(query="", status_filter="needs_verification"):
 
     rows = []
     for submission in submissions:
-        title_match = evaluate_extracted_title_match(submission, save=False, apply=False)
+        title_match = evaluate_extracted_title_match(
+            submission,
+            save=False,
+            apply=False,
+            include_diff=include_display_details,
+        )
         has_extraction = bool(submission.extracted_title or submission.extracted_authors)
         review_status = submission.title_author_review_status
         needs_verification = has_extraction and review_status in {"pending", "red_flag"}
@@ -903,8 +919,16 @@ def title_author_extraction_rows(query="", status_filter="needs_verification"):
         row = (
             {
                 "submission": submission,
-                "publication_pdf": publication_pdf_info(submission),
-                "image_url": verification_image_url(submission),
+                "publication_pdf": (
+                    publication_pdf_info(submission)
+                    if include_display_details
+                    else None
+                ),
+                "image_url": (
+                    verification_image_url(submission)
+                    if include_display_details
+                    else ""
+                ),
                 "has_extraction": has_extraction,
                 "grobid_suspicious": is_grobid_suspicious(submission),
                 "needs_verification": needs_verification,
@@ -916,6 +940,26 @@ def title_author_extraction_rows(query="", status_filter="needs_verification"):
         if _title_author_row_matches(row, status_filter):
             rows.append(row)
     return rows
+
+
+def hydrate_title_author_extraction_rows(rows):
+    hydrated = []
+    for row in rows:
+        submission = row["submission"]
+        hydrated.append(
+            {
+                **row,
+                "publication_pdf": publication_pdf_info(submission),
+                "image_url": verification_image_url(submission),
+                "title_match": evaluate_extracted_title_match(
+                    submission,
+                    save=False,
+                    apply=False,
+                    include_diff=True,
+                ),
+            }
+        )
+    return hydrated
 
 
 def _title_author_row_matches(row, status_filter):

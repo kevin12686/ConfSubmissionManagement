@@ -146,7 +146,12 @@ FINAL_SUBMISSION_FILTER_OPTIONS = [
 ]
 
 
-def final_submission_list_context(query="", score_level_builder=None, current_filter="all"):
+def final_submission_list_context(
+    query="",
+    score_level_builder=None,
+    current_filter="all",
+    page_builder=None,
+):
     submissions = FinalSubmission.objects.all()
     valid_filters = {option["value"] for option in FINAL_SUBMISSION_FILTER_OPTIONS}
     if current_filter not in valid_filters:
@@ -178,8 +183,9 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
         submissions = submissions.filter(discarded=True)
     elif current_filter == "start2":
         submissions = submissions.filter(submission_origin="start2")
+    page = page_builder(submissions) if page_builder else None
     settings_obj = AppSetting.load()
-    items = list(submissions)
+    items = list(page.items if page else submissions)
     master_by_id = {
         paper.paper_id: paper
         for paper in InitialPaper.objects.filter(
@@ -215,6 +221,7 @@ def final_submission_list_context(query="", score_level_builder=None, current_fi
         "current_filter": current_filter,
         "filter_options": filter_tabs,
         "import_form": FinalSubmissionImportForm(),
+        "pagination": page,
     }
 
 

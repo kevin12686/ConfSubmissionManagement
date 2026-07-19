@@ -114,6 +114,7 @@
 </form>
 {% endif %}
 
+{% include "submissions/partials/worklist_pagination.html" %}
 {% for row in rows %}
     {% with item=row.submission %}
     <div class="card cfm-review-card {% if item.title_author_review_status == 'red_flag' or item.title_author_extraction_status == 'error' %}border-danger extraction-red-flag{% elif row.needs_verification %}border-warning{% endif %}">

@@ -1,0 +1,177 @@
+<div id="dashboard-summary">
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">Dashboard</h1>
+        <div class="cfm-page-subtitle">Publication readiness and the next editorial actions, using the same blockers as the final package export.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+    </div>
+</div>
+
+<section class="cfm-section cfm-dashboard-readiness {% if readiness.ready %}cfm-dashboard-ready{% else %}cfm-dashboard-blocked{% endif %}">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <div class="text-muted small text-uppercase">Final publication readiness</div>
+            <h2 class="h4 mb-1">{% if readiness.ready %}Final package checks are clear{% else %}Final package is blocked{% endif %}</h2>
+            {% if readiness.ready %}
+                <p class="mb-0">The current publication candidates have no blocking readiness issues.</p>
+            {% elif readiness.blocking_paper_count %}
+                <p class="mb-0"><strong>{{ readiness.blocking_paper_count }} paper{{ readiness.blocking_paper_count|pluralize }}</strong> have {{ readiness.blocking_issue_count }} blocking check{{ readiness.blocking_issue_count|pluralize }}.</p>
+            {% else %}
+                <p class="mb-0">Complete the required system setup before creating a final package.</p>
+            {% endif %}
+        </div>
+        <span class="badge text-bg-{% if readiness.ready %}success{% else %}danger{% endif %}">{% if readiness.ready %}Ready{% else %}Blocked{% endif %}</span>
+    </div>
+    {% if readiness.top_categories %}
+        <div class="d-flex flex-wrap gap-1 mt-3">
+            {% for category in readiness.top_categories %}
+                <span class="badge text-bg-light text-dark border">{{ category.label }}: {{ category.count }}</span>
+            {% endfor %}
+        </div>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-{% if readiness.ready %}outline-success{% else %}danger{% endif %}" href="{% url 'submissions:error_report' %}">Open Error Report</a>
+        <a class="btn btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+    </div>
+</section>
+
+<div class="row g-3 align-items-start">
+    <div class="col-xl-8">
+        <section class="cfm-section mb-0">
+            <div class="mb-3">
+                <h2 class="h5 mb-1">Next actions</h2>
+                <div class="text-muted small">Only workflows with current publication blockers are listed.</div>
+            </div>
+            {% if action_items %}
+                <div class="cfm-dashboard-actions">
+                    {% for item in action_items %}
+                        <div class="cfm-dashboard-action">
+                            <div class="cfm-dashboard-action-count">{{ item.count_label }}</div>
+                            <div class="cfm-dashboard-action-content">
+                                <div class="fw-semibold">{{ item.title }}</div>
+                                <div class="small text-muted">{{ item.description }}</div>
+                                {% if item.key == "files" %}
+                                    <div class="small mt-1">{{ counts.active_pdfs_need_processing }} need processing · {{ counts.missing_pdfs }} missing PDFs · {{ counts.page_minimum_errors|add:counts.page_limit_errors }} page issues</div>
+                                {% elif item.key == "title_authors" %}
+                                    <div class="small mt-1">{{ counts.title_author_pending }} Pending · {{ counts.title_author_red_flag }} Red Flag · {{ counts.missing_title_author_extraction }} missing extraction</div>
+                                {% elif item.key == "formatting" %}
+                                    <div class="small mt-1">{{ counts.format_pending }} Pending · {{ counts.format_needs_edit }} Needs edit</div>
+                                {% elif item.key == "plagiarism" %}
+                                    <div class="small mt-1">{{ counts.missing_plagiarism_result }} missing · {{ counts.plagiarism_threshold_issue_papers }} papers over threshold{% if counts.stale_plagiarism_exceptions %} · {{ counts.stale_plagiarism_exceptions }} stale exceptions{% endif %}</div>
+                                {% elif item.key == "mapping" %}
+                                    <div class="small mt-1">{{ counts.unverified_paper_ids }} unverified · {{ counts.unclassified_not_in_master }} need decision · {{ counts.start2_editor_conflicts }} Start2/Editor Conflicts · {{ counts.missing_final_submissions }} missing finals</div>
+                                {% elif item.key == "authors" %}
+                                    <div class="small mt-1">{{ counts.papers_over_author_number_limit }} papers over author limit · {{ counts.authors_over_limit }} authors over paper-count limit · {{ counts.duplicate_author_papers }} duplicate-author reviews</div>
+                                {% endif %}
+                            </div>
+                            <div><a class="btn btn-sm btn-outline-primary" href="{{ item.action_url }}">{{ item.action_label }}</a></div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-success border mb-0">No publication workflows currently need attention.</div>
+            {% endif %}
+            {% if completed_checks %}
+                <div class="cfm-dashboard-completed mt-3 pt-3 border-top">
+                    <div class="small text-muted mb-1">No current blockers</div>
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for label in completed_checks %}<span class="badge text-bg-success">{{ label }}</span>{% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+    </div>
+    <div class="col-xl-4">
+        <section class="cfm-section">
+            <h2 class="h5 mb-3">Conference totals</h2>
+            <div class="cfm-dashboard-totals">
+                {% for item in conference_totals %}
+                    <a class="cfm-dashboard-total" href="{{ item.url }}">
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
+        <section class="cfm-section mb-0">
+            <h2 class="h5 mb-3">Tracked information</h2>
+            {% for item in tracking_items %}
+                <div class="cfm-dashboard-tracking {% if not forloop.last %}mb-3 pb-3 border-bottom{% endif %}">
+                    <div class="d-flex justify-content-between gap-2">
+                        <a href="{{ item.url }}">{{ item.label }}</a>
+                        <strong>{{ item.value }}</strong>
+                    </div>
+                    <div class="small text-muted">{{ item.help }}</div>
+                </div>
+            {% endfor %}
+        </section>
+    </div>
+</div>
+
+<style>
+    .cfm-dashboard-readiness {
+        border-left-width: 5px;
+    }
+    .cfm-dashboard-blocked {
+        border-left-color: var(--cfm-danger-border) !important;
+    }
+    .cfm-dashboard-ready {
+        border-left-color: var(--cfm-success-border) !important;
+    }
+    .cfm-dashboard-action {
+        align-items: center;
+        border-top: 1px solid var(--cfm-border);
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto;
+        padding: 0.9rem 0;
+    }
+    .cfm-dashboard-action:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+    .cfm-dashboard-action:last-child {
+        padding-bottom: 0;
+    }
+    .cfm-dashboard-action-count {
+        background: var(--cfm-danger-bg);
+        border: 1px solid var(--cfm-danger-border);
+        border-radius: 0.375rem;
+        color: var(--cfm-danger-text);
+        font-weight: 600;
+        padding: 0.35rem 0.55rem;
+        text-align: center;
+    }
+    .cfm-dashboard-total {
+        align-items: center;
+        border-top: 1px solid var(--cfm-border);
+        color: inherit;
+        display: flex;
+        justify-content: space-between;
+        padding: 0.65rem 0;
+        text-decoration: none;
+    }
+    .cfm-dashboard-total:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+    .cfm-dashboard-total:last-child {
+        padding-bottom: 0;
+    }
+    .cfm-dashboard-total:hover {
+        color: var(--cfm-primary-hover);
+    }
+    @media (max-width: 767.98px) {
+        .cfm-dashboard-action {
+            align-items: start;
+            grid-template-columns: 1fr;
+        }
+        .cfm-dashboard-action-count {
+            justify-self: start;
+        }
+    }
+</style>
+</div>

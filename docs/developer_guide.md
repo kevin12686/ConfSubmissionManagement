@@ -46,8 +46,13 @@ bind-mounts the working tree into `/app`. After `git pull`, restart or run
 changed.
 
 The Docker entrypoint creates the standard `data/...` folders, runs migrations
-unless `SMS_RUN_MIGRATIONS=0`, and starts Django on `0.0.0.0:8000` inside the
-container. It does not change publication file selection rules.
+unless `SMS_RUN_MIGRATIONS=0`, and starts Gunicorn on `0.0.0.0:8000` inside the
+container. Before Gunicorn starts, `collectstatic` copies the pinned local UI
+assets into `STATIC_ROOT`; WhiteNoise serves that directory without requiring a
+separate proxy. It defaults to one worker and four threads to avoid
+multi-process SQLite write contention. `SMS_WEB_WORKERS`, `SMS_WEB_THREADS`,
+and `SMS_WEB_TIMEOUT` are runtime overrides; keep one worker with SQLite. This
+does not change publication file selection rules.
 
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
 existing Compose `web` container created from this checkout. It reads Docker
@@ -163,7 +168,8 @@ rewrite `extracted_authors` while preparing the display list.
   publication worklist's scope, render an explicit read-only explanation; do
   not widen the service queryset or change active/review state to make it appear.
 - Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.
-- Worklist GET filters/search are progressively enhanced with pinned local HTMX. Every enhanced endpoint must remain a valid normal GET, preserve URL query state, and render its named worklist container; never move service decisions into HTMX event handlers.
+- Worklist GET filters/search/pagination are progressively enhanced with pinned local HTMX. Every worklist URL must remain a valid normal GET, preserve URL query state, and render its named container; never move service decisions into HTMX event handlers.
+- Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `50`, `100`, `200`, and `all`, with 100 as the default. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result.
 - Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
 - Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.
 - Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.
@@ -174,7 +180,7 @@ rewrite `extracted_authors` while preparing the display list.
 
 Return-context coverage includes Organized List (both views), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions. Use `url_has_allowed_host_and_scheme()` at the Final Submission controller boundary; do not trust or redirect directly to arbitrary `next` values. The normal edit form and version-action danger-zone form remain separate POST forms even though they share the same controller endpoint.
 
-Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Enhanced GET requests use `hx-select` on the normal server page, avoiding duplicate fragment-only rendering paths. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. Alpine.js and Uppy are not dependencies; do not add them unless a future requirement needs durable client-side state or per-file retry/progress that cannot be met cleanly.
+Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Worklists use `hx-select` on normal server pages. Dashboard readiness and global workflow alerts use dedicated read-only partial endpoints so expensive global scans do not block every page response. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. UI caches must never feed publication/export decisions.
 
 ## Data And Review Reset Rules
 

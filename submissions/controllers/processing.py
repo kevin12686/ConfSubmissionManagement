@@ -108,6 +108,7 @@ from submissions.services.verification import (
     verify_submission,
 )
 from submissions.application.commands import run_pdf_processing_action
+from submissions.application.pagination import paginate_worklist
 from submissions.application.selectors import (
     focused_submission_context,
     processed_pdf_context,
@@ -148,6 +149,15 @@ def process_pdfs_view(request):
             ),
         )
     )
+    page = paginate_worklist(
+        request,
+        context["processed_rows"],
+        hx_target="#process-preview-worklist",
+        indicator_id="process-preview-loading",
+        force_all=bool(focused_submission),
+    )
+    context["processed_rows"] = page.items
+    context["pagination"] = page
     if focused_submission:
         in_scope = any(
             row["submission"].pk == focused_submission.pk

@@ -149,9 +149,24 @@ System State ZIP files are portable. They restore settings, conference name, dat
 12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.
 13. Download a System State ZIP before moving machines or archiving a conference.
 
-Large worklists are organized for editorial scanning. Final Submissions keeps `Import / Re-upload` collapsed until needed. Formatting Review uses a compact queue with one expanded paper at a time plus Single Paper Mode. Process PDFs keeps every matching paper's complete thumbnail strip expanded, while search, four status filters, paper jump, sticky paper headers, lazy-loaded fixed-size thumbnails, and enlarged page previews make long runs manageable. Organized List separates publication blockers from tracked information and keeps stable table widths.
+Large worklists are organized for editorial scanning. They default to 100 rows
+and offer `50 / 100 / 200 / All`; `All` preserves the former complete-list
+behavior when a full comparison is required. Filtering and sorting happen
+before pagination, while expensive row details and diffs are built only for the
+displayed page. Final Submissions keeps `Import / Re-upload` collapsed until
+needed. Formatting Review uses a compact queue with one expanded paper at a
+time plus Single Paper Mode. Process PDFs keeps every page thumbnail for each
+paper on the current page expanded. Organized List separates publication
+blockers from tracked information and keeps stable table widths.
 
-The UI modernization is complete for the current scope. It uses locally pinned Tabler 1.4.0 on Bootstrap-compatible templates and HTMX 2.0.10 for GET-only worklist updates. Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs preserve filter URLs and ordinary Django fallback. Upload zones show selected file counts/types and allow removal before submit, but imports still require the server-side preview-before-apply step. Workflow decisions, publication files, active versions, review resets, exceptions, and state-changing actions remain server-owned; no publication-changing action uses optimistic browser state.
+The UI uses locally pinned Tabler 1.4.0 and HTMX 2.0.10. Worklist GETs,
+pagination, Dashboard readiness, and global workflow alerts load through
+server-rendered endpoints; normal worklist URLs remain directly usable.
+Upload zones show selected file counts/types and allow removal before submit,
+but imports still require the server-side preview-before-apply step. Workflow
+decisions, publication files, active versions, review resets, exceptions, and
+state-changing actions remain server-owned; no publication-changing action
+uses optimistic browser state.
 
 Links opened from a specific Final Submission use exact record identifiers rather
 than the normal fuzzy search box. Paper ID Review, Process PDFs, Title/Author
@@ -279,5 +294,9 @@ Development sanity checks:
 .venv/bin/python manage.py test submissions
 ```
 
-Docker startup uses the same Django application and stores its SQLite database
-and managed files in the bind-mounted `SMS_DATA_DIR` folder.
+Docker startup uses Gunicorn with one worker and four threads by default, runs
+the same Django application, and stores its SQLite database and managed files
+in the bind-mounted `SMS_DATA_DIR` folder. One worker avoids multi-process
+SQLite write contention; `SMS_WEB_THREADS` and `SMS_WEB_TIMEOUT` may be
+overridden for a deployment. Startup also collects the pinned local UI assets,
+and WhiteNoise serves them through Gunicorn without a separate web server.

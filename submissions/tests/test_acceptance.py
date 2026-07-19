@@ -1,4 +1,5 @@
 import csv
+import gzip
 import hashlib
 import io
 import importlib.util
@@ -14,6 +15,7 @@ from unittest.mock import patch
 import pandas as pd
 from django.conf import settings as django_settings
 from django.contrib.staticfiles import finders
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -1991,6 +1993,37 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             {row["category"] for row in publication_readiness_rows()},
         )
 
+    def test_cached_workflow_alerts_never_feed_publication_readiness_or_export(self):
+        paper = self.make_master_paper("P001", "Cached Alert Isolation", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Cached Alert Isolation",
+            extracted_title="Cached Alert Isolation",
+        )
+        cache.clear()
+        before = self.client.get(reverse("submissions:workflow_alerts"))
+        self.assertNotContains(before, "Start2/Editor version decision needed")
+
+        create_editor_submission(
+            paper=paper,
+            pdf_file=self.uploaded_file("editor.pdf", b"editor pdf"),
+            source_file=self.uploaded_file("editor.docx", b"editor source"),
+            notes="Cache isolation test.",
+        )
+
+        cached = self.client.get(reverse("submissions:workflow_alerts"))
+        self.assertNotContains(cached, "Start2/Editor version decision needed")
+        self.assertIn(
+            "Start2/Editor Version Conflict",
+            {row["category"] for row in publication_readiness_rows()},
+        )
+        self.assert_publication_blocked("Start2/Editor Version Conflict")
+
+        cache.clear()
+        refreshed = self.client.get(reverse("submissions:workflow_alerts"))
+        self.assertContains(refreshed, "Start2/Editor version decision needed")
+
     def test_editor_upload_title_guard_and_process_alert(self):
         paper = self.make_master_paper("P010", "Guarded Editor Paper", "Ada")
 
@@ -2037,12 +2070,14 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             pdf_hash="",
         )
 
-        page = self.client.get(reverse("submissions:dashboard"))
-        self.assertContains(page, "Process PDFs needed")
-        self.assertContains(page, "2 active PDFs")
-        self.assertContains(page, "2 need processing")
-        self.assertContains(page, "1 missing PDFs")
-        self.assertContains(page, "PDF, source, and page checks")
+        cache.clear()
+        alerts = self.client.get(reverse("submissions:workflow_alerts"))
+        summary = self.client.get(reverse("submissions:dashboard_summary"))
+        self.assertContains(alerts, "Process PDFs needed")
+        self.assertContains(alerts, "2 active PDFs")
+        self.assertContains(summary, "2 need processing")
+        self.assertContains(summary, "1 missing PDFs")
+        self.assertContains(summary, "PDF, source, and page checks")
 
         process_page = self.client.get(reverse("submissions:process"))
         self.assertContains(process_page, "Active PDFs not processed")
@@ -3163,8 +3198,146 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
         self.assertIn("publication_manifest_", event["file_changes"]["manifest_path"])
         self.assertNotIn(str(self.root), json.dumps(event, ensure_ascii=False))
 
+    def test_paginated_ui_gets_do_not_change_publication_scope_state_or_package_bytes(self):
+        for index in range(1, 106):
+            paper_id = f"P{index:03d}"
+            title = f"Pagination Safe Paper {index:03d}"
+            authors = f"Author {index:03d}"
+            self.make_master_paper(paper_id, title, authors)
+            self.make_final_submission(
+                final_submission_id=str(index),
+                paper_id_filled=paper_id,
+                start2_paper_id_raw=paper_id,
+                final_submission_title=title,
+                final_submission_authors=authors,
+                extracted_title=title,
+                extracted_authors=authors,
+            )
+
+        before_state = list(
+            FinalSubmission.objects.order_by("pk").values()
+        )
+        before_active = list(
+            FinalSubmission.objects.filter(active_version=True)
+            .order_by("paper_id_filled")
+            .values_list("pk", flat=True)
+        )
+        before_readiness = publication_readiness_rows()
+        self.assertEqual(before_readiness, [])
+
+        def zip_snapshot(payload):
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                return {
+                    name: hashlib.sha256(archive.read(name)).hexdigest()
+                    for name in sorted(archive.namelist())
+                }
+
+        with patch(
+            "submissions.services.reports._timestamp",
+            return_value="20260718_120000",
+        ):
+            before_package = Path(export_publication_package()).read_bytes()
+        audit_count_before_gets = len(read_audit_log(limit=1000))
+
+        cache.clear()
+        ui_requests = [
+            (reverse("submissions:initial_paper_list"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:final_submission_list"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:organized_list"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:process"), {"filter": "all", "page": 2, "page_size": 50}),
+            (reverse("submissions:verify_paper_ids"), {"filter": "all", "page": 2, "page_size": 50}),
+            (
+                reverse("submissions:title_author_extraction"),
+                {"filter": "all", "page": 2, "page_size": 50},
+            ),
+            (reverse("submissions:formatting"), {"filter": "all", "page": 2, "page_size": 50}),
+            (reverse("submissions:exceptions_center"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:error_report"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:author_count"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:old_versions"), {"page": 2, "page_size": 50}),
+            (reverse("submissions:dashboard"), {}),
+            (reverse("submissions:dashboard_summary"), {}),
+            (reverse("submissions:workflow_alerts"), {}),
+        ]
+        for url, params in ui_requests:
+            response = self.client.get(url, params)
+            self.assertEqual(response.status_code, 200, url)
+
+        self.assertEqual(len(read_audit_log(limit=1000)), audit_count_before_gets)
+        self.assertEqual(
+            list(FinalSubmission.objects.order_by("pk").values()),
+            before_state,
+        )
+        self.assertEqual(
+            list(
+                FinalSubmission.objects.filter(active_version=True)
+                .order_by("paper_id_filled")
+                .values_list("pk", flat=True)
+            ),
+            before_active,
+        )
+        self.assertEqual(publication_readiness_rows(), before_readiness)
+
+        with patch(
+            "submissions.services.reports._timestamp",
+            return_value="20260718_120000",
+        ):
+            after_package = Path(export_publication_package()).read_bytes()
+        self.assertEqual(zip_snapshot(after_package), zip_snapshot(before_package))
+
+    def test_gzip_middleware_preserves_downloadable_publication_zip(self):
+        self.make_master_paper("P001", "GZip Safe Publication", "Ada")
+        self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="GZip Safe Publication",
+            extracted_title="GZip Safe Publication",
+            final_submission_authors="Ada Lovelace",
+            extracted_authors="Ada Lovelace",
+        )
+
+        response = self.client.post(
+            reverse("submissions:export_reports"),
+            {"action": "publication_package"},
+            HTTP_ACCEPT_ENCODING="gzip",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Encoding"], "gzip")
+        self.assertIn("publication_package_", response["Content-Disposition"])
+        decoded = gzip.decompress(b"".join(response.streaming_content))
+        with zipfile.ZipFile(io.BytesIO(decoded)) as archive:
+            self.assertIn("PDF/P001-GZip Safe Publication.pdf", archive.namelist())
+            self.assertIn("Source/P001-GZip Safe Publication.docx", archive.namelist())
+
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_gunicorn_deployment_collects_and_serves_local_static_assets(self):
+        self.assertIn(
+            "whitenoise.middleware.WhiteNoiseMiddleware",
+            django_settings.MIDDLEWARE,
+        )
+        self.assertEqual(
+            django_settings.MIDDLEWARE.index(
+                "whitenoise.middleware.WhiteNoiseMiddleware"
+            ),
+            django_settings.MIDDLEWARE.index(
+                "django.middleware.security.SecurityMiddleware"
+            )
+            + 1,
+        )
+        self.assertEqual(django_settings.STATIC_URL, "/static/")
+        self.assertEqual(django_settings.STATIC_ROOT, django_settings.BASE_DIR / "staticfiles")
+
+        entrypoint = (django_settings.BASE_DIR / "docker" / "entrypoint.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("python manage.py collectstatic --noinput", entrypoint)
+        self.assertLess(
+            entrypoint.index("python manage.py collectstatic --noinput"),
+            entrypoint.index("exec gunicorn"),
+        )
+
     def test_alert_layout_defaults_to_stacked_content_and_keeps_flex_opt_in(self):
         response = self.client.get(reverse("submissions:dashboard"))
 
@@ -6186,7 +6359,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(counts["single_over_threshold"], 2)
         self.assertEqual(counts["plagiarism_threshold_issue_papers"], 2)
 
-        response = self.client.get(reverse("submissions:dashboard"))
+        response = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(response, "2 papers over threshold")
         self.assertNotContains(response, "3 papers over threshold")
 
@@ -6245,7 +6418,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         readiness_rows = publication_readiness_rows()
 
-        response = self.client.get(reverse("submissions:dashboard"))
+        response = self.client.get(reverse("submissions:dashboard_summary"))
 
         self.assertEqual(
             response.context["readiness"]["blocking_issue_count"],
@@ -6269,7 +6442,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             format_status="review_ok",
         )
 
-        response = self.client.get(reverse("submissions:dashboard"))
+        response = self.client.get(reverse("submissions:dashboard_summary"))
 
         self.assertEqual(dashboard_counts()["unverified_extracted_title_match"], 0)
         self.assertEqual(dashboard_counts()["reviewed_extracted_title_differences"], 1)
@@ -6718,8 +6891,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             notes="Use email version.",
         )
 
-        dashboard = self.client.get(reverse("submissions:dashboard"))
-        self.assertContains(dashboard, "Start2/Editor version decision needed")
+        cache.clear()
+        alerts = self.client.get(reverse("submissions:workflow_alerts"))
+        dashboard = self.client.get(reverse("submissions:dashboard_summary"))
+        self.assertContains(alerts, "Start2/Editor version decision needed")
         self.assertContains(dashboard, "Start2/Editor Conflicts")
 
         filtered = self.client.get(
@@ -6957,7 +7132,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         _mark_duplicate_submissions()
         self.assertEqual(publication_readiness_rows(), [])
 
-        dashboard = self.client.get(reverse("submissions:dashboard"))
+        dashboard = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(dashboard, "Final package checks are clear")
         self.assertContains(dashboard, "Publication candidates")
         self.assertContains(dashboard, "Current Not Publishing")
@@ -7266,7 +7441,7 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
 
     def test_dashboard_links_open_scoped_worklists(self):
         self.make_master_paper(paper_id="MISSING")
-        response = self.client.get(reverse("submissions:dashboard"))
+        response = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(
             response,
             f'{reverse("submissions:error_report")}?area=mapping',

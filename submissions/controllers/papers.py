@@ -109,6 +109,7 @@ from submissions.services.verification import (
     verify_submission,
 )
 from submissions.application.commands import apply_paper_master_preview
+from submissions.application.pagination import paginate_worklist
 from submissions.application.selectors import paper_master_list_context, search_query
 
 
@@ -130,10 +131,14 @@ def _search_query(request):
 
 def initial_paper_list(request):
     q = _search_query(request)
+    context = paper_master_list_context(q)
+    page = paginate_worklist(request, context["papers"])
+    context["papers"] = page.items
+    context["pagination"] = page
     return render(
         request,
         "submissions/initial_paper_list.html",
-        paper_master_list_context(q),
+        context,
     )
 
 

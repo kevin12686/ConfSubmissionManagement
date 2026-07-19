@@ -516,12 +516,8 @@ def publication_duplicate_rows():
     rows = []
     for group in publication_duplicate_groups():
         labels = [_submission_label(submission) for submission in group["submissions"]]
-        for submission in group["submissions"]:
-            other_labels = [
-                label
-                for label in labels
-                if label != _submission_label(submission)
-            ]
+        for index, submission in enumerate(group["submissions"]):
+            other_labels = labels[:index] + labels[index + 1 :]
             rows.append(
                 {
                     "category": group["category"],

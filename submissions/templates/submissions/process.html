@@ -208,6 +208,7 @@
     <div class="small text-muted pb-2">Paper headers stay visible while you scan each complete thumbnail strip.</div>
 </div>
 {% endif %}
+{% include "submissions/partials/worklist_pagination.html" %}
 <div class="vstack gap-3">
     {% for row in processed_rows %}
         <div id="paper-preview-{{ row.submission.pk }}" class="card cfm-review-card cfm-pdf-preview-card {% if row.submission.processing_status == 'error' %}cfm-processing-error{% elif row.page_issue or row.needs_processing %}cfm-page-issue{% endif %}">

@@ -20,4 +20,11 @@ if [ "${SMS_RUN_MIGRATIONS:-1}" != "0" ]; then
     python manage.py migrate --noinput
 fi
 
-exec python manage.py runserver "${DJANGO_HOST:-0.0.0.0}:${DJANGO_PORT:-8000}"
+python manage.py collectstatic --noinput
+
+exec gunicorn conference_final_manager.wsgi:application \
+    --bind "${DJANGO_HOST:-0.0.0.0}:${DJANGO_PORT:-8000}" \
+    --workers "${SMS_WEB_WORKERS:-1}" \
+    --threads "${SMS_WEB_THREADS:-4}" \
+    --timeout "${SMS_WEB_TIMEOUT:-300}" \
+    --access-logfile -

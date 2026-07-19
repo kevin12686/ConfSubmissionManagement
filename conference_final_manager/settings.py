@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.6.0"
 STATE_ARCHIVE_VERSION = 2
 
 
@@ -49,6 +49,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "submissions.middleware.AppTimezoneMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -92,7 +94,8 @@ TIME_ZONE = "America/Chicago"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = _env_path("SMS_STATIC_ROOT", BASE_DIR / "staticfiles")
 MEDIA_URL = "/media/"
 MEDIA_ROOT = _env_path("SMS_MEDIA_ROOT", BASE_DIR / "data" / "media")
 

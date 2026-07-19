@@ -129,6 +129,7 @@ from submissions.services.verification import (
     verify_submission,
 )
 from submissions.application.commands import apply_final_submission_preview
+from submissions.application.pagination import paginate_worklist
 from submissions.application.selectors import final_submission_list_context, search_query
 
 
@@ -236,7 +237,17 @@ def final_submission_list(request):
     return render(
         request,
         "submissions/final_submission_list.html",
-        final_submission_list_context(q, _score_badge_level, current_filter),
+        final_submission_list_context(
+            q,
+            _score_badge_level,
+            current_filter,
+            page_builder=lambda items: paginate_worklist(
+                request,
+                items,
+                hx_target="#final-submission-worklist",
+                indicator_id="final-submission-loading",
+            ),
+        ),
     )
 
 

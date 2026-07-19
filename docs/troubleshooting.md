@@ -98,11 +98,24 @@ Run Process PDFs again. Corrected PDFs are the first publication PDF priority, b
 
 ### Process PDFs page is long
 
-This is intentional: every page thumbnail for every matching paper stays expanded so blank middle/end pages remain visible. Use the paper status filters, search, and `Jump to paper` rather than collapsing strips. Images use fixed-size lazy-loaded tiles, so rapid scrolling should not change the layout. Select a thumbnail to inspect a larger version.
+Every page thumbnail for each paper on the current worklist page stays expanded
+so blank middle/end pages remain visible. Use the paper status filters, search,
+page-size control, and `Jump to paper`. Select `All` only when the complete
+filtered set must be inspected together. Images use fixed-size lazy-loaded
+tiles, so rapid scrolling should not change the layout.
 
 ### Formatting queue filter did not update
 
-Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs use the locally bundled HTMX asset for GET-only worklist updates. If a partial request fails, the page shows a red alert and no workflow state is changed. Retry, refresh, or open the filter/search URL normally; every filter remains a standard Django link/form fallback. If assets are missing after deployment, confirm `htmx-2.0.10.min.js`, `tabler-1.4.0.min.css`, and `tabler-1.4.0.min.js` exist under `submissions/static/submissions/vendor/` and static files are being served.
+Formatting, Process PDFs, Organized List, Final Submissions, Author Count,
+Exceptions, Title/Author Review, and Verify Paper IDs use the locally bundled
+HTMX asset for GET-only worklist updates. Dashboard readiness and global alerts
+also load asynchronously. If a partial request fails, the page shows a red
+alert and no workflow state is changed. Retry or refresh. Worklists remain
+normal Django GET URLs. If assets are missing after deployment, confirm
+`htmx-2.0.10.min.js`, `tabler-1.4.0.min.css`, and
+`tabler-1.4.0.min.js` exist under static files. For Docker/Gunicorn, also check
+that startup completed `collectstatic`; WhiteNoise serves the resulting
+`STATIC_ROOT`.
 
 ### Upload drop zone summary looks wrong
 

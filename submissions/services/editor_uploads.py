@@ -1,6 +1,7 @@
 import json
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -24,7 +25,51 @@ from submissions.services.verification import build_title_guard_context, titles_
 EDITOR_UPLOAD_PREVIEW_TTL_HOURS = 2
 
 
-def editor_conflict_paper_ids():
+@dataclass(frozen=True)
+class EditorConflictSnapshot:
+    conflict_ids: tuple
+    details: tuple
+
+    @classmethod
+    def load(cls):
+        conflict_ids = tuple(editor_conflict_paper_ids())
+        submissions = list(
+            FinalSubmission.objects.filter(
+                discarded=False,
+                excluded_from_publication=False,
+                paper_id_filled__in=conflict_ids,
+            )
+            .order_by("paper_id_filled", "submission_origin", "final_submission_id")
+        )
+        grouped = {}
+        for submission in submissions:
+            grouped.setdefault(submission.paper_id_filled, []).append(submission)
+        details = []
+        for paper_id in conflict_ids:
+            items = grouped[paper_id]
+            start2 = [item for item in items if item.submission_origin == "start2"]
+            editor = [
+                item for item in items if item.submission_origin == "editor_upload"
+            ]
+            details.append(
+                {
+                    "paper_id": paper_id,
+                    "start2": start2,
+                    "editor": editor,
+                    "start2_ids": ", ".join(
+                        item.final_submission_id for item in start2
+                    ),
+                    "editor_ids": ", ".join(
+                        item.final_submission_id for item in editor
+                    ),
+                }
+            )
+        return cls(conflict_ids=conflict_ids, details=tuple(details))
+
+
+def editor_conflict_paper_ids(snapshot=None):
+    if snapshot is not None:
+        return list(snapshot.conflict_ids)
     rows = (
         FinalSubmission.objects.filter(
             discarded=False,
@@ -43,32 +88,13 @@ def editor_conflict_paper_ids():
     )
 
 
-def editor_conflict_count():
-    return len(editor_conflict_paper_ids())
+def editor_conflict_count(snapshot=None):
+    return len(editor_conflict_paper_ids(snapshot))
 
 
-def editor_conflict_details():
-    details = []
-    for paper_id in editor_conflict_paper_ids():
-        submissions = list(
-            FinalSubmission.objects.filter(
-                paper_id_filled=paper_id,
-                discarded=False,
-                excluded_from_publication=False,
-            ).order_by("submission_origin", "final_submission_id")
-        )
-        start2 = [item for item in submissions if item.submission_origin == "start2"]
-        editor = [item for item in submissions if item.submission_origin == "editor_upload"]
-        details.append(
-            {
-                "paper_id": paper_id,
-                "start2": start2,
-                "editor": editor,
-                "start2_ids": ", ".join(item.final_submission_id for item in start2),
-                "editor_ids": ", ".join(item.final_submission_id for item in editor),
-            }
-        )
-    return details
+def editor_conflict_details(snapshot=None):
+    snapshot = snapshot or EditorConflictSnapshot.load()
+    return list(snapshot.details)
 
 
 def submission_has_editor_conflict(submission):

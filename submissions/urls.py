@@ -6,6 +6,8 @@ from . import views
 app_name = "submissions"
 
 urlpatterns = [
+    path("ui/workflow-alerts/", views.workflow_alerts, name="workflow_alerts"),
+    path("ui/dashboard-summary/", views.dashboard_summary, name="dashboard_summary"),
     path("", views.dashboard, name="dashboard"),
     path("papers/", views.initial_paper_list, name="initial_paper_list"),
     path("papers/add/", views.initial_paper_form, name="initial_paper_add"),

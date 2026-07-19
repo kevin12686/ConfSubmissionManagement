@@ -84,7 +84,21 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.
 - `Review OK` is the single Title/Author completion decision. The Final-versus-extracted title comparison remains visible evidence; a reviewed difference is tracked but does not create a second blocker.
 
-The UI remains server-rendered with full Django request/response fallback. Tabler 1.4.0 and HTMX 2.0.10 are vendored locally. HTMX enhances GET-only filter/search/tab navigation for Formatting, Process PDFs, Organized List, Final Submissions, Author Count, Exceptions, Title/Author Review, and Verify Paper IDs. The server still renders the complete page; HTMX selects the named worklist container, updates browser history, and falls back to the normal link/form request if JavaScript is unavailable. State-changing POST actions remain normal audited Django requests. Alpine.js and Uppy were intentionally not introduced because the required small UI states and multipart preview workflow are handled without a second client-side state system.
+The UI remains server-rendered. Tabler 1.4.0 and HTMX 2.0.10 are vendored
+locally. Normal worklist URLs support GET filter/search/tab/pagination
+navigation, while HTMX replaces the named worklist container and updates
+browser history. Dashboard readiness and global workflow alerts are separate
+read-only partial endpoints so their global scans do not delay unrelated page
+content. Global alerts may use a short display-only cache; publication
+readiness and exports never do. State-changing POST actions remain normal
+audited Django requests.
+
+Large worklists use the shared `WorklistPage` boundary. The complete lightweight
+scope is classified and sorted first, then the selected `50 / 100 / 200` page
+is hydrated with file checks, previews, suggestions, and diffs. `page_size=all`
+hydrates the complete filtered result and is the explicit compatibility path
+for full-list inspection. Request-scoped file/configuration snapshots prevent
+row-level settings queries without changing publication source resolution.
 
 Final Submission and Paper Master upload zones are presentation helpers only. File extension/hash validation and preview/apply remain server-owned. The browser may summarize selected files or remove them before submit, but cannot classify publication files or bypass import preview.
 

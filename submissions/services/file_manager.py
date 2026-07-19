@@ -1,9 +1,32 @@
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 from django.conf import settings as django_settings
 from django.urls import reverse
+
+
+@dataclass(frozen=True)
+class PublicationDebugPdfContext:
+    folder: Path
+    title_words_for_filename: int
+
+    @classmethod
+    def load(cls):
+        from submissions.models import AppSetting
+
+        return cls.from_settings(AppSetting.load())
+
+    @classmethod
+    def from_settings(cls, settings_obj):
+        folder = Path(settings_obj.publication_pdf_debug_folder).expanduser()
+        if not folder.is_absolute():
+            folder = django_settings.BASE_DIR / folder
+        return cls(
+            folder=folder,
+            title_words_for_filename=settings_obj.title_words_for_filename,
+        )
 
 
 def resolve_folder(path_value):
@@ -89,18 +112,13 @@ def publication_source_info(submission):
     return _publication_file_info(path=None, label="No source", source="missing", url="")
 
 
-def publication_debug_pdf_info(submission, paper=None):
-    from submissions.models import AppSetting
-
-    settings_obj = AppSetting.load()
-    folder = Path(settings_obj.publication_pdf_debug_folder).expanduser()
-    if not folder.is_absolute():
-        folder = django_settings.BASE_DIR / folder
+def publication_debug_pdf_info(submission, paper=None, context=None):
+    context = context or PublicationDebugPdfContext.load()
     paper_id = paper.paper_id if paper else submission.paper_id_filled
-    path = folder / publication_pdf_filename(
+    path = context.folder / publication_pdf_filename(
         paper_id,
         submission.extracted_title,
-        settings_obj.title_words_for_filename,
+        context.title_words_for_filename,
     )
     return _publication_file_info(
         path=path,

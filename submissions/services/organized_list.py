@@ -18,6 +18,7 @@ from submissions.services.exceptions import (
     single_percent_exception_status,
 )
 from submissions.services.file_manager import (
+    PublicationDebugPdfContext,
     active_pdf_needs_processing,
     publication_debug_pdf_info,
     publication_pdf_info,
@@ -647,6 +648,7 @@ def organized_list_rows(
     exact_paper_id="",
 ):
     settings_obj = AppSetting.load()
+    debug_pdf_context = PublicationDebugPdfContext.from_settings(settings_obj)
     papers = list(InitialPaper.objects.all())
     valid_paper_ids = {paper.paper_id for paper in papers}
     duplicate_map = publication_duplicate_map()
@@ -684,7 +686,11 @@ def organized_list_rows(
         author_status = _author_count_status(submission, settings_obj)
         publication_pdf = publication_pdf_info(submission) if submission else None
         publication_source = publication_source_info(submission) if submission else None
-        debug_pdf = publication_debug_pdf_info(submission, paper) if submission else None
+        debug_pdf = (
+            publication_debug_pdf_info(submission, paper, debug_pdf_context)
+            if submission
+            else None
+        )
         rows.append(
             {
                 "row_type": "master",
@@ -750,7 +756,9 @@ def organized_list_rows(
         author_status = _author_count_status(submission, settings_obj)
         publication_pdf = publication_pdf_info(submission)
         publication_source = publication_source_info(submission)
-        debug_pdf = publication_debug_pdf_info(submission)
+        debug_pdf = publication_debug_pdf_info(
+            submission, context=debug_pdf_context
+        )
         rows.append(
             {
                 "row_type": "unmatched",

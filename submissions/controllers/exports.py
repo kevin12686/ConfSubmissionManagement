@@ -110,6 +110,7 @@ from submissions.services.verification import (
     verify_submission,
 )
 from submissions.application.selectors import old_versions_context
+from submissions.application.pagination import paginate_worklist
 
 
 logger = logging.getLogger("submissions.views")
@@ -160,10 +161,14 @@ def active_versions(request):
 
 
 def old_versions(request):
+    context = old_versions_context(request.GET.get("filter", "all"))
+    page = paginate_worklist(request, context["rows"])
+    context["rows"] = page.items
+    context["pagination"] = page
     return render(
         request,
         "submissions/old_versions.html",
-        old_versions_context(request.GET.get("filter", "all")),
+        context,
     )
 
 
@@ -172,15 +177,20 @@ def error_report(request):
     rows, current_area, area_label = filter_error_report_rows(
         rows, request.GET.get("area", "")
     )
+    summary_sections = error_report_severity_sections(rows)
+    page = paginate_worklist(request, rows)
+    displayed_rows = list(page.items)
     return render(
         request,
         "submissions/error_report.html",
         {
-            "rows": rows,
-            "sections": error_report_sections(rows),
-            "severity_sections": error_report_severity_sections(rows),
+            "rows": displayed_rows,
+            "sections": error_report_sections(displayed_rows),
+            "severity_sections": error_report_severity_sections(displayed_rows),
+            "severity_summary_sections": summary_sections,
             "current_area": current_area,
             "area_label": area_label,
+            "pagination": page,
         },
     )
 
@@ -257,11 +267,17 @@ def author_count(request):
         {"value": "duplicates", "label": "Duplicate in paper"},
         {"value": "allowed", "label": "Allowed exceptions"},
     ]
+    page = paginate_worklist(
+        request,
+        rows,
+        hx_target="#author-count-worklist",
+        indicator_id="author-count-loading",
+    )
     return render(
         request,
         "submissions/author_count.html",
         {
-            "rows": rows,
+            "rows": page.items,
             "q": q,
             "current_filter": current_filter,
             "current_sort": current_sort,
@@ -275,6 +291,7 @@ def author_count(request):
                 {**option, "count": counts[option["value"]]}
                 for option in filter_options
             ],
+            "pagination": page,
         },
     )
 def export_reports(request):

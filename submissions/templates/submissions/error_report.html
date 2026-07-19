@@ -25,7 +25,7 @@
 
 {% if rows %}
     <div class="row g-2 cfm-metric-strip">
-        {% for section in severity_sections %}
+        {% for section in severity_summary_sections %}
             <div class="col-sm-6 col-lg-3">
                 <div class="cfm-metric">
                     <div class="cfm-metric-label">{{ section.label }}</div>
@@ -35,6 +35,7 @@
         {% endfor %}
     </div>
 
+    {% include "submissions/partials/worklist_pagination.html" %}
     <ul class="nav nav-tabs cfm-tabs" id="errorSeverityTabs" role="tablist">
         {% for section in severity_sections %}
             <li class="nav-item" role="presentation">
