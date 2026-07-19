@@ -96,7 +96,7 @@ Tables use one uniform row surface with clear horizontal separators. Zebra strip
 
 Typography is centralized for long editorial sessions. Normal page and table text uses 15px type with increased line height, supporting text has a fixed 13px minimum, and status pills use 12px type. Nested `small` elements do not shrink further. Muted text is reserved for supporting metadata and remains dark enough to read against the work surfaces.
 
-Large worklists default to 100 rows and provide `50 / 100 / 200 / All`.
+Large worklists default to 25 rows and provide `25 / 50 / 100 / 200 / All`.
 Filters and sorting apply to the complete result before pagination. Use `All`
 when every matching record must be compared together; routine numbered pages
 respond faster because file checks, previews, suggestions, and text diffs are

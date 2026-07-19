@@ -190,8 +190,8 @@ System State ZIP files are portable. They restore settings, conference name, dat
 12. Use Audit Log when tracing what changed, when it changed, and which paper/version was affected.
 13. Download a System State ZIP before moving machines or archiving a conference.
 
-Large worklists are organized for editorial scanning. They default to 100 rows
-and offer `50 / 100 / 200 / All`; `All` preserves the former complete-list
+Large worklists are organized for editorial scanning. They default to 25 rows
+and offer `25 / 50 / 100 / 200 / All`; `All` preserves the former complete-list
 behavior when a full comparison is required. Filtering and sorting happen
 before pagination, while expensive row details and diffs are built only for the
 displayed page. Final Submissions keeps `Import / Re-upload` collapsed until

@@ -23,12 +23,18 @@ class WorklistPaginationTests(SimpleTestCase):
         self.factory = RequestFactory()
         self.items = list(range(1, 251))
 
-    def test_default_page_size_is_100(self):
+    def test_default_page_size_is_25(self):
         page = paginate_worklist(self.factory.get("/papers/"), self.items)
 
-        self.assertEqual(list(page.items), list(range(1, 101)))
+        self.assertEqual(list(page.items), list(range(1, 26)))
         self.assertEqual(page.total_count, 250)
-        self.assertEqual(page.page_size, 100)
+        self.assertEqual(page.page_size, 25)
+        self.assertEqual(
+            [option["value"] for option in page.page_size_links],
+            ["25", "50", "100", "200", "all"],
+        )
+        self.assertEqual(page.start_index, 1)
+        self.assertEqual(page.end_index, 25)
 
     def test_all_returns_every_filtered_item(self):
         page = paginate_worklist(
@@ -48,9 +54,9 @@ class WorklistPaginationTests(SimpleTestCase):
             self.items,
         )
 
-        self.assertEqual(page.page_number, 3)
-        self.assertEqual(page.page_size, 100)
-        self.assertEqual(list(page.items), list(range(201, 251)))
+        self.assertEqual(page.page_number, 10)
+        self.assertEqual(page.page_size, 25)
+        self.assertEqual(list(page.items), list(range(226, 251)))
 
     def test_page_size_links_reset_page_and_preserve_filters(self):
         page = paginate_worklist(
@@ -125,7 +131,7 @@ class WorklistPaginationViewTests(TestCase):
         first_page = self.client.get(url)
         all_rows = self.client.get(url, {"page_size": "all"})
 
-        self.assertEqual(len(first_page.context["papers"]), 100)
+        self.assertEqual(len(first_page.context["papers"]), 25)
         self.assertEqual(len(all_rows.context["papers"]), 205)
         self.assertEqual(
             [paper.paper_id for paper in all_rows.context["papers"]],
@@ -164,7 +170,7 @@ class WorklistPaginationViewTests(TestCase):
 
         first_ids = [paper.paper_id for paper in first_page.context["papers"]]
         second_ids = [paper.paper_id for paper in second_page.context["papers"]]
-        self.assertEqual(second_ids[0], "P0101")
+        self.assertEqual(second_ids[0], "P0026")
         self.assertFalse(set(first_ids) & set(second_ids))
 
     def test_publication_worklists_paginate_the_complete_ordered_scope(self):
@@ -225,11 +231,11 @@ class WorklistPaginationViewTests(TestCase):
                 second_rows = list(second.context[context_key])
                 complete_rows = list(complete.context[context_key])
                 self.assertEqual(first.context["pagination"].total_count, 205)
-                self.assertEqual(len(first_rows), 100)
-                self.assertEqual(len(second_rows), 100)
+                self.assertEqual(len(first_rows), 25)
+                self.assertEqual(len(second_rows), 25)
                 self.assertEqual(len(complete_rows), 205)
                 self.assertEqual(identity(first_rows[0]), "P0001")
-                self.assertEqual(identity(second_rows[0]), "P0101")
+                self.assertEqual(identity(second_rows[0]), "P0026")
                 self.assertEqual(
                     [identity(row) for row in complete_rows],
                     [f"P{index:04d}" for index in range(1, 206)],
@@ -258,11 +264,11 @@ class WorklistPaginationViewTests(TestCase):
         )
 
         self.assertGreater(error_response.context["pagination"].total_count, 205)
-        self.assertEqual(len(error_response.context["rows"]), 100)
+        self.assertEqual(len(error_response.context["rows"]), 25)
         self.assertEqual(author_response.context["pagination"].total_count, 205)
-        self.assertEqual(len(author_response.context["rows"]), 100)
+        self.assertEqual(len(author_response.context["rows"]), 25)
         self.assertEqual(exception_response.context["pagination"].total_count, 205)
-        self.assertEqual(len(exception_response.context["rows"]), 100)
+        self.assertEqual(len(exception_response.context["rows"]), 25)
 
     def test_old_versions_paginate_without_affecting_current_candidates(self):
         old_submissions = FinalSubmission.objects.bulk_create(
@@ -286,7 +292,7 @@ class WorklistPaginationViewTests(TestCase):
         )
 
         self.assertEqual(response.context["pagination"].total_count, 205)
-        self.assertEqual(len(response.context["rows"]), 100)
+        self.assertEqual(len(response.context["rows"]), 25)
         self.assertTrue(
             all(not row["submission"].active_version for row in response.context["rows"])
         )

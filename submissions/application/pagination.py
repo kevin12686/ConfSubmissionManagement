@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from django.core.paginator import Paginator
 
 
-DEFAULT_PAGE_SIZE = 100
-PAGE_SIZE_OPTIONS = (50, 100, 200)
+DEFAULT_PAGE_SIZE = 25
+PAGE_SIZE_OPTIONS = (25, 50, 100, 200)
 ALL_PAGE_SIZE = "all"
 
 
