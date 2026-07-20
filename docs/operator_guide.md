@@ -275,6 +275,10 @@ covering it. The PDF evidence marks title text in yellow with a blue underline
 and gives every parsed author an independent green box and underline. Compare
 the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
 boxes can reveal that one person's name was incorrectly parsed as two authors.
+Hold `Ctrl` while pointing at the verification image to inspect the title
+underline and individual author boundaries with the same magnifier used by
+Formatting Review. Its `3:2` landscape shape preserves horizontal title and
+author context. A normal click still opens the complete verification image.
 
 ## Formatting Review
 
@@ -289,6 +293,12 @@ Use `/reviews/formatting/` to review title/author formatting visually.
   mode before the file is saved. It compares with the Final Submission title without
   replacing stored extracted metadata.
 - Source file buttons show type labels such as Word, ZIP, or TeX.
+- On a desktop or laptop, place the pointer over the first-page preview and hold
+  `Ctrl` to magnify a wide title/author area in place. The landscape lens follows the
+  pointer, stays inside the image, hides its hover hint while active, and closes
+  as soon as `Ctrl` is released.
+  Touch devices show the normal preview; use `Open Publication PDF` when closer
+  inspection is needed.
 - Review OK means the current publication version's format is acceptable.
 - Edited means corrected PDF/source files exist.
 

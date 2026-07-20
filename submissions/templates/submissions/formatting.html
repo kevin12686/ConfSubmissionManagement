@@ -24,12 +24,6 @@
         background: var(--cfm-surface);
         border: 1px solid var(--cfm-border-strong);
         border-radius: 0.375rem;
-        overflow: hidden;
-    }
-    .format-preview img {
-        display: block;
-        width: 100%;
-        height: auto;
     }
     .format-status-group {
         display: flex;
@@ -199,7 +193,11 @@
                 <div class="col-xl-4">
                     <div class="small fw-semibold mb-1">First page title/author preview</div>
                     {% if row.preview.exists %}
-                        <div class="format-preview">
+                        <div
+                            class="format-preview cfm-image-magnifier"
+                            data-cfm-image-magnifier
+                            data-cfm-image-magnifier-hint="Hold Ctrl to magnify"
+                        >
                             <img
                                 {% if mode == "list" %}
                                     data-format-preview-src="{{ row.preview.url }}"

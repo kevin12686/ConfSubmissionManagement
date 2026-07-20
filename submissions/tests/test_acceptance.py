@@ -6546,6 +6546,63 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Original Source (Unknown)")
         self.assertNotContains(response, "data-formatting-single-form")
 
+    def test_image_magnifier_is_shared_by_all_formatting_review_modes(self):
+        self.make_master_paper("P001", "Magnifier Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Magnifier Paper",
+            extracted_title="Magnifier Paper",
+        )
+
+        preview = {
+            "exists": True,
+            "url": "/media/format_previews/magnifier.png",
+            "path": "",
+            "status": "ready",
+            "message": "First page upper-half preview.",
+        }
+        with patch(
+            "submissions.controllers.reviews.formatting_preview_info",
+            return_value=preview,
+        ):
+            list_page = self.open_formatting_review(submission)
+            single_page = self.open_formatting_review(submission, mode="single")
+            focus_page = self.open_formatting_review(submission, mode="focus")
+
+        for response in (list_page, single_page, focus_page):
+            self.assertContains(response, "data-cfm-image-magnifier")
+            self.assertContains(
+                response,
+                'data-cfm-image-magnifier-hint="Hold Ctrl to magnify"',
+            )
+            self.assertNotContains(response, 'title="Hold Ctrl to magnify"')
+            self.assertContains(
+                response,
+                "/static/submissions/image_magnifier.js",
+            )
+            self.assertContains(response, "/static/submissions/image_magnifier.css")
+
+        asset_path = finders.find("submissions/image_magnifier.js")
+        self.assertIsNotNone(asset_path)
+        asset = Path(asset_path).read_text(encoding="utf-8")
+        self.assertIn("requestAnimationFrame", asset)
+        self.assertIn("shown.bs.collapse", asset)
+        self.assertIn("htmx:afterSwap", asset)
+        self.assertIn('(hover: hover) and (pointer: fine)', asset)
+        self.assertIn('event.key === "Control"', asset)
+        self.assertIn('window.addEventListener("blur"', asset)
+        self.assertIn('document.addEventListener("visibilitychange"', asset)
+        self.assertIn("cfm-image-magnifier-hint", asset)
+        self.assertIn("container.dataset.cfmImageMagnifierHint", asset)
+        self.assertIn("pointerInside && !active && !controlPressed", asset)
+        stylesheet_path = finders.find("submissions/image_magnifier.css")
+        self.assertIsNotNone(stylesheet_path)
+        stylesheet = Path(stylesheet_path).read_text(encoding="utf-8")
+        self.assertIn("aspect-ratio: 3 / 2", stylesheet)
+        self.assertIn("width: min(72%, 30rem)", stylesheet)
+        self.assertIn(".cfm-image-magnifier-hint.is-visible", stylesheet)
+
     def test_formatting_review_ok_no_edit_filter(self):
         self.make_master_paper("P001", "Review OK Original", "Ada")
         self.make_master_paper("P002", "Review OK Source Edited", "Grace")
@@ -8415,6 +8472,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertContains(response, 'loading="lazy"')
         self.assertContains(response, 'decoding="async"')
+        self.assertContains(response, "data-cfm-image-magnifier")
+        self.assertContains(
+            response,
+            'data-cfm-image-magnifier-hint="Hold Ctrl to magnify"',
+        )
+        self.assertNotContains(response, 'title="Hold Ctrl to magnify"')
+        self.assertContains(response, "/static/submissions/image_magnifier.js")
+        self.assertContains(response, "/static/submissions/image_magnifier.css")
         self.assertContains(response, 'width="2550"')
         self.assertContains(response, 'height="1100"')
         self.assertContains(

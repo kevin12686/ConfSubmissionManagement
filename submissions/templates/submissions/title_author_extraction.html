@@ -214,7 +214,14 @@
                 </div>
                 <div class="col-lg-7">
                     {% if row.image_url %}
-                        <a href="{{ row.image_url }}" target="_blank" rel="noopener">
+                        <a
+                            class="cfm-image-magnifier"
+                            data-cfm-image-magnifier
+                            data-cfm-image-magnifier-hint="Hold Ctrl to magnify"
+                            href="{{ row.image_url }}"
+                            target="_blank"
+                            rel="noopener"
+                        >
                             <img
                                 src="{{ row.image_url }}"
                                 class="img-fluid border rounded bg-light cfm-verification-image"

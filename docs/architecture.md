@@ -89,6 +89,15 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
   filter/search in the Django session. Status changes do not reorder that
   snapshot. Previous/Next skip IDs that later leave publication scope, and the
   queue expires after two hours. Focus mode never creates or mutates a queue.
+- Formatting previews and Title/Author verification images use one shared native
+  Image Magnifier component. It initializes after lazy Bootstrap collapse
+  loading and HTMX worklist swaps, runs only for fine hover pointers, requires
+  the `Ctrl` modifier, resets on key release/window blur, and never supplies
+  publication or workflow state. Normal verification-image links still open the
+  complete image. The shared lens uses a responsive `3:2` landscape viewport
+  constrained by the source image's displayed bounds. A shared in-image hint
+  replaces the browser-native tooltip so it hides immediately while the lens is
+  active and returns without browser-dependent delay when the lens closes.
 - Process PDFs deliberately keeps complete page-thumbnail strips expanded. Search and `Needs processing / Page issues / Processed / All` filters narrow papers only; paper jump, sticky identity headers, fixed thumbnail geometry, lazy image loading, and the enlarged preview modal do not change processing scope. Its integrated formatting-triage action is the only state-changing exception: it appends to the existing `FinalSubmission.format_notes`, sets `format_status=needs_edit`, and clears the Formatting Review source binding. It does not create a second issue store or modify files and processing metadata.
 - Organized List separates current-view publication blockers from tracked information and uses stable table columns. Paper Master rows whose active final is Not Publishing are omitted from this publication-current view, while replaced versions remain inactive history. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
 - Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.

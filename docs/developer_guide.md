@@ -314,6 +314,18 @@ Return-context coverage includes Organized List (both views), Formatting Review,
 
 Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Worklists use `hx-select` on normal server pages. Dashboard readiness and global workflow alerts use dedicated read-only partial endpoints so expensive global scans do not block every page response. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. UI caches must never feed publication/export decisions.
 
+Shared image magnification lives in
+`submissions/static/submissions/image_magnifier.js` and
+`submissions/static/submissions/image_magnifier.css`. Formatting previews and
+Title/Author verification images opt in with `data-cfm-image-magnifier`; do not
+create page-specific lens implementations. New rendering paths must initialize
+correctly after Bootstrap collapse lazy loading and HTMX swaps, remain disabled
+for coarse/touch pointers, require `Ctrl`, clear modifier state on key
+release/window blur, and must not write review or publication state. Supply hint
+text through `data-cfm-image-magnifier-hint`; do not use the native image
+`title` tooltip because browsers cannot dismiss an already-open tooltip
+immediately.
+
 ## Data And Review Reset Rules
 
 When changing data that affects a review, reset only dependent review flags.

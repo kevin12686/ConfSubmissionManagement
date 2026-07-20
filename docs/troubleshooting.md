@@ -307,6 +307,18 @@ Upload report PDFs through the report upload workflow. The app matches reports b
 
 Open Exceptions and approve `Plagiarism %` or `Single %` separately with a reason. A valid allowed exception moves the issue to Info and does not block final export. If the imported score changes later, the exception becomes stale and blocks export until it is re-approved or removed.
 
+### Review image magnifier does not appear
+
+The in-place magnifier is intentionally enabled only for a mouse or trackpad
+that reports hover and a fine pointer. It does not appear on touch/coarse-pointer
+devices. In Formatting list mode, expand the paper first. Wait for the
+Formatting preview or Title/Author verification image to load, place the pointer
+over it, and hold `Ctrl`. The lens closes when `Ctrl` is released or the browser
+loses focus. The in-image `Hold Ctrl to magnify` hint should disappear
+immediately while the lens is active; it is not a browser-native tooltip. Use
+`Open Publication PDF` or click the full verification-image
+link when the browser or device does not support the modifier-controlled lens.
+
 ## Exports
 
 ### Final publication package is blocked
