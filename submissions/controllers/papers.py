@@ -134,7 +134,11 @@ def initial_paper_list(request):
     context = paper_master_list_context(
         q,
         request.GET.get("sort", "paper_id_asc"),
-        page_builder=lambda items: paginate_worklist(request, items),
+        page_builder=lambda items: paginate_worklist(
+            request,
+            items,
+            scroll_anchor="paper-master-worklist",
+        ),
     )
     return render(
         request,

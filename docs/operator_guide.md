@@ -100,9 +100,17 @@ Large worklists default to 25 rows and provide `25 / 50 / 100 / 200 / All`.
 Filters and sorting apply to the complete result before pagination. Use `All`
 when every matching record must be compared together; routine numbered pages
 respond faster because file checks, previews, suggestions, and text diffs are
-prepared only for visible rows. Dashboard readiness and global workflow alerts
+prepared only for visible rows. The same pagination controls appear above and
+below the worklist. Changing page or page size returns to the worklist controls,
+so an editor can continue from the top of the new page without manually
+scrolling back. Dashboard readiness and global workflow alerts
 load just after the page shell, but remain server-calculated from the same
 rules used by publication export.
+
+Error Report severity tabs are server-side filters. Select `All`, `Critical`,
+`Medium`, or `Info` before paging; each selected severity has its own complete
+result count and numbered pages. Workflow-area links and severity filters can
+be combined without hiding issues on a different mixed-severity page.
 
 Duplicate-title, PDF, or source rows in Error Report show a compact group
 summary. Use `Show matching records` to load the complete list for that row.
@@ -251,8 +259,11 @@ boxes can reveal that one person's name was incorrectly parsed as two authors.
 
 Use `/reviews/formatting/` to review title/author formatting visually.
 
-- List mode is a compact queue; select `Review paper` to expand one full workspace.
+- List mode is a compact worklist; select `Review paper` to expand one full workspace.
 - Single Paper Mode shows one paper at a time to reduce wrong-file uploads.
+  When it starts, the system snapshots the papers matching the current filter
+  and search in natural Paper ID order. That sequence remains stable even after
+  a paper changes from Pending/Needs edit to Review OK.
 - Corrected PDF upload performs the same responsive title safety check in dry-run
   mode before the file is saved. It compares with the Final Submission title without
   replacing stored extracted metadata.
@@ -262,7 +273,23 @@ Use `/reviews/formatting/` to review title/author formatting visually.
 
 If corrected files are uploaded, related review flags reset as needed and Process PDFs may be required.
 
-Single Paper Mode remains the sequential review workspace. Save and Go next are separate, and the page warns before leaving with unsaved changes.
+Single Paper Mode remains the sequential review workspace. Save and Go next are
+separate: Save returns to the same paper for inspection, while Go next follows
+the queue snapshot. Previous, Next, Go next, and Back to list warn before leaving
+with unsaved changes. The queue keeps its original filter/search and expires
+after two hours; start it again if the expiration message appears. If a queued
+submission is discarded, excluded, or replaced while the queue is open, it is
+shown as outside scope and Continue moves to the next valid queued paper.
+
+An `Open Formatting Review` link from a specific Final Submission uses Focused
+Formatting Review. Focus mode shows that exact active publication candidate
+without adding neighboring papers or altering the sequential queue. Use `Start
+Single Paper Mode here` when a sequential review should begin at that record.
+
+Every formatting Save is bound to the publication PDF/source displayed when the
+page opened. If either file or the submission changes before Save or before a
+corrected-PDF title warning is confirmed, the system rejects the stale action.
+Reload and review the current files rather than confirming an older page.
 
 ## Plagiarism / CrossCheck Workflow
 

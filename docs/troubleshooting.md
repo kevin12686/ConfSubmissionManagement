@@ -166,6 +166,28 @@ Editor Upload performs a dry-run title extraction and compares the PDF title wit
 
 Corrected PDF upload uses the same title safety component. A mismatch does not forbid saving, but it prevents accidental wrong-file upload by requiring confirmation. The ordinary word-level difference is shown first; character-level differences are available in an expandable detail.
 
+### Single Paper Mode loses Next or returns to the first paper
+
+Current versions create a stable Single Paper queue when the mode starts.
+Saving Review OK stays on the same paper; Go next follows the original queue
+instead of recalculating the Pending/Review OK sort. If an old bookmark contains
+only `mode=single&submission=...`, reopen Single Paper Mode from the current
+Formatting list. A message that the queue expired means its two-hour temporary
+session snapshot is gone; the fallback link preserves the original filter and
+search so a new queue can be started.
+
+If the current queued submission was discarded, marked Not Publishing,
+replaced, or otherwise removed from active publication scope, the page reports
+that transition and offers the next valid queue item. It must not display
+`Paper 0 of N`.
+
+### Formatting Save says the record or publication file changed
+
+The review page is stale. Formatting Save and corrected-PDF title confirmation
+are bound to the exact publication PDF/source shown when the page was rendered.
+Reload that paper, inspect the current preview/files, and save again. Do not
+work around the warning by copying an old review status into the database.
+
 ### Title/Author extraction is wrong
 
 Use Title/Author Review:
@@ -287,6 +309,16 @@ stage. For `Source Review Hash Missing` on a record already marked Review OK, or
 for `Source Changed After Review`, inspect the current source in Formatting
 Review and save `Review OK` again. Do not copy a hash from another record or
 restore an older status directly in the database.
+
+### Error Report count does not match the visible page
+
+Select the relevant `Critical`, `Medium`, or `Info` severity tab. Severity is a
+server-side filter and pagination applies to that filtered result, so the
+worklist should show `1-25 of N` for the selected severity. `All` intentionally
+sorts all issues by severity. Workflow-area links can be combined with severity
+tabs. If a selected severity reports a nonzero count but an empty first page,
+record the URL and app version; that indicates a pagination regression rather
+than missing readiness data.
 
 ### Need an intermediate package anyway
 

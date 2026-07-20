@@ -52,7 +52,7 @@
             </div>
 	        </form>
 </div>
-<div id="final-submission-worklist">
+<div id="final-submission-worklist" class="cfm-worklist-anchor">
 	<ul class="nav nav-tabs cfm-tabs">
 	    {% for option in filter_options %}
 	        <li class="nav-item">
@@ -99,7 +99,7 @@
         <span><span class="badge text-bg-success">Verified</span> checked or identical</span>
     </div>
 </details>
-    {% include "submissions/partials/worklist_pagination.html" %}
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 	<div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky">
         <thead><tr><th>Final ID</th><th>Author-entered ID</th><th>Paper ID</th><th>Version</th><th>Final Title</th><th>Files</th><th>Plagiarism</th><th>Processing</th><th>Actions</th></tr></thead>
@@ -237,7 +237,8 @@
             <tr><td colspan="9" class="text-muted">No final submissions found.</td></tr>
 	        {% endfor %}
         </tbody>
-    </table>
-</div>
+	    </table>
+	</div>
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 {% endblock %}

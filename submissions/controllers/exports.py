@@ -170,7 +170,11 @@ def old_versions(request):
         request.GET.get("filter", "all"),
         hydrate=False,
     )
-    page = paginate_worklist(request, context["rows"])
+    page = paginate_worklist(
+        request,
+        context["rows"],
+        scroll_anchor="old-versions-worklist",
+    )
     context["rows"] = hydrate_old_version_rows(
         page.items,
         inspection=FileInspectionContext(),
@@ -197,20 +201,67 @@ def error_report(request):
     rows, current_area, area_label = filter_error_report_rows(
         rows, request.GET.get("area", "")
     )
-    rows = sort_error_report_rows(rows)
-    summary_sections = error_report_severity_sections(rows)
-    page = paginate_worklist(request, rows)
-    displayed_rows = list(page.items)
-    severity_sections = error_report_severity_sections(displayed_rows)
-    total_by_severity = {
-        section["severity"]: section["count"]
+    area_rows = sort_error_report_rows(rows)
+    summary_sections = error_report_severity_sections(area_rows)
+    rows_by_severity = {
+        section["severity"]: section["rows"]
         for section in summary_sections
     }
-    for section in severity_sections:
-        section["total_count"] = total_by_severity.get(
-            section["severity"],
-            section["count"],
+    valid_severities = {"all", *rows_by_severity}
+    current_severity = request.GET.get("severity", "all")
+    if current_severity not in valid_severities:
+        current_severity = "all"
+    filtered_rows = (
+        area_rows
+        if current_severity == "all"
+        else rows_by_severity[current_severity]
+    )
+    page = paginate_worklist(
+        request,
+        filtered_rows,
+        scroll_anchor="error-report-worklist",
+    )
+    displayed_rows = list(page.items)
+    page_sections = error_report_severity_sections(displayed_rows)
+    severity_sections = (
+        [section for section in page_sections if section["count"]]
+        if current_severity == "all"
+        else [
+            section
+            for section in page_sections
+            if section["severity"] == current_severity
+        ]
+    )
+    severity_filter_options = [
+        {
+            "value": "all",
+            "label": "All",
+            "level": "secondary",
+            "count": len(area_rows),
+        },
+        *[
+            {
+                "value": section["severity"],
+                "label": section["label"],
+                "level": section["level"],
+                "count": section["count"],
+            }
+            for section in summary_sections
+        ],
+    ]
+    for option in severity_filter_options:
+        query = request.GET.copy()
+        query["severity"] = option["value"]
+        query["page"] = "1"
+        option["url"] = (
+            f"{request.path}?{query.urlencode()}#error-report-worklist"
         )
+    clear_area_query = request.GET.copy()
+    clear_area_query.pop("area", None)
+    clear_area_query["page"] = "1"
+    clear_area_url = (
+        f"{request.path}?{clear_area_query.urlencode()}#error-report-worklist"
+    )
     return render(
         request,
         "submissions/error_report.html",
@@ -219,8 +270,12 @@ def error_report(request):
             "sections": error_report_sections(displayed_rows),
             "severity_sections": severity_sections,
             "severity_summary_sections": summary_sections,
+            "severity_filter_options": severity_filter_options,
+            "current_severity": current_severity,
             "current_area": current_area,
             "area_label": area_label,
+            "clear_area_url": clear_area_url,
+            "has_any_errors": bool(area_rows),
             "pagination": page,
         },
     )

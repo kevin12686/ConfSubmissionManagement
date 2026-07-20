@@ -176,7 +176,7 @@
 
 <h2 class="h4 mt-4">Processed PDF Page Preview</h2>
 <div class="small text-muted mb-2">Every matching paper remains fully expanded so blank pages can be spotted by scanning the complete page strip.</div>
-<div id="process-preview-worklist">
+<div id="process-preview-worklist" class="cfm-worklist-anchor">
 {% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
@@ -208,7 +208,7 @@
     <div class="small text-muted pb-2">Paper headers stay visible while you scan each complete thumbnail strip.</div>
 </div>
 {% endif %}
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="vstack gap-3">
     {% for row in processed_rows %}
         <div id="paper-preview-{{ row.submission.pk }}" class="card cfm-review-card cfm-pdf-preview-card {% if row.submission.processing_status == 'error' %}cfm-processing-error{% elif row.page_issue or row.needs_processing %}cfm-page-issue{% endif %}">
@@ -247,6 +247,7 @@
         <div class="cfm-empty">No publication PDFs match the current filter.</div>
     {% endfor %}
 </div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 
 <div class="modal fade" id="thumbnail-preview-modal" tabindex="-1" aria-labelledby="thumbnail-preview-title" aria-hidden="true">

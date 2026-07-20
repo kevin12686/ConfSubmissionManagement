@@ -78,7 +78,15 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
   publication scope. If the exact target is outside that scope, the UI reports
   why; it never substitutes another fuzzy match. GET focus modes are read-only.
 - Final Submission Edit separates editable identity/metadata/files/plagiarism data from a read-only workflow summary. Its normal Save form is structurally separate from the collapsed bottom version-action danger-zone form. Discard and undo continue to call the existing audited service; Not Publishing remains owned by its dedicated workflow.
-- Formatting Review exposes a compact queue plus a full Single Paper Mode. Queue rows show publication file/status context before expansion, Bootstrap's shared parent keeps one paper expanded at a time, and HTMX enhances GET-only filter/search navigation without owning workflow state.
+- Formatting Review exposes a compact list, a stable Single Paper Mode queue,
+  and a separate exact-record Focus mode. List rows show publication
+  file/status context before expansion, Bootstrap's shared parent keeps one
+  paper expanded at a time, and HTMX enhances GET-only filter/search navigation
+  without owning workflow state. Starting Single Paper Mode stores an
+  ephemeral, naturally sorted snapshot of matching submission IDs plus the
+  filter/search in the Django session. Status changes do not reorder that
+  snapshot. Previous/Next skip IDs that later leave publication scope, and the
+  queue expires after two hours. Focus mode never creates or mutates a queue.
 - Process PDFs deliberately keeps complete page-thumbnail strips expanded. Search and `Needs processing / Page issues / Processed / All` filters narrow papers only; paper jump, sticky identity headers, fixed thumbnail geometry, lazy image loading, and the enlarged preview modal do not change processing scope.
 - Organized List separates current-view publication blockers from tracked information and uses stable table columns. Paper Master rows whose active final is Not Publishing are omitted from this publication-current view, while replaced versions remain inactive history. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
 - Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.
@@ -140,12 +148,29 @@ reported as a missing review hash. Once status is Review OK, a missing or
 changed source hash is a Critical integrity blocker. A configured Corrected
 PDF/source that is missing never falls back to the Original file.
 
+Formatting writes use a second ephemeral review snapshot containing the
+submission update timestamp and filesystem identity of the selected publication
+PDF/source. Save revalidates that snapshot under a database row lock before
+calling the central formatting update service. Corrected-PDF title-guard
+previews carry the same snapshot plus hashes of their temporary uploads, so a
+later confirmation cannot bind an old review decision to changed publication
+files. Queue/review/title-guard tokens are temporary workflow state and are not
+part of System State backup.
+
 Error Report keeps duplicate categories and blocker messages unchanged in the
 readiness/report services. Its HTML worklist uses a compact duplicate-group
 summary and a read-only HTMX detail endpoint for the full matching-record list,
 preventing `page_size=all` from repeating an O(n) group description in every
-row. Rows are sorted by severity before pagination, tab badges retain full-list
-totals, and the detail endpoint has a complete non-HTMX fallback page.
+row. Workflow-area filtering runs first, severity filtering runs second, and
+sorting/pagination apply only to that selected result. Severity tab badges retain
+the complete area-scoped totals, while each server-side `All / Critical / Medium /
+Info` tab paginates its own rows. The detail endpoint has a complete non-HTMX
+fallback page.
+
+All paginated worklists render one shared pagination component above and below
+their rows. The `WorklistPage.scroll_anchor` identifies the stable worklist
+container. Normal links use the anchor fragment, while the shared HTMX handler
+scrolls the swapped worklist into view after a successful page change.
 
 Final Submission and Paper Master upload zones are presentation helpers only. File extension/hash validation and preview/apply remain server-owned. The browser may summarize selected files or remove them before submit, but cannot classify publication files or bypass import preview.
 

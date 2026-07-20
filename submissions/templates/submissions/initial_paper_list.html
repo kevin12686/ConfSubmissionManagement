@@ -64,7 +64,8 @@
         </form>
     </div>
 </div>
-{% include "submissions/partials/worklist_pagination.html" %}
+<div id="paper-master-worklist" class="cfm-worklist-anchor">
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table">
         <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Notes</th><th></th></tr></thead>
@@ -95,5 +96,7 @@
         {% endfor %}
         </tbody>
     </table>
+</div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 {% endblock %}

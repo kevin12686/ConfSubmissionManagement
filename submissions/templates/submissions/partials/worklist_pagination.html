@@ -1,5 +1,6 @@
 {% if pagination.total_count %}
-<nav class="cfm-worklist-pagination d-flex flex-wrap align-items-center justify-content-between gap-3 my-3" aria-label="Worklist pagination">
+<nav class="cfm-worklist-pagination d-flex flex-wrap align-items-center justify-content-between gap-3 my-3"
+     aria-label="{% if pagination_position == 'bottom' %}Bottom{% else %}Top{% endif %} worklist pagination">
     <div class="small text-muted">
         Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }}
     </div>
@@ -7,22 +8,26 @@
         <div class="btn-group btn-group-sm" role="group" aria-label="Rows per page">
             {% for option in pagination.page_size_links %}
                 <a class="btn {% if option.active %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                   href="{{ option.url }}"
+                   href="{{ option.url }}{% if pagination.scroll_anchor %}#{{ pagination.scroll_anchor }}{% endif %}"
+                   {% if pagination.scroll_anchor %}data-cfm-pagination-scroll="#{{ pagination.scroll_anchor }}"{% endif %}
                    {% if pagination.hx_target %}hx-get="{{ option.url }}" hx-target="{{ pagination.hx_target }}" hx-select="{{ pagination.hx_target }}" hx-swap="outerHTML" hx-push-url="true"{% if pagination.indicator_id %} hx-indicator="#{{ pagination.indicator_id }}"{% endif %}{% endif %}>{{ option.label }}</a>
             {% endfor %}
         </div>
         {% if not pagination.is_all and pagination.page_links|length > 1 %}
             <div class="btn-group btn-group-sm" role="group" aria-label="Page number">
                 {% if pagination.has_previous %}
-                    <a class="btn btn-outline-secondary" href="{{ pagination.previous_url }}" aria-label="Previous page"
+                    <a class="btn btn-outline-secondary" href="{{ pagination.previous_url }}{% if pagination.scroll_anchor %}#{{ pagination.scroll_anchor }}{% endif %}" aria-label="Previous page"
+                       {% if pagination.scroll_anchor %}data-cfm-pagination-scroll="#{{ pagination.scroll_anchor }}"{% endif %}
                        {% if pagination.hx_target %}hx-get="{{ pagination.previous_url }}" hx-target="{{ pagination.hx_target }}" hx-select="{{ pagination.hx_target }}" hx-swap="outerHTML" hx-push-url="true"{% if pagination.indicator_id %} hx-indicator="#{{ pagination.indicator_id }}"{% endif %}{% endif %}>&lsaquo;</a>
                 {% endif %}
                 {% for link in pagination.page_links %}
-                    <a class="btn {% if link.active %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ link.url }}"
+                    <a class="btn {% if link.active %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ link.url }}{% if pagination.scroll_anchor %}#{{ pagination.scroll_anchor }}{% endif %}"
+                       {% if pagination.scroll_anchor %}data-cfm-pagination-scroll="#{{ pagination.scroll_anchor }}"{% endif %}
                        {% if pagination.hx_target %}hx-get="{{ link.url }}" hx-target="{{ pagination.hx_target }}" hx-select="{{ pagination.hx_target }}" hx-swap="outerHTML" hx-push-url="true"{% if pagination.indicator_id %} hx-indicator="#{{ pagination.indicator_id }}"{% endif %}{% endif %}>{{ link.number }}</a>
                 {% endfor %}
                 {% if pagination.has_next %}
-                    <a class="btn btn-outline-secondary" href="{{ pagination.next_url }}" aria-label="Next page"
+                    <a class="btn btn-outline-secondary" href="{{ pagination.next_url }}{% if pagination.scroll_anchor %}#{{ pagination.scroll_anchor }}{% endif %}" aria-label="Next page"
+                       {% if pagination.scroll_anchor %}data-cfm-pagination-scroll="#{{ pagination.scroll_anchor }}"{% endif %}
                        {% if pagination.hx_target %}hx-get="{{ pagination.next_url }}" hx-target="{{ pagination.hx_target }}" hx-select="{{ pagination.hx_target }}" hx-swap="outerHTML" hx-push-url="true"{% if pagination.indicator_id %} hx-indicator="#{{ pagination.indicator_id }}"{% endif %}{% endif %}>&rsaquo;</a>
                 {% endif %}
             </div>

@@ -73,17 +73,21 @@ from submissions.services.system_state import (
 )
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
+    FormattingWorkflowError,
     apply_formatting_upload_preview,
     cancel_formatting_upload_preview,
     corrected_source_type_label,
-    formatting_single_navigation,
-    formatting_upload_confirmation,
+    create_formatting_review_queue,
+    create_formatting_review_snapshot,
+    discard_formatting_review_snapshot,
     formatting_filter_counts,
     formatting_preview_info,
+    formatting_review_queue_context,
     formatting_rows,
+    load_formatting_review_snapshot,
     original_source_type_label,
     preview_formatting_upload,
-    update_formatting_submission,
+    save_formatting_review,
 )
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
@@ -721,15 +725,76 @@ def title_author_extraction(request):
 
 
 def formatting(request):
-    q = _search_query(request)
+    q = (
+        request.POST.get("q", "").strip()
+        if request.method == "POST"
+        else _search_query(request)
+    )
     current_filter = request.POST.get("filter") or request.GET.get("filter", "needs_attention")
     mode = request.POST.get("mode") or request.GET.get("mode", "list")
     valid_filters = {option["value"] for option in FORMAT_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "needs_attention"
-    if mode != "single":
+    if mode not in {"single", "focus"}:
         mode = "list"
+    if (
+        request.method == "GET"
+        and mode == "list"
+        and request.GET.get("submission")
+    ):
+        mode = "focus"
+    queue_token = request.POST.get("queue") or request.GET.get("queue", "")
+    requested_id = (
+        request.POST.get("submission_id")
+        or request.GET.get("current")
+        or request.GET.get("submission")
+    )
+    single_navigation = None
+    if mode == "single":
+        try:
+            if queue_token:
+                single_navigation = formatting_review_queue_context(
+                    request.session,
+                    queue_token,
+                    current_submission_id=requested_id,
+                )
+            elif request.method == "GET":
+                single_navigation = create_formatting_review_queue(
+                    request.session,
+                    query=q,
+                    status_filter=current_filter,
+                    current_submission_id=requested_id,
+                )
+                redirect_query = {
+                    "mode": "single",
+                    "queue": single_navigation["token"],
+                    "filter": single_navigation["filter"],
+                }
+                if single_navigation["q"]:
+                    redirect_query["q"] = single_navigation["q"]
+                if single_navigation["current"]:
+                    redirect_query["current"] = single_navigation["current"].pk
+                return redirect(
+                    f"{reverse('submissions:formatting')}?"
+                    f"{urlencode(redirect_query)}"
+                )
+            else:
+                raise FormattingWorkflowError(
+                    "The Single Paper queue is missing. Start Single Paper Mode again."
+                )
+        except FormattingWorkflowError as exc:
+            messages.warning(request, str(exc))
+            return redirect(
+                f"{reverse('submissions:formatting')}?"
+                f"{urlencode({'filter': current_filter, **({'q': q} if q else {})})}"
+            )
+        current_filter = single_navigation["filter"]
+        q = single_navigation["q"]
+        queue_token = single_navigation["token"]
+
     formatting_confirmation = None
+    bound_form = None
+    bound_submission_id = None
     if request.method == "POST":
         action = request.POST.get("action", "save")
         if action == "confirm_formatting_upload":
@@ -737,7 +802,13 @@ def formatting(request):
             try:
                 submission = apply_formatting_upload_preview(token)
                 messages.success(request, _formatting_success_message(submission, mode))
-                return _formatting_redirect_after_save(request, current_filter, q, mode)
+                return _formatting_redirect_after_save(
+                    request,
+                    current_filter,
+                    q,
+                    mode,
+                    queue_token=queue_token,
+                )
             except Exception as exc:
                 audit_failure("formatting_upload_confirm", exc, "Formatting upload confirmation failed.", request=request)
                 messages.error(request, str(exc))
@@ -756,63 +827,166 @@ def formatting(request):
                     request=request,
                 )
                 messages.error(request, str(exc))
-            return _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=True)
+            return _formatting_redirect_after_save(
+                request,
+                current_filter,
+                q,
+                mode,
+                queue_token=queue_token,
+            )
         else:
             submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
-            form = FormattingUploadForm(request.POST, request.FILES, submission=submission)
+            form = FormattingUploadForm(
+                request.POST,
+                request.FILES,
+                submission=submission,
+                auto_id=f"id_%s_{submission.pk}",
+            )
+            bound_form = form
+            bound_submission_id = submission.pk
             if form.is_valid():
                 try:
-                    preview = preview_formatting_upload(submission, form.cleaned_data)
+                    snapshot_token = request.POST.get("review_snapshot", "")
+                    review_snapshot = load_formatting_review_snapshot(
+                        request.session,
+                        snapshot_token,
+                        submission_id=submission.pk,
+                    )
+                    workflow_context = {
+                        "mode": mode,
+                        "queue": queue_token,
+                        "filter": current_filter,
+                        "q": q,
+                        "current": submission.pk,
+                    }
+                    preview = preview_formatting_upload(
+                        submission,
+                        form.cleaned_data,
+                        review_snapshot=review_snapshot,
+                        workflow_context=workflow_context,
+                    )
                     if preview.get("token") and preview.get("requires_confirmation"):
+                        discard_formatting_review_snapshot(
+                            request.session,
+                            snapshot_token,
+                        )
                         formatting_confirmation = {
                             **preview,
                             "submission": submission,
                             "mode": mode,
                             "filter": current_filter,
                             "q": q,
+                            "queue": queue_token,
                         }
                     elif preview.get("token"):
                         apply_formatting_upload_preview(preview["token"])
+                        discard_formatting_review_snapshot(
+                            request.session,
+                            snapshot_token,
+                        )
                         messages.success(request, _formatting_success_message(submission, mode))
-                        return _formatting_redirect_after_save(request, current_filter, q, mode)
+                        return _formatting_redirect_after_save(
+                            request,
+                            current_filter,
+                            q,
+                            mode,
+                            queue_token=queue_token,
+                        )
                     else:
-                        update_formatting_submission(submission, form.cleaned_data)
+                        save_formatting_review(
+                            submission.pk,
+                            form.cleaned_data,
+                            review_snapshot,
+                        )
+                        discard_formatting_review_snapshot(
+                            request.session,
+                            snapshot_token,
+                        )
                         messages.success(request, _formatting_success_message(submission, mode))
-                        return _formatting_redirect_after_save(request, current_filter, q, mode)
+                        return _formatting_redirect_after_save(
+                            request,
+                            current_filter,
+                            q,
+                            mode,
+                            queue_token=queue_token,
+                        )
                 except Exception as exc:
                     audit_failure("formatting_update", exc, "Formatting update failed.", request=request, submission=submission)
                     messages.error(request, f"Formatting update failed: {exc}")
             else:
-                messages.error(request, "Formatting update failed. Check the uploaded files and status.")
+                messages.error(
+                    request,
+                    "Formatting update failed. Correct the highlighted fields; "
+                    "uploaded files must be selected again.",
+                )
 
-    requested_id = request.POST.get("submission_id") or request.GET.get("submission")
-    explicit_focus = bool(request.GET.get("submission"))
-    focused_submission = (
-        get_object_or_404(FinalSubmission, pk=request.GET.get("submission"))
-        if explicit_focus
-        else None
-    )
-    if explicit_focus:
-        q = ""
-        current_filter = "all"
-    all_submissions = formatting_rows(q, current_filter)
-    single_navigation = None
+    focused_submission = None
+    focused_context = None
+    single_out_of_scope = None
     if mode == "single":
-        all_submissions = list(all_submissions)
-        current_submission = next(
-            (submission for submission in all_submissions if str(submission.pk) == str(requested_id)),
-            None if requested_id else (all_submissions[0] if all_submissions else None),
+        current_submission = single_navigation["current"]
+        all_submissions = (
+            [current_submission]
+            if current_submission and single_navigation["current_in_scope"]
+            else []
         )
-        all_submissions = [current_submission] if current_submission else []
-        single_navigation = formatting_single_navigation(current_submission, q, current_filter)
-    page = paginate_worklist(
-        request,
-        all_submissions,
-        hx_target="#formatting-worklist",
-        indicator_id="formatting-loading",
-        force_all=mode == "single" or explicit_focus,
-    )
-    all_submissions = page.items
+        if current_submission and not single_navigation["current_in_scope"]:
+            single_out_of_scope = (
+                f"{current_submission.paper_id_filled or 'This paper'} is no longer "
+                "an active publication formatting candidate. Continue to the next "
+                "paper in this queue."
+            )
+        page = None
+    elif mode == "focus":
+        focused_submission = get_object_or_404(
+            FinalSubmission,
+            pk=request.POST.get("submission_id") or request.GET.get("submission"),
+        )
+        candidate = formatting_rows("", "all").filter(pk=focused_submission.pk).first()
+        all_submissions = [candidate] if candidate else []
+        page = None
+        focused_context = focused_submission_context(
+            focused_submission,
+            title="Focused Formatting review",
+            message=(
+                "Review this exact current publication candidate."
+                if candidate
+                else (
+                    "This Final Submission is not in the current formatting queue "
+                    "because it is inactive, discarded, Not Publishing, or outside "
+                    "the Paper Master List."
+                )
+            ),
+            back_url=reverse("submissions:formatting"),
+            status_label=(
+                focused_submission.get_format_status_display()
+                if candidate
+                else "Outside review scope"
+            ),
+            status_level=(
+                "success"
+                if candidate and focused_submission.format_status == "review_ok"
+                else "warning"
+            ),
+            out_of_scope=not bool(candidate),
+        )
+        focused_context["primary_action_url"] = (
+            f"{reverse('submissions:formatting')}?"
+            f"{urlencode({'mode': 'single', 'filter': 'all', 'current': focused_submission.pk})}"
+            if candidate
+            else ""
+        )
+        focused_context["primary_action_label"] = "Start Single Paper Mode here"
+    else:
+        all_submissions = formatting_rows(q, current_filter)
+        page = paginate_worklist(
+            request,
+            all_submissions,
+            hx_target="#formatting-worklist",
+            indicator_id="formatting-loading",
+        )
+        all_submissions = page.items
+
     file_inspection = FileInspectionContext()
     rows = []
     for submission in all_submissions:
@@ -823,7 +997,18 @@ def formatting(request):
         rows.append(
             {
                 "submission": submission,
-                "form": FormattingUploadForm(submission=submission),
+                "form": (
+                    bound_form
+                    if bound_submission_id == submission.pk
+                    else FormattingUploadForm(
+                        submission=submission,
+                        auto_id=f"id_%s_{submission.pk}",
+                    )
+                ),
+                "review_snapshot": create_formatting_review_snapshot(
+                    request.session,
+                    submission,
+                ),
                 "publication_pdf": publication_pdf,
                 "publication_source": publication_source_info(
                     submission,
@@ -851,34 +1036,6 @@ def formatting(request):
         {**option, "count": filter_counts.get(option["value"], 0)}
         for option in FORMAT_FILTER_OPTIONS
     ]
-    focused_context = None
-    if explicit_focus:
-        in_scope = bool(all_submissions)
-        focused_context = focused_submission_context(
-            focused_submission,
-            title="Focused Formatting review",
-            message=(
-                "Single Paper Mode is locked to this current publication candidate."
-                if in_scope
-                else (
-                    "This Final Submission is not in the current formatting queue "
-                    "because it is inactive, discarded, Not Publishing, or outside "
-                    "the Paper Master List."
-                )
-            ),
-            back_url=reverse("submissions:formatting"),
-            status_label=(
-                focused_submission.get_format_status_display()
-                if in_scope
-                else "Outside review scope"
-            ),
-            status_level=(
-                "success"
-                if in_scope and focused_submission.format_status == "review_ok"
-                else "warning"
-            ),
-            out_of_scope=not in_scope,
-        )
     return render(
         request,
         "submissions/formatting.html",
@@ -889,8 +1046,10 @@ def formatting(request):
             "filter_options": filter_options,
             "mode": mode,
             "single_navigation": single_navigation,
+            "single_out_of_scope": single_out_of_scope,
             "formatting_confirmation": formatting_confirmation,
             "focused_context": focused_context,
+            "focused_submission": focused_submission,
             "pagination": page,
         },
     )
@@ -905,17 +1064,32 @@ def _formatting_success_message(submission, mode):
     return f"Formatting record updated for {submission.final_submission_id}."
 
 
-def _formatting_redirect_after_save(request, current_filter, q, mode, stay_on_current=False):
+def _formatting_redirect_after_save(
+    request,
+    current_filter,
+    q,
+    mode,
+    *,
+    queue_token="",
+):
     query = {"filter": current_filter}
     if q:
         query["q"] = q
     if mode == "single":
         current_submission = request.POST.get("submission_id", "")
-        if current_submission:
-            query["mode"] = "single"
-            query["submission"] = current_submission
-            return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")
-        messages.success(request, "Single Paper Mode complete for the current filter.")
+        query = {
+            "mode": "single",
+            "queue": queue_token or request.POST.get("queue", ""),
+            "current": current_submission,
+            "filter": current_filter,
+        }
+        if q:
+            query["q"] = q
+    elif mode == "focus":
+        query = {
+            "mode": "focus",
+            "submission": request.POST.get("submission_id", ""),
+        }
     return redirect(f"{reverse('submissions:formatting')}?{urlencode(query)}")
 
 

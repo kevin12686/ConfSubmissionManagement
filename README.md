@@ -194,9 +194,15 @@ Large worklists are organized for editorial scanning. They default to 25 rows
 and offer `25 / 50 / 100 / 200 / All`; `All` preserves the former complete-list
 behavior when a full comparison is required. Filtering and sorting happen
 before pagination, while expensive row details and diffs are built only for the
-displayed page. Final Submissions keeps `Import / Re-upload` collapsed until
-needed. Formatting Review uses a compact queue with one expanded paper at a
-time plus Single Paper Mode. Process PDFs keeps every page thumbnail for each
+displayed page. Pagination controls appear above and below each worklist, and
+changing the page or page size returns the viewport to the worklist controls
+instead of leaving the editor at the bottom of the new page. Final Submissions keeps `Import / Re-upload` collapsed until
+needed. Formatting Review uses a compact list with one expanded paper at a
+time plus a stable Single Paper Mode queue. Starting Single Paper Mode snapshots
+the selected filter/search order; Save stays on the same paper, and changing its
+status does not remove or reorder the queue's Previous/Next destinations. Exact
+links from another workflow open a separate focused review instead of silently
+creating a queue. Process PDFs keeps every page thumbnail for each
 paper on the current page expanded. Organized List separates publication
 blockers from tracked information and keeps stable table widths.
 

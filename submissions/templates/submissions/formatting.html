@@ -8,7 +8,9 @@
     </div>
     <div class="cfm-page-actions">
         {% if mode == "single" %}
-            <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
+            <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.back_url }}">Back to list</a>
+        {% elif mode == "focus" %}
+            <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}">Back to list</a>
         {% else %}
             <a class="btn btn-outline-dark" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Single Paper Mode</a>
         {% endif %}
@@ -40,8 +42,8 @@
     }
 </style>
 
-<div id="formatting-worklist">
-{% if not focused_context %}
+<div id="formatting-worklist" class="cfm-worklist-anchor">
+{% if mode == "list" %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
     <li class="nav-item">
@@ -96,6 +98,7 @@
                 <input type="hidden" name="mode" value="{{ formatting_confirmation.mode }}">
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">
                 <input type="hidden" name="q" value="{{ formatting_confirmation.q }}">
+                <input type="hidden" name="queue" value="{{ formatting_confirmation.queue }}">
                 <button class="btn btn-warning">Confirm save corrected files anyway</button>
             </form>
             <form method="post">
@@ -106,8 +109,16 @@
                 <input type="hidden" name="mode" value="{{ formatting_confirmation.mode }}">
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">
                 <input type="hidden" name="q" value="{{ formatting_confirmation.q }}">
+                <input type="hidden" name="queue" value="{{ formatting_confirmation.queue }}">
                 <button class="btn btn-outline-secondary">Cancel upload</button>
             </form>
+        </div>
+        <div class="cfm-title-guard-footnote mt-3">
+            <strong>Pending save</strong>
+            <span>PDF: {{ formatting_confirmation.corrected_pdf_name }}</span>
+            {% if formatting_confirmation.corrected_source_name %}<span>Source: {{ formatting_confirmation.corrected_source_name }}</span>{% endif %}
+            <span>Workflow: {{ formatting_confirmation.format_status_label }}</span>
+            {% if formatting_confirmation.format_notes %}<span>Notes: {{ formatting_confirmation.format_notes }}</span>{% endif %}
         </div>
     </div>
 {% endif %}
@@ -116,26 +127,39 @@
     <div class="cfm-section d-flex flex-wrap gap-2 justify-content-between align-items-center">
         <div>
             <div class="fw-semibold">Single Paper Mode</div>
-            <div class="small text-muted">Paper {{ single_navigation.position }} of {{ single_navigation.total }} in the current filter.</div>
+            <div class="small text-muted">
+                {% if single_navigation.total %}
+                    Paper {{ single_navigation.position }} of {{ single_navigation.total }}
+                    · {{ single_navigation.remaining }} remaining after this paper
+                {% else %}
+                    Queue complete · no papers match the selected filter and search.
+                {% endif %}
+            </div>
         </div>
         <div class="cfm-page-actions">
             {% if single_navigation.previous %}
-                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.previous.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Previous</a>
+                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.previous_url }}">Previous</a>
             {% else %}
                 <button class="btn btn-outline-secondary" disabled>Previous</button>
             {% endif %}
             {% if single_navigation.next %}
-                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.next.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next</a>
+                <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.next_url }}">Next</a>
             {% else %}
                 <button class="btn btn-outline-secondary" disabled>Next</button>
             {% endif %}
-            <a class="btn btn-outline-dark" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Back to list</a>
+            <a class="btn btn-outline-dark" data-unsaved-check="true" href="{{ single_navigation.back_url }}">Back to list</a>
         </div>
     </div>
 {% endif %}
 
 <div id="formatting-queue">
-{% include "submissions/partials/worklist_pagination.html" %}
+{% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}{% endif %}
+{% if single_out_of_scope %}
+    <div class="alert alert-warning border d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>{{ single_out_of_scope }}</span>
+        {% if single_navigation.next %}<a class="btn btn-sm btn-outline-dark" href="{{ single_navigation.next_url }}">Continue to next paper</a>{% endif %}
+    </div>
+{% endif %}
 {% for row in rows %}
     {% with item=row.submission form=row.form %}
     <div class="card cfm-review-card">
@@ -158,18 +182,18 @@
                     <span class="badge text-bg-danger">No source</span>
                 {% endif %}
                 {% if row.needs_processing_after_formatting %}<span class="badge text-bg-warning">Needs Process PDFs</span>{% endif %}
-                {% if mode != "single" %}
+                {% if mode == "list" %}
                     <span class="small text-muted">{{ item.final_submission_title|default:"Missing title"|truncatechars:72 }}</span>
                 {% endif %}
             </div>
             <div class="cfm-table-actions">
-                {% if mode != "single" %}
+                {% if mode == "list" %}
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#format-review-{{ item.pk }}" aria-expanded="false" aria-controls="format-review-{{ item.pk }}">Review paper</button>
                 {% endif %}
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
             </div>
         </div>
-        <div id="format-review-{{ item.pk }}" class="{% if mode != 'single' %}collapse{% endif %}" {% if mode != "single" %}data-bs-parent="#formatting-queue"{% endif %}>
+        <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue"{% endif %}>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-xl-4">
@@ -220,19 +244,28 @@
                     {% endif %}
                 </div>
                 <div class="col-xl-5">
-                    <form method="post" enctype="multipart/form-data" class="row g-2" {% if mode == "single" %}data-formatting-single-form="true"{% endif %}>
+                    <form method="post" enctype="multipart/form-data" class="row g-2" {% if mode != "list" %}data-formatting-single-form="true"{% endif %}>
                         {% csrf_token %}
                         <input type="hidden" name="submission_id" value="{{ item.pk }}">
                         <input type="hidden" name="mode" value="{{ mode }}">
                         <input type="hidden" name="filter" value="{{ current_filter }}">
                         <input type="hidden" name="q" value="{{ q }}">
+                        <input type="hidden" name="queue" value="{{ single_navigation.token }}">
+                        <input type="hidden" name="review_snapshot" value="{{ row.review_snapshot }}">
+                        {% if form.non_field_errors %}
+                            <div class="col-12">
+                                <div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div>
+                            </div>
+                        {% endif %}
                         <div class="col-md-6">
-                            <label class="form-label" for="{{ form.corrected_pdf.id_for_label }}_{{ item.pk }}">Corrected PDF</label>
+                            <label class="form-label" for="{{ form.corrected_pdf.id_for_label }}">Corrected PDF</label>
                             {{ form.corrected_pdf }}
+                            {% for error in form.corrected_pdf.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="{{ form.corrected_source.id_for_label }}_{{ item.pk }}">Corrected Source</label>
+                            <label class="form-label" for="{{ form.corrected_source.id_for_label }}">Corrected Source</label>
                             {{ form.corrected_source }}
+                            {% for error in form.corrected_source.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
                         <div class="col-12">
                             <label class="form-label d-block">Formatting Workflow</label>
@@ -246,18 +279,20 @@
                                 <label class="btn btn-outline-success" for="format_status_review_ok_{{ item.pk }}">Review OK</label>
                             </div>
                             {% endwith %}
+                            {% for error in form.format_status.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
                         <div class="col-12">
-                            <label class="form-label" for="{{ form.format_notes.id_for_label }}_{{ item.pk }}">Notes</label>
+                            <label class="form-label" for="{{ form.format_notes.id_for_label }}">Notes</label>
                             {{ form.format_notes }}
+                            {% for error in form.format_notes.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
                         <div class="col-12 d-flex flex-wrap gap-2 justify-content-end align-items-center">
-                            <button class="btn btn-primary">{% if mode == "single" %}Save{% else %}Save Formatting Update{% endif %}</button>
+                            <button class="btn btn-primary">{% if mode == "list" %}Save Formatting Update{% else %}Save{% endif %}</button>
                             {% if mode == "single" %}
                                 {% if single_navigation.next %}
-                                    <a class="btn btn-outline-primary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}&submission={{ single_navigation.next.pk }}{% if q %}&q={{ q|urlencode }}{% endif %}">Go next</a>
+                                    <a class="btn btn-outline-primary" data-unsaved-check="true" href="{{ single_navigation.next_url }}">Go next</a>
                                 {% else %}
-                                    <button class="btn btn-outline-secondary" disabled>No next paper</button>
+                                    <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.back_url }}">Queue complete</a>
                                 {% endif %}
                             {% endif %}
                         </div>
@@ -269,11 +304,22 @@
     </div>
     {% endwith %}
 {% empty %}
-    <div class="cfm-empty">No active submissions found.</div>
+    {% if not single_out_of_scope %}
+        <div class="cfm-empty">
+            {% if mode == "single" %}
+                This Single Paper queue has no papers to review.
+            {% elif mode == "focus" %}
+                This exact Final Submission is outside the current formatting scope.
+            {% else %}
+                No active submissions found.
+            {% endif %}
+        </div>
+    {% endif %}
 {% endfor %}
+{% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}{% endif %}
 </div>
 </div>
-{% if mode == "single" %}
+{% if mode != "list" %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const form = document.querySelector("[data-formatting-single-form='true']");

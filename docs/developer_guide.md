@@ -223,17 +223,26 @@ rewrite `extracted_authors` while preparing the display list.
   `partials/focused_worklist.html` context. When a target is outside a
   publication worklist's scope, render an explicit read-only explanation; do
   not widen the service queryset or change active/review state to make it appear.
-- Formatting list mode is a compact queue with one Bootstrap-collapse paper open at a time; Single Paper Mode remains the full sequential workspace.
+- Formatting list mode is a compact worklist with one Bootstrap-collapse paper
+  open at a time. Single Paper Mode must use the session-backed stable queue in
+  `services/formatting.py`; do not recalculate Previous/Next from the current
+  status order after every Save. Queue order is natural Paper ID/Final ID order,
+  while the saved filter/search is used only to create the snapshot and return
+  to the originating list. Exact cross-page links use Focus mode and must not
+  create a sequential queue. Single and Focus modes do not render normal
+  worklist pagination.
 - Worklist GET filters/search/pagination are progressively enhanced with pinned local HTMX. Every worklist URL must remain a valid normal GET, preserve URL query state, and render its named container; never move service decisions into HTMX event handlers.
 - Heavy worklist evidence should not be eagerly decoded or rendered. Title/Author verification images use native lazy loading and dimensions read from the PNG header; do not decode each image just to size the worklist. Built-in, GROBID, and Manual Override must all use `submissions/services/title_author_verification.py`; extractor-specific renderers are not allowed. The renderer conservatively scans for visibly blank top-page pixels, reuses only verified whitespace, and computes `source_offset` so `header height + safety margin` never reaches the first non-white source content. If the invariant cannot be met with existing whitespace, extend upward. Each Manual Override form is fetched only when its collapsed panel is opened. The partial endpoint is read-only; the existing audited POST workflow remains the only mutation path.
-- Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `25`, `50`, `100`, `200`, and `all`, with 25 as the centralized default. Individual worklists do not define their own default size. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result.
+- Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `25`, `50`, `100`, `200`, and `all`, with 25 as the centralized default. Individual worklists do not define their own default size. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result. Every paginated worklist renders the shared partial above and below its rows. Give the worklist a stable `.cfm-worklist-anchor`; pagination links retain GET state and return full-page or HTMX navigation to that anchor.
 - Paper Master and Final Submission list sorting is defined in
   `submissions/application/selectors.py`; templates only submit the selected
   `sort` value. Identifier sorts use `natural_text_key()` so numeric chunks are
   ordered numerically. Search, filter tabs, sorting, and pagination must retain
   one another's GET parameters.
 - Worklist tabs use `nav nav-tabs cfm-tabs` and the shared active/inactive count
-  badge treatment. Do not create page-specific tab styling.
+  badge treatment. Do not create page-specific tab styling. A tab that changes
+  the result set must be a server-side GET filter applied before pagination;
+  client-only Bootstrap tabs must not partition only the current page.
 - Worklists with expensive row details must expose separate lightweight row
   selection and hydration functions. Controllers paginate between them. Do not
   call PDF previews, thumbnail enumeration, publication links, exception
@@ -261,6 +270,17 @@ rewrite `extracted_authors` while preparing the display list.
   OK`; an empty hash is expected before review and must not create a duplicate
   `Source Review Hash Missing` issue. A missing Corrected PDF/source is a
   blocker rather than permission to fall back to Original.
+- Every formatting POST must provide a short-lived review snapshot created for
+  the rendered row. `save_formatting_review()` rechecks active publication scope,
+  the row update timestamp, and the selected PDF/source filesystem identity
+  under `select_for_update()`. Corrected-PDF title-guard confirmation must reuse
+  that snapshot and verify temporary upload size/SHA-256. Never bypass these
+  checks with a direct controller call to `update_formatting_submission()`.
+- Formatting upload validation accepts a known PDF/source pair even if the two
+  fields were swapped, but rejects two PDFs, two recognized source files, or an
+  unknown file in the PDF field. Bound status/notes and field errors must remain
+  visible after validation failure; browsers require file inputs to be selected
+  again.
 - Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
 - Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.
 - Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.

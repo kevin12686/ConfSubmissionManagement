@@ -67,7 +67,7 @@
     {% endif %}
 {% endif %}
 
-<div id="title-author-worklist">
+<div id="title-author-worklist" class="cfm-worklist-anchor">
 {% if not focused_context %}
 <div class="cfm-filter-groups">
     <div class="cfm-filter-group">
@@ -114,7 +114,7 @@
 </form>
 {% endif %}
 
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 {% for row in rows %}
     {% with item=row.submission %}
     <div class="card cfm-review-card {% if item.title_author_review_status == 'red_flag' or item.title_author_extraction_status == 'error' %}border-danger extraction-red-flag{% elif row.needs_verification %}border-warning{% endif %}">
@@ -316,6 +316,7 @@
 {% empty %}
     {% include "submissions/partials/empty_state.html" with message="No title/author records match this view." %}
 {% endfor %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 <style>
     .cfm-tool-group {

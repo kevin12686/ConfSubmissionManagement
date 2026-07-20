@@ -32,6 +32,7 @@
     </div>
 </div>
 
+<div id="old-versions-worklist" class="cfm-worklist-anchor">
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
         <li class="nav-item">
@@ -43,7 +44,7 @@
     {% endfor %}
 </ul>
 
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table">
         <thead>
@@ -130,5 +131,7 @@
         {% endfor %}
         </tbody>
     </table>
+</div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 {% endblock %}

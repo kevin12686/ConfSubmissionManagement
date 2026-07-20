@@ -13,6 +13,7 @@
                 <p class="mb-0 mt-2 {% if focused_context.out_of_scope %}text-warning-emphasis{% else %}text-muted{% endif %}">{{ focused_context.message }}</p>
             </div>
             <div class="cfm-table-actions">
+                {% if focused_context.primary_action_url %}<a class="btn btn-sm btn-outline-primary" href="{{ focused_context.primary_action_url }}">{{ focused_context.primary_action_label }}</a>{% endif %}
                 {% if focused_context.edit_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ focused_context.edit_url }}">Edit submission</a>{% endif %}
                 <a class="btn btn-sm btn-outline-dark" href="{{ focused_context.back_url }}">Back to full worklist</a>
             </div>

@@ -1338,6 +1338,9 @@
                 margin-left: 0;
             }
         }
+        .cfm-worklist-anchor {
+            scroll-margin-top: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -1453,8 +1456,10 @@
 <script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>
 <script>
 let cfmFullPageNavigationPending = false;
+let cfmPendingPaginationScroll = "";
 
 function cfmShowHtmxRequestError() {
+    cfmPendingPaginationScroll = "";
     if (cfmFullPageNavigationPending) return;
     document.getElementById("htmx-request-error")?.classList.remove("d-none");
 }
@@ -1492,6 +1497,12 @@ document.addEventListener("submit", function (event) {
         submittedAction.dataset.cfmSubmitterCopy = "true";
         form.appendChild(submittedAction);
     }
+});
+
+document.addEventListener("click", function (event) {
+    const link = event.target.closest("[data-cfm-pagination-scroll]");
+    if (!link) return;
+    cfmPendingPaginationScroll = link.dataset.cfmPaginationScroll || "";
 });
 
 function initializeUploadZones(root) {
@@ -1561,6 +1572,10 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 document.body.addEventListener("htmx:afterSwap", function (event) {
     initializeUploadZones(event.target);
+    if (!cfmPendingPaginationScroll) return;
+    const target = document.querySelector(cfmPendingPaginationScroll);
+    cfmPendingPaginationScroll = "";
+    if (target) target.scrollIntoView({block: "start"});
 });
 </script>
 </body>

@@ -4,12 +4,15 @@ import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 import fitz
 from django.conf import settings as django_settings
 from django.core.files import File
+from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Value, When
 from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
@@ -26,6 +29,7 @@ from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
 )
+from submissions.services.text_utils import natural_text_key
 from submissions.services.verification import build_title_guard_context, titles_identical
 
 
@@ -38,6 +42,21 @@ FORMAT_FILTER_OPTIONS = [
     {"value": "edited", "label": "Edited"},
     {"value": "all", "label": "All"},
 ]
+FORMAT_STATUS_LABELS = {
+    "pending": "Pending",
+    "needs_edit": "Needs edit",
+    "review_ok": "Review OK",
+}
+
+FORMATTING_QUEUE_SESSION_KEY = "formatting_review_queues"
+FORMATTING_SNAPSHOT_SESSION_KEY = "formatting_review_snapshots"
+FORMATTING_WORKFLOW_TTL = timedelta(hours=2)
+FORMATTING_QUEUE_LIMIT = 20
+FORMATTING_SNAPSHOT_LIMIT = 5000
+
+
+class FormattingWorkflowError(ValueError):
+    pass
 
 
 def source_file_type_label(file_name):
@@ -81,7 +100,14 @@ def formatting_upload_preview_root():
     return path
 
 
-def preview_formatting_upload(submission, cleaned_data):
+def preview_formatting_upload(
+    submission,
+    cleaned_data,
+    *,
+    review_snapshot,
+    workflow_context=None,
+):
+    validate_formatting_review_snapshot(submission, review_snapshot)
     corrected_pdf, corrected_source = _normalize_corrected_uploads(
         cleaned_data.get("corrected_pdf"), cleaned_data.get("corrected_source")
     )
@@ -124,6 +150,10 @@ def preview_formatting_upload(submission, cleaned_data):
         "submission_id": submission.pk,
         "created_at": timezone.now().isoformat(),
         "format_status": cleaned_data["format_status"],
+        "format_status_label": FORMAT_STATUS_LABELS.get(
+            cleaned_data["format_status"],
+            cleaned_data["format_status"],
+        ),
         "format_notes": cleaned_data.get("format_notes", ""),
         "corrected_pdf": pdf_info,
         "corrected_source": source_info,
@@ -131,6 +161,8 @@ def preview_formatting_upload(submission, cleaned_data):
         "dry_run_extracted_title": extracted_title,
         "extraction_status": extraction_status,
         "extraction_message": extraction_message,
+        "review_snapshot": review_snapshot,
+        "workflow_context": workflow_context or {},
     }
     (token_root / "payload.json").write_text(json.dumps(payload), encoding="utf-8")
     audit_preview(
@@ -155,6 +187,16 @@ def preview_formatting_upload(submission, cleaned_data):
         "dry_run_extracted_title": extracted_title,
         "extraction_status": extraction_status,
         "extraction_message": extraction_message,
+        "corrected_pdf_name": pdf_info["original_name"],
+        "corrected_source_name": (
+            source_info["original_name"] if source_info else ""
+        ),
+        "format_status": cleaned_data["format_status"],
+        "format_status_label": FORMAT_STATUS_LABELS.get(
+            cleaned_data["format_status"],
+            cleaned_data["format_status"],
+        ),
+        "format_notes": cleaned_data.get("format_notes", ""),
         "title_guard": build_title_guard_context(
             extracted_title=extracted_title,
             references=[{"label": "Final Submission Title", "title": final_title}],
@@ -166,7 +208,6 @@ def preview_formatting_upload(submission, cleaned_data):
 
 def apply_formatting_upload_preview(token):
     payload, token_root = load_formatting_upload_preview(token)
-    submission = FinalSubmission.objects.get(pk=payload["submission_id"])
     opened_files = []
     try:
         cleaned_data = {
@@ -187,11 +228,18 @@ def apply_formatting_upload_preview(token):
             cleaned_data["corrected_source"] = File(
                 handle, name=payload["corrected_source"]["original_name"]
             )
-        update_formatting_submission(submission, cleaned_data)
+        submission = save_formatting_review(
+            payload["submission_id"],
+            cleaned_data,
+            payload["review_snapshot"],
+        )
+    except Exception:
+        raise
+    else:
+        shutil.rmtree(token_root, ignore_errors=True)
     finally:
         for handle in opened_files:
             handle.close()
-        shutil.rmtree(token_root, ignore_errors=True)
     return submission
 
 
@@ -208,8 +256,19 @@ def load_formatting_upload_preview(token):
         shutil.rmtree(token_root, ignore_errors=True)
         raise ValueError("Formatting upload preview expired. Upload the files again.")
     for key in ["corrected_pdf", "corrected_source"]:
-        if payload.get(key) and not Path(payload[key]["path"]).exists():
+        if not payload.get(key):
+            continue
+        path = Path(payload[key]["path"])
+        if not path.exists():
             raise ValueError("Formatting upload preview file is missing. Upload the files again.")
+        if (
+            path.stat().st_size != payload[key].get("size")
+            or FileInspectionContext().sha256(path, fresh=True)
+            != payload[key].get("sha256")
+        ):
+            raise ValueError(
+                "Formatting upload preview file changed. Upload the files again."
+            )
     return payload, token_root
 
 
@@ -224,6 +283,19 @@ def formatting_upload_confirmation(token):
         "dry_run_extracted_title": extracted_title,
         "extraction_status": payload.get("extraction_status", ""),
         "extraction_message": payload.get("extraction_message", ""),
+        "corrected_pdf_name": payload.get("corrected_pdf", {}).get(
+            "original_name", ""
+        ),
+        "corrected_source_name": (
+            payload.get("corrected_source", {}) or {}
+        ).get("original_name", ""),
+        "format_status": payload.get("format_status", "pending"),
+        "format_status_label": FORMAT_STATUS_LABELS.get(
+            payload.get("format_status", "pending"),
+            payload.get("format_status", "pending"),
+        ),
+        "format_notes": payload.get("format_notes", ""),
+        "workflow_context": payload.get("workflow_context", {}),
         "title_guard": build_title_guard_context(
             extracted_title=extracted_title,
             references=[{"label": "Final Submission Title", "title": final_title}],
@@ -246,21 +318,205 @@ def cancel_formatting_upload_preview(token):
     return payload
 
 
-def formatting_single_navigation(current_submission, query="", status_filter="needs_attention"):
-    submissions = list(formatting_rows(query, status_filter))
-    ids = [submission.pk for submission in submissions]
-    if not current_submission or current_submission.pk not in ids:
-        return {"previous": None, "next": None, "next_id": "", "position": 0, "total": len(ids)}
-    index = ids.index(current_submission.pk)
-    previous_submission = submissions[index - 1] if index > 0 else None
-    next_submission = submissions[index + 1] if index + 1 < len(submissions) else None
+def create_formatting_review_queue(
+    session,
+    *,
+    query="",
+    status_filter="needs_attention",
+    current_submission_id=None,
+):
+    rows = sorted(
+        list(formatting_rows(query, status_filter)),
+        key=lambda submission: (
+            natural_text_key(submission.paper_id_filled),
+            natural_text_key(submission.final_submission_id),
+            submission.pk,
+        ),
+    )
+    ids = [submission.pk for submission in rows]
+    if current_submission_id:
+        try:
+            current_submission_id = int(current_submission_id)
+        except (TypeError, ValueError) as exc:
+            raise FormattingWorkflowError("Invalid current formatting paper.") from exc
+        if current_submission_id not in ids:
+            raise FormattingWorkflowError(
+                "The selected paper is not in this formatting filter. "
+                "Return to the list or start an All-papers queue."
+            )
+    elif ids:
+        current_submission_id = ids[0]
+    else:
+        current_submission_id = None
+
+    token = uuid.uuid4().hex
+    payload = {
+        "created_at": timezone.now().isoformat(),
+        "query": str(query or "").strip(),
+        "filter": status_filter,
+        "ids": ids,
+    }
+    queues = _load_session_payloads(
+        session,
+        FORMATTING_QUEUE_SESSION_KEY,
+        FORMATTING_QUEUE_LIMIT,
+    )
+    queues[token] = payload
+    session[FORMATTING_QUEUE_SESSION_KEY] = _trim_session_payloads(
+        queues,
+        FORMATTING_QUEUE_LIMIT,
+    )
+    session.modified = True
+    return formatting_review_queue_context(
+        session,
+        token,
+        current_submission_id=current_submission_id,
+    )
+
+
+def formatting_review_queue_context(
+    session,
+    token,
+    *,
+    current_submission_id=None,
+):
+    queues = _load_session_payloads(
+        session,
+        FORMATTING_QUEUE_SESSION_KEY,
+        FORMATTING_QUEUE_LIMIT,
+    )
+    payload = queues.get(str(token or ""))
+    if not payload:
+        raise FormattingWorkflowError(
+            "This Single Paper queue expired. Start Single Paper Mode again."
+        )
+    ids = [int(value) for value in payload.get("ids", [])]
+    if current_submission_id in (None, ""):
+        current_submission_id = ids[0] if ids else None
+    else:
+        try:
+            current_submission_id = int(current_submission_id)
+        except (TypeError, ValueError) as exc:
+            raise FormattingWorkflowError("Invalid current formatting paper.") from exc
+    if current_submission_id is not None and current_submission_id not in ids:
+        raise FormattingWorkflowError(
+            "This paper does not belong to the active Single Paper queue."
+        )
+
+    all_records = FinalSubmission.objects.in_bulk(ids)
+    candidate_ids = set(
+        _formatting_queryset().filter(pk__in=ids).values_list("pk", flat=True)
+    )
+    current_submission = all_records.get(current_submission_id)
+    current_in_scope = bool(
+        current_submission and current_submission_id in candidate_ids
+    )
+    index = ids.index(current_submission_id) if current_submission_id in ids else -1
+
+    previous_submission = _nearest_queue_candidate(
+        ids[:index] if index >= 0 else [],
+        all_records,
+        candidate_ids,
+        reverse_order=True,
+    )
+    next_submission = _nearest_queue_candidate(
+        ids[index + 1 :] if index >= 0 else ids,
+        all_records,
+        candidate_ids,
+    )
+    remaining = sum(
+        1
+        for candidate_id in (ids[index + 1 :] if index >= 0 else ids)
+        if candidate_id in candidate_ids
+    )
+    list_query = {"filter": payload.get("filter", "needs_attention")}
+    if payload.get("query"):
+        list_query["q"] = payload["query"]
+    back_url = f"{reverse('submissions:formatting')}?{urlencode(list_query)}"
+
     return {
+        "token": token,
+        "filter": payload.get("filter", "needs_attention"),
+        "q": payload.get("query", ""),
+        "current": current_submission,
+        "current_in_scope": current_in_scope,
         "previous": previous_submission,
         "next": next_submission,
-        "next_id": next_submission.pk if next_submission else "",
-        "position": index + 1,
+        "position": index + 1 if index >= 0 else 0,
         "total": len(ids),
+        "remaining": remaining,
+        "back_url": back_url,
+        "previous_url": _formatting_queue_url(
+            token,
+            previous_submission.pk if previous_submission else None,
+            status_filter=payload.get("filter", "needs_attention"),
+            query=payload.get("query", ""),
+        ),
+        "next_url": _formatting_queue_url(
+            token,
+            next_submission.pk if next_submission else None,
+            status_filter=payload.get("filter", "needs_attention"),
+            query=payload.get("query", ""),
+        ),
     }
+
+
+def create_formatting_review_snapshot(session, submission):
+    snapshot = _formatting_review_snapshot(submission)
+    token = uuid.uuid4().hex
+    snapshots = _load_session_payloads(
+        session,
+        FORMATTING_SNAPSHOT_SESSION_KEY,
+        FORMATTING_SNAPSHOT_LIMIT,
+    )
+    snapshots[token] = snapshot
+    session[FORMATTING_SNAPSHOT_SESSION_KEY] = _trim_session_payloads(
+        snapshots,
+        FORMATTING_SNAPSHOT_LIMIT,
+    )
+    session.modified = True
+    return token
+
+
+def load_formatting_review_snapshot(
+    session,
+    token,
+    *,
+    submission_id=None,
+):
+    snapshots = _load_session_payloads(
+        session,
+        FORMATTING_SNAPSHOT_SESSION_KEY,
+        FORMATTING_SNAPSHOT_LIMIT,
+    )
+    snapshot = snapshots.get(str(token or ""))
+    if not snapshot:
+        raise FormattingWorkflowError(
+            "This formatting review page expired. Reload the current paper before saving."
+        )
+    if submission_id is not None and int(snapshot["submission_id"]) != int(submission_id):
+        raise FormattingWorkflowError(
+            "The formatting review snapshot does not belong to this paper."
+        )
+    return snapshot
+
+
+def discard_formatting_review_snapshot(session, token):
+    snapshots = _load_session_payloads(
+        session,
+        FORMATTING_SNAPSHOT_SESSION_KEY,
+        FORMATTING_SNAPSHOT_LIMIT,
+    )
+    if snapshots.pop(str(token or ""), None) is not None:
+        session[FORMATTING_SNAPSHOT_SESSION_KEY] = snapshots
+        session.modified = True
+
+
+def save_formatting_review(submission_id, cleaned_data, review_snapshot):
+    with transaction.atomic():
+        submission = FinalSubmission.objects.select_for_update().get(pk=submission_id)
+        validate_formatting_review_snapshot(submission, review_snapshot)
+        return update_formatting_submission(submission, cleaned_data)
 
 
 def _save_preview_upload(file_obj, token_root, prefix):
@@ -275,7 +531,12 @@ def _save_preview_upload(file_obj, token_root, prefix):
             target.write(chunk)
     if hasattr(file_obj, "seek"):
         file_obj.seek(0)
-    return {"path": str(path), "original_name": original_name}
+    return {
+        "path": str(path),
+        "original_name": original_name,
+        "size": path.stat().st_size,
+        "sha256": FileInspectionContext().sha256(path, fresh=True),
+    }
 
 
 def _formatting_queryset(query=""):
@@ -351,6 +612,135 @@ def formatting_filter_counts(query=""):
             filter=~empty_pdf | ~empty_source,
         ),
         all=Count("pk"),
+    )
+
+
+def validate_formatting_review_snapshot(submission, snapshot):
+    if not _formatting_queryset().filter(pk=submission.pk).exists():
+        raise FormattingWorkflowError(
+            "This Final Submission is no longer the active publication candidate. "
+            "Reload Formatting Review before making changes."
+        )
+    current = _formatting_review_snapshot(submission)
+    if current["updated_at"] != snapshot.get("updated_at"):
+        raise FormattingWorkflowError(
+            "This formatting record changed after the page was opened. "
+            "Reload it and review the current files before saving."
+        )
+    for key, label in (
+        ("publication_pdf", "publication PDF"),
+        ("publication_source", "publication source"),
+    ):
+        if current[key] != snapshot.get(key):
+            raise FormattingWorkflowError(
+                f"The {label} changed after the page was opened. "
+                "Reload the paper and review the current file before saving."
+            )
+    return current
+
+
+def _formatting_review_snapshot(submission):
+    if not _formatting_queryset().filter(pk=submission.pk).exists():
+        raise FormattingWorkflowError(
+            "This Final Submission is outside the current publication formatting scope."
+        )
+    inspection = FileInspectionContext()
+    return {
+        "created_at": timezone.now().isoformat(),
+        "submission_id": submission.pk,
+        "updated_at": submission.updated_at.isoformat(),
+        "publication_pdf": _publication_file_snapshot(
+            publication_pdf_info(submission, inspection, include_url=False),
+            inspection,
+        ),
+        "publication_source": _publication_file_snapshot(
+            publication_source_info(submission, inspection, include_url=False),
+            inspection,
+        ),
+    }
+
+
+def _publication_file_snapshot(info, inspection):
+    snapshot = {
+        "source": info.get("source", "missing"),
+        "exists": bool(info.get("exists")),
+        "name": "",
+        "signature": None,
+    }
+    if not info.get("exists") or not info.get("path"):
+        return snapshot
+    path = Path(info["path"])
+    try:
+        snapshot["name"] = str(path.relative_to(django_settings.MEDIA_ROOT))
+    except ValueError:
+        snapshot["name"] = path.name
+    status = inspection.status(path)
+    snapshot["signature"] = list(status.signature) if status.signature else None
+    return snapshot
+
+
+def _load_session_payloads(session, key, limit):
+    now = timezone.now()
+    payloads = dict(session.get(key, {}))
+    valid = {}
+    for token, payload in payloads.items():
+        try:
+            created_at = datetime.fromisoformat(payload["created_at"])
+            if timezone.is_naive(created_at):
+                created_at = timezone.make_aware(created_at)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if now - created_at <= FORMATTING_WORKFLOW_TTL:
+            valid[token] = payload
+    if valid != payloads:
+        session[key] = _trim_session_payloads(valid, limit)
+        session.modified = True
+    return valid
+
+
+def _trim_session_payloads(payloads, limit):
+    return dict(
+        sorted(
+            payloads.items(),
+            key=lambda item: item[1].get("created_at", ""),
+        )[-limit:]
+    )
+
+
+def _nearest_queue_candidate(
+    ids,
+    all_records,
+    candidate_ids,
+    *,
+    reverse_order=False,
+):
+    candidates = reversed(ids) if reverse_order else ids
+    for candidate_id in candidates:
+        if candidate_id in candidate_ids and candidate_id in all_records:
+            return all_records[candidate_id]
+    return None
+
+
+def _formatting_queue_url(
+    token,
+    current_submission_id,
+    *,
+    status_filter="needs_attention",
+    query="",
+):
+    if not token or not current_submission_id:
+        return ""
+    params = {
+        "mode": "single",
+        "queue": token,
+        "current": current_submission_id,
+        "filter": status_filter,
+    }
+    if query:
+        params["q"] = query
+    return (
+        f"{reverse('submissions:formatting')}?"
+        f"{urlencode(params)}"
     )
 
 

@@ -47,7 +47,23 @@ Create Final Submission records and files:
 8. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
 9. Run Process PDFs. Confirm only current Paper Master publication candidates are processed; discarded, Not Publishing, invalid-ID, and historical versions must not create processing errors. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated. Confirm all matching thumbnail strips remain expanded. Exercise `Needs processing`, `Page issues`, `Processed`, and `All`; use paper jump; verify sticky paper identity, fixed-size lazy thumbnails, page labels, enlarged preview, and failure tile without changing any record.
 10. Run Title/Author Review for needs-review records. Review extracted title/authors, title differences, red flags, and verification images together. Generate one Built-in, one GROBID, and one Manual Override image and confirm all three use the same layout, differing only in their source label. Test one PDF with substantial white space above its title and confirm the header reuses that space, then test one with a top logo/text and confirm the image expands instead of covering it. Use a long title and a long filename to confirm the header wraps with small margins and never reaches the PDF title/authors. Use adjacent or intentionally split author names to confirm every parsed author has a separate numbered legend entry and green boundary. Confirm that Review OK is the only completion action and no second title-match confirmation appears. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
-11. Open Formatting Review. Confirm list mode is a compact queue and only one selected paper remains expanded. Change tabs and search, verify the worklist updates and URL history changes without losing the page shell, then disable JavaScript or open the filter URL directly to confirm the ordinary GET fallback. Use Single Paper Mode, upload a corrected PDF/source for one paper, confirm it uses the same vertically stacked title safety component, cancel once to verify the temporary upload is removed, then save. Save must stay on that paper before re-running Process PDFs.
+11. Open Formatting Review. Confirm list mode is a compact worklist and only one
+    selected paper remains expanded. Change tabs and search, verify the worklist
+    updates and URL history changes without losing the page shell, then disable
+    JavaScript or open the filter URL directly to confirm the ordinary GET
+    fallback. Start Single Paper Mode from a filtered/search result and record
+    its first two Paper IDs. Mark the first Review OK and Save: it must stay on
+    the same paper, preserve the filter/search, and Go next must still point to
+    the recorded second paper. Previous/Next must use natural Paper ID order.
+    Confirm Single mode has no numbered worklist paginator. Open Formatting from
+    Final Submission Edit and confirm the exact Focus mode shows only that paper,
+    no queue navigation, and offers `Start Single Paper Mode here`.
+    Upload a corrected PDF/source, confirm the vertically stacked title safety
+    component, cancel once to verify the temporary upload is removed, then save.
+    Replace the publication file from another request before one Save and before
+    one title-guard confirmation; both stale actions must be rejected without
+    changing formatting status/files. Invalid or duplicate-kind uploads must
+    retain entered status/notes and require files to be selected again.
 12. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
 13. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
 14. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again.
@@ -88,7 +104,13 @@ Create Final Submission records and files:
 - Expand an Audit Log JSON record and inspect inline path/action code on Settings and Integration pages; monospace content must use dark text on a muted light surface and remain readable.
 - UI-only GET requests must leave publication ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness blocker categories byte-for-byte/logically unchanged.
 - Old Versions classifies inactive records as Replaced, Discarded, or Other inactive; Not Publishing appears only as a secondary flag.
-- Error Report separates Critical, Medium, and Info items.
+- Error Report separates Critical, Medium, and Info items. With more than 25
+  issues in one severity, select that severity and confirm its first page shows
+  `1-25` of the severity total rather than an empty client-side tab. Combine a
+  workflow-area link with a severity tab and confirm both filters remain active.
+- Every paginated worklist shows the same page-size/page controls above and
+  below its rows. Use the bottom control to change page and confirm the next
+  view returns to the top of that worklist with search/filter/sort state intact.
 - Error Report duplicate rows show a compact matching-record count; opening
   `Show matching records` must return the complete duplicate group without
   changing any database or file state. Verify this on a numbered page and with

@@ -234,6 +234,38 @@ class FormattingUploadForm(BootstrapMixin, forms.Form):
             self.fields["format_notes"].initial = submission.format_notes
         self._apply_bootstrap()
 
+    def clean(self):
+        cleaned_data = super().clean()
+        from submissions.services.import_export import classify_uploaded_file
+
+        corrected_pdf = cleaned_data.get("corrected_pdf")
+        corrected_source = cleaned_data.get("corrected_source")
+        uploads = []
+        for field_name, file_obj in (
+            ("corrected_pdf", corrected_pdf),
+            ("corrected_source", corrected_source),
+        ):
+            if not file_obj:
+                continue
+            kind = classify_uploaded_file(getattr(file_obj, "name", ""))
+            if kind == "unknown" and field_name == "corrected_pdf":
+                self.add_error(
+                    field_name,
+                    "Corrected PDF must use the .pdf extension. "
+                    "Upload unknown source formats in Corrected Source.",
+                )
+                continue
+            uploads.append(("source" if kind == "unknown" else kind, field_name))
+
+        kinds = [kind for kind, _field_name in uploads]
+        if len(kinds) == 2 and kinds[0] == kinds[1]:
+            label = "PDF" if kinds[0] == "pdf" else "source"
+            raise forms.ValidationError(
+                f"Both uploaded files are classified as {label} files. "
+                "Upload at most one corrected PDF and one corrected source."
+            )
+        return cleaned_data
+
 
 class AppSettingForm(BootstrapMixin, forms.ModelForm):
     class Meta:

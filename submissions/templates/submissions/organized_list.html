@@ -23,7 +23,7 @@
 {% include "submissions/includes/note_summary.html" %}
 {% include "submissions/partials/focused_worklist.html" %}
 
-<div id="organized-worklist">
+<div id="organized-worklist" class="cfm-worklist-anchor">
 {% if view_mode == "checklist" %}
 {% if not focused_context %}
 {% if summary.needs_process_pdfs %}
@@ -102,7 +102,7 @@
 </form>
 {% endif %}
 
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle table-sm cfm-table cfm-table-sticky cfm-organized-table">
         <colgroup>
@@ -597,6 +597,7 @@
         </tbody>
     </table>
 </div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 {% else %}
 <div class="alert alert-light border small">Compact candidates shows the same active Paper Master publication scope as Checklist, without readiness detail panels.</div>
 <form method="get" class="row g-2 align-items-end cfm-filter-panel" hx-get="{% url 'submissions:organized_list' %}" hx-target="#organized-worklist" hx-select="#organized-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#organized-compact-loading" hx-disabled-elt="button, input">
@@ -605,7 +606,7 @@
     <div class="col-lg-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill">Search</button>{% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:organized_list' %}?view=compact">Clear</a>{% endif %}</div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="organized-compact-loading" message="Updating publication candidates..." %}
 </form>
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky cfm-compact-candidates-table">
         <thead><tr><th>Paper ID</th><th>Final ID</th><th>Extracted Title</th><th>Extracted Authors</th><th>Pages</th><th>Publication Files</th><th>Format</th><th></th></tr></thead>
@@ -629,6 +630,7 @@
         </tbody>
     </table>
 </div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 {% endif %}
 </div>
 <style>

@@ -25,6 +25,7 @@ class WorklistPage:
     page_size_links: tuple
     hx_target: str
     indicator_id: str
+    scroll_anchor: str
 
 
 def paginate_worklist(
@@ -34,8 +35,14 @@ def paginate_worklist(
     default_page_size=DEFAULT_PAGE_SIZE,
     hx_target="",
     indicator_id="",
+    scroll_anchor="",
     force_all=False,
 ):
+    if not scroll_anchor and hx_target.startswith("#"):
+        candidate = hx_target[1:]
+        if candidate and all(character.isalnum() or character in "-_" for character in candidate):
+            scroll_anchor = candidate
+
     requested_size = request.GET.get("page_size", str(default_page_size)).lower()
     valid_sizes = {str(size) for size in PAGE_SIZE_OPTIONS} | {ALL_PAGE_SIZE}
     if requested_size not in valid_sizes:
@@ -71,6 +78,7 @@ def paginate_worklist(
             page_size_links=size_links,
             hx_target=hx_target,
             indicator_id=indicator_id,
+            scroll_anchor=scroll_anchor,
         )
 
     page_size = int(requested_size)
@@ -109,6 +117,7 @@ def paginate_worklist(
         page_size_links=size_links,
         hx_target=hx_target,
         indicator_id=indicator_id,
+        scroll_anchor=scroll_anchor,
     )
 
 

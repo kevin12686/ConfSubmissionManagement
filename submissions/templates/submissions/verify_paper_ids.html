@@ -36,7 +36,7 @@
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 
-<div id="verify-paper-id-worklist">
+<div id="verify-paper-id-worklist" class="cfm-worklist-anchor">
 {% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
@@ -70,7 +70,7 @@
     <mark class="diff-delete">red</mark> characters present in Initial text but missing from Final text.
 </div>
 
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="vstack gap-3">
     {% for row in rows %}
         <div class="card cfm-review-card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">
@@ -216,5 +216,6 @@
         {% include "submissions/partials/empty_state.html" with message="No Paper ID records match this view." %}
     {% endfor %}
 </div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 {% endblock %}

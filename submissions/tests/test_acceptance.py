@@ -4027,7 +4027,7 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
         )
         self.assertNotContains(partial, "Back to Error Report")
 
-    def test_error_report_paginates_in_severity_order_and_keeps_total_badges(self):
+    def test_error_report_filters_severity_before_pagination(self):
         rows = [
             {
                 "category": "Unverified Paper ID",
@@ -4044,7 +4044,7 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
                 "final_submission_id": str(index),
                 "message": "Medium issue.",
             }
-            for index in range(2)
+            for index in range(236)
         )
         rows.append(
             {
@@ -4060,36 +4060,142 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
             "submissions.controllers.exports.error_report_rows",
             return_value=rows,
         ):
-            first = self.client.get(
+            medium_first = self.client.get(
                 reverse("submissions:error_report"),
-                {"page": 1, "page_size": 50},
+                {"severity": "medium", "page": 1, "page_size": 25},
             )
-            second = self.client.get(
+            medium_second = self.client.get(
                 reverse("submissions:error_report"),
-                {"page": 2, "page_size": 50},
+                {"severity": "medium", "page": 2, "page_size": 25},
             )
-            third = self.client.get(
+            all_first = self.client.get(
                 reverse("submissions:error_report"),
-                {"page": 3, "page_size": 50},
+                {"severity": "all", "page": 1, "page_size": 25},
             )
 
         self.assertTrue(
-            all(row["severity"] == "critical" for row in first.context["rows"])
+            all(
+                row["severity"] == "medium"
+                for row in medium_first.context["rows"]
+            )
         )
+        self.assertEqual(len(medium_first.context["rows"]), 25)
+        self.assertEqual(medium_first.context["pagination"].total_count, 236)
+        self.assertEqual(medium_first.context["pagination"].start_index, 1)
+        self.assertEqual(medium_first.context["pagination"].end_index, 25)
         self.assertTrue(
-            all(row["severity"] == "critical" for row in second.context["rows"])
+            all(
+                row["severity"] == "medium"
+                for row in medium_second.context["rows"]
+            )
         )
-        self.assertEqual(
-            [row["severity"] for row in third.context["rows"]],
-            ["critical", "medium", "medium", "info"],
+        self.assertEqual(medium_second.context["pagination"].start_index, 26)
+        self.assertTrue(
+            all(row["severity"] == "critical" for row in all_first.context["rows"])
         )
         total_counts = {
-            section["severity"]: section["total_count"]
-            for section in first.context["severity_sections"]
+            option["value"]: option["count"]
+            for option in medium_first.context["severity_filter_options"]
         }
         self.assertEqual(
             total_counts,
-            {"critical": 101, "medium": 2, "info": 1},
+            {"all": 338, "critical": 101, "medium": 236, "info": 1},
+        )
+        self.assertEqual(medium_first.context["current_severity"], "medium")
+        self.assertContains(
+            medium_first,
+            'aria-label="Top worklist pagination"',
+            count=1,
+        )
+        self.assertContains(
+            medium_first,
+            'aria-label="Bottom worklist pagination"',
+            count=1,
+        )
+
+    def test_error_report_area_and_severity_filters_compose(self):
+        rows = [
+            {
+                "category": "Missing PDF",
+                "paper_id": "P001",
+                "final_submission_id": "1",
+                "message": "Critical file issue.",
+            },
+            {
+                "category": "Allowed Page Exception",
+                "paper_id": "P002",
+                "final_submission_id": "2",
+                "message": "Allowed file issue.",
+            },
+            {
+                "category": "Formatting Not Review OK",
+                "paper_id": "P003",
+                "final_submission_id": "3",
+                "message": "Unrelated formatting issue.",
+            },
+        ]
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            response = self.client.get(
+                reverse("submissions:error_report"),
+                {
+                    "area": "files",
+                    "severity": "info",
+                    "page_size": 25,
+                },
+            )
+
+        self.assertEqual(response.context["current_area"], "files")
+        self.assertEqual(response.context["current_severity"], "info")
+        self.assertEqual(
+            [row["paper_id"] for row in response.context["rows"]],
+            ["P002"],
+        )
+        self.assertNotContains(response, "Unrelated formatting issue.")
+        info_option = next(
+            option
+            for option in response.context["severity_filter_options"]
+            if option["value"] == "info"
+        )
+        self.assertIn("area=files", info_option["url"])
+        self.assertIn("severity=info", info_option["url"])
+        self.assertIn("page_size=25", info_option["url"])
+
+    def test_error_report_invalid_severity_falls_back_to_all(self):
+        rows = [
+            {
+                "category": "Unverified Paper ID",
+                "paper_id": "P001",
+                "final_submission_id": "1",
+                "message": "Critical issue.",
+            },
+            {
+                "category": "Formatting Not Review OK",
+                "paper_id": "P002",
+                "final_submission_id": "2",
+                "message": "Medium issue.",
+            },
+        ]
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            response = self.client.get(
+                reverse("submissions:error_report"),
+                {"severity": "not-a-severity"},
+            )
+
+        self.assertEqual(response.context["current_severity"], "all")
+        self.assertEqual(response.context["pagination"].total_count, 2)
+        self.assertEqual(
+            [row["severity"] for row in response.context["rows"]],
+            ["critical", "medium"],
         )
 
     def test_replaced_old_duplicate_file_does_not_create_publication_duplicate(self):
@@ -4539,6 +4645,46 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def open_formatting_review(
+        self,
+        submission,
+        *,
+        mode="list",
+        status_filter="all",
+        query="",
+    ):
+        params = {"filter": status_filter}
+        if query:
+            params["q"] = query
+        if mode == "single":
+            params.update({"mode": "single", "current": submission.pk})
+            response = self.client.get(reverse("submissions:formatting"), params)
+            self.assertEqual(response.status_code, 302)
+            return self.client.get(response["Location"])
+        if mode == "focus":
+            params = {"mode": "focus", "submission": submission.pk}
+        return self.client.get(reverse("submissions:formatting"), params)
+
+    def formatting_post_data(self, response, submission, **overrides):
+        row = next(
+            row
+            for row in response.context["rows"]
+            if row["submission"].pk == submission.pk
+        )
+        navigation = response.context.get("single_navigation") or {}
+        data = {
+            "submission_id": submission.pk,
+            "mode": response.context.get("mode", "list"),
+            "filter": response.context.get("current_filter", "all"),
+            "q": response.context.get("q", ""),
+            "queue": navigation.get("token", ""),
+            "review_snapshot": row["review_snapshot"],
+            "format_status": submission.format_status,
+            "format_notes": submission.format_notes,
+        }
+        data.update(overrides)
+        return data
+
     def test_gunicorn_deployment_collects_and_serves_local_static_assets(self):
         self.assertIn(
             "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -5638,14 +5784,16 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertFalse(submission.excluded_from_publication)
         verify_submission(submission, "P001")
 
+        formatting_page = self.open_formatting_review(submission)
         response = self.client.post(
             reverse("submissions:formatting"),
-            {
-                "submission_id": submission.pk,
-                "format_status": "review_ok",
-                "format_notes": "corrected",
-                "corrected_source": self.uploaded_file("fixed.docx", b"fixed source"),
-            },
+            self.formatting_post_data(
+                formatting_page,
+                submission,
+                format_status="review_ok",
+                format_notes="corrected",
+                corrected_source=self.uploaded_file("fixed.docx", b"fixed source"),
+            ),
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5878,10 +6026,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             format_status="pending",
         )
 
-        response = self.client.get(
-            reverse("submissions:formatting"),
-            {"mode": "single", "filter": "all", "submission": first.pk},
-        )
+        response = self.open_formatting_review(first, mode="single")
         self.assertContains(response, "Single Paper Mode")
         self.assertContains(response, "Previous")
         self.assertContains(response, "Next")
@@ -5892,24 +6037,246 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertNotContains(response, "Save and go next")
         self.assertContains(response, "First Format Paper")
         self.assertNotContains(response, "Second Format Paper</div>")
-        self.assertContains(response, f"submission={second.pk}")
+        self.assertContains(response, f"current={second.pk}")
 
         with patch("submissions.services.formatting.get_title_author") as extractor:
-            response = self.client.post(
+            save_response = self.client.post(
                 reverse("submissions:formatting"),
-                {
-                    "submission_id": first.pk,
-                    "mode": "single",
-                    "filter": "all",
-                    "format_status": "pending",
-                    "format_notes": "source only",
-                    "corrected_source": self.uploaded_file("fixed.docx", b"fixed source"),
-                },
+                self.formatting_post_data(
+                    response,
+                    first,
+                    format_status="pending",
+                    format_notes="source only",
+                    corrected_source=self.uploaded_file(
+                        "fixed.docx", b"fixed source"
+                    ),
+                ),
             )
         extractor.assert_not_called()
+        self.assertEqual(save_response.status_code, 302)
+        self.assertIn(f"current={first.pk}", save_response["Location"])
+        self.assertNotIn(f"current={second.pk}", save_response["Location"])
+
+        saved_page = self.client.get(save_response["Location"])
+        self.assertContains(saved_page, "First Format Paper")
+        self.assertContains(saved_page, f"current={second.pk}")
+
+    def test_formatting_single_queue_stays_stable_after_review_ok(self):
+        self.make_master_paper("P002", "First Pending Paper", "Ada")
+        self.make_master_paper("P010", "Second Pending Paper", "Grace")
+        first = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="First Pending Paper",
+            extracted_title="First Pending Paper",
+            format_status="pending",
+        )
+        second = self.make_final_submission(
+            final_submission_id="110",
+            paper_id_filled="P010",
+            final_submission_title="Second Pending Paper",
+            extracted_title="Second Pending Paper",
+            format_status="pending",
+        )
+
+        page = self.open_formatting_review(
+            first,
+            mode="single",
+            status_filter="needs_attention",
+        )
+        self.assertEqual(page.context["single_navigation"]["position"], 1)
+        self.assertEqual(page.context["single_navigation"]["next"].pk, second.pk)
+
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            self.formatting_post_data(
+                page,
+                first,
+                format_status="review_ok",
+                format_notes="Reviewed in the stable queue.",
+            ),
+        )
         self.assertEqual(response.status_code, 302)
-        self.assertIn(f"submission={first.pk}", response["Location"])
-        self.assertNotIn(f"submission={second.pk}", response["Location"])
+        self.assertIn(f"current={first.pk}", response["Location"])
+
+        saved_page = self.client.get(response["Location"])
+        first.refresh_from_db()
+        self.assertEqual(first.format_status, "review_ok")
+        self.assertEqual(saved_page.context["current_filter"], "needs_attention")
+        self.assertEqual(saved_page.context["single_navigation"]["position"], 1)
+        self.assertEqual(saved_page.context["single_navigation"]["next"].pk, second.pk)
+        self.assertContains(saved_page, "Go next")
+
+    def test_formatting_single_queue_uses_natural_order_and_preserves_search(self):
+        self.make_master_paper("P10", "Queue Paper Ten", "Ada")
+        self.make_master_paper("P2", "Queue Paper Two", "Grace")
+        ten = self.make_final_submission(
+            final_submission_id="110",
+            paper_id_filled="P10",
+            final_submission_title="Queue Paper Ten",
+            extracted_title="Queue Paper Ten",
+            format_status="pending",
+        )
+        two = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P2",
+            final_submission_title="Queue Paper Two",
+            extracted_title="Queue Paper Two",
+            format_status="pending",
+        )
+
+        page = self.open_formatting_review(
+            two,
+            mode="single",
+            status_filter="needs_attention",
+            query="Queue Paper",
+        )
+
+        navigation = page.context["single_navigation"]
+        self.assertEqual(navigation["current"].pk, two.pk)
+        self.assertEqual(navigation["next"].pk, ten.pk)
+        self.assertEqual(page.context["q"], "Queue Paper")
+        self.assertIn("filter=needs_attention", navigation["back_url"])
+        self.assertIn("q=Queue+Paper", navigation["back_url"])
+
+        next_page = self.client.get(navigation["next_url"])
+        self.assertEqual(next_page.context["q"], "Queue Paper")
+        self.assertEqual(next_page.context["single_navigation"]["current"].pk, ten.pk)
+
+    def test_formatting_single_queue_handles_current_paper_leaving_scope(self):
+        self.make_master_paper("P001", "Leaving Scope", "Ada")
+        self.make_master_paper("P002", "Still In Scope", "Grace")
+        first = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Leaving Scope",
+            extracted_title="Leaving Scope",
+            format_status="pending",
+        )
+        second = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Still In Scope",
+            extracted_title="Still In Scope",
+            format_status="pending",
+        )
+        page = self.open_formatting_review(first, mode="single")
+        queue_url = page.request["PATH_INFO"] + "?" + page.request["QUERY_STRING"]
+
+        first.discarded = True
+        first.save()
+        response = self.client.get(queue_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["single_navigation"]["position"], 1)
+        self.assertEqual(response.context["single_navigation"]["next"].pk, second.pk)
+        self.assertContains(response, "no longer an active publication formatting candidate")
+        self.assertContains(response, "Continue to next paper")
+        self.assertNotContains(response, "Paper 0 of")
+
+    def test_formatting_focus_and_single_modes_do_not_render_worklist_pagination(self):
+        self.make_master_paper("P001", "Focused Format Paper", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Focused Format Paper",
+            extracted_title="Focused Format Paper",
+        )
+
+        single = self.open_formatting_review(submission, mode="single")
+        focus = self.open_formatting_review(submission, mode="focus")
+
+        self.assertNotContains(single, 'data-pagination-position="top"')
+        self.assertNotContains(single, 'data-pagination-position="bottom"')
+        self.assertNotContains(single, "Focused Formatting review")
+        self.assertContains(focus, "Focused Formatting review")
+        self.assertContains(focus, "Start Single Paper Mode here")
+        self.assertContains(focus, "data-formatting-single-form")
+        self.assertNotContains(focus, 'data-pagination-position="top"')
+        self.assertNotContains(focus, 'data-pagination-position="bottom"')
+
+    def test_formatting_save_rejects_changed_publication_file_snapshot(self):
+        self.make_master_paper("P001", "Snapshot Paper", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Snapshot Paper",
+            extracted_title="Snapshot Paper",
+            format_status="pending",
+        )
+        page = self.open_formatting_review(submission, mode="single")
+        pdf_path = Path(publication_pdf_info(submission)["path"])
+        pdf_path.write_bytes(b"changed after review page opened")
+
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            self.formatting_post_data(
+                page,
+                submission,
+                format_status="review_ok",
+                format_notes="This must not save.",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "publication PDF changed after the page was opened")
+        submission.refresh_from_db()
+        self.assertEqual(submission.format_status, "pending")
+        self.assertNotEqual(submission.format_notes, "This must not save.")
+
+    def test_formatting_invalid_upload_retains_bound_status_and_notes(self):
+        self.make_master_paper("P001", "Bound Form Paper", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Bound Form Paper",
+            extracted_title="Bound Form Paper",
+            format_status="pending",
+        )
+        page = self.open_formatting_review(submission, mode="single")
+
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            self.formatting_post_data(
+                page,
+                submission,
+                format_status="needs_edit",
+                format_notes="Keep this explanation visible.",
+                corrected_pdf=self.uploaded_file("not-a-pdf.pages", b"invalid"),
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Corrected PDF must use the .pdf extension")
+        self.assertContains(response, "Keep this explanation visible.")
+        self.assertContains(
+            response,
+            f'id="format_status_needs_edit_{submission.pk}"',
+            html=False,
+        )
+        submission.refresh_from_db()
+        self.assertEqual(submission.format_status, "pending")
+
+    def test_formatting_rejects_two_uploads_of_the_same_file_kind(self):
+        self.make_master_paper("P001", "Duplicate Upload Kind", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Duplicate Upload Kind",
+            extracted_title="Duplicate Upload Kind",
+        )
+        page = self.open_formatting_review(submission, mode="single")
+
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            self.formatting_post_data(
+                page,
+                submission,
+                corrected_pdf=self.uploaded_file("first.pdf", b"%PDF first"),
+                corrected_source=self.uploaded_file("second.pdf", b"%PDF second"),
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Both uploaded files are classified as PDF files")
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
 
     def test_formatting_corrected_pdf_title_guard_requires_confirmation_before_saving(self):
         self.make_master_paper("P001", "Correct Paper Title", "Ada")
@@ -5922,20 +6289,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             title_author_verified=True,
         )
 
+        page = self.open_formatting_review(submission, mode="single")
         with patch(
             "submissions.services.formatting.get_title_author",
             return_value=("Wrong Paper Title", "Ada", 1),
         ):
             response = self.client.post(
                 reverse("submissions:formatting"),
-                {
-                    "submission_id": submission.pk,
-                    "mode": "single",
-                    "filter": "all",
-                    "format_status": "pending",
-                    "format_notes": "corrected pdf",
-                    "corrected_pdf": self.uploaded_file("wrong.pdf", b"%PDF wrong"),
-                },
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    format_status="pending",
+                    format_notes="corrected pdf",
+                    corrected_pdf=self.uploaded_file("wrong.pdf", b"%PDF wrong"),
+                ),
             )
 
         self.assertEqual(response.status_code, 200)
@@ -5958,11 +6325,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": submission.pk,
                 "mode": "single",
                 "filter": "all",
+                "queue": response.context["single_navigation"]["token"],
                 "format_status": "pending",
             },
         )
         self.assertEqual(response.status_code, 302)
-        self.assertIn(f"submission={submission.pk}", response["Location"])
+        self.assertIn(f"current={submission.pk}", response["Location"])
         submission.refresh_from_db()
         self.assertTrue(submission.formatted_pdf_file)
         self.assertEqual(submission.extracted_title, "Existing Extracted Title")
@@ -5977,19 +6345,22 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             extracted_title="Existing Extracted Title",
         )
 
+        page = self.open_formatting_review(submission)
         with patch(
             "submissions.services.formatting.get_title_author",
             return_value=("Matching Paper Title", "Ada", 1),
         ):
             response = self.client.post(
                 reverse("submissions:formatting"),
-                {
-                    "submission_id": submission.pk,
-                    "filter": "all",
-                    "format_status": "pending",
-                    "format_notes": "matching corrected pdf",
-                    "corrected_source": self.uploaded_file("actually_pdf.pdf", b"%PDF corrected"),
-                },
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    format_status="pending",
+                    format_notes="matching corrected pdf",
+                    corrected_source=self.uploaded_file(
+                        "actually_pdf.pdf", b"%PDF corrected"
+                    ),
+                ),
             )
 
         self.assertEqual(response.status_code, 302)
@@ -6009,20 +6380,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             title_author_verified=True,
         )
 
+        page = self.open_formatting_review(submission, mode="single")
         with patch(
             "submissions.services.formatting.get_title_author",
             return_value=("Wrong Uploaded Paper", "Ada", 1),
         ):
             response = self.client.post(
                 reverse("submissions:formatting"),
-                {
-                    "submission_id": submission.pk,
-                    "mode": "single",
-                    "filter": "all",
-                    "format_status": "pending",
-                    "format_notes": "cancel this upload",
-                    "corrected_pdf": self.uploaded_file("cancel.pdf", b"%PDF cancel"),
-                },
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    format_status="pending",
+                    format_notes="cancel this upload",
+                    corrected_pdf=self.uploaded_file("cancel.pdf", b"%PDF cancel"),
+                ),
             )
 
         token = response.context["formatting_confirmation"]["token"]
@@ -6036,6 +6407,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": submission.pk,
                 "mode": "single",
                 "filter": "all",
+                "queue": response.context["single_navigation"]["token"],
             },
         )
 
@@ -6055,25 +6427,85 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             extracted_title="Existing Extracted Title",
         )
 
+        page = self.open_formatting_review(submission)
         with patch(
             "submissions.services.formatting.get_title_author",
             side_effect=ValueError("cannot read title"),
         ):
             response = self.client.post(
                 reverse("submissions:formatting"),
-                {
-                    "submission_id": submission.pk,
-                    "filter": "all",
-                    "format_status": "pending",
-                    "format_notes": "bad corrected pdf",
-                    "corrected_pdf": self.uploaded_file("bad.pdf", b"%PDF bad"),
-                },
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    format_status="pending",
+                    format_notes="bad corrected pdf",
+                    corrected_pdf=self.uploaded_file("bad.pdf", b"%PDF bad"),
+                ),
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Title extraction failed")
         submission.refresh_from_db()
         self.assertFalse(submission.formatted_pdf_file)
+
+    def test_formatting_title_guard_confirmation_rejects_stale_submission(self):
+        self.make_master_paper("P001", "Guard Snapshot Paper", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Guard Snapshot Paper",
+            extracted_title="Guard Snapshot Paper",
+            format_status="pending",
+        )
+        page = self.open_formatting_review(submission, mode="single")
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Wrong Uploaded Paper", "Ada", 1),
+        ):
+            preview = self.client.post(
+                reverse("submissions:formatting"),
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    corrected_pdf=self.uploaded_file("wrong.pdf", b"%PDF wrong"),
+                ),
+            )
+        token = preview.context["formatting_confirmation"]["token"]
+        token_root = Path(django_settings.MEDIA_ROOT) / "formatting_upload_previews" / token
+
+        submission.format_notes = "Changed somewhere else after preview."
+        submission.save()
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            {
+                "action": "confirm_formatting_upload",
+                "preview_token": token,
+                "submission_id": submission.pk,
+                "mode": "single",
+                "filter": "all",
+                "queue": preview.context["single_navigation"]["token"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "changed after the page was opened")
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
+        self.assertTrue(token_root.exists())
+
+    def test_formatting_single_empty_queue_has_integrated_completion_state(self):
+        response = self.client.get(
+            reverse("submissions:formatting"),
+            {"mode": "single", "filter": "needs_attention"},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        page = self.client.get(response["Location"])
+        self.assertContains(
+            page,
+            "Queue complete · no papers match the selected filter and search.",
+        )
+        self.assertContains(page, "This Single Paper queue has no papers to review.")
+        self.assertNotContains(page, "Paper 0 of 0")
 
     def test_identical_title_auto_verifies_without_manual_click(self):
         self.make_master_paper("P001", title="Exactly Matching Title")
@@ -8790,8 +9222,8 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
         self.assertContains(
             response,
             (
-                f'{reverse("submissions:formatting")}?mode=single&amp;'
-                f'filter=all&amp;submission={submission.pk}'
+                f'{reverse("submissions:formatting")}?mode=focus&amp;'
+                f'submission={submission.pk}'
             ),
             html=False,
         )
@@ -8882,7 +9314,7 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
             ("verify_paper_ids", {"submission": submission.pk}),
             ("title_author_extraction", {"submission": submission.pk}),
             ("process", {"submission": submission.pk}),
-            ("formatting", {"mode": "single", "filter": "all", "submission": submission.pk}),
+            ("formatting", {"mode": "focus", "submission": submission.pk}),
             ("not_publishing_list", {"submission": submission.pk}),
             ("organized_list", {"paper_id": "P001"}),
         ]:

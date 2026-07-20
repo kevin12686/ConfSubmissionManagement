@@ -71,6 +71,24 @@ class WorklistPaginationTests(SimpleTestCase):
         self.assertIn("page=1", all_link["url"])
         self.assertIn("page_size=all", all_link["url"])
 
+    def test_scroll_anchor_defaults_to_simple_htmx_target(self):
+        page = paginate_worklist(
+            self.factory.get("/papers/?filter=attention"),
+            self.items,
+            hx_target="#paper-worklist",
+        )
+
+        self.assertEqual(page.scroll_anchor, "paper-worklist")
+
+    def test_explicit_scroll_anchor_supports_full_page_worklists(self):
+        page = paginate_worklist(
+            self.factory.get("/papers/"),
+            self.items,
+            scroll_anchor="paper-master-worklist",
+        )
+
+        self.assertEqual(page.scroll_anchor, "paper-master-worklist")
+
 
 class WorklistPaginationViewTests(TestCase):
     @classmethod
@@ -244,6 +262,17 @@ class WorklistPaginationViewTests(TestCase):
                     {identity(row) for row in first_rows}
                     & {identity(row) for row in second_rows}
                 )
+                self.assertContains(
+                    first,
+                    'aria-label="Top worklist pagination"',
+                    count=1,
+                )
+                self.assertContains(
+                    first,
+                    'aria-label="Bottom worklist pagination"',
+                    count=1,
+                )
+                self.assertContains(first, "data-cfm-pagination-scroll")
 
     def test_error_author_and_exception_worklists_paginate_full_counts(self):
         error_response = self.client.get(

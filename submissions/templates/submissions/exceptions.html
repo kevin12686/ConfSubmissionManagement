@@ -12,7 +12,7 @@
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 
-<div id="exceptions-worklist">
+<div id="exceptions-worklist" class="cfm-worklist-anchor">
 {% if not focused_context %}
 <div class="row g-2 cfm-metric-strip">
     <div class="col-sm-6 col-lg-3"><div class="cfm-metric"><div class="cfm-metric-label">Not allowed</div><div class="cfm-metric-value text-danger">{{ counts.not_allowed }}</div></div></div>
@@ -55,7 +55,7 @@
 </form>
 {% endif %}
 
-{% include "submissions/partials/worklist_pagination.html" %}
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="vstack gap-3">
     {% for row in rows %}
         <div class="card cfm-review-card border-{{ row.status_level }}">
@@ -148,5 +148,6 @@
         {% include "submissions/partials/empty_state.html" with message="No exceptions match this view." %}
     {% endfor %}
 </div>
+{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
 </div>
 {% endblock %}

@@ -187,7 +187,7 @@
                     <div class="col-md-6 col-xl-3 cfm-workflow-summary-item">
                         <div class="small text-muted">Formatting review</div>
                         <span class="badge text-bg-{% if submission.format_status == 'review_ok' %}success{% elif submission.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">{{ submission.get_format_status_display }}</span>
-                        <div class="mt-2"><a href="{% url 'submissions:formatting' %}?mode=single&amp;filter=all&amp;submission={{ submission.pk }}">Open Formatting Review</a></div>
+                        <div class="mt-2"><a href="{% url 'submissions:formatting' %}?mode=focus&amp;submission={{ submission.pk }}">Open Formatting Review</a></div>
                     </div>
                 </div>
                 <div class="cfm-workflow-detail mt-3 pt-3 border-top">
