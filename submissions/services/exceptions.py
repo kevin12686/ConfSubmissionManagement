@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import AppSetting, AuthorLimitWaiver, FinalSubmission
@@ -18,6 +19,11 @@ from submissions.services.checks import (
 )
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.workflow_evidence import (
+    attach_exception_evidence_token,
+    exception_review_evidence,
+    require_evidence_token,
+)
 
 
 EXCEPTION_FILTER_OPTIONS = [
@@ -219,6 +225,8 @@ def exception_rows_for_submission(submission, setting=None):
     setting = setting or AppSetting.load()
     rows = []
     _append_submission_exception_rows(rows, submission, setting)
+    for row in rows:
+        attach_exception_evidence_token(row)
     return rows
 
 
@@ -304,6 +312,7 @@ def exception_counts(rows=None):
 def hydrate_exception_rows(rows, *, context):
     hydrated = []
     for row in rows:
+        row = attach_exception_evidence_token({**row})
         if row.get("submission") and not row.get("publication_pdf"):
             hydrated.append(
                 {
@@ -319,10 +328,18 @@ def hydrate_exception_rows(rows, *, context):
     return hydrated
 
 
-def approve_exception(row, reason):
+@transaction.atomic
+def approve_exception(row, reason, *, expected_evidence_token=None):
     reason = (reason or "").strip()
     if not reason:
         raise ValueError("Exception requires a reason note.")
+    row = _locked_current_exception_row(row)
+    if expected_evidence_token is not None:
+        require_evidence_token(
+            expected_evidence_token,
+            "exception-review",
+            exception_review_evidence(row),
+        )
 
     if row["type"] == "page":
         submission = row["submission"]
@@ -464,7 +481,15 @@ def approve_exception(row, reason):
     raise ValueError("Unknown exception type.")
 
 
-def remove_exception(row):
+@transaction.atomic
+def remove_exception(row, *, expected_evidence_token=None):
+    row = _locked_current_exception_row(row)
+    if expected_evidence_token is not None:
+        require_evidence_token(
+            expected_evidence_token,
+            "exception-review",
+            exception_review_evidence(row),
+        )
     if row["type"] == "page":
         submission = row["submission"]
         reset_page_limit_exception(submission)
@@ -565,3 +590,29 @@ def remove_exception(row):
         return
 
     raise ValueError("Unknown exception type.")
+
+
+def _locked_current_exception_row(row):
+    submission = row.get("submission")
+    if not submission:
+        return row
+    locked_submission = FinalSubmission.objects.select_for_update().get(
+        pk=submission.pk
+    )
+    current_rows = exception_rows_for_submission(
+        locked_submission,
+        AppSetting.load(),
+    )
+    current = next(
+        (
+            current_row
+            for current_row in current_rows
+            if current_row["type"] == row.get("type")
+        ),
+        None,
+    )
+    if not current:
+        raise ValueError(
+            "This exception is no longer applicable. Reload the current workflow."
+        )
+    return current

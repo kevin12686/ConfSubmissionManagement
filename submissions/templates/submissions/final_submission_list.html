@@ -175,10 +175,9 @@
                 </td>
                 <td>{{ item.processing_status }}</td>
 	                <td>
-	                    <div class="cfm-table-actions">
-	                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
-	                        <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:final_submission_delete' item.pk %}">Delete</a>
-	                        {% if item.submission_origin == "editor_upload" and item.editor_upload_notes %}
+		                    <div class="cfm-table-actions">
+		                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
+		                        {% if item.submission_origin == "editor_upload" and item.editor_upload_notes %}
 	                            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#editor-note-row-{{ item.pk }}" aria-expanded="false" aria-controls="editor-note-row-{{ item.pk }}">Editor note</button>
 	                        {% endif %}
 	                        {% if not item.discarded %}
@@ -189,6 +188,7 @@
 	                        <form method="post" class="mt-2">
 	                            {% csrf_token %}
 	                            <input type="hidden" name="submission_id" value="{{ item.pk }}">
+	                            <input type="hidden" name="evidence_token" value="{{ item.version_decision_evidence_token }}">
 	                            <button class="btn btn-sm btn-outline-success" name="action" value="undo_discard_submission">Undo discard</button>
 	                        </form>
 	                    {% endif %}
@@ -214,6 +214,7 @@
 	                    <form method="post" class="border rounded p-3 bg-light">
 	                        {% csrf_token %}
 	                        <input type="hidden" name="submission_id" value="{{ item.pk }}">
+	                        <input type="hidden" name="evidence_token" value="{{ item.version_decision_evidence_token }}">
 	                        <div class="row g-3 align-items-end">
 	                            <div class="col-lg-9">
 	                                <div class="fw-semibold mb-1">Discard Final {{ item.final_submission_id }}</div>

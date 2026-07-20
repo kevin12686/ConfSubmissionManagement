@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 import fitz
 from django.conf import settings as django_settings
+from django.core import signing
 from django.core.files import File
 from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Value, When
@@ -29,8 +30,17 @@ from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
 )
+from submissions.services.preview_storage import (
+    purge_expired_preview_directories,
+    save_preview_upload,
+)
 from submissions.services.text_utils import clean_note_text, natural_text_key
 from submissions.services.verification import build_title_guard_context, titles_identical
+from submissions.services.workflow_evidence import (
+    StaleWorkflowEvidence,
+    formatting_issue_evidence,
+    require_evidence_token,
+)
 
 
 FORMAT_FILTER_OPTIONS = [
@@ -49,10 +59,9 @@ FORMAT_STATUS_LABELS = {
 }
 
 FORMATTING_QUEUE_SESSION_KEY = "formatting_review_queues"
-FORMATTING_SNAPSHOT_SESSION_KEY = "formatting_review_snapshots"
 FORMATTING_WORKFLOW_TTL = timedelta(hours=2)
 FORMATTING_QUEUE_LIMIT = 20
-FORMATTING_SNAPSHOT_LIMIT = 5000
+FORMATTING_REVIEW_SALT = "submissions.formatting-review.v1"
 
 
 class FormattingWorkflowError(ValueError):
@@ -66,8 +75,18 @@ def record_formatting_issue_from_pdf_preview(
     *,
     page_number=None,
     request=None,
+    expected_evidence_token=None,
 ):
     submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    if expected_evidence_token is not None:
+        try:
+            require_evidence_token(
+                expected_evidence_token,
+                "process-formatting-issue",
+                formatting_issue_evidence(submission),
+            )
+        except StaleWorkflowEvidence as exc:
+            raise FormattingWorkflowError(str(exc)) from exc
     if (
         not submission.active_version
         or submission.discarded
@@ -175,6 +194,7 @@ def corrected_source_type_label(submission):
 def formatting_upload_preview_root():
     path = django_settings.MEDIA_ROOT / "formatting_upload_previews"
     path.mkdir(parents=True, exist_ok=True)
+    purge_expired_preview_directories(path, timedelta(hours=2))
     return path
 
 
@@ -196,9 +216,9 @@ def preview_formatting_upload(
     token_root = formatting_upload_preview_root() / token
     token_root.mkdir(parents=True, exist_ok=True)
 
-    pdf_info = _save_preview_upload(corrected_pdf, token_root, "corrected_pdf")
+    pdf_info = save_preview_upload(corrected_pdf, token_root, "corrected_pdf")
     source_info = (
-        _save_preview_upload(corrected_source, token_root, "corrected_source")
+        save_preview_upload(corrected_source, token_root, "corrected_source")
         if corrected_source
         else None
     )
@@ -338,12 +358,14 @@ def load_formatting_upload_preview(token):
             continue
         path = Path(payload[key]["path"])
         if not path.exists():
+            shutil.rmtree(token_root, ignore_errors=True)
             raise ValueError("Formatting upload preview file is missing. Upload the files again.")
         if (
             path.stat().st_size != payload[key].get("size")
             or FileInspectionContext().sha256(path, fresh=True)
             != payload[key].get("sha256")
         ):
+            shutil.rmtree(token_root, ignore_errors=True)
             raise ValueError(
                 "Formatting upload preview file changed. Upload the files again."
             )
@@ -539,21 +561,28 @@ def formatting_review_queue_context(
     }
 
 
-def create_formatting_review_snapshot(session, submission):
-    snapshot = _formatting_review_snapshot(submission)
-    token = uuid.uuid4().hex
-    snapshots = _load_session_payloads(
-        session,
-        FORMATTING_SNAPSHOT_SESSION_KEY,
-        FORMATTING_SNAPSHOT_LIMIT,
+def create_formatting_review_snapshot(
+    session,
+    submission,
+    *,
+    inspection=None,
+    publication_pdf=None,
+    publication_source=None,
+    assume_in_scope=False,
+):
+    del session
+    snapshot = _formatting_review_snapshot(
+        submission,
+        inspection=inspection,
+        publication_pdf=publication_pdf,
+        publication_source=publication_source,
+        check_scope=not assume_in_scope,
     )
-    snapshots[token] = snapshot
-    session[FORMATTING_SNAPSHOT_SESSION_KEY] = _trim_session_payloads(
-        snapshots,
-        FORMATTING_SNAPSHOT_LIMIT,
+    return signing.dumps(
+        snapshot,
+        salt=FORMATTING_REVIEW_SALT,
+        compress=True,
     )
-    session.modified = True
-    return token
 
 
 def load_formatting_review_snapshot(
@@ -562,16 +591,22 @@ def load_formatting_review_snapshot(
     *,
     submission_id=None,
 ):
-    snapshots = _load_session_payloads(
-        session,
-        FORMATTING_SNAPSHOT_SESSION_KEY,
-        FORMATTING_SNAPSHOT_LIMIT,
-    )
-    snapshot = snapshots.get(str(token or ""))
-    if not snapshot:
+    del session
+    try:
+        snapshot = signing.loads(
+            str(token or ""),
+            salt=FORMATTING_REVIEW_SALT,
+            max_age=int(FORMATTING_WORKFLOW_TTL.total_seconds()),
+        )
+    except signing.SignatureExpired as exc:
         raise FormattingWorkflowError(
             "This formatting review page expired. Reload the current paper before saving."
-        )
+        ) from exc
+    except signing.BadSignature as exc:
+        raise FormattingWorkflowError(
+            "This formatting review evidence is invalid. Reload the current paper "
+            "before saving."
+        ) from exc
     if submission_id is not None and int(snapshot["submission_id"]) != int(submission_id):
         raise FormattingWorkflowError(
             "The formatting review snapshot does not belong to this paper."
@@ -580,14 +615,7 @@ def load_formatting_review_snapshot(
 
 
 def discard_formatting_review_snapshot(session, token):
-    snapshots = _load_session_payloads(
-        session,
-        FORMATTING_SNAPSHOT_SESSION_KEY,
-        FORMATTING_SNAPSHOT_LIMIT,
-    )
-    if snapshots.pop(str(token or ""), None) is not None:
-        session[FORMATTING_SNAPSHOT_SESSION_KEY] = snapshots
-        session.modified = True
+    del session, token
 
 
 def save_formatting_review(submission_id, cleaned_data, review_snapshot):
@@ -595,26 +623,6 @@ def save_formatting_review(submission_id, cleaned_data, review_snapshot):
         submission = FinalSubmission.objects.select_for_update().get(pk=submission_id)
         validate_formatting_review_snapshot(submission, review_snapshot)
         return update_formatting_submission(submission, cleaned_data)
-
-
-def _save_preview_upload(file_obj, token_root, prefix):
-    if hasattr(file_obj, "seek"):
-        file_obj.seek(0)
-    original_name = Path(getattr(file_obj, "name", prefix)).name
-    suffix = Path(original_name).suffix
-    filename = f"{prefix}-{sanitize_filename_part(Path(original_name).stem)}{suffix}"
-    path = token_root / filename
-    with open(path, "wb") as target:
-        for chunk in file_obj.chunks():
-            target.write(chunk)
-    if hasattr(file_obj, "seek"):
-        file_obj.seek(0)
-    return {
-        "path": str(path),
-        "original_name": original_name,
-        "size": path.stat().st_size,
-        "sha256": FileInspectionContext().sha256(path, fresh=True),
-    }
 
 
 def _formatting_queryset(query=""):
@@ -717,22 +725,31 @@ def validate_formatting_review_snapshot(submission, snapshot):
     return current
 
 
-def _formatting_review_snapshot(submission):
-    if not _formatting_queryset().filter(pk=submission.pk).exists():
+def _formatting_review_snapshot(
+    submission,
+    *,
+    inspection=None,
+    publication_pdf=None,
+    publication_source=None,
+    check_scope=True,
+):
+    if check_scope and not _formatting_queryset().filter(pk=submission.pk).exists():
         raise FormattingWorkflowError(
             "This Final Submission is outside the current publication formatting scope."
         )
-    inspection = FileInspectionContext()
+    inspection = inspection or FileInspectionContext()
     return {
         "created_at": timezone.now().isoformat(),
         "submission_id": submission.pk,
         "updated_at": submission.updated_at.isoformat(),
         "publication_pdf": _publication_file_snapshot(
-            publication_pdf_info(submission, inspection, include_url=False),
+            publication_pdf
+            or publication_pdf_info(submission, inspection, include_url=False),
             inspection,
         ),
         "publication_source": _publication_file_snapshot(
-            publication_source_info(submission, inspection, include_url=False),
+            publication_source
+            or publication_source_info(submission, inspection, include_url=False),
             inspection,
         ),
     }
@@ -827,6 +844,7 @@ def formatting_preview_info(
     *,
     inspection=None,
     publication_pdf=None,
+    defer=False,
 ):
     inspection = inspection or FileInspectionContext()
     publication_pdf = publication_pdf or publication_pdf_info(
@@ -840,6 +858,18 @@ def formatting_preview_info(
             "path": "",
             "status": "missing",
             "message": "No publication PDF is available for preview.",
+        }
+
+    if defer:
+        return {
+            "exists": True,
+            "url": reverse(
+                "submissions:formatting_preview",
+                args=[submission.pk],
+            ),
+            "path": "",
+            "status": "deferred",
+            "message": "Preview loads when this review is opened.",
         }
 
     pdf_path = Path(publication_pdf["path"])

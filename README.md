@@ -180,6 +180,8 @@ System State ZIP files are portable. They restore settings, conference name, dat
    title safety check compares the uploaded PDF title vertically against Paper
    Master and Final titles, combines identical references, and lets you open,
    replace, or cancel the temporary PDF before confirming a mismatch.
+   Confirmation is rejected if the temporary PDF bytes or Paper Master record
+   changed after preview.
 5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies. If a thumbnail reveals a formatting problem, record it directly from the paper card or enlarged page preview; the note is added to the existing Formatting Review workflow as `Needs edit`.
 6. Run Title/Author Review. Extraction, the verification image, title comparison, and authors are reviewed together; `Review OK` is the single completion state. Built-in, GROBID, and Manual Override results use the same collision-safe verification renderer: a review header lists the source, filename, extracted title, and numbered authors, reuses verified blank space above the PDF title, and expands upward only when needed. The PDF evidence uses title underlines and separate author boundaries. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
@@ -225,6 +227,11 @@ Review to bind the exact source bytes. A selected
 Corrected file that is missing never falls back to Original. Error Report keeps
 large duplicate groups compact and loads the full matching-record list on
 demand, including when Page size is `All`.
+
+Author paper counts and their publication blockers are derived from that same
+active Paper Master snapshot, not from the persisted `PaperAuthor`
+compatibility cache. A stale or empty cache cannot change readiness or package
+eligibility.
 
 The UI uses locally pinned Tabler 1.4.0 and HTMX 2.0.10. Worklist GETs,
 pagination, Dashboard readiness, and global workflow alerts load through
@@ -341,9 +348,13 @@ service therefore does not block the Settings form.
 
 The app writes key actions to `data/logs/audit.log` as JSON Lines. Events include imports, applies, manual edits, uploads, editor uploads, discard/undo, Not Publishing, verification, extraction, formatting, Process PDFs, CrossCheck export/import, exceptions, settings changes, publication export, backup/restore, storage cleanup, and Clear Database.
 
-Open `/reports/audit-log/` to search by Paper ID, Final ID, action, status, or message. The page shows the latest events and can download the raw log.
+Open `/reports/audit-log/` to search by Paper ID, Final ID, action, status, or message. The page shows the latest events and can download the raw log. The default latest-events view reads only the tail of a large log; search intentionally scans the complete log.
 
 Clear Database preserves `audit.log` by default. If you check `Also archive and clear audit log`, the current log is moved to `data/logs/archive/` and a new `audit.log` is created with an event recording that archive action.
+
+The Django `/admin/` pages are read-only diagnostics for
+publication-critical models. Make changes through the audited editorial
+workflows so reset, concurrency, and active-version rules cannot be bypassed.
 
 ## Manual Commands
 

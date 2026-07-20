@@ -3,7 +3,6 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
-from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import (
@@ -11,9 +10,8 @@ from submissions.models import (
     FinalSubmission,
     InitialPaper,
 )
-from submissions.services.checks import clean_identifier, resolve_official_paper_id
+from submissions.services.checks import clean_identifier
 from submissions.services.final_submission_state import (
-    defer_submission_state_sync,
     sync_all_submission_state_records,
 )
 from submissions.services.file_manager import (
@@ -150,148 +148,53 @@ EXTERNAL_RESULTS_TEMPLATE_COLUMNS = [
 
 
 def import_initial_papers(uploaded_file):
-    frame = normalize_columns(read_table(uploaded_file, [MASTER_SHEET_NAME]))
-    return _import_initial_frame(frame)
+    from submissions.services.import_preview import (
+        apply_import_preview,
+        preview_initial_import,
+    )
+
+    preview = preview_initial_import(uploaded_file)
+    if preview.get("blocking_errors"):
+        raise ValueError(
+            "Paper Master import has blocking errors: "
+            + " ".join(preview["blocking_errors"])
+        )
+    result = apply_import_preview(
+        preview["token"],
+        notes_policy="apply_imported_notes",
+    )
+    return {
+        "created": result.get("new", 0),
+        "updated": sum(
+            1
+            for row in preview.get("rows", [])
+            if not row.get("skip_apply") and row.get("status") != "new"
+        ),
+    }
 
 
-@transaction.atomic
-@defer_submission_state_sync()
 def import_final_submissions(uploaded_file, submission_files=None):
-    if is_excel_file(uploaded_file):
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-        excel = pd.ExcelFile(uploaded_file)
-        if MAPPING_SHEET_NAME in excel.sheet_names:
-            return import_mapping_workbook(uploaded_file)
+    from submissions.services.import_preview import (
+        apply_import_preview,
+        preview_final_import,
+    )
 
-    frame = normalize_columns(read_table(uploaded_file, [START2_SHEET_NAME]))
-    created = 0
-    updated = 0
-    attached_pdfs = 0
-    attached_sources = 0
-    file_lookup = _build_submission_file_lookup(submission_files or [])
-    for row in frame.to_dict("records"):
-        final_id = clean_value(row.get("final_submission_id") or row.get("submission id"))
-        if not final_id:
-            continue
-        upload_date = parse_upload_date(row.get("upload_date"))
-        raw_paper_id = clean_value(
-            row.get("start2_paper_id_raw")
-            or row.get("author_entered_paper_id")
-            or row.get("paper-id")
-            or row.get("paper_id_filled")
-            or row.get("paper_id")
+    preview = preview_final_import(uploaded_file, submission_files or [])
+    if preview.get("blocking_errors"):
+        raise ValueError(
+            "Final Submission import has blocking errors: "
+            + " ".join(preview["blocking_errors"])
         )
-        final_submission_title = clean_value(row.get("final_submission_title") or row.get("title"))
-        defaults = {
-            "start2_paper_id_raw": raw_paper_id,
-            "paper_id_filled": resolve_official_paper_id(raw_paper_id, final_submission_title),
-            "auto_verify_blocked": False,
-            "final_submission_title": final_submission_title,
-            "final_submission_authors": clean_value(row.get("final_submission_authors") or row.get("authors")),
-            "upload_date": upload_date,
-            "original_file_name": clean_value(row.get("pdf_file_name") or row.get("original_file_name")),
-            "current_file_path": clean_value(row.get("current_file_path")),
-            "extracted_title": clean_value(row.get("extracted_title")),
-            "extracted_authors": clean_value(row.get("extracted_authors")),
-            "title_author_source": clean_value(row.get("title_author_source")) or "unknown",
-            "plagiarism_status": clean_value(row.get("plagiarism_status")),
-            "similarity_score": parse_decimal(row.get("similarity_score")),
-            "single_similarity_score": parse_decimal(row.get("single_similarity_score")),
-            "plagiarism_report_path": clean_value(row.get("plagiarism_report_path")),
-        }
-        obj, was_created = FinalSubmission.objects.update_or_create(
-            final_submission_id=final_id, defaults=defaults
-        )
-        attachments = _match_submission_files(final_id, file_lookup)
-        if attachments["pdf"]:
-            _attach_pdf(obj, attachments["pdf"])
-            attached_pdfs += 1
-        if attachments["source"]:
-            _attach_source(obj, attachments["source"])
-            attached_sources += 1
-        created += int(was_created)
-        updated += int(not was_created)
-    from submissions.services.recompute import recompute_active_and_duplicate_state
-
-    recompute_active_and_duplicate_state()
-    evaluate_imported_submissions()
-    return {
-        "created": created,
-        "updated": updated,
-        "attached_pdfs": attached_pdfs,
-        "attached_sources": attached_sources,
-    }
+    result = apply_import_preview(preview["token"])
+    result.setdefault("created", result.get("new", 0))
+    result.setdefault("updated", result.get("metadata_updated", 0))
+    result.setdefault("attached_pdfs", result.get("pdf_reset", 0))
+    result.setdefault("attached_sources", result.get("source_reset", 0))
+    return result
 
 
-@transaction.atomic
-@defer_submission_state_sync()
 def import_mapping_workbook(uploaded_file):
-    if hasattr(uploaded_file, "seek"):
-        uploaded_file.seek(0)
-    excel = pd.ExcelFile(uploaded_file)
-
-    initial_result = {"created": 0, "updated": 0}
-    if MASTER_SHEET_NAME in excel.sheet_names:
-        master_frame = normalize_columns(
-            pd.read_excel(excel, sheet_name=MASTER_SHEET_NAME).fillna("")
-        )
-        initial_result = _import_initial_frame(master_frame)
-
-    start2_by_final_id = {}
-    if START2_SHEET_NAME in excel.sheet_names:
-        start2_frame = normalize_columns(
-            pd.read_excel(excel, sheet_name=START2_SHEET_NAME).fillna("")
-        )
-        for row in start2_frame.to_dict("records"):
-            final_id = clean_value(row.get("submission id") or row.get("final_submission_id"))
-            if final_id:
-                start2_by_final_id[final_id] = row
-
-    mapping_frame = pd.read_excel(excel, sheet_name=MAPPING_SHEET_NAME, header=0).fillna("")
-    created = 0
-    updated = 0
-    imported = 0
-
-    for index, row in mapping_frame.iterrows():
-        final_id = clean_value(row.iloc[0] if len(row) > 0 else "")
-        official_paper_id = clean_value(row.iloc[1] if len(row) > 1 else "")
-        if not final_id or not official_paper_id:
-            continue
-
-        start2_row = start2_by_final_id.get(final_id, {})
-        raw_paper_id = clean_value(start2_row.get("paper-id") or official_paper_id)
-        defaults = {
-            "start2_paper_id_raw": raw_paper_id,
-            "paper_id_filled": official_paper_id,
-            "auto_verify_blocked": False,
-            "final_submission_title": clean_value(start2_row.get("title")),
-            "final_submission_authors": clean_value(start2_row.get("authors")),
-            "mapping_source": MAPPING_SHEET_NAME,
-            "mapping_order": int(index) + 2,
-        }
-        file_name = clean_value(row.iloc[14] if len(row) > 14 else "")
-        if file_name:
-            defaults["original_file_name"] = file_name
-        obj, was_created = FinalSubmission.objects.update_or_create(
-            final_submission_id=final_id, defaults=defaults
-        )
-        imported += 1
-        created += int(was_created)
-        updated += int(not was_created)
-
-    from submissions.services.recompute import recompute_active_and_duplicate_state
-
-    duplicate_count = recompute_active_and_duplicate_state()
-    evaluate_imported_submissions()
-    return {
-        "created": created,
-        "updated": updated,
-        "imported": imported,
-        "duplicates": duplicate_count,
-        "initial_created": initial_result["created"],
-        "initial_updated": initial_result["updated"],
-    }
+    return import_final_submissions(uploaded_file)
 
 
 def _import_initial_frame(frame):
@@ -362,23 +265,6 @@ def _mark_duplicate_submissions(*, sync_state_records=True):
     return len(duplicate_ids)
 
 
-def _build_submission_file_lookup(submission_files):
-    lookup = {}
-    for uploaded_file in submission_files:
-        name = clean_value(getattr(uploaded_file, "name", ""))
-        if not name:
-            continue
-        parsed = parse_submission_file_name(name)
-        if not parsed:
-            continue
-        final_id, declared_kind = parsed
-        actual_kind = classify_uploaded_file(name)
-        if actual_kind not in {"pdf", "source"}:
-            actual_kind = declared_kind
-        lookup.setdefault(final_id, {})[actual_kind] = uploaded_file
-    return lookup
-
-
 def parse_submission_file_name(file_name):
     import re
 
@@ -413,43 +299,6 @@ def classify_uploaded_file(file_name):
     }:
         return "source"
     return "unknown"
-
-
-def _match_submission_files(final_id, file_lookup):
-    matched = file_lookup.get(clean_value(final_id), {})
-    return {"pdf": matched.get("pdf"), "source": matched.get("source")}
-
-
-def _attach_pdf(submission, pdf_file):
-    if hasattr(pdf_file, "seek"):
-        pdf_file.seek(0)
-    submission.pdf_file.save(pdf_file.name, pdf_file, save=False)
-    submission.original_file_name = pdf_file.name
-    submission.current_file_path = submission.pdf_file.path
-    submission.save(
-        update_fields=[
-            "pdf_file",
-            "original_file_name",
-            "current_file_path",
-            "updated_at",
-        ]
-    )
-
-
-def _attach_source(submission, source_file):
-    if hasattr(source_file, "seek"):
-        source_file.seek(0)
-    submission.source_file.save(source_file.name, source_file, save=False)
-    submission.source_original_file_name = source_file.name
-    submission.source_current_file_path = submission.source_file.path
-    submission.save(
-        update_fields=[
-            "source_file",
-            "source_original_file_name",
-            "source_current_file_path",
-            "updated_at",
-        ]
-    )
 
 
 def evaluate_imported_submissions():

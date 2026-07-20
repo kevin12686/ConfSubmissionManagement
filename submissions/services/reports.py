@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import io
 from datetime import datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -37,6 +38,7 @@ class PublicationPackageBlocked(ValueError):
 
 _DRAFT_UNSAFE_CATEGORIES = {
     "Multiple Active Final Submissions",
+    "Mixed Not Publishing Decision",
     "Duplicate Publication Filename",
 }
 
@@ -284,10 +286,27 @@ def _publication_warning_rows(readiness_blockers, skipped_rows):
     return rows
 
 
+def _csv_bytes(fieldnames, rows):
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+def _publication_source_extension(path):
+    path = Path(path)
+    suffixes = path.suffixes
+    if len(suffixes) >= 2:
+        compound = "".join(suffixes[-2:])
+        if compound.casefold() in {".tar.gz", ".tar.bz2", ".tar.xz"}:
+            return compound
+    return path.suffix or ".source"
+
+
 def export_publication_package(force=False):
     generated_paths = []
     try:
-        rebuild_paper_authors()
         publication_context = PublicationReadContext.load(
             require_stable_database=True
         )
@@ -414,11 +433,12 @@ def export_publication_package(force=False):
         reports_folder = _reports_folder()
         zip_prefix = "publication_package_draft" if force else "publication_package"
         zip_path = reports_folder / f"{zip_prefix}_{timestamp}.zip"
+        pending_zip_path = zip_path.with_suffix(f"{zip_path.suffix}.part")
         manifest_name = f"publication_manifest_{timestamp}.csv"
         manifest_path = reports_folder / manifest_name
         warnings_name = f"publication_package_warnings_{timestamp}.csv"
         warnings_path = reports_folder / warnings_name
-        generated_paths.extend([zip_path, manifest_path])
+        generated_paths.extend([pending_zip_path, zip_path, manifest_path])
         if force:
             generated_paths.append(warnings_path)
 
@@ -437,36 +457,33 @@ def export_publication_package(force=False):
                 }
             )
 
-        with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
-            writer = csv.DictWriter(
-                manifest_file,
-                fieldnames=[
-                    "ID",
-                    "Extracted Title",
-                    "Extracted Author",
-                    "Author Number",
-                    "Page Number",
-                    "Similarity (P)",
-                    "Similarity (S)",
-                ],
-            )
-            writer.writeheader()
-            writer.writerows(manifest_rows)
+        manifest_fieldnames = [
+            "ID",
+            "Extracted Title",
+            "Extracted Author",
+            "Author Number",
+            "Page Number",
+            "Similarity (P)",
+            "Similarity (S)",
+        ]
+        manifest_bytes = _csv_bytes(manifest_fieldnames, manifest_rows)
+        manifest_path.write_bytes(manifest_bytes)
 
+        warning_bytes = b""
         if force:
             warning_rows = _publication_warning_rows(readiness_blockers, skipped_rows)
-            with warnings_path.open("w", newline="", encoding="utf-8-sig") as warnings_file:
-                writer = csv.DictWriter(
-                    warnings_file,
-                    fieldnames=["Type", "Paper ID", "Final ID", "Category", "Message"],
-                )
-                writer.writeheader()
-                writer.writerows(warning_rows)
+            warning_bytes = _csv_bytes(
+                ["Type", "Paper ID", "Final ID", "Category", "Message"],
+                warning_rows,
+            )
+            warnings_path.write_bytes(warning_bytes)
 
-        with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as package:
-            package.write(manifest_path, arcname=manifest_name)
+        expected_entry_names = [manifest_name]
+        with ZipFile(pending_zip_path, "w", compression=ZIP_DEFLATED) as package:
+            package.writestr(manifest_name, manifest_bytes)
             if force:
-                package.write(warnings_path, arcname=warnings_name)
+                package.writestr(warnings_name, warning_bytes)
+                expected_entry_names.append(warnings_name)
             for submission, pdf_info, source_info in package_items:
                 base_name = publication_file_base_name(
                     submission.paper_id_filled,
@@ -485,9 +502,11 @@ def export_publication_package(force=False):
                         f"{submission.paper_id_filled} / Final "
                         f"{submission.final_submission_id}."
                     )
-                package.writestr(f"PDF/{base_name}.pdf", pdf_bytes)
+                pdf_entry_name = f"PDF/{base_name}.pdf"
+                package.writestr(pdf_entry_name, pdf_bytes)
+                expected_entry_names.append(pdf_entry_name)
                 source_path = Path(source_info["path"])
-                source_extension = source_path.suffix or ".source"
+                source_extension = _publication_source_extension(source_path)
                 source_bytes = publication_context.file_inspection.read_snapshot_bytes(
                     source_path
                 )
@@ -501,12 +520,27 @@ def export_publication_package(force=False):
                         f"{submission.paper_id_filled} / Final "
                         f"{submission.final_submission_id}."
                     )
-                package.writestr(
-                    f"Source/{base_name}{source_extension}",
-                    source_bytes,
-                )
+                source_entry_name = f"Source/{base_name}{source_extension}"
+                package.writestr(source_entry_name, source_bytes)
+                expected_entry_names.append(source_entry_name)
 
+        if len(expected_entry_names) != len(set(expected_entry_names)):
+            raise ValueError(
+                "Publication package entry names are not unique. No package was retained."
+            )
+        with ZipFile(pending_zip_path, "r") as package:
+            actual_entry_names = package.namelist()
+            if actual_entry_names != expected_entry_names:
+                raise ValueError(
+                    "Publication package entries differ from the immutable export plan."
+                )
+            corrupt_entry = package.testzip()
+            if corrupt_entry:
+                raise ValueError(
+                    f"Publication package verification failed for {corrupt_entry}."
+                )
         publication_context.assert_database_unchanged()
+        pending_zip_path.replace(zip_path)
         audit_success(
             "publication_package_export",
             "Publication package exported.",

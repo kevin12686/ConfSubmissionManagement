@@ -115,6 +115,7 @@ from submissions.application.commands import run_pdf_processing_action
 from submissions.application.pagination import paginate_worklist
 from submissions.application.selectors import (
     focused_submission_context,
+    hydrate_processed_pdf_file_state,
     processed_pdf_context,
 )
 
@@ -170,6 +171,10 @@ def process_pdfs_view(request):
                     form.cleaned_data["issue_note"],
                     page_number=form.cleaned_data.get("page_number"),
                     request=request,
+                    expected_evidence_token=request.POST.get(
+                        "evidence_token",
+                        "",
+                    ),
                 )
                 messages.success(
                     request,
@@ -220,7 +225,11 @@ def process_pdfs_view(request):
         indicator_id="process-preview-loading",
         force_all=bool(focused_submission),
     )
-    context["processed_rows"] = hydrate_processed_pdf_rows(page.items)
+    page_rows = hydrate_processed_pdf_file_state(
+        page.items,
+        context=context.pop("_publication_context"),
+    )
+    context["processed_rows"] = hydrate_processed_pdf_rows(page_rows)
     context["pagination"] = page
     if focused_submission:
         in_scope = any(

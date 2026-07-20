@@ -44,6 +44,9 @@ Create Final Submission records and files:
 5. Open Verify Paper IDs. Correct P003 and verify only after it maps to a valid Paper Master record.
 6. Mark P004 as Not Publishing and confirm it moves out of publication blockers while remaining visible in the Not Publishing List.
 7. Create the Editor Upload for P007. Trigger a title mismatch and confirm the title safety check shows the uploaded PDF title above vertically stacked Paper Master and Final comparisons, combines identical references, and provides word-level plus expandable character differences. At 320, 768, 1024, and 1440 pixel widths, confirm long titles wrap without horizontal page overflow. Open the temporary PDF, then test replacing and canceling a preview without creating a submission. Finally confirm a mismatched upload and verify it remains unverified and the Start2/Editor conflict warning appears.
+   In a disposable data folder, change the preview PDF bytes and separately edit
+   the Paper Master after preview; both confirmations must fail without creating
+   an Editor Upload.
 8. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
 9. Run Process PDFs. Confirm only current Paper Master publication candidates are processed; discarded, Not Publishing, invalid-ID, and historical versions must not create processing errors. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated. Confirm all matching thumbnail strips remain expanded. Exercise `Needs processing`, `Page issues`, `Processed`, and `All`; use paper jump; verify sticky paper identity, fixed-size lazy thumbnails, page labels, enlarged preview, and failure tile. Record one general formatting issue and one page-specific issue from the enlarged preview. Confirm both append to the same Formatting notes, set Needs edit, clear a prior Review OK binding, leave PDF/processing/Title-Author/plagiarism state unchanged, and create audit events.
 10. Run Title/Author Review for needs-review records. Review extracted title/authors, title differences, red flags, and verification images together. Generate one Built-in, one GROBID, and one Manual Override image and confirm all three use the same layout, differing only in their source label. Test one PDF with substantial white space above its title and confirm the header reuses that space, then test one with a top logo/text and confirm the image expands instead of covering it. Use a long title and a long filename to confirm the header wraps with small margins and never reaches the PDF title/authors. Use adjacent or intentionally split author names to confirm every parsed author has a separate numbered legend entry and green boundary. Confirm that Review OK is the only completion action and no second title-match confirmation appears. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
@@ -94,7 +97,11 @@ Create Final Submission records and files:
 - Re-uploaded PDFs/sources reset only dependent review/check flags.
 - Corrected PDFs are first priority for publication-facing links, CrossCheck export, duplicate checks, and publication packages.
 - If no corrected PDF exists, the original active-submission PDF is the publication-facing PDF source.
-- Process PDFs recalculates active versions, page counts, hashes, thumbnails, author cache, and debug copies, but it must not rewrite original uploads, corrected uploads, extracted data, plagiarism scores, or review flags.
+- Process PDFs recalculates active versions, page counts, hashes, thumbnails,
+  the compatibility author cache, and debug copies, but it must not rewrite
+  original uploads, corrected uploads, extracted data, plagiarism scores, or
+  review flags. A stale concurrent batch must not overwrite a newer thumbnail
+  directory.
 - Editor Uploads are active over Start2 until the conflict is resolved, but unresolved conflicts block final publication export.
 - Discarded versions remain traceable and appear as old versions, not current publication candidates.
 - Not Publishing records remain traceable but are excluded from publication readiness and final packages.
@@ -103,6 +110,9 @@ Create Final Submission records and files:
 - UI navigation, partial GET updates, display filters, thumbnail previews, and layout changes must not alter publication PDF/source priority, active-version selection, readiness categories, review reset behavior, publication ZIP contents, or audit requirements.
 - Expand an Audit Log JSON record and inspect inline path/action code on Settings and Integration pages; monospace content must use dark text on a muted light surface and remain readable.
 - UI-only GET requests must leave publication ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness blocker categories byte-for-byte/logically unchanged.
+- Empty or deliberately stale `PaperAuthor` compatibility rows must not change
+  Author Count, `Author Over Limit`, or final package blocking.
+- Django admin must show publication-critical models as read-only.
 - Old Versions classifies inactive records as Replaced, Discarded, or Other inactive; Not Publishing appears only as a secondary flag.
 - Error Report separates Critical, Medium, and Info items. With more than 25
   issues in one severity, select that severity and confirm its first page shows
@@ -137,6 +147,18 @@ Create Final Submission records and files:
 - Change Paper Master, active/Not Publishing state, review status, or settings
   from a second editor request while final export is assembling. Confirm the
   export fails and removes all partial outputs.
+- Open Final Submission Edit, Paper Master Edit, Title/Author Review,
+  Exceptions, and Process PDF formatting triage in editor A. Change the same
+  evidence in editor B, then submit editor A's stale form. Confirm every action
+  is rejected and editor B's values remain unchanged.
+- Export a CrossCheck batch, create a newer active Final or replace its
+  publication PDF, then import the old result/report. Confirm it is counted as
+  stale, neither score nor report is attached to the replacement, and final
+  export remains blocked for missing current results.
+- Mark an inactive version Not Publishing and confirm every version with that
+  Official Paper ID is excluded. Manually create a mixed included/excluded
+  state in a disposable test database and confirm both final and draft package
+  exports stop with `Mixed Not Publishing Decision`.
 - Duplicate CJK, Greek, and canonically equivalent accented publication titles
   must appear as duplicate-title blockers.
 - Final publication manifest contains publication fields only; editorial notes are not included.

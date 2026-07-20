@@ -200,7 +200,15 @@
                     <div class="small fw-semibold mb-1">First page title/author preview</div>
                     {% if row.preview.exists %}
                         <div class="format-preview">
-                            <img src="{{ row.preview.url }}" alt="First page title and author preview for {{ item.final_submission_id }}">
+                            <img
+                                {% if mode == "list" %}
+                                    data-format-preview-src="{{ row.preview.url }}"
+                                {% else %}
+                                    src="{{ row.preview.url }}"
+                                {% endif %}
+                                loading="lazy"
+                                decoding="async"
+                                alt="First page title and author preview for {{ item.final_submission_id }}">
                         </div>
                     {% else %}
                         <div class="border rounded p-3 text-{% if row.preview.status == 'error' %}danger{% else %}muted{% endif %}">
@@ -319,6 +327,16 @@
 {% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}{% endif %}
 </div>
 </div>
+{% if mode == "list" %}
+<script>
+document.addEventListener("shown.bs.collapse", function (event) {
+    event.target.querySelectorAll("img[data-format-preview-src]").forEach(function (image) {
+        image.src = image.dataset.formatPreviewSrc;
+        image.removeAttribute("data-format-preview-src");
+    });
+});
+</script>
+{% endif %}
 {% if mode != "list" %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {

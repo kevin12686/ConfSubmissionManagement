@@ -138,6 +138,7 @@ Put reusable workflow behavior in services:
 - Title/author extraction and manual override: `title_author_extraction.py`, `builtin_title_author_extractor.py`, and optional `grobid_extractor.py`.
 - Formatting workflow: `formatting.py`.
 - CrossCheck/plagiarism: `crosscheck.py`.
+- Signed multi-editor evidence: `workflow_evidence.py`.
 - Readiness and author checks: `checks.py`.
 - Exceptions: `exceptions.py`.
 - Reports and publication ZIPs: `reports.py`.
@@ -247,6 +248,12 @@ rewrite `extracted_authors` while preparing the display list.
   selection and hydration functions. Controllers paginate between them. Do not
   call PDF previews, thumbnail enumeration, publication links, exception
   panels, or text diff builders while classifying rows that will not be shown.
+- Signed evidence tokens follow the same rule: generate them only for the
+  hydrated page or exact focused record, never for the complete pre-pagination
+  result set. Token creation and validation must perform zero database queries
+  and zero publication-file reads. Paper ID review must compute the canonical
+  Paper Master digest once per response and reuse it for every displayed row;
+  do not serialize and hash the complete Master list once per token.
 - Publication-wide read pages share
   `submissions.services.publication_read.PublicationReadContext`. Pass its
   `FileInspectionContext` through publication-facing helpers so a path is
@@ -276,6 +283,13 @@ rewrite `extracted_authors` while preparing the display list.
   under `select_for_update()`. Corrected-PDF title-guard confirmation must reuse
   that snapshot and verify temporary upload size/SHA-256. Never bypass these
   checks with a direct controller call to `update_formatting_submission()`.
+- Editor Upload and Formatting preview writes calculate SHA-256 while streaming
+  the upload to disk. Confirmation must still fresh-hash the stored preview.
+  Their token directories expire after two hours, and changed/missing preview
+  bytes are rejected and removed. Do not trade away the confirmation hash to
+  reduce low-frequency POST cost. TTL cleanup may remove only a directory with
+  a complete parseable payload; an in-progress directory without one must not
+  be deleted by another request.
 - Formatting upload validation accepts a known PDF/source pair even if the two
   fields were swapped, but rejects two PDFs, two recognized source files, or an
   unknown file in the PDF field. Bound status/notes and field errors must remain
@@ -286,8 +300,15 @@ rewrite `extracted_authors` while preparing the display list.
 - Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.
 - Final Submissions must keep Import/Re-upload collapsed by default and preserve preview-before-apply behavior.
 - Upload zones may summarize/remove browser-selected files, but the server must continue extension/hash validation and preview-before-apply. Do not add direct-to-model uploads or bypass the import preview token.
+- Final import compares uploaded bytes only with the canonical original
+  `pdf_file` / `source_file`. If either canonical file is absent, a re-upload is
+  `new` and must restore it even when a matching legacy
+  `current_file_path` / `source_current_file_path` still exists.
 - Destructive actions such as discard belong in a clearly separated, collapsed action area rather than before normal edit fields.
 - Search/filter logic belongs in selectors/controllers and must not alter publication candidates, active-version rules, review flags, or export scope.
+- Mixed Not Publishing and Start2/Editor conflict discovery must use database
+  conditional aggregation and load detail rows only for conflicting Paper IDs.
+  Avoid transferring every historical Final row to Python on routine GETs.
 
 Return-context coverage includes Organized List (both views), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions. Use `url_has_allowed_host_and_scheme()` at the Final Submission controller boundary; do not trust or redirect directly to arbitrary `next` values. The normal edit form and version-action danger-zone form remain separate POST forms even though they share the same controller endpoint.
 
@@ -337,6 +358,12 @@ Use app-managed file helpers instead of ad hoc path logic.
 
 Process PDFs is not a read-only page-count operation. It recalculates active versions, then processes only Paper Master publication candidates that are active, undiscarded, and not Not Publishing. For those candidates it calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, rebuilds author cache, and syncs the publication PDF debug folder. Historical, discarded, Not Publishing, and invalid-ID records must not create processing errors. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
 
+Thumbnail rendering must use operation-unique directories. Batch persistence
+compares `final_submission_state_evidence()` under row locks; stale generated
+directories are removed, and replaced directories are removed only after
+commit when no row references them. Never render directly over a shared
+Final-ID directory.
+
 Process PDFs also exposes formatting triage through
 `record_formatting_issue_from_pdf_preview()`. Keep this action in the Formatting
 service and persist only through the existing `format_status`, `format_notes`,
@@ -362,12 +389,18 @@ Audit events should include the relevant Paper ID, Final Submission ID, changed 
 
 Clear Database must preserve `data/logs/audit.log` unless the user explicitly checks the audit-clear checkbox. System State backup must include the active audit log and archived logs.
 
+The default Audit Log request must use the bounded tail reader. Full-file scans
+are reserved for explicit search. Django admin remains read-only for
+publication-critical models; new writes belong in audited services.
+
 ## Tests
 
 Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add scenario tests when changing:
 
 - Active-version selection.
 - Import preview/apply behavior.
+- Preview-file byte changes between preview and apply, including Final import,
+  Editor Upload, and Formatting title guards.
 - Review reset flags.
 - Publication readiness and export blocking.
 - File priority or publication package output.
@@ -379,6 +412,8 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   the fresh reference check between cleanup preview and apply.
 - Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
+- Multi-editor long-running Process PDFs/extraction races, including generated
+  file output as well as database fields.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
 - Pagination performance coverage should assert expensive helper call counts,
   not wall-clock thresholds: normal pages must hydrate only the selected page,

@@ -9,6 +9,7 @@
 <form method="post" class="row g-3">
     {% csrf_token %}
     <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+    <input type="hidden" name="evidence_token" value="{{ evidence_token }}">
     <div class="col-lg-6">
         <label class="form-label" for="manual-title-{{ submission.pk }}">Extracted Title</label>
         <textarea id="manual-title-{{ submission.pk }}" class="form-control" name="manual_extracted_title" rows="3">{{ submission.extracted_title }}</textarea>

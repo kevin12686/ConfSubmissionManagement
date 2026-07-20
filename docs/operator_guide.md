@@ -158,6 +158,11 @@ Use Discard when a specific version should not be used. Discard keeps the record
 Use Not Publishing when the paper should not be published at all, such as unpaid, withdrawn, or intentionally excluded.
 
 Old Versions is version history. Not Publishing is a publication decision.
+Marking or undoing Not Publishing applies to every Final Submission version with
+the same Official Paper ID. If a later import creates mixed included/excluded
+versions, final and draft publication exports stop with `Mixed Not Publishing
+Decision`; re-apply Mark Not Publishing or Undo Not Publishing to resolve the
+paper-level decision.
 Old Versions uses the same tab treatment and active-count styling as the other
 editorial worklists.
 
@@ -200,7 +205,8 @@ Process PDFs does all of the following:
 - Generates page thumbnails.
 - Resets page-limit exceptions if the page count changed.
 - Recalculates active versions.
-- Rebuilds author cache.
+- Refreshes the compatibility author cache; publication author counts are
+  calculated from current active Paper Master submissions.
 - Syncs `data/publication_pdf_debug/` from the same Corrected/Original PDF source used by publication export.
 
 Process PDFs does not scan folders and does not silently create submissions. It does not intentionally rewrite original uploaded PDFs, corrected PDFs, original source files, corrected source files, extracted title/authors, plagiarism scores, or review status.
@@ -316,6 +322,11 @@ Go to `/integrations/crosscheck/`.
 4. Upload optional report PDFs separately. Reports are matched by filename.
 
 CrossCheck ZIP exports are limited to active, undiscarded, not-Not-Publishing submissions whose Paper ID exists in the Paper Master List. The PDFs use the same Corrected/Original publication source priority as the publication package.
+Each token/scope export writes a manifest that binds Paper ID, exact Final ID,
+and publication PDF SHA-256. A token/scope cannot be overwritten. Result rows
+and report PDFs are accepted only while that exact Final and PDF remain the
+current publication candidate; replacement-version and changed-PDF results are
+reported as stale and are not applied.
 
 Scores are displayed as whole percentages. Reports are opened through app links, not by manually browsing paths.
 
@@ -390,6 +401,11 @@ remains the portable, versioned application backup. Never use
 `docker compose down -v`, because `-v` deletes the active conference volume.
 
 System State ZIPs include `data/logs/audit.log` and archived audit logs, so restored systems keep the same action trail.
+Restore verifies the uploaded ZIP again, stages and hashes all files beside
+their destination filesystems, restores database records, and then promotes
+the staged files. A normal database, Python, or filesystem failure rolls back
+both records and files; retained recovery paths are reported if cleanup cannot
+complete.
 
 Use Storage Management in Settings for preview-first cleanup:
 
@@ -427,3 +443,16 @@ Use `/reports/audit-log/` when you need to trace a mistake or confirm what the s
 The log is append-only JSON Lines stored at `data/logs/audit.log`. It records key actions such as import previews/applies, manual edits, uploads, Editor Uploads, discard/undo, Not Publishing, verification, title/author review, formatting, Process PDFs, CrossCheck export/import/report uploads, exception approvals/removals, settings changes, publication export, System State backup/restore, storage cleanup, and Clear Database.
 
 The log records metadata, reset flags, counts, file names, hashes, and portable paths. It does not store PDF/source/report binary content.
+
+Multi-editor review forms carry signed evidence for the exact values shown on
+the page. Final Submission Edit, Paper Master Edit, Title/Author Review,
+Exceptions, Settings, and Process PDF formatting triage reject a submit if
+another editor changed the relevant record first. Editor Upload confirmation
+also rejects changed temporary file bytes or changed Paper Master data. Reload
+and review the new values; stale forms never merge or overwrite
+publication-critical state. Temporary Editor Upload and Formatting previews
+expire automatically after two hours; a changed preview is deleted when the
+system rejects it, so the files must be uploaded and reviewed again.
+
+`/admin/` is a read-only diagnostic view for publication-critical records. Use
+the normal editorial pages for all changes.

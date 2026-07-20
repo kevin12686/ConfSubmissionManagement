@@ -324,6 +324,7 @@
                             {% csrf_token %}
                             <input type="hidden" name="action" value="record_format_issue">
                             <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                            <input type="hidden" name="evidence_token" value="{{ row.formatting_evidence_token }}">
                             <input type="hidden" name="return_to" value="{{ request.get_full_path }}#paper-preview-{{ row.submission.pk }}">
                             <div class="cfm-formatting-triage-layout">
                                 <div>

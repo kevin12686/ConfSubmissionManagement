@@ -18,3 +18,4 @@ data/**/*.zip
 data/reports/*.xlsx
 data/reports/*.csv
 data
+.playwright-cli

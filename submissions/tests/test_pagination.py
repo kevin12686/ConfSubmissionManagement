@@ -1,7 +1,15 @@
+import hashlib
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from django.db import connection
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import (
+    RequestFactory,
+    SimpleTestCase,
+    TestCase,
+    override_settings,
+)
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
@@ -12,10 +20,14 @@ from submissions.application.selectors import (
 )
 from submissions.models import FinalSubmission, InitialPaper, PaperAuthor
 from submissions.services.editor_uploads import editor_conflict_details
+from submissions.services.checks import publication_duplicate_groups
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.final_submission_state import (
     bulk_sync_submission_state_records,
     bulk_update_submissions,
 )
+from submissions.services.organized_list import organized_list_rows
+from submissions.services.workflow_evidence import paper_master_review_digest
 
 
 class WorklistPaginationTests(SimpleTestCase):
@@ -361,6 +373,20 @@ class WorklistPaginationViewTests(TestCase):
         self.assertEqual(title_diff.call_count, 50)
         self.assertEqual(author_diff.call_count, 50)
 
+    def test_paper_id_master_evidence_digest_is_built_once_per_page(self):
+        with patch(
+            "submissions.controllers.reviews.paper_master_review_digest",
+            wraps=paper_master_review_digest,
+        ) as master_digest:
+            response = self.client.get(
+                reverse("submissions:verify_paper_ids"),
+                {"filter": "all", "page_size": 50},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 50)
+        self.assertEqual(master_digest.call_count, 1)
+
     def test_organized_details_are_hydrated_only_for_displayed_page(self):
         with patch(
             "submissions.services.organized_list.text_diff_html",
@@ -485,7 +511,433 @@ class WorklistPaginationViewTests(TestCase):
 
         self.assertEqual(len(details), 205)
         self.assertLessEqual(len(captured), 2)
+        self.assertIn("COUNT", captured[0]["sql"].upper())
         self.assertEqual(details[0]["paper_id"], "P0001")
         self.assertEqual(details[-1]["paper_id"], "P0205")
         self.assertEqual(len(details[0]["start2"]), 1)
         self.assertEqual(len(details[0]["editor"]), 1)
+
+
+class PublicationFileHydrationPaginationTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._media_directory = tempfile.TemporaryDirectory()
+        cls._media_override = override_settings(
+            MEDIA_ROOT=Path(cls._media_directory.name),
+        )
+        cls._media_override.enable()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            super().tearDownClass()
+        finally:
+            cls._media_override.disable()
+            cls._media_directory.cleanup()
+
+    @classmethod
+    def setUpTestData(cls):
+        media_root = Path(cls._media_directory.name)
+        pdf_root = media_root / "final_submissions"
+        source_root = media_root / "source_submissions"
+        thumbnail_root = media_root / "pdf_thumbnails"
+        pdf_root.mkdir(parents=True)
+        source_root.mkdir(parents=True)
+        thumbnail_root.mkdir(parents=True)
+
+        InitialPaper.objects.bulk_create(
+            [
+                InitialPaper(
+                    paper_id=f"P{index:04d}",
+                    acceptance_status="Accept",
+                    title=f"Publication Paper {index:04d}",
+                )
+                for index in range(1, 61)
+            ]
+        )
+        submissions = []
+        for index in range(1, 61):
+            shared_suffix = 59 if index in {59, 60} else index
+            pdf_bytes = f"pdf-{shared_suffix}".encode("ascii")
+            source_bytes = f"source-{shared_suffix}".encode("ascii")
+            pdf_name = f"P{index:04d}.pdf"
+            source_name = f"P{index:04d}.docx"
+            (pdf_root / pdf_name).write_bytes(pdf_bytes)
+            (source_root / source_name).write_bytes(source_bytes)
+            paper_thumbnail_root = thumbnail_root / f"P{index:04d}"
+            paper_thumbnail_root.mkdir()
+            (paper_thumbnail_root / "page-1.png").write_bytes(b"thumbnail")
+            submissions.append(
+                FinalSubmission(
+                    final_submission_id=str(index),
+                    start2_paper_id_raw=f"P{index:04d}",
+                    paper_id_filled=f"P{index:04d}",
+                    final_submission_title=f"Publication Paper {index:04d}",
+                    final_submission_authors=f"Author {index:04d}",
+                    extracted_title=f"Publication Paper {index:04d}",
+                    extracted_authors=f"Author {index:04d}",
+                    pdf_file=f"final_submissions/{pdf_name}",
+                    source_file=f"source_submissions/{source_name}",
+                    active_version=True,
+                    paper_id_verified=True,
+                    verification_status="verified",
+                    title_author_review_status="review_ok",
+                    title_author_verified=True,
+                    extracted_title_verified=True,
+                    format_status="review_ok",
+                    page_count=8,
+                    processing_status="processed",
+                    pdf_hash=hashlib.sha256(pdf_bytes).hexdigest(),
+                    source_hash=hashlib.sha256(source_bytes).hexdigest(),
+                    thumbnail_folder=str(paper_thumbnail_root),
+                    thumbnail_status="processed",
+                    similarity_score=1,
+                    single_similarity_score=1,
+                )
+            )
+        created = FinalSubmission.objects.bulk_create(submissions)
+        bulk_sync_submission_state_records(created)
+
+    def _count_hashes_for_get(self, url, params):
+        original_sha256 = FileInspectionContext.sha256
+        with patch.object(
+            FileInspectionContext,
+            "sha256",
+            autospec=True,
+            side_effect=lambda inspection, path, **kwargs: original_sha256(
+                inspection,
+                path,
+                **kwargs,
+            ),
+        ) as sha256:
+            response = self.client.get(url, params)
+        return response, sha256.call_count
+
+    def test_organized_default_page_hashes_only_displayed_pdf_and_source_files(self):
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:organized_list"),
+            {"sort": "paper_id_asc"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 25)
+        self.assertEqual(hash_count, 50)
+        self.assertEqual(
+            response.context["summary"]["publication_duplicates"],
+            2,
+        )
+        self.assertEqual(
+            response.context["pagination"].total_count,
+            60,
+        )
+
+    def test_organized_duplicate_filter_finds_records_outside_first_page(self):
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:organized_list"),
+            {
+                "filter": "publication_duplicates",
+                "sort": "paper_id_asc",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(hash_count, 4)
+        self.assertEqual(
+            [
+                row["submission"].paper_id_filled
+                for row in response.context["rows"]
+            ],
+            ["P0059", "P0060"],
+        )
+        self.assertTrue(
+            all(
+                {"Duplicate PDF", "Duplicate source"}.issubset(
+                    row["duplicate_badges"]
+                )
+                for row in response.context["rows"]
+            )
+        )
+
+    def test_organized_all_mode_hydrates_all_requested_records(self):
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:organized_list"),
+            {
+                "sort": "paper_id_asc",
+                "page_size": "all",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 60)
+        self.assertEqual(hash_count, 120)
+        self.assertTrue(response.context["pagination"].is_all)
+
+    def test_organized_service_full_hydration_contract_remains_available(self):
+        original_sha256 = FileInspectionContext.sha256
+        with patch.object(
+            FileInspectionContext,
+            "sha256",
+            autospec=True,
+            side_effect=lambda inspection, path, **kwargs: original_sha256(
+                inspection,
+                path,
+                **kwargs,
+            ),
+        ) as sha256:
+            rows, _summary, _settings, _current_filter, _current_sort = (
+                organized_list_rows(current_sort="paper_id_asc")
+            )
+
+        self.assertEqual(len(rows), 60)
+        self.assertEqual(sha256.call_count, 120)
+        self.assertTrue(rows[0]["publication_pdf"]["url"])
+        self.assertTrue(rows[0]["publication_source"]["url"])
+
+    def test_compact_view_shows_multiple_active_conflict_without_selecting_files(self):
+        conflicting = FinalSubmission.objects.create(
+            final_submission_id="30B",
+            start2_paper_id_raw="P0030",
+            paper_id_filled="P0030",
+            final_submission_title="Conflicting Publication Paper",
+            active_version=True,
+        )
+        bulk_sync_submission_state_records([conflicting])
+
+        response = self.client.get(
+            reverse("submissions:organized_list"),
+            {
+                "view": "compact",
+                "q": "P0030",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["summary"]["missing_final"], 0)
+        self.assertEqual(response.context["summary"]["version_conflicts"], 1)
+        self.assertEqual(
+            response.context["summary"]["multiple_active_conflicts"],
+            [
+                {
+                    "paper_id": "P0030",
+                    "final_ids": ["30", "30B"],
+                }
+            ],
+        )
+        self.assertContains(response, "Version conflicts require resolution")
+        self.assertContains(response, "30, 30B")
+        self.assertContains(response, "No file selected")
+        self.assertNotContains(response, "P0030.pdf")
+
+    def test_unbound_hash_is_not_silently_trusted_by_duplicate_precheck(self):
+        submission = FinalSubmission.objects.get(paper_id_filled="P0060")
+        submission.pdf_hash = ""
+        submission.save(update_fields=["pdf_hash", "updated_at"])
+
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:organized_list"),
+            {
+                "filter": "pdf_issues",
+                "sort": "paper_id_asc",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(hash_count, 1)
+        self.assertEqual(
+            [row["submission"].paper_id_filled for row in response.context["rows"]],
+            ["P0060"],
+        )
+        self.assertTrue(response.context["rows"][0]["needs_processing_after_formatting"])
+        strict_groups = publication_duplicate_groups(strict_hash=True)
+        self.assertTrue(
+            any(
+                group["kind"] == "pdf"
+                and {
+                    item.paper_id_filled
+                    for item in group["submissions"]
+                }
+                == {"P0059", "P0060"}
+                for group in strict_groups
+            )
+        )
+
+    def test_process_default_page_hashes_only_displayed_pdfs(self):
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:process"),
+            {"filter": "all"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["processed_rows"]), 25)
+        self.assertEqual(hash_count, 25)
+        self.assertEqual(response.context["pagination"].total_count, 60)
+        self.assertEqual(
+            next(
+                option["count"]
+                for option in response.context["filter_options"]
+                if option["value"] == "processed"
+            ),
+            60,
+        )
+
+    def test_process_all_mode_hydrates_all_requested_records(self):
+        response, hash_count = self._count_hashes_for_get(
+            reverse("submissions:process"),
+            {
+                "filter": "all",
+                "page_size": "all",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["processed_rows"]), 60)
+        self.assertEqual(hash_count, 60)
+        self.assertTrue(response.context["pagination"].is_all)
+
+    def test_formatting_list_defers_preview_rendering_and_has_constant_queries(self):
+        self.client.get(
+            reverse("submissions:formatting"),
+            {"filter": "all"},
+        )
+        with (
+            patch(
+                "submissions.services.formatting._render_first_page_upper_half"
+            ) as render_preview,
+            CaptureQueriesContext(connection) as page_queries,
+        ):
+            page = self.client.get(
+                reverse("submissions:formatting"),
+                {"filter": "all"},
+            )
+        with (
+            patch(
+                "submissions.services.formatting._render_first_page_upper_half"
+            ) as render_all_previews,
+            CaptureQueriesContext(connection) as all_queries,
+        ):
+            all_rows = self.client.get(
+                reverse("submissions:formatting"),
+                {"filter": "all", "page_size": "all"},
+            )
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(all_rows.status_code, 200)
+        self.assertEqual(render_preview.call_count, 0)
+        self.assertEqual(render_all_previews.call_count, 0)
+        self.assertEqual(len(page.context["rows"]), 25)
+        self.assertEqual(len(all_rows.context["rows"]), 60)
+        self.assertLessEqual(
+            abs(len(page_queries) - len(all_queries)),
+            1,
+        )
+        self.assertLessEqual(len(page_queries), 6)
+        self.assertLessEqual(len(all_queries), 6)
+        self.assertNotIn("formatting_review_snapshots", self.client.session)
+        self.assertContains(
+            page,
+            'data-format-preview-src="/reviews/formatting/',
+            count=25,
+        )
+
+    def test_formatting_preview_is_generated_only_when_requested(self):
+        submission = FinalSubmission.objects.get(paper_id_filled="P0001")
+
+        def write_preview(_source, target):
+            Path(target).write_bytes(b"preview")
+
+        with patch(
+            "submissions.services.formatting._render_first_page_upper_half",
+            side_effect=write_preview,
+        ) as render_preview:
+            response = self.client.get(
+                reverse(
+                    "submissions:formatting_preview",
+                    args=[submission.pk],
+                )
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body, b"preview")
+        self.assertEqual(render_preview.call_count, 1)
+
+    def test_current_page_detects_pdf_changed_outside_workflow(self):
+        submission = FinalSubmission.objects.get(paper_id_filled="P0001")
+        pdf_path = Path(submission.pdf_file.path)
+        original_bytes = pdf_path.read_bytes()
+        pdf_path.write_bytes(b"externally changed")
+        try:
+            organized = self.client.get(
+                reverse("submissions:organized_list"),
+                {"sort": "paper_id_asc"},
+            )
+            process = self.client.get(
+                reverse("submissions:process"),
+                {"filter": "all"},
+            )
+        finally:
+            pdf_path.write_bytes(original_bytes)
+
+        self.assertEqual(organized.status_code, 200)
+        self.assertEqual(process.status_code, 200)
+        organized_row = next(
+            row
+            for row in organized.context["rows"]
+            if row["submission"].paper_id_filled == "P0001"
+        )
+        process_row = next(
+            row
+            for row in process.context["processed_rows"]
+            if row["submission"].paper_id_filled == "P0001"
+        )
+        self.assertTrue(organized_row["needs_processing_after_formatting"])
+        self.assertEqual(organized_row["page_label"], "Page OK")
+        self.assertTrue(process_row["needs_processing"])
+        self.assertFalse(process_row["is_processed"])
+
+    def test_organized_and_process_query_counts_are_not_per_submission(self):
+        # Warm request/session state so the comparison measures worklist scaling.
+        self.client.get(
+            reverse("submissions:organized_list"),
+            {"sort": "paper_id_asc"},
+        )
+        self.client.get(
+            reverse("submissions:process"),
+            {"filter": "all"},
+        )
+        with CaptureQueriesContext(connection) as organized_queries:
+            organized = self.client.get(
+                reverse("submissions:organized_list"),
+                {"sort": "paper_id_asc"},
+            )
+        with CaptureQueriesContext(connection) as organized_all_queries:
+            organized_all = self.client.get(
+                reverse("submissions:organized_list"),
+                {
+                    "sort": "paper_id_asc",
+                    "page_size": "all",
+                },
+            )
+        with CaptureQueriesContext(connection) as process_queries:
+            process = self.client.get(
+                reverse("submissions:process"),
+                {"filter": "all"},
+            )
+        with CaptureQueriesContext(connection) as process_all_queries:
+            process_all = self.client.get(
+                reverse("submissions:process"),
+                {
+                    "filter": "all",
+                    "page_size": "all",
+                },
+            )
+
+        self.assertEqual(organized.status_code, 200)
+        self.assertEqual(organized_all.status_code, 200)
+        self.assertEqual(process.status_code, 200)
+        self.assertEqual(process_all.status_code, 200)
+        self.assertEqual(len(organized_queries), len(organized_all_queries))
+        self.assertEqual(len(process_queries), len(process_all_queries))
+        self.assertLessEqual(len(organized_queries), 12)
+        self.assertLessEqual(len(process_queries), 6)

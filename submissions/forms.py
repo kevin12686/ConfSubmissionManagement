@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from django import forms
+from django.conf import settings as django_settings
 from django.utils import timezone
 
 from .models import AppSetting, FinalSubmission, InitialPaper
@@ -37,6 +40,19 @@ class InitialPaperForm(BootstrapMixin, forms.ModelForm):
 
     def clean_notes(self):
         return clean_note_text(self.cleaned_data.get("notes"))
+
+    def clean_paper_id(self):
+        paper_id = (self.cleaned_data.get("paper_id") or "").strip()
+        conflict = InitialPaper.objects.filter(
+            paper_id__iexact=paper_id
+        )
+        if self.instance and self.instance.pk:
+            conflict = conflict.exclude(pk=self.instance.pk)
+        if conflict.exists():
+            raise forms.ValidationError(
+                "Paper ID already exists with different capitalization."
+            )
+        return paper_id
 
 
 class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
@@ -352,3 +368,54 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
         self.fields["plagiarism_percent_threshold"].label = "Plagiarism % threshold"
         self.fields["single_similarity_threshold"].label = "Single % threshold"
         self._apply_bootstrap()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        base_dir = Path(django_settings.BASE_DIR).resolve(strict=False)
+        data_root = (base_dir / "data").resolve(strict=False)
+        audit_root = (data_root / "logs").resolve(strict=False)
+        filesystem_root = Path(base_dir.anchor)
+        for field_name in (
+            "publication_pdf_debug_folder",
+            "reports_folder",
+            "extraction_results_folder",
+            "plagiarism_reports_folder",
+        ):
+            raw_value = cleaned_data.get(field_name)
+            if not raw_value:
+                continue
+            path = Path(str(raw_value)).expanduser()
+            if not path.is_absolute():
+                path = base_dir / path
+            resolved = path.resolve(strict=False)
+            try:
+                base_dir.relative_to(resolved)
+                contains_project = True
+            except ValueError:
+                contains_project = False
+            try:
+                resolved.relative_to(audit_root)
+                inside_audit = True
+            except ValueError:
+                inside_audit = False
+            try:
+                audit_root.relative_to(resolved)
+                contains_audit = True
+            except ValueError:
+                contains_audit = False
+            if (
+                resolved in {
+                    filesystem_root,
+                    base_dir,
+                    data_root,
+                }
+                or contains_project
+                or inside_audit
+                or contains_audit
+            ):
+                self.add_error(
+                    field_name,
+                    "Choose a dedicated folder. Project, data, and Audit Log "
+                    "roots cannot be used as managed output folders.",
+                )
+        return cleaned_data

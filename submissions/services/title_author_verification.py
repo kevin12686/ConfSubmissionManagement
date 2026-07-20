@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from functools import lru_cache
 from pathlib import Path
 
 import fitz
@@ -15,6 +16,8 @@ AUTHOR_BADGE_WIDTH = 24
 DEFAULT_CONTENT_FRACTION = 1 / 3
 MAX_CONTENT_FRACTION = 0.60
 BLANK_PIXEL_THRESHOLD = 252
+VERIFICATION_FONT_ALIAS = "verification_unicode"
+VERIFICATION_FONT_NAME = "cjk"
 
 
 def generate_verification_image(
@@ -28,7 +31,6 @@ def generate_verification_image(
     """Render one collision-safe review image for every extraction source."""
     pdf_path = Path(pdf_path)
     target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
     source_slug = _safe_source_slug(source_label)
     output_path = target_dir / f"{pdf_path.stem}-{source_slug}.png"
     authors = list(author_names)
@@ -66,6 +68,7 @@ def generate_verification_image(
         top_blank_height = _safe_top_blank_height(source_page, source_clip)
         source_offset = _source_offset(header_height, top_blank_height)
 
+        target_dir.mkdir(parents=True, exist_ok=True)
         output_document = fitz.open()
         try:
             output_page = output_document.new_page(
@@ -186,6 +189,10 @@ def _build_header_layout(page_width, filename, title, authors, source_label):
 
 
 def _draw_header(page, layout, page_width):
+    page.insert_font(
+        fontname=VERIFICATION_FONT_ALIAS,
+        fontbuffer=_verification_font().buffer,
+    )
     page.draw_rect(
         fitz.Rect(0, 0, page_width, layout["height"]),
         color=(0.72, 0.76, 0.80),
@@ -211,6 +218,7 @@ def _draw_header(page, layout, page_width):
     page.insert_text(
         fitz.Point(badge_rect.x0 + 8, badge_rect.y0 + 13),
         layout["source_label"],
+        fontname=VERIFICATION_FONT_ALIAS,
         fontsize=BODY_FONT_SIZE,
         color=(0.58, 0.05, 0.07),
     )
@@ -262,6 +270,7 @@ def _draw_header(page, layout, page_width):
             page.insert_text(
                 fitz.Point(badge_rect.x0 + 5, badge_rect.y0 + 9),
                 f"A{index}",
+                fontname=VERIFICATION_FONT_ALIAS,
                 fontsize=7,
                 color=(0.04, 0.31, 0.15),
             )
@@ -287,6 +296,7 @@ def _draw_section_label(page, label, top):
     page.insert_text(
         fitz.Point(HEADER_PADDING, top + LABEL_FONT_SIZE),
         label,
+        fontname=VERIFICATION_FONT_ALIAS,
         fontsize=LABEL_FONT_SIZE,
         color=(0.30, 0.35, 0.41),
     )
@@ -297,6 +307,7 @@ def _draw_lines(page, lines, x, top, font_size, color):
         page.insert_text(
             fitz.Point(x, top + font_size + (index * BODY_LINE_HEIGHT)),
             line,
+            fontname=VERIFICATION_FONT_ALIAS,
             fontsize=font_size,
             color=color,
         )
@@ -356,10 +367,6 @@ def _find_text_rects(page, text, clip):
     if not text:
         return []
 
-    exact_matches = page.search_for(text, clip=clip, quads=True)
-    if exact_matches:
-        return [match.rect for match in exact_matches]
-
     target = _normalized_match_text(text)
     if not target:
         return []
@@ -369,6 +376,7 @@ def _find_text_rects(page, text, clip):
         for word in page.get_text("words", clip=clip, sort=True)
         if _normalized_match_text(word[4])
     ]
+    matches = []
     for start in range(len(words)):
         combined = ""
         matched = []
@@ -376,10 +384,11 @@ def _find_text_rects(page, text, clip):
             combined += _normalized_match_text(word[4])
             matched.append(word)
             if combined == target:
-                return _merge_word_rects(matched)
+                matches.extend(_merge_word_rects(matched))
+                break
             if not target.startswith(combined):
                 break
-    return []
+    return matches
 
 
 def _merge_word_rects(words):
@@ -448,4 +457,30 @@ def _split_long_token(token, max_width, font_size):
 
 
 def _text_width(text, font_size):
-    return fitz.get_text_length(str(text), fontname="helv", fontsize=font_size)
+    text = str(text)
+    font = _verification_font()
+    unsupported = sorted(
+        {
+            character
+            for character in text
+            if not character.isspace() and not font.has_glyph(ord(character))
+        }
+    )
+    if unsupported:
+        codepoints = ", ".join(f"U+{ord(character):04X}" for character in unsupported)
+        raise ValueError(
+            "Verification evidence cannot represent all header characters with "
+            f"the bundled Unicode font: {codepoints}."
+        )
+    return font.text_length(text, fontsize=font_size)
+
+
+@lru_cache(maxsize=1)
+def _verification_font():
+    """Return MuPDF's bundled Unicode fallback; initialization failures are fatal."""
+    try:
+        return fitz.Font(fontname=VERIFICATION_FONT_NAME)
+    except Exception as exc:
+        raise RuntimeError(
+            "The bundled Unicode font required for verification evidence is unavailable."
+        ) from exc

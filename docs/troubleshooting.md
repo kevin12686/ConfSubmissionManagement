@@ -52,6 +52,14 @@ Use the app's template download when possible. If a CSV came from Excel, save it
 
 Preview pages do not mutate records or files. Review the differences and click Apply Confirmed Changes when the preview matches the intended import.
 
+If Apply says a preview file changed, do not reuse the token. Upload and preview
+the metadata/files again; the stored size or SHA-256 no longer matches what was
+reviewed.
+
+Editor Upload and Formatting title-guard previews also expire after two hours.
+An expired, missing, or changed preview is intentionally not recoverable; start
+a new preview so the confirmation is bound to the exact current bytes.
+
 ### Paper Master notes would be overwritten
 
 Paper Master Import Preview offers a notes choice. Keep the default Preserve existing system notes unless the import file intentionally contains the updated internal notes.
@@ -172,6 +180,10 @@ No. Current publication ZIP generation uses the publication-facing PDF helper:
 
 Editor Upload performs a dry-run title extraction and compares the PDF title with the selected Paper Master title and Final Title. The uploaded title is shown once above vertically stacked comparisons so long titles do not overlap on short or narrow screens. If Paper Master and Final Title are exactly the same, they appear as one reference. Open the temporary PDF to inspect it, choose another PDF to replace the preview, or cancel without creating a record. Confirm a mismatch only after checking that the uploaded file is the intended paper.
 
+If confirmation reports that the preview file or Paper Master changed, the
+previous decision is stale. Reopen Editor Upload and review the current bytes
+and current Master record; no submission was created from the stale preview.
+
 ### Formatting upload asks for confirmation
 
 Corrected PDF upload uses the same title safety component. A mismatch does not forbid saving, but it prevents accidental wrong-file upload by requiring confirmation. The ordinary word-level difference is shown first; character-level differences are available in an expandable detail.
@@ -197,6 +209,10 @@ The review page is stale. Formatting Save and corrected-PDF title confirmation
 are bound to the exact publication PDF/source shown when the page was rendered.
 Reload that paper, inspect the current preview/files, and save again. Do not
 work around the warning by copying an old review status into the database.
+
+The same stale-page rule applies to Final Submission Edit, Paper Master Edit,
+Title/Author Review, Exceptions, and Process PDF formatting triage. Reload the
+page and re-review the current values; do not retry with an old hidden token.
 
 ### Title/Author extraction is wrong
 
@@ -271,6 +287,13 @@ A Paper ID must exist in the Paper Master List before it can be verified. Correc
 ### CrossCheck result import has no report
 
 Reports are optional. The CSV imports `filename`, `plagiarism_percent`, and `single_percent`. Upload report PDFs separately if they exist.
+
+### CrossCheck import reports stale batch/version
+
+The token manifest points to a different Final ID or publication PDF SHA-256
+than the current candidate. Do not rename or reuse the old result. Prepare a new
+CrossCheck token for the current publication PDF, then import that result and
+report.
 
 ### Percent values include `<1%`
 

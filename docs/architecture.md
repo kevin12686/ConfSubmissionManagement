@@ -58,7 +58,9 @@ external processing.
   safety component. Services build a common comparison payload, templates render the
   uploaded title once with vertically stacked references, and character-level detail
   remains collapsed by default. Preview files stay temporary until apply; opening,
-  replacing, or canceling a preview never changes publication state.
+  replacing, or canceling a preview never changes publication state. Editor
+  Upload apply locks and rechecks Paper Master evidence plus the exact temporary
+  PDF/source size and SHA-256 before creating a version.
 - Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
 - Not Publishing is paper/publication-decision-level: it keeps records for traceability but excludes the paper from publication readiness and package output.
 - Publication PDF priority is corrected PDF, then original author PDF.
@@ -123,6 +125,15 @@ workflow alerts reuse this context rather than loading independent publication
 scopes. It is immutable request data, not a publication cache, and GET requests
 do not persist derived state.
 
+Not Publishing is enforced as a Paper ID group invariant over the existing
+Final Submission compatibility state: mark and undo lock/update every version
+with that Official Paper ID. A mixed group is a Critical readiness blocker;
+publication code does not infer which version's decision should win.
+Routine reads find mixed Not Publishing and Start2/Editor conflict groups with
+database conditional aggregation, then load details only for groups that
+actually conflict. Historical Final rows must not be materialized in Python
+merely to prove that no conflict exists.
+
 `FileInspectionContext` reuses request-local filesystem observations for normal
 reads. SHA-256 results may be reused across requests only when device, inode,
 size, mtime, and ctime all match. A strict fresh hash re-stats the path even
@@ -133,6 +144,10 @@ Final Publication Package export keeps the same `PublicationReadContext` from
 readiness validation through manifest construction and ZIP assembly. PDF/source
 entries are written from `FileInspectionContext.read_snapshot_bytes()`, which
 rejects a path whose full filesystem signature changed after inspection.
+Manifest and warning CSV bytes are immutable ZIP inputs rather than files that
+are re-read after creation. The package is written to a temporary path, reopened
+for entry and CRC verification, checked against the final database signature,
+and atomically promoted only after every check succeeds.
 Export also blocks when Paper ID/title sanitization would produce the same
 case-insensitive ZIP base name for more than one publication record. Therefore
 validated files cannot be silently replaced or overwritten by a later path
@@ -140,7 +155,7 @@ read or duplicate archive entry.
 
 Final export also fingerprints publication-critical database state before
 loading the snapshot and after ZIP assembly. A concurrent editor change to
-Paper Master, submissions, settings, author rows, or author waivers deletes the
+Paper Master, submissions, settings, or author waivers deletes the
 partial output and requires a fresh export. Publication source bytes are bound
 to a completed Formatting Review by `source_hash`. A Pending or Needs Edit
 Formatting status is blocked by `Formatting Not Review OK` and is not also
@@ -154,8 +169,31 @@ PDF/source. Save revalidates that snapshot under a database row lock before
 calling the central formatting update service. Corrected-PDF title-guard
 previews carry the same snapshot plus hashes of their temporary uploads, so a
 later confirmation cannot bind an old review decision to changed publication
-files. Queue/review/title-guard tokens are temporary workflow state and are not
-part of System State backup.
+files. Preview SHA-256 is accumulated while the upload is streamed to temporary
+storage; confirmation still performs a fresh independent hash. Abandoned
+Editor Upload and Formatting preview directories expire after two hours, and a
+changed preview is removed when it is rejected. Queue/review/title-guard tokens
+are temporary workflow state and are not part of System State backup.
+TTL cleanup removes only directories with a complete parseable payload; it
+does not guess that a directory still being built by another request is stale.
+
+`workflow_evidence.py` supplies signed, expiring digests for other multi-editor
+mutation boundaries. Final Submission Edit, Paper Master Edit, Title/Author
+Review, Exceptions, Settings, and Process PDF formatting triage compare the
+submitted digest with current locked state. Settings active-rule confirmation
+also locks the candidate set before recomputing active/duplicate state. Tokens
+are generated only after pagination and require no database or file I/O. Paper
+ID review canonicalizes the Paper Master evidence once per response and reuses
+its digest in each displayed-row token; POST validation recomputes that digest
+after locking the current Master rows.
+
+Final import apply does not trust preview paths. Each selected upload is copied
+into an operation-unique staging file while size and SHA-256 are checked against
+preview evidence; FileField storage reads only that validated copy.
+Built-in/GROBID extraction and Process PDFs capture semantic row/file evidence
+before long work and lock/recheck before persistence. PDF thumbnails are
+rendered into unique immutable directories so a rejected stale batch cannot
+overwrite a newer editor's visible preview.
 
 Error Report keeps duplicate categories and blocker messages unchanged in the
 readiness/report services. Its HTML worklist uses a compact duplicate-group
@@ -195,13 +233,19 @@ Current active-version selection is implemented in `submissions/services/pdf_pro
 6. The selected candidate is determined by Settings:
    - `final_id`: numeric/natural Final ID sort.
    - `upload_date`: upload date, with Final ID sort as tie-breaker.
-7. State mirror tables and `PaperAuthor` cache are refreshed after active selection.
+7. State mirror tables and the compatibility `PaperAuthor` cache are refreshed
+   after active selection.
 
 Workflows that also recalculate duplicate/replaced status call
 `recompute_active_and_duplicate_state()`. It computes both values in memory,
 bulk-updates the compatibility table, bulk-syncs only Identity state, and
 rebuilds the author cache once. Publication scope and Editor Upload priority
 are unchanged.
+
+Publication readiness, Author Count, Exceptions, and package export do not
+trust `PaperAuthor`. They derive author entries directly from
+`PublicationReadContext.master_submissions`; the cache remains only for
+compatibility, diagnostics, and portable state archives.
 
 Publication file resolution is implemented in `submissions/services/file_manager.py`.
 
@@ -216,6 +260,11 @@ Publication file resolution is implemented in `submissions/services/file_manager
 2. Original uploaded PDF.
 
 `publication_source_info()` resolves corrected source, then original uploaded source.
+
+CrossCheck export manifests bind each external filename to its Paper ID, exact
+Final ID, and publication PDF SHA-256. Result and report import resolves through
+that manifest and rejects replacement versions, changed PDFs, ambiguous reused
+tokens, and legacy manifests without provenance.
 
 This distinction matters. Process PDFs recalculates active versions and then calculates page/hash/thumbnails only for current, non-discarded, non-Not-Publishing submissions whose Paper ID is in Paper Master. It may sync `data/publication_pdf_debug/` for inspection, but that debug folder is not read by publication package export, CrossCheck export, duplicate checks, or publication-facing links.
 
@@ -235,6 +284,11 @@ previous complete mirror is retained. This operational mirror does not change
 System State archive structure or publication-facing file resolution.
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
+Restore extracts and verifies files into sibling staging directories before the
+database transaction begins. Live files move to quarantine only after model
+restore succeeds; Python, database-commit, or filesystem failures restore the
+quarantine and roll back the database. Staging and quarantine live on the
+target filesystem so promotion uses rename rather than cross-device copying.
 
 Storage cleanup is split by risk:
 
@@ -311,9 +365,17 @@ Each event includes timestamp, event ID, app version, state archive version, act
 
 Use `submissions/services/audit.py` for all audit writes. Do not open-write the log directly from controllers or other services. File paths in events must be portable: use project/media-relative paths, hashes, sizes, and filenames instead of machine-specific temp paths or binary content.
 
+The default Audit Log view reads a bounded UTF-8 tail. A non-empty search may
+scan the complete append-only file. Archive filenames include microseconds and
+a random identity so repeated operations cannot replace an earlier log.
+
 System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens are still excluded.
 
 Clear Database writes `clear_database_requested` first. If the audit-clear checkbox is selected, it archives the current log, creates a new log with `audit_log_archived_and_cleared`, and then writes `clear_database_applied` after the wipe succeeds.
+
+Django admin registrations for Paper Master, Final Submission, Settings,
+author waivers, and `PaperAuthor` are read-only. Admin must not become an
+unaudited mutation path around editorial services.
 
 Clear Database never recursively empties arbitrary configured absolute folders.
 Only app-owned paths below `BASE_DIR/data` or the configured application

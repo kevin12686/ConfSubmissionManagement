@@ -425,13 +425,19 @@ def processed_pdf_context(
     active_missing_pdf_rows = []
     for row in all_rows:
         submission = row["submission"]
-        row["missing_pdf"] = not pdf_available_for_processing(
-            submission,
-            publication_context.file_inspection,
+        has_selected_pdf = bool(
+            submission.formatted_pdf_file or submission.pdf_file
         )
-        row["needs_processing"] = active_pdf_needs_processing(
-            submission,
-            publication_context.file_inspection,
+        row["missing_pdf"] = not has_selected_pdf
+        row["needs_processing"] = bool(
+            has_selected_pdf
+            and (
+                submission.processing_status != "processed"
+                or submission.page_count is None
+                or not submission.pdf_hash
+                or submission.thumbnail_status != "processed"
+                or not submission.thumbnail_folder
+            )
         )
         if row["missing_pdf"]:
             active_missing_pdf_rows.append(submission)
@@ -516,7 +522,38 @@ def processed_pdf_context(
             {**option, "count": counts[option["value"]]}
             for option in PROCESS_PREVIEW_FILTER_OPTIONS
         ],
+        "_publication_context": publication_context,
     }
+
+
+def hydrate_processed_pdf_file_state(rows, *, context):
+    hydrated = []
+    for row in rows:
+        submission = row["submission"]
+        missing_pdf = not pdf_available_for_processing(
+            submission,
+            context.file_inspection,
+        )
+        needs_processing = bool(
+            not missing_pdf
+            and active_pdf_needs_processing(
+                submission,
+                context.file_inspection,
+            )
+        )
+        hydrated.append(
+            {
+                **row,
+                "missing_pdf": missing_pdf,
+                "needs_processing": needs_processing,
+                "is_processed": bool(
+                    submission.processing_status == "processed"
+                    and not needs_processing
+                    and not missing_pdf
+                ),
+            }
+        )
+    return hydrated
 
 
 def active_versions_context(query=""):

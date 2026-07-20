@@ -1,6 +1,6 @@
 import hashlib
-import re
 import shutil
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -25,6 +25,12 @@ from submissions.services.file_manager import (
     source_pdf_path,
 )
 from submissions.services.audit import audit_failure, audit_success
+from submissions.services.text_utils import natural_text_key
+from submissions.services.workflow_evidence import (
+    final_submission_state_evidence,
+    formatting_issue_evidence,
+    make_evidence_token,
+)
 
 
 def calculate_pdf_hash(path):
@@ -47,21 +53,26 @@ def thumbnails_root():
 
 
 def render_pdf_thumbnails(submission, pdf_path, max_width=220):
-    target_dir = thumbnails_root() / sanitize_filename_part(submission.final_submission_id)
-    if target_dir.exists():
-        shutil.rmtree(target_dir)
+    target_dir = thumbnails_root() / (
+        f"{sanitize_filename_part(submission.final_submission_id)}-"
+        f"{uuid.uuid4().hex}"
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    document = fitz.open(str(pdf_path))
     try:
-        for index, page in enumerate(document, start=1):
-            width = page.rect.width or 1
-            scale = max_width / width
-            matrix = fitz.Matrix(scale, scale)
-            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-            pixmap.save(str(target_dir / f"page-{index}.png"))
-    finally:
-        document.close()
+        document = fitz.open(str(pdf_path))
+        try:
+            for index, page in enumerate(document, start=1):
+                width = page.rect.width or 1
+                scale = max_width / width
+                matrix = fitz.Matrix(scale, scale)
+                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                pixmap.save(str(target_dir / f"page-{index}.png"))
+        finally:
+            document.close()
+    except Exception:
+        shutil.rmtree(target_dir, ignore_errors=True)
+        raise
     return target_dir
 
 
@@ -88,14 +99,7 @@ def _thumbnail_sort_key(path):
 
 
 def final_submission_sort_key(submission):
-    value = str(submission.final_submission_id or "")
-    parts = re.split(r"(\d+)", value)
-    natural_parts = tuple(
-        (0, int(part)) if part.isdigit() else (1, part.lower()) for part in parts if part
-    )
-    numeric_chunks = re.findall(r"\d+", value)
-    numeric_value = int(numeric_chunks[-1]) if numeric_chunks else -1
-    return numeric_value, natural_parts, submission.created_at
+    return natural_text_key(submission.final_submission_id), submission.created_at
 
 
 def determine_active_versions(*, sync_state_records=True, rebuild_authors=True):
@@ -151,6 +155,20 @@ def determine_active_versions(*, sync_state_records=True, rebuild_authors=True):
 
 def _thumbnail_folder_ready(submission):
     return bool(submission.thumbnail_folder and Path(submission.thumbnail_folder).exists())
+
+
+def _remove_thumbnail_folder_if_unreferenced(path):
+    if not path:
+        return
+    root = thumbnails_root().resolve(strict=False)
+    target = Path(path).resolve(strict=False)
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return
+    if FinalSubmission.objects.filter(thumbnail_folder=str(path)).exists():
+        return
+    shutil.rmtree(target, ignore_errors=True)
 
 
 PDF_PROCESSING_UPDATE_FIELDS = [
@@ -222,6 +240,8 @@ PDF_PROCESSING_PERSIST_FIELDS = list(
 
 def process_submission_pdf(submission, force=False, *, save=True):
     submission._pdf_content_integrity_reset = False
+    previous_thumbnail_folder = submission.thumbnail_folder
+    rendered_thumbnail_dir = None
     path = source_pdf_path(submission)
     if not path:
         submission.processing_status = "error"
@@ -266,6 +286,7 @@ def process_submission_pdf(submission, force=False, *, save=True):
         submission.page_count = new_page_count
         submission.pdf_hash = new_hash
         thumbnail_dir = render_pdf_thumbnails(submission, path)
+        rendered_thumbnail_dir = thumbnail_dir
         submission.processing_status = "processed"
         submission.processing_message = "PDF page count, hash, and thumbnails computed."
         submission.thumbnail_folder = str(thumbnail_dir)
@@ -275,8 +296,20 @@ def process_submission_pdf(submission, force=False, *, save=True):
             submission.save(
                 update_fields=PDF_PROCESSING_PERSIST_FIELDS + ["updated_at"]
             )
+            if (
+                previous_thumbnail_folder
+                and previous_thumbnail_folder != str(thumbnail_dir)
+            ):
+                transaction.on_commit(
+                    lambda path=previous_thumbnail_folder: (
+                        _remove_thumbnail_folder_if_unreferenced(path)
+                    ),
+                    robust=True,
+                )
         return True
     except Exception as exc:
+        if rendered_thumbnail_dir is not None:
+            shutil.rmtree(rendered_thumbnail_dir, ignore_errors=True)
         submission.processing_status = "error"
         submission.processing_message = f"PDF processing failed: {exc}"
         submission.thumbnail_status = "error"
@@ -306,6 +339,7 @@ def process_all_pdfs(force=False):
         processed = 0
         skipped = 0
         errors = 0
+        concurrent_skipped = 0
         integrity_resets = 0
         error_rows = []
         publication_submissions = FinalSubmission.objects.filter(
@@ -317,38 +351,123 @@ def process_all_pdfs(force=False):
         pending_updates = []
 
         def flush_pending_updates():
+            nonlocal processed
+            nonlocal errors
+            nonlocal concurrent_skipped
+            nonlocal integrity_resets
             updates = list(pending_updates)
             pending_updates.clear()
-            if updates:
+            if not updates:
+                return
+            with transaction.atomic():
+                current_by_id = {
+                    current.pk: current
+                    for current in FinalSubmission.objects.select_for_update()
+                    .filter(pk__in=[item[0].pk for item in updates])
+                    .order_by("pk")
+                }
+                accepted = []
+                for candidate, before_state, processing_result in updates:
+                    current = current_by_id.get(candidate.pk)
+                    if (
+                        current is None
+                        or final_submission_state_evidence(current)
+                        != before_state
+                    ):
+                        if (
+                            candidate.thumbnail_folder
+                            and candidate.thumbnail_folder
+                            != before_state.get("thumbnail_folder")
+                        ):
+                            _remove_thumbnail_folder_if_unreferenced(
+                                candidate.thumbnail_folder
+                            )
+                        concurrent_skipped += 1
+                        errors += 1
+                        error_rows.append(
+                            {
+                                "final_submission_id": (
+                                    candidate.final_submission_id
+                                ),
+                                "paper_id": candidate.paper_id_filled,
+                                "author_entered_id": (
+                                    candidate.start2_paper_id_raw
+                                ),
+                                "message": (
+                                    "Final Submission changed while Process PDFs "
+                                    "was running. No processing state was written; "
+                                    "review the current row and run Process PDFs "
+                                    "again."
+                                ),
+                            }
+                        )
+                        continue
+                    for field_name in PDF_PROCESSING_PERSIST_FIELDS:
+                        setattr(
+                            current,
+                            field_name,
+                            getattr(candidate, field_name),
+                        )
+                    previous_thumbnail_folder = before_state.get(
+                        "thumbnail_folder"
+                    )
+                    if (
+                        previous_thumbnail_folder
+                        and previous_thumbnail_folder
+                        != candidate.thumbnail_folder
+                    ):
+                        transaction.on_commit(
+                            lambda path=previous_thumbnail_folder: (
+                                _remove_thumbnail_folder_if_unreferenced(path)
+                            ),
+                            robust=True,
+                        )
+                    accepted.append(current)
+                    if processing_result is True:
+                        processed += 1
+                        if candidate._pdf_content_integrity_reset:
+                            integrity_resets += 1
+                    else:
+                        errors += 1
+                        error_rows.append(
+                            {
+                                "final_submission_id": (
+                                    candidate.final_submission_id
+                                ),
+                                "paper_id": candidate.paper_id_filled,
+                                "author_entered_id": (
+                                    candidate.start2_paper_id_raw
+                                ),
+                                "message": (
+                                    candidate.processing_message
+                                    or "Unknown processing error."
+                                ),
+                            }
+                        )
+                if not accepted:
+                    return
                 bulk_update_submissions(
-                    updates,
+                    accepted,
                     PDF_PROCESSING_PERSIST_FIELDS,
                 )
 
         try:
             for submission in publication_submissions:
+                before_state = final_submission_state_evidence(submission)
                 result = process_submission_pdf(
                     submission,
                     force=force,
                     save=False,
                 )
                 if result is True:
-                    processed += 1
-                    if submission._pdf_content_integrity_reset:
-                        integrity_resets += 1
-                    pending_updates.append(submission)
+                    pending_updates.append(
+                        (submission, before_state, result)
+                    )
                 elif result is None:
                     skipped += 1
                 else:
-                    errors += 1
-                    pending_updates.append(submission)
-                    error_rows.append(
-                        {
-                            "final_submission_id": submission.final_submission_id,
-                            "paper_id": submission.paper_id_filled,
-                            "author_entered_id": submission.start2_paper_id_raw,
-                            "message": submission.processing_message or "Unknown processing error.",
-                        }
+                    pending_updates.append(
+                        (submission, before_state, result)
                     )
                 if len(pending_updates) >= 100:
                     flush_pending_updates()
@@ -362,6 +481,7 @@ def process_all_pdfs(force=False):
             "processed": processed,
             "skipped": skipped,
             "errors": errors,
+            "concurrent_skipped": concurrent_skipped,
             "integrity_resets": integrity_resets,
             "error_rows": error_rows,
             "debug_synced": debug_result["synced_count"],
@@ -375,6 +495,7 @@ def process_all_pdfs(force=False):
                 "processed": processed,
                 "skipped": skipped,
                 "errors": errors,
+                "concurrent_skipped": concurrent_skipped,
                 "integrity_resets": integrity_resets,
                 "debug_synced": debug_result["synced_count"],
                 "debug_skipped": debug_result["skipped_count"],
@@ -436,6 +557,10 @@ def hydrate_processed_pdf_rows(rows):
         hydrated.append(
             {
                 **row,
+                "formatting_evidence_token": make_evidence_token(
+                    "process-formatting-issue",
+                    formatting_issue_evidence(submission),
+                ),
                 "thumbnail_urls": urls,
                 "page_numbers": range(1, page_total + 1),
             }

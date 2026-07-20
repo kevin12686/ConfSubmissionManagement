@@ -143,7 +143,19 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
-from submissions.services.audit import audit_log_path, read_audit_log, write_audit_event
+from submissions.services.workflow_evidence import (
+    exception_review_evidence,
+    final_submission_edit_evidence,
+    formatting_issue_evidence,
+    make_evidence_token,
+    require_evidence_token,
+)
+from submissions.services.audit import (
+    _tail_utf8_lines,
+    audit_log_path,
+    read_audit_log,
+    write_audit_event,
+)
 
 
 class EditorialAcceptanceTestCase(TestCase):
@@ -167,16 +179,13 @@ class EditorialAcceptanceTestCase(TestCase):
         self.system_state_reports_root = self.root / "system_state_backups"
         self.system_state_restore_root = self.root / "system_state_restore_previews"
         self.storage_cleanup_root = self.root / "storage_cleanup_previews"
+        self.crosscheck_root = self.root / "crosscheck_upload"
         self.audit_root = self.root / "logs"
         self.system_state_reports_root.mkdir()
         self.system_state_restore_root.mkdir()
         self.storage_cleanup_root.mkdir()
+        self.crosscheck_root.mkdir()
         self.audit_root.mkdir()
-        self.addCleanup(
-            shutil.rmtree,
-            django_settings.BASE_DIR / "data" / "restored_external_folders",
-            True,
-        )
         self.system_state_reports_patcher = patch(
             "submissions.services.system_state.system_state_reports_root",
             lambda: self.system_state_reports_root,
@@ -193,6 +202,10 @@ class EditorialAcceptanceTestCase(TestCase):
             "submissions.services.audit.audit_log_root",
             lambda: self.audit_root,
         )
+        self.crosscheck_root_patcher = patch(
+            "submissions.services.crosscheck.crosscheck_export_root",
+            lambda: self.crosscheck_root,
+        )
         self.system_state_audit_root_patcher = patch(
             "submissions.services.system_state.audit_log_root",
             lambda: self.audit_root,
@@ -201,11 +214,13 @@ class EditorialAcceptanceTestCase(TestCase):
         self.system_state_restore_patcher.start()
         self.storage_cleanup_patcher.start()
         self.audit_root_patcher.start()
+        self.crosscheck_root_patcher.start()
         self.system_state_audit_root_patcher.start()
         self.addCleanup(self.system_state_reports_patcher.stop)
         self.addCleanup(self.system_state_restore_patcher.stop)
         self.addCleanup(self.storage_cleanup_patcher.stop)
         self.addCleanup(self.audit_root_patcher.stop)
+        self.addCleanup(self.crosscheck_root_patcher.stop)
         self.addCleanup(self.system_state_audit_root_patcher.stop)
 
         settings_obj = AppSetting.load()
@@ -355,6 +370,10 @@ class EditorialAcceptanceTestCase(TestCase):
 
     def final_submission_form_data(self, submission, **overrides):
         data = {
+            "evidence_token": make_evidence_token(
+                "final-submission-edit",
+                final_submission_edit_evidence(submission),
+            ),
             "final_submission_id": submission.final_submission_id,
             "start2_paper_id_raw": submission.start2_paper_id_raw,
             "paper_id_filled": submission.paper_id_filled,
@@ -387,6 +406,76 @@ class EditorialAcceptanceTestCase(TestCase):
             data["excluded_from_publication"] = "on"
         data.update(overrides)
         return data
+
+    def exception_evidence_token(self, exception_key):
+        rebuild_paper_authors()
+        rows, _status = exception_rows("all", hydrate=False)
+        row = next(item for item in rows if item["key"] == exception_key)
+        return make_evidence_token(
+            "exception-review",
+            exception_review_evidence(row),
+        )
+
+    def settings_evidence_token(self):
+        response = self.client.get(reverse("submissions:settings"))
+        self.assertEqual(response.status_code, 200)
+        return response.context["settings_evidence_token"]
+
+    def paper_id_review_token(self, submission, token_key):
+        response = self.client.get(
+            reverse("submissions:verify_paper_ids"),
+            {
+                "filter": "all",
+                "submission": submission.pk,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item
+            for item in response.context["rows"]
+            if item["submission"].pk == submission.pk
+        )
+        return row[token_key]
+
+    def publication_decision_token(self, submission):
+        response = self.client.get(
+            reverse("submissions:not_publishing_list"),
+            {"submission": submission.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.context[
+            "focused_submission"
+        ].publication_decision_evidence_token
+
+    def version_decision_token(self, submission):
+        response = self.client.get(
+            reverse("submissions:final_submission_list"),
+            {"q": submission.final_submission_id},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item
+            for item in response.context["submissions"]
+            if item.pk == submission.pk
+        )
+        return row.version_decision_evidence_token
+
+    def duplicate_author_review_token(self, submission):
+        response = self.client.get(
+            reverse("submissions:organized_list"),
+            {
+                "paper_id": submission.paper_id_filled,
+                "filter": "all",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item
+            for item in response.context["rows"]
+            if item.get("submission")
+            and item["submission"].pk == submission.pk
+        )
+        return row["duplicate_author_evidence_token"]
 
     def assert_publication_blocked(self, expected_text):
         with self.assertRaisesMessage(ValueError, expected_text):
@@ -480,6 +569,46 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertIn("media/uploads/paper.pdf", event_text)
         self.assertNotIn(str(self.root), event_text)
         self.assertNotIn("/private/var", event_text)
+
+    def test_audit_log_default_read_returns_utf8_tail_without_full_scan(self):
+        lines = [
+            json.dumps(
+                {
+                    "action": f"event_{index}",
+                    "message": f"履歷 {index}",
+                },
+                ensure_ascii=False,
+            )
+            for index in range(1000)
+        ]
+        audit_log_path().write_text(
+            "\n".join(lines) + "\n",
+            encoding="utf-8",
+        )
+
+        with patch(
+            "submissions.services.audit._tail_utf8_lines",
+            wraps=_tail_utf8_lines,
+        ) as tail_reader:
+            events = read_audit_log(limit=10)
+
+        tail_reader.assert_called_once()
+        self.assertEqual(
+            [event["action"] for event in events],
+            [f"event_{index}" for index in range(999, 989, -1)],
+        )
+        self.assertEqual(events[0]["message"], "履歷 999")
+        self.assertEqual(
+            [
+                json.loads(line)["action"]
+                for line in _tail_utf8_lines(
+                    audit_log_path(),
+                    10,
+                    chunk_size=13,
+                )
+            ],
+            [f"event_{index}" for index in range(990, 1000)],
+        )
 
     def test_clear_database_wipes_app_state_settings_and_managed_files(self):
         settings_obj = AppSetting.load()
@@ -639,6 +768,92 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertIn("clear_database_requested", text)
         self.assertIn("clear_database_applied", text)
         self.assertFalse((self.audit_root / "archive").exists())
+
+    def test_clear_database_completion_audit_failure_does_not_hide_committed_wipe(self):
+        self.make_master_paper("AUDIT1")
+
+        with patch(
+            "submissions.controllers.settings.audit_success",
+            side_effect=OSError("audit storage unavailable"),
+        ):
+            response = self.client.post(
+                reverse("submissions:clear_database"),
+                {"confirmation": "CLEAR DATABASE"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(InitialPaper.objects.exists())
+        self.assertContains(
+            response,
+            "completion Audit Log entry could not be written",
+        )
+        events = read_audit_log()
+        self.assertTrue(
+            any(
+                event["action"] == "clear_database_apply"
+                and event["status"] == "requested"
+                for event in events
+            )
+        )
+
+    def test_clear_database_blocks_configured_data_root_without_touching_state(self):
+        self.make_master_paper("SAFE1")
+        settings_obj = AppSetting.load()
+        settings_obj.reports_folder = "data"
+        settings_obj.save(update_fields=["reports_folder"])
+        marker = self.root / "data" / "must-stay.txt"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(b"preserve data root")
+        write_audit_event(
+            action="before_unsafe_clear",
+            status="success",
+        )
+
+        response = self.client.post(
+            reverse("submissions:clear_database"),
+            {"confirmation": "CLEAR DATABASE"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Clear Database failed. Database changes were rolled back",
+        )
+        self.assertTrue(InitialPaper.objects.filter(paper_id="SAFE1").exists())
+        self.assertEqual(marker.read_bytes(), b"preserve data root")
+        self.assertIn(
+            "before_unsafe_clear",
+            audit_log_path().read_text(encoding="utf-8"),
+        )
+
+    def test_clear_database_blocks_folder_inside_audit_root(self):
+        self.make_master_paper("SAFE2")
+        settings_obj = AppSetting.load()
+        settings_obj.reports_folder = "data/logs/exports"
+        settings_obj.save(update_fields=["reports_folder"])
+        write_audit_event(
+            action="before_audit_overlap_clear",
+            status="success",
+        )
+
+        response = self.client.post(
+            reverse("submissions:clear_database"),
+            {"confirmation": "CLEAR DATABASE"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Clear Database failed. Database changes were rolled back",
+        )
+        self.assertTrue(InitialPaper.objects.filter(paper_id="SAFE2").exists())
+        self.assertIn(
+            "before_audit_overlap_clear",
+            audit_log_path().read_text(encoding="utf-8"),
+        )
 
     def test_clear_database_can_archive_and_clear_audit_log(self):
         write_audit_event(
@@ -1645,6 +1860,103 @@ class SystemStateTests(EditorialAcceptanceTestCase):
 
 
 class ImportAndMappingTests(EditorialAcceptanceTestCase):
+    def test_reupload_restores_missing_canonical_files_even_when_legacy_paths_match(self):
+        self.make_master_paper("P001", "Canonical Recovery", "Ada")
+        legacy_pdf = self.make_pdf_file("legacy-recovery.pdf", b"%PDF same bytes")
+        legacy_source = self.make_source_file(
+            "legacy-recovery.docx",
+            b"same source bytes",
+        )
+        submission = self.make_final_submission(
+            final_submission_id="100",
+            paper_id_filled="P001",
+            final_submission_title="Canonical Recovery",
+            pdf_file="",
+            source_file="",
+            current_file_path=str(legacy_pdf),
+            source_current_file_path=str(legacy_source),
+        )
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "100,P001,Canonical Recovery,Ada\n",
+            ),
+            [
+                self.uploaded_file(
+                    "100_file_Submit_PDF.pdf",
+                    b"%PDF same bytes",
+                ),
+                self.uploaded_file(
+                    "100_file_Submit_Source.docx",
+                    b"same source bytes",
+                ),
+            ],
+        )
+        row = next(
+            item
+            for item in preview["rows"]
+            if item["identifier"] == "100"
+        )
+
+        self.assertEqual(row["file_changes"]["pdf"]["status"], "new")
+        self.assertEqual(row["file_changes"]["source"]["status"], "new")
+        apply_import_preview(preview["token"])
+
+        submission.refresh_from_db()
+        self.assertTrue(submission.pdf_file)
+        self.assertTrue(submission.source_file)
+        self.assertEqual(
+            Path(submission.pdf_file.path).read_bytes(),
+            b"%PDF same bytes",
+        )
+        self.assertEqual(
+            Path(submission.source_file.path).read_bytes(),
+            b"same source bytes",
+        )
+        self.assertEqual(
+            Path(submission.current_file_path),
+            Path(submission.pdf_file.path),
+        )
+        self.assertEqual(
+            Path(submission.source_current_file_path),
+            Path(submission.source_file.path),
+        )
+
+    def test_final_import_apply_rejects_preview_file_changed_after_review(self):
+        self.make_master_paper("P001", "Immutable Import", "Ada")
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "10,P001,Immutable Import,Ada\n",
+            ),
+            [
+                self.uploaded_file(
+                    "10_file_Submit_PDF.pdf",
+                    b"%PDF reviewed import",
+                )
+            ],
+        )
+        staged_pdf = next(
+            (self.preview_root / preview["token"] / "uploads").iterdir()
+        )
+        staged_pdf.write_bytes(b"%PDF changed after preview")
+
+        with self.assertRaisesMessage(
+            ValueError,
+            "Import preview file changed after preview",
+        ):
+            apply_import_preview(preview["token"])
+
+        self.assertFalse(
+            FinalSubmission.objects.filter(
+                final_submission_id="10"
+            ).exists()
+        )
+
     def test_initial_import_creates_updates_and_skips_blank_rows(self):
         result = import_initial_papers(
             self.uploaded_csv(
@@ -2296,6 +2608,7 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         determine_active_versions()
         _mark_duplicate_submissions()
 
+        prepare_crosscheck_upload("BATCH")
         upload_crosscheck_reports([self.uploaded_file("P001_BATCH.pdf", b"matching report")])
         active.refresh_from_db()
         old.refresh_from_db()
@@ -2319,6 +2632,51 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         self.assertEqual(active.similarity_score, 6)
         self.assertEqual(active.single_similarity_score, 2)
         self.assertEqual(publication_readiness_rows(), [])
+
+    def test_crosscheck_batch_does_not_follow_a_later_active_replacement(self):
+        self.make_master_paper("P001", "Crosscheck Bound Version", "Ada")
+        old = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Crosscheck Bound Version",
+            extracted_title="Crosscheck Bound Version",
+            similarity_score=None,
+            single_similarity_score=None,
+        )
+        determine_active_versions()
+        prepare_crosscheck_upload("OLD_BATCH")
+
+        replacement = self.make_final_submission(
+            final_submission_id="11",
+            paper_id_filled="P001",
+            final_submission_title="Crosscheck Bound Version",
+            extracted_title="Crosscheck Bound Version",
+            similarity_score=None,
+            single_similarity_score=None,
+        )
+        determine_active_versions()
+
+        result = import_crosscheck_results(
+            self.uploaded_csv(
+                "crosscheck.csv",
+                "filename,plagiarism_percent,single_percent\n"
+                "P001_OLD_BATCH.pdf,6,2\n",
+            )
+        )
+        report_result = upload_crosscheck_reports(
+            [self.uploaded_file("P001_OLD_BATCH.pdf", b"old-version report")]
+        )
+
+        old.refresh_from_db()
+        replacement.refresh_from_db()
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(len(result["stale"]), 1)
+        self.assertEqual(report_result["updated"], 0)
+        self.assertEqual(len(report_result["stale"]), 1)
+        self.assertIsNone(replacement.similarity_score)
+        self.assertIsNone(replacement.single_similarity_score)
+        self.assertEqual(replacement.plagiarism_report_path, "")
+        self.assert_publication_blocked("Missing Plagiarism Result")
 
     def test_crosscheck_missing_results_export_uses_current_publication_pdfs(self):
         self.make_master_paper("P001", "Needs CrossCheck Corrected", "Ada")
@@ -2839,6 +3197,90 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Editor Upload Title Safety Check")
         self.assertContains(response, "Title extraction failed")
         self.assertEqual(FinalSubmission.objects.filter(submission_origin="editor_upload").count(), 0)
+
+    def test_editor_upload_confirmation_rejects_changed_preview_pdf(self):
+        paper = self.make_master_paper("P016", "Preview Integrity", "Ada")
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Different Uploaded Title", "Ada", 1),
+        ):
+            preview = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Preview Integrity",
+                    "final_submission_authors": "Ada",
+                    "notes": "Changed preview must fail.",
+                    "pdf_file": self.uploaded_file(
+                        "integrity.pdf",
+                        b"%PDF reviewed bytes",
+                    ),
+                },
+            )
+        token = preview.context["editor_upload_confirmation"]["token"]
+        token_root = self.media_root / "editor_upload_previews" / token
+        preview_pdf = next(token_root.glob("editor_pdf-*"))
+        preview_pdf.write_bytes(b"%PDF different bytes")
+
+        response = self.client.post(
+            reverse("submissions:editor_upload"),
+            {
+                "action": "confirm_editor_upload",
+                "preview_token": token,
+            },
+        )
+
+        self.assertContains(
+            response,
+            "preview file changed after title review",
+        )
+        self.assertFalse(
+            FinalSubmission.objects.filter(
+                submission_origin="editor_upload"
+            ).exists()
+        )
+        self.assertFalse(token_root.exists())
+
+    def test_editor_upload_confirmation_rejects_changed_paper_master(self):
+        paper = self.make_master_paper("P017", "Original Master", "Ada")
+        with patch(
+            "submissions.services.editor_uploads.get_title_author",
+            return_value=("Different Uploaded Title", "Ada", 1),
+        ):
+            preview = self.client.post(
+                reverse("submissions:editor_upload"),
+                {
+                    "paper": paper.pk,
+                    "final_submission_title": "Original Master",
+                    "final_submission_authors": "Ada",
+                    "notes": "Stale Master must fail.",
+                    "pdf_file": self.uploaded_file(
+                        "stale-master.pdf",
+                        b"%PDF stale master",
+                    ),
+                },
+            )
+        token = preview.context["editor_upload_confirmation"]["token"]
+        paper.title = "New Master Title"
+        paper.save(update_fields=["title"])
+
+        response = self.client.post(
+            reverse("submissions:editor_upload"),
+            {
+                "action": "confirm_editor_upload",
+                "preview_token": token,
+            },
+        )
+
+        self.assertContains(
+            response,
+            "Paper Master changed after the Editor Upload preview",
+        )
+        self.assertFalse(
+            FinalSubmission.objects.filter(
+                submission_origin="editor_upload"
+            ).exists()
+        )
 
     def test_editor_upload_title_guard_deduplicates_references_and_cleans_canceled_preview(self):
         paper = self.make_master_paper("P015", "Same Reference Title", "Ada")
@@ -3373,9 +3815,17 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             "Multiple Active Final Submissions",
             {row["category"] for row in rows},
         )
+        self.assertIn(
+            "Mixed Not Publishing Decision",
+            {row["category"] for row in rows},
+        )
         organized_rows, _summary, _settings, _filter, _sort = organized_list_rows()
         self.assertEqual(len(organized_rows), 1)
-        self.assertEqual(organized_rows[0]["submission"].pk, included.pk)
+        self.assertIsNone(organized_rows[0]["submission"])
+        self.assertEqual(
+            set(organized_rows[0]["multiple_active_final_ids"]),
+            {included.final_submission_id, excluded.final_submission_id},
+        )
         self.assert_publication_blocked("Multiple Active Final Submissions")
 
     def test_numeric_author_entered_id_resolves_only_when_title_matches(self):
@@ -5228,6 +5678,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             {
                 "action": "record_format_issue",
                 "submission_id": submission.pk,
+                "evidence_token": make_evidence_token(
+                    "process-formatting-issue",
+                    formatting_issue_evidence(submission),
+                ),
                 "page_number": "3",
                 "issue_note": "  Bottom margin is too small.  ",
                 "return_to": return_to,
@@ -5277,6 +5731,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             {
                 "action": "record_format_issue",
                 "submission_id": submission.pk,
+                "evidence_token": make_evidence_token(
+                    "process-formatting-issue",
+                    formatting_issue_evidence(submission),
+                ),
                 "page_number": "9",
                 "issue_note": "Out-of-range page.",
             },
@@ -5727,7 +6185,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertTrue(str(settings_obj.reports_folder).startswith(str(self.root)))
         response = self.client.post(
             reverse("submissions:settings"),
-            {"action": "reset_folders"},
+            {
+                "action": "reset_folders",
+                "evidence_token": self.settings_evidence_token(),
+            },
         )
         self.assertEqual(response.status_code, 302)
         settings_obj.refresh_from_db()
@@ -5743,7 +6204,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.post(
             reverse("submissions:exceptions_center"),
-            {"exception_key": f"page:{submission.pk}", "action": "approve_exception"},
+            {
+                "exception_key": f"page:{submission.pk}",
+                "action": "approve_exception",
+                "evidence_token": self.exception_evidence_token(
+                    f"page:{submission.pk}"
+                ),
+            },
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5755,6 +6222,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": f"page:{submission.pk}",
                 "action": "approve_exception",
                 "reason": "chair approved",
+                "evidence_token": self.exception_evidence_token(
+                    f"page:{submission.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -5767,6 +6237,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": f"author_number:{submission.pk}",
                 "action": "approve_exception",
                 "reason": "panel paper",
+                "evidence_token": self.exception_evidence_token(
+                    f"author_number:{submission.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -5782,7 +6255,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.post(
             reverse("submissions:exceptions_center"),
-            {"exception_key": f"plagiarism_percent:{submission.pk}", "action": "approve_exception"},
+            {
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "approve_exception",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{submission.pk}"
+                ),
+            },
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5794,6 +6273,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": f"plagiarism_percent:{submission.pk}",
                 "action": "approve_exception",
                 "reason": "chair approved high overlap",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{submission.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -5826,6 +6308,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": "author_limit:a",
                 "action": "approve_exception",
                 "reason": "chair approved author workload",
+                "evidence_token": self.exception_evidence_token(
+                    "author_limit:a"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -5838,7 +6323,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.post(
             reverse("submissions:verify_paper_ids"),
-            {"submission_id": submission.pk, "corrected_paper_id": "P001"},
+            {
+                "submission_id": submission.pk,
+                "corrected_paper_id": "P001",
+                "evidence_token": self.paper_id_review_token(
+                    submission,
+                    "paper_id_evidence_token",
+                ),
+            },
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5846,7 +6338,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.post(
             reverse("submissions:verify_paper_ids"),
-            {"submission_id": submission.pk, "action": "unverify"},
+            {
+                "submission_id": submission.pk,
+                "action": "unverify",
+                "evidence_token": self.paper_id_review_token(
+                    submission,
+                    "paper_id_unverify_evidence_token",
+                ),
+            },
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5859,6 +6358,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": submission.pk,
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "unpaid",
+                "evidence_token": self.publication_decision_token(
+                    submission
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -5867,7 +6369,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.post(
             reverse("submissions:not_publishing_list"),
-            {"submission_id": submission.pk, "action": "undo_not_publishing"},
+            {
+                "submission_id": submission.pk,
+                "action": "undo_not_publishing",
+                "evidence_token": self.publication_decision_token(
+                    submission
+                ),
+            },
         )
         self.assertEqual(response.status_code, 302)
         submission.refresh_from_db()
@@ -5897,6 +6405,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.post(
             reverse("submissions:final_submission_edit", args=[submission.pk]),
             {
+                "evidence_token": make_evidence_token(
+                    "final-submission-edit",
+                    final_submission_edit_evidence(submission),
+                ),
                 "final_submission_id": submission.final_submission_id,
                 "start2_paper_id_raw": submission.start2_paper_id_raw,
                 "paper_id_filled": submission.paper_id_filled,
@@ -5933,6 +6445,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.post(
             reverse("submissions:final_submission_edit", args=[submission.pk]),
             {
+                "evidence_token": make_evidence_token(
+                    "final-submission-edit",
+                    final_submission_edit_evidence(submission),
+                ),
                 "final_submission_id": submission.final_submission_id,
                 "start2_paper_id_raw": submission.start2_paper_id_raw,
                 "paper_id_filled": submission.paper_id_filled,
@@ -6582,6 +7098,57 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertFalse(submission.formatted_pdf_file)
         self.assertTrue(token_root.exists())
 
+    def test_formatting_title_guard_rejects_changed_preview_bytes_and_cleans_token(self):
+        self.make_master_paper("P001", "Guarded Formatting Paper", "Ada")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Guarded Formatting Paper",
+            extracted_title="Guarded Formatting Paper",
+            format_status="pending",
+        )
+        page = self.open_formatting_review(submission, mode="single")
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Wrong Uploaded Paper", "Ada", 1),
+        ):
+            preview = self.client.post(
+                reverse("submissions:formatting"),
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    corrected_pdf=self.uploaded_file(
+                        "wrong.pdf",
+                        b"%PDF reviewed bytes",
+                    ),
+                ),
+            )
+        token = preview.context["formatting_confirmation"]["token"]
+        token_root = (
+            Path(django_settings.MEDIA_ROOT)
+            / "formatting_upload_previews"
+            / token
+        )
+        preview_pdf = next(token_root.glob("corrected_pdf-*"))
+        preview_pdf.write_bytes(b"%PDF changed after review")
+
+        response = self.client.post(
+            reverse("submissions:formatting"),
+            {
+                "action": "confirm_formatting_upload",
+                "preview_token": token,
+                "submission_id": submission.pk,
+                "mode": "single",
+                "filter": "all",
+                "queue": preview.context["single_navigation"]["token"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Formatting upload preview file changed")
+        submission.refresh_from_db()
+        self.assertFalse(submission.formatted_pdf_file)
+        self.assertFalse(token_root.exists())
+
     def test_formatting_single_empty_queue_has_integrated_completion_state(self):
         response = self.client.get(
             reverse("submissions:formatting"),
@@ -6632,10 +7199,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             paper_id_verified=True,
             verification_status="verified",
         )
+        self.assertEqual(
+            final_submission_edit_evidence(submission),
+            final_submission_edit_evidence(
+                FinalSubmission.objects.get(pk=submission.pk)
+            ),
+        )
 
         response = self.client.post(
             reverse("submissions:final_submission_edit", args=[submission.pk]),
             {
+                "evidence_token": make_evidence_token(
+                    "final-submission-edit",
+                    final_submission_edit_evidence(submission),
+                ),
                 "final_submission_id": submission.final_submission_id,
                 "start2_paper_id_raw": "P002",
                 "paper_id_filled": "P002",
@@ -8456,6 +9033,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": f"page:{page_issue.pk}",
                 "action": "approve_exception",
                 "reason": "Chair approved page count.",
+                "evidence_token": self.exception_evidence_token(
+                    f"page:{page_issue.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -8469,6 +9049,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": plagiarism_issue.pk,
                 "exception_key": f"plagiarism_percent:{plagiarism_issue.pk}",
                 "action": "approve_exception",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{plagiarism_issue.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -8482,6 +9065,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "exception_key": f"author_number:{author_issue.pk}",
                 "action": "approve_exception",
                 "reason": "Panel paper approved.",
+                "evidence_token": self.exception_evidence_token(
+                    f"author_number:{author_issue.pk}"
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -8495,6 +9081,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": duplicate_author.pk,
                 "action": "mark_duplicate_author_reviewed",
                 "duplicate_author_review_notes": "Confirmed different people.",
+                "evidence_token": self.duplicate_author_review_token(
+                    duplicate_author
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -8531,6 +9120,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         settings_obj = AppSetting.load()
         post_data = {
             "action": "save_settings",
+            "evidence_token": self.settings_evidence_token(),
             "conference_name": settings_obj.conference_name,
             "page_minimum": settings_obj.page_minimum,
             "page_limit": settings_obj.page_limit,
@@ -8614,6 +9204,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         settings_obj = AppSetting.load()
         post_data = {
             "action": "save_settings",
+            "evidence_token": self.settings_evidence_token(),
             "conference_name": settings_obj.conference_name,
             "page_minimum": settings_obj.page_minimum,
             "page_limit": settings_obj.page_limit,
@@ -8737,6 +9328,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             ),
         )
         self.assertRedirects(response, reverse("submissions:final_submission_list"))
+        submission.refresh_from_db()
 
         malicious = "https://example.com/steal"
         response = self.client.post(
@@ -8850,7 +9442,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         missing_note = self.client.post(
             reverse("submissions:final_submission_list"),
-            {"submission_id": submission.pk, "action": "discard_submission", "discard_notes": ""},
+            {
+                "submission_id": submission.pk,
+                "action": "discard_submission",
+                "discard_notes": "",
+                "evidence_token": self.version_decision_token(
+                    submission
+                ),
+            },
             follow=True,
         )
         submission.refresh_from_db()
@@ -8863,6 +9462,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": submission.pk,
                 "action": "discard_submission",
                 "discard_notes": "Author requested this version be discarded.",
+                "evidence_token": self.version_decision_token(
+                    submission
+                ),
             },
         )
         submission.refresh_from_db()
@@ -9041,6 +9643,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "unpaid",
                 "publication_exclusion_notes": "payment not received",
+                "evidence_token": self.publication_decision_token(
+                    excluded
+                ),
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -9242,6 +9847,45 @@ class PerformanceRegressionTests(EditorialAcceptanceTestCase):
         submission.refresh_from_db()
         self.assertFalse(submission.extracted_title_verified)
         self.assertEqual(submission.extracted_title_match_status, "pending")
+
+    def test_evidence_signing_is_query_free_and_exception_tokens_are_page_bounded(self):
+        submission = FinalSubmission.objects.order_by("pk").first()
+        with self.assertNumQueries(0):
+            token = make_evidence_token(
+                "final-submission-edit",
+                final_submission_edit_evidence(submission),
+            )
+            require_evidence_token(
+                token,
+                "final-submission-edit",
+                final_submission_edit_evidence(submission),
+            )
+
+        for index in range(30):
+            paper_id = f"PX{index:03d}"
+            self.make_master_paper(
+                paper_id=paper_id,
+                title=f"Exception Paper {index}",
+                authors="Ada",
+            )
+            self.make_final_submission(
+                final_submission_id=f"X{index:03d}",
+                paper_id_filled=paper_id,
+                final_submission_title=f"Exception Paper {index}",
+                extracted_title=f"Exception Paper {index}",
+                page_count=13,
+            )
+        with patch(
+            "submissions.services.workflow_evidence.make_evidence_token",
+            wraps=make_evidence_token,
+        ) as signer:
+            response = self.client.get(
+                reverse("submissions:exceptions_center"),
+                {"filter": "all"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(signer.call_count, len(response.context["rows"]))
+        self.assertLessEqual(signer.call_count, 25)
 
 class ExactNavigationTests(EditorialAcceptanceTestCase):
     def test_exact_submission_focus_does_not_collide_with_similar_ids(self):

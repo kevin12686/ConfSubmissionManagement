@@ -9,17 +9,29 @@ from django.conf import settings as django_settings
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.import_export import classify_uploaded_file
 from submissions.services.import_preview import _reset_pdf_dependent_state, _reset_source_dependent_state
+from submissions.services.preview_storage import (
+    purge_expired_preview_directories,
+    save_preview_upload,
+)
 from submissions.services.recompute import recompute_active_and_duplicate_state
 from submissions.services.file_manager import sanitize_filename_part
 from submissions.services.text_utils import clean_note_text
 from submissions.services.verification import build_title_guard_context, titles_identical
+from submissions.services.workflow_evidence import (
+    make_evidence_token,
+    paper_master_edit_evidence,
+    require_evidence_token,
+    submission_group_evidence,
+)
 
 
 EDITOR_UPLOAD_PREVIEW_TTL_HOURS = 2
@@ -70,22 +82,27 @@ class EditorConflictSnapshot:
 def editor_conflict_paper_ids(snapshot=None):
     if snapshot is not None:
         return list(snapshot.conflict_ids)
-    rows = (
+    conflict_ids = (
         FinalSubmission.objects.filter(
             discarded=False,
             excluded_from_publication=False,
         )
         .exclude(paper_id_filled="")
-        .values_list("paper_id_filled", "submission_origin")
+        .values("paper_id_filled")
+        .annotate(
+            start2_count=Count(
+                "pk",
+                filter=Q(submission_origin="start2"),
+            ),
+            editor_count=Count(
+                "pk",
+                filter=Q(submission_origin="editor_upload"),
+            ),
+        )
+        .filter(start2_count__gt=0, editor_count__gt=0)
+        .values_list("paper_id_filled", flat=True)
     )
-    grouped = {}
-    for paper_id, origin in rows:
-        grouped.setdefault(paper_id, set()).add(origin)
-    return sorted(
-        paper_id
-        for paper_id, origins in grouped.items()
-        if {"start2", "editor_upload"} <= origins
-    )
+    return sorted(conflict_ids)
 
 
 def editor_conflict_count(snapshot=None):
@@ -140,6 +157,10 @@ def _split_editor_uploads(pdf_file, source_file):
 def editor_upload_preview_root():
     root = django_settings.MEDIA_ROOT / "editor_upload_previews"
     root.mkdir(parents=True, exist_ok=True)
+    purge_expired_preview_directories(
+        root,
+        timedelta(hours=EDITOR_UPLOAD_PREVIEW_TTL_HOURS),
+    )
     return root
 
 
@@ -151,8 +172,12 @@ def preview_editor_upload(cleaned_data):
     token = uuid.uuid4().hex
     token_root = editor_upload_preview_root() / token
     token_root.mkdir(parents=True, exist_ok=True)
-    pdf_info = _save_preview_upload(pdf, token_root, "editor_pdf")
-    source_info = _save_preview_upload(source, token_root, "editor_source") if source else None
+    pdf_info = save_preview_upload(pdf, token_root, "editor_pdf")
+    source_info = (
+        save_preview_upload(source, token_root, "editor_source")
+        if source
+        else None
+    )
 
     extracted_title = ""
     extraction_status = "extracted"
@@ -187,6 +212,7 @@ def preview_editor_upload(cleaned_data):
         "token": token,
         "paper_pk": paper.pk,
         "paper_id": paper.paper_id,
+        "paper_evidence": paper_master_edit_evidence(paper),
         "created_at": timezone.now().isoformat(),
         "pdf": pdf_info,
         "source": source_info,
@@ -220,11 +246,17 @@ def preview_editor_upload(cleaned_data):
     return _editor_upload_confirmation_context(payload)
 
 
+@transaction.atomic
 def apply_editor_upload_preview(token, confirmed=False):
     payload, token_root = load_editor_upload_preview(token)
     if payload.get("requires_confirmation") and not confirmed:
         raise ValueError("Editor upload title check requires confirmation.")
-    paper = InitialPaper.objects.get(pk=payload["paper_pk"])
+    paper = InitialPaper.objects.select_for_update().get(pk=payload["paper_pk"])
+    if paper_master_edit_evidence(paper) != payload.get("paper_evidence"):
+        raise ValueError(
+            "Paper Master changed after the Editor Upload preview was created. "
+            "Upload and review the current file again."
+        )
     opened_files = []
     try:
         pdf_handle = open(payload["pdf"]["path"], "rb")
@@ -270,8 +302,23 @@ def load_editor_upload_preview(token):
         shutil.rmtree(token_root, ignore_errors=True)
         raise ValueError("Editor upload preview expired. Upload the files again.")
     for key in ["pdf", "source"]:
-        if payload.get(key) and not Path(payload[key]["path"]).exists():
+        file_info = payload.get(key)
+        if not file_info:
+            continue
+        path = Path(file_info["path"])
+        if not path.exists():
+            shutil.rmtree(token_root, ignore_errors=True)
             raise ValueError("Editor upload preview file is missing. Upload the files again.")
+        if (
+            path.stat().st_size != file_info.get("size")
+            or FileInspectionContext().sha256(path, fresh=True)
+            != file_info.get("sha256")
+        ):
+            shutil.rmtree(token_root, ignore_errors=True)
+            raise ValueError(
+                "Editor upload preview file changed after title review. "
+                "Upload and review the file again."
+            )
     return payload, token_root
 
 
@@ -303,21 +350,6 @@ def _editor_upload_confirmation_context(payload):
     }
 
 
-def _save_preview_upload(file_obj, token_root, prefix):
-    if hasattr(file_obj, "seek"):
-        file_obj.seek(0)
-    original_name = Path(getattr(file_obj, "name", prefix)).name
-    suffix = Path(original_name).suffix
-    filename = f"{prefix}-{sanitize_filename_part(Path(original_name).stem)}{suffix}"
-    path = token_root / filename
-    with open(path, "wb") as target:
-        for chunk in file_obj.chunks():
-            target.write(chunk)
-    if hasattr(file_obj, "seek"):
-        file_obj.seek(0)
-    return {"path": str(path), "original_name": original_name}
-
-
 @transaction.atomic
 def create_editor_submission(
     *,
@@ -330,8 +362,8 @@ def create_editor_submission(
     paper_id_verified=True,
     verification_message="Editor upload linked to Paper Master List by editor.",
 ):
-    if not isinstance(paper, InitialPaper):
-        paper = InitialPaper.objects.get(pk=paper)
+    paper_pk = paper.pk if isinstance(paper, InitialPaper) else paper
+    paper = InitialPaper.objects.select_for_update().get(pk=paper_pk)
     pdf, source = _split_editor_uploads(pdf_file, source_file)
     now = timezone.now()
     submission = FinalSubmission(
@@ -355,9 +387,13 @@ def create_editor_submission(
         verification_message=verification_message,
         verified_at=now if paper_id_verified else None,
     )
+    if hasattr(pdf, "seek"):
+        pdf.seek(0)
     submission.pdf_file.save(pdf.name, ContentFile(pdf.read()), save=False)
     submission.original_file_name = Path(pdf.name).name
     if source:
+        if hasattr(source, "seek"):
+            source.seek(0)
         submission.source_file.save(source.name, ContentFile(source.read()), save=False)
         submission.source_original_file_name = Path(source.name).name
     submission.save()
@@ -394,11 +430,67 @@ def create_editor_submission(
     return submission
 
 
+def _default_version_decision_token(submission, token):
+    if token is not None:
+        return token
+    paper_id = (submission.paper_id_filled or "").strip()
+    group = list(
+        FinalSubmission.objects.filter(paper_id_filled=paper_id).order_by("pk")
+    ) if paper_id else [submission]
+    return make_evidence_token(
+        "version-decision",
+        submission_group_evidence(submission, group),
+    )
+
+
+def _locked_version_decision_group(submission):
+    probe = FinalSubmission.objects.only("pk", "paper_id_filled").get(pk=submission.pk)
+    paper_id = (probe.paper_id_filled or "").strip()
+    filters = Q(pk=probe.pk)
+    if paper_id:
+        filters |= Q(paper_id_filled=paper_id)
+    group = list(
+        FinalSubmission.objects.select_for_update()
+        .filter(filters)
+        .order_by("pk")
+    )
+    locked = next((item for item in group if item.pk == probe.pk), None)
+    if locked is None:
+        raise ValueError("Final Submission no longer exists.")
+    if (locked.paper_id_filled or "").strip() != paper_id:
+        raise ValueError(
+            "The Final Submission changed while this action was being applied. "
+            "Reload and review the current version state."
+        )
+    return locked, group
+
+
+def _copy_submission_state(source, target):
+    if source is target:
+        return
+    for field in source._meta.concrete_fields:
+        value = getattr(source, field.attname)
+        if hasattr(value, "name"):
+            value = value.name
+        setattr(target, field.attname, value)
+
+
 @transaction.atomic
-def discard_submission(submission, notes):
+def discard_submission(submission, notes, *, expected_evidence_token=None):
+    caller_submission = submission
     notes = (notes or "").strip()
     if not notes:
         raise ValueError("Discard requires a note.")
+    expected_evidence_token = _default_version_decision_token(
+        submission,
+        expected_evidence_token,
+    )
+    submission, group = _locked_version_decision_group(submission)
+    require_evidence_token(
+        expected_evidence_token,
+        "version-decision",
+        submission_group_evidence(submission, group),
+    )
     submission.discarded = True
     submission.discard_notes = notes
     submission.discarded_at = timezone.now()
@@ -413,26 +505,41 @@ def discard_submission(submission, notes):
         ]
     )
     recompute_active_and_duplicate_state()
+    submission.refresh_from_db()
     audit_success(
         "discard_submission",
         "Final submission version discarded.",
         submission=submission,
         after={"discarded": True, "discard_notes": notes},
     )
+    _copy_submission_state(submission, caller_submission)
     return submission
 
 
 @transaction.atomic
-def undo_discard_submission(submission):
+def undo_discard_submission(submission, *, expected_evidence_token=None):
+    caller_submission = submission
+    expected_evidence_token = _default_version_decision_token(
+        submission,
+        expected_evidence_token,
+    )
+    submission, group = _locked_version_decision_group(submission)
+    require_evidence_token(
+        expected_evidence_token,
+        "version-decision",
+        submission_group_evidence(submission, group),
+    )
     submission.discarded = False
     submission.discard_notes = ""
     submission.discarded_at = None
     submission.save(update_fields=["discarded", "discard_notes", "discarded_at", "updated_at"])
     recompute_active_and_duplicate_state()
+    submission.refresh_from_db()
     audit_success(
         "undo_discard_submission",
         "Final submission discard undone.",
         submission=submission,
         after={"discarded": False},
     )
+    _copy_submission_state(submission, caller_submission)
     return submission

@@ -107,7 +107,6 @@ from submissions.services.pdf_processor import processed_pdf_rows, process_all_p
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.title_author_extraction import (
-    ManualOverrideError,
     apply_title_author_manual_override,
     extract_active_title_authors,
     extract_grobid_for_suspicious_rows,
@@ -129,10 +128,20 @@ from submissions.services.verification import (
     evaluate_submission,
     hydrate_verification_rows,
     mark_not_publishing,
+    set_duplicate_author_review,
     unverify_submission,
     undo_not_publishing,
     verification_rows,
     verify_submission,
+)
+from submissions.services.workflow_evidence import (
+    duplicate_author_review_evidence,
+    final_submission_state_evidence,
+    make_evidence_token,
+    paper_master_review_digest,
+    paper_id_review_evidence,
+    submission_group_evidence,
+    title_author_manual_override_evidence,
 )
 from submissions.application.selectors import (
     focused_paper_context,
@@ -171,6 +180,42 @@ def _worklist_return_url(request, fallback_name):
     return reverse(f"submissions:{fallback_name}")
 
 
+def _submission_groups(submissions):
+    groups = {}
+    for submission in submissions:
+        paper_id = (submission.paper_id_filled or "").strip()
+        if paper_id:
+            groups.setdefault(paper_id, []).append(submission)
+    return groups
+
+
+def _group_for_submission(submission, groups):
+    paper_id = (submission.paper_id_filled or "").strip()
+    return groups.get(paper_id, [submission]) if paper_id else [submission]
+
+
+def _load_submission_groups_for_targets(targets):
+    targets = list(targets)
+    paper_ids = {
+        (submission.paper_id_filled or "").strip()
+        for submission in targets
+        if (submission.paper_id_filled or "").strip()
+    }
+    blank_pks = [
+        submission.pk
+        for submission in targets
+        if not (submission.paper_id_filled or "").strip()
+    ]
+    filters = Q(paper_id_filled__in=paper_ids)
+    if blank_pks:
+        filters |= Q(pk__in=blank_pks)
+    if not targets:
+        return {}
+    return _submission_groups(
+        FinalSubmission.objects.filter(filters).order_by("pk")
+    )
+
+
 def organized_list(request):
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
@@ -185,64 +230,53 @@ def organized_list(request):
             else:
                 try:
                     if action in {"approve_exception", "reapprove_exception"}:
-                        approve_exception(row, request.POST.get("reason", ""))
+                        approve_exception(
+                            row,
+                            request.POST.get("reason", ""),
+                            expected_evidence_token=request.POST.get(
+                                "evidence_token",
+                                "",
+                            ),
+                        )
                         messages.success(request, f"{row['type_label']} exception allowed.")
                     else:
-                        remove_exception(row)
+                        remove_exception(
+                            row,
+                            expected_evidence_token=request.POST.get(
+                                "evidence_token",
+                                "",
+                            ),
+                        )
                         messages.warning(request, f"{row['type_label']} exception removed.")
                 except ValueError as exc:
                     messages.error(request, str(exc))
         elif action == "mark_duplicate_author_reviewed":
-            submission.duplicate_author_review_status = "review_ok"
-            submission.duplicate_author_review_notes = request.POST.get(
-                "duplicate_author_review_notes", ""
-            ).strip()
-            submission.duplicate_author_reviewed_at = timezone.now()
-            submission.save(
-                update_fields=[
-                    "duplicate_author_review_status",
-                    "duplicate_author_review_notes",
-                    "duplicate_author_reviewed_at",
-                    "updated_at",
-                ]
-            )
-            audit_success(
-                "duplicate_author_review",
-                "Duplicate author review marked OK.",
-                request=request,
-                submission=submission,
-                after={
-                    "duplicate_author_review_status": submission.duplicate_author_review_status,
-                    "notes": submission.duplicate_author_review_notes,
-                },
-            )
-            messages.success(
-                request,
-                f"Duplicate author review marked OK for {submission.final_submission_id}.",
-            )
+            try:
+                set_duplicate_author_review(
+                    submission,
+                    reviewed=True,
+                    notes=request.POST.get("duplicate_author_review_notes", ""),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(
+                    request,
+                    f"Duplicate author review marked OK for {submission.final_submission_id}.",
+                )
+            except ValueError as exc:
+                messages.error(request, str(exc))
         elif action == "reset_duplicate_author_review":
-            submission.duplicate_author_review_status = "pending"
-            submission.duplicate_author_review_notes = ""
-            submission.duplicate_author_reviewed_at = None
-            submission.save(
-                update_fields=[
-                    "duplicate_author_review_status",
-                    "duplicate_author_review_notes",
-                    "duplicate_author_reviewed_at",
-                    "updated_at",
-                ]
-            )
-            audit_success(
-                "duplicate_author_review_reset",
-                "Duplicate author review moved back to pending.",
-                request=request,
-                submission=submission,
-                reset_flags={"duplicate_author_review": True},
-            )
-            messages.warning(
-                request,
-                f"Duplicate author review moved back to pending for {submission.final_submission_id}.",
-            )
+            try:
+                set_duplicate_author_review(
+                    submission,
+                    reviewed=False,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.warning(
+                    request,
+                    f"Duplicate author review moved back to pending for {submission.final_submission_id}.",
+                )
+            except ValueError as exc:
+                messages.error(request, str(exc))
         return redirect(request.get_full_path())
 
     q = _search_query(request)
@@ -279,6 +313,13 @@ def organized_list(request):
         settings_obj=settings_obj,
         context=publication_context,
     )
+    for row in rows:
+        submission = row.get("submission")
+        if submission:
+            row["duplicate_author_evidence_token"] = make_evidence_token(
+                "duplicate-author-review",
+                duplicate_author_review_evidence(submission),
+            )
     note_summary = paper_note_summary()
     focused_context = None
     if exact_paper_id:
@@ -362,30 +403,36 @@ def verify_paper_ids(request):
 
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
-        if request.POST.get("action") == "unverify":
-            unverify_submission(submission)
-            messages.success(request, f"Final submission {submission.final_submission_id} moved back to unverified.")
-            return redirect(_worklist_return_url(request, "verify_paper_ids"))
-        if request.POST.get("action") == "mark_not_publishing":
-            mark_not_publishing(
-                submission,
-                request.POST.get("publication_exclusion_reason", "unpaid"),
-                request.POST.get("publication_exclusion_notes", ""),
-            )
-            messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
-            return redirect(_worklist_return_url(request, "verify_paper_ids"))
-        if request.POST.get("action") == "undo_not_publishing":
-            undo_not_publishing(submission)
-            messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
-            return redirect(_worklist_return_url(request, "verify_paper_ids"))
-
-        corrected_paper_id = request.POST.get("corrected_paper_id", "").strip()
-        if request.POST.get("action") == "use_suggestion":
-            suggestion = evaluate_submission(submission).get("suggested_paper")
-            corrected_paper_id = suggestion.paper_id if suggestion else corrected_paper_id
+        action = request.POST.get("action")
         try:
-            verify_submission(submission, corrected_paper_id)
-            messages.success(request, f"Final submission {submission.final_submission_id} verified.")
+            if action == "unverify":
+                unverify_submission(
+                    submission,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} moved back to unverified.")
+            elif action == "mark_not_publishing":
+                mark_not_publishing(
+                    submission,
+                    request.POST.get("publication_exclusion_reason", "unpaid"),
+                    request.POST.get("publication_exclusion_notes", ""),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
+            elif action == "undo_not_publishing":
+                undo_not_publishing(
+                    submission,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
+            else:
+                verify_submission(
+                    submission,
+                    request.POST.get("corrected_paper_id", "").strip(),
+                    use_suggestion=action == "use_suggestion",
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} verified.")
         except ValueError as exc:
             audit_failure("verify_paper_id", exc, "Paper ID verification failed.", request=request, submission=submission)
             messages.error(request, str(exc))
@@ -445,6 +492,34 @@ def verify_paper_ids(request):
         paper_candidates=paper_candidates,
         initial_paper_by_id=initial_paper_by_id,
     )
+    all_submission_groups = _load_submission_groups_for_targets(
+        row["submission"]
+        for row in rows
+    )
+    paper_master_digest = paper_master_review_digest(paper_candidates)
+    for row in rows:
+        submission = row["submission"]
+        row["paper_id_evidence_token"] = make_evidence_token(
+            "paper-id-review",
+            paper_id_review_evidence(
+                submission,
+                paper_candidates,
+                row.get("suggested_paper"),
+                row.get("suggested_score"),
+                paper_master_digest=paper_master_digest,
+            ),
+        )
+        row["paper_id_unverify_evidence_token"] = make_evidence_token(
+            "paper-id-unverify",
+            final_submission_state_evidence(submission),
+        )
+        row["publication_decision_evidence_token"] = make_evidence_token(
+            "publication-decision",
+            submission_group_evidence(
+                submission,
+                _group_for_submission(submission, all_submission_groups),
+            ),
+        )
 
     focused_context = None
     if focused_submission:
@@ -485,7 +560,13 @@ def title_author_manual_override_form(request, pk):
     return render(
         request,
         "submissions/partials/title_author_manual_override_form.html",
-        {"submission": submission},
+        {
+            "submission": submission,
+            "evidence_token": make_evidence_token(
+                "title-author-manual-override",
+                title_author_manual_override_evidence(submission),
+            ),
+        },
     )
 
 
@@ -599,26 +680,59 @@ def title_author_extraction(request):
                         request.POST.get("manual_extracted_title", ""),
                         request.POST.get("manual_extracted_authors", ""),
                         request.POST.get("manual_override_reason", ""),
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
                     )
                     messages.warning(
                         request,
                         f"Manual title/author override saved for {submission.final_submission_id}. Review OK is required again.",
                     )
-                except ManualOverrideError as exc:
+                except ValueError as exc:
                     messages.error(request, str(exc))
             elif action == "verify":
-                verify_title_author(submission)
-                messages.success(request, f"Title/authors marked Review OK for {submission.final_submission_id}.")
+                try:
+                    verify_title_author(
+                        submission,
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                    )
+                    messages.success(request, f"Title/authors marked Review OK for {submission.final_submission_id}.")
+                except ValueError as exc:
+                    messages.error(request, str(exc))
             elif action == "unverify":
-                unverify_title_author(submission)
-                messages.success(request, f"Title/authors moved back to Pending for {submission.final_submission_id}.")
+                try:
+                    unverify_title_author(
+                        submission,
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                    )
+                    messages.success(request, f"Title/authors moved back to Pending for {submission.final_submission_id}.")
+                except ValueError as exc:
+                    messages.error(request, str(exc))
             elif action == "set_review_status":
                 review_status = request.POST.get("review_status", "pending")
-                set_title_author_review_status(submission, review_status)
-                messages.success(
-                    request,
-                    f"Title/author review status updated to {submission.get_title_author_review_status_display()} for {submission.final_submission_id}.",
-                )
+                try:
+                    set_title_author_review_status(
+                        submission,
+                        review_status,
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                    )
+                    submission.refresh_from_db()
+                    messages.success(
+                        request,
+                        f"Title/author review status updated to {submission.get_title_author_review_status_display()} for {submission.final_submission_id}.",
+                    )
+                except ValueError as exc:
+                    messages.error(request, str(exc))
             return redirect(_worklist_return_url(request, "title_author_extraction"))
 
     filter_options = [
@@ -994,6 +1108,10 @@ def formatting(request):
             submission,
             file_inspection,
         )
+        publication_source = publication_source_info(
+            submission,
+            file_inspection,
+        )
         rows.append(
             {
                 "submission": submission,
@@ -1008,16 +1126,18 @@ def formatting(request):
                 "review_snapshot": create_formatting_review_snapshot(
                     request.session,
                     submission,
+                    inspection=file_inspection,
+                    publication_pdf=publication_pdf,
+                    publication_source=publication_source,
+                    assume_in_scope=True,
                 ),
                 "publication_pdf": publication_pdf,
-                "publication_source": publication_source_info(
-                    submission,
-                    file_inspection,
-                ),
+                "publication_source": publication_source,
                 "preview": formatting_preview_info(
                     submission,
                     inspection=file_inspection,
                     publication_pdf=publication_pdf,
+                    defer=mode == "list",
                 ),
                 "needs_processing_after_formatting": corrected_pdf_needs_processing(
                     submission,
@@ -1052,6 +1172,22 @@ def formatting(request):
             "focused_submission": focused_submission,
             "pagination": page,
         },
+    )
+
+
+@require_GET
+def formatting_preview(request, pk):
+    submission = get_object_or_404(
+        formatting_rows("", "all"),
+        pk=pk,
+    )
+    preview = formatting_preview_info(submission)
+    if not preview["exists"] or not preview["path"]:
+        raise Http404(preview["message"])
+    return FileResponse(
+        open(preview["path"], "rb"),
+        content_type="image/png",
+        filename=Path(preview["path"]).name,
     )
 
 
@@ -1106,16 +1242,23 @@ def not_publishing_list(request):
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
         action = request.POST.get("action")
-        if action == "mark_not_publishing":
-            mark_not_publishing(
-                submission,
-                request.POST.get("publication_exclusion_reason", "unpaid"),
-                request.POST.get("publication_exclusion_notes", ""),
-            )
-            messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
-        elif action == "undo_not_publishing":
-            undo_not_publishing(submission)
-            messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
+        try:
+            if action == "mark_not_publishing":
+                mark_not_publishing(
+                    submission,
+                    request.POST.get("publication_exclusion_reason", "unpaid"),
+                    request.POST.get("publication_exclusion_notes", ""),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
+            elif action == "undo_not_publishing":
+                undo_not_publishing(
+                    submission,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
+        except ValueError as exc:
+            messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "not_publishing_list"))
 
     needs_decision = FinalSubmission.objects.filter(
@@ -1140,16 +1283,31 @@ def not_publishing_list(request):
         needs_decision = needs_decision.filter(search_filter)
         excluded = excluded.filter(search_filter)
 
-    needs_decision = needs_decision.order_by("paper_id_filled", "final_submission_id")
+    needs_decision = list(
+        needs_decision.order_by("paper_id_filled", "final_submission_id")
+    )
     excluded = list(
         excluded.order_by("-active_version", "-publication_excluded_at", "paper_id_filled", "final_submission_id")
     )
+    evidence_targets = [*needs_decision, *excluded]
+    if focused_submission:
+        evidence_targets.append(focused_submission)
+    all_submission_groups = _load_submission_groups_for_targets(evidence_targets)
     active_by_paper = {
         submission.paper_id_filled: submission
         for submission in FinalSubmission.objects.filter(
-            active_version=True, discarded=False
+            active_version=True,
+            discarded=False,
         ).exclude(paper_id_filled="")
     }
+    for submission in [*needs_decision, *excluded]:
+        submission.publication_decision_evidence_token = make_evidence_token(
+            "publication-decision",
+            submission_group_evidence(
+                submission,
+                _group_for_submission(submission, all_submission_groups),
+            ),
+        )
     for submission in excluded:
         replacement = active_by_paper.get(submission.paper_id_filled)
         if replacement and replacement.pk == submission.pk:
@@ -1162,6 +1320,13 @@ def not_publishing_list(request):
         submission.active_replacement = replacement
     focused_context = None
     if focused_submission:
+        focused_submission.publication_decision_evidence_token = make_evidence_token(
+            "publication-decision",
+            submission_group_evidence(
+                focused_submission,
+                _group_for_submission(focused_submission, all_submission_groups),
+            ),
+        )
         focused_context = focused_submission_context(
             focused_submission,
             title="Focused publication decision",
@@ -1194,7 +1359,7 @@ def not_publishing_list(request):
             "q": q,
             "needs_decision": needs_decision,
             "excluded": excluded,
-            "needs_decision_count": needs_decision.count(),
+            "needs_decision_count": len(needs_decision),
             "excluded_count": len(excluded),
             "active_excluded_count": sum(1 for item in excluded if item.active_version),
             "focused_submission": focused_submission,
@@ -1272,10 +1437,23 @@ def exceptions_center(request):
             return redirect(_worklist_return_url(request, "exceptions_center"))
         try:
             if action in {"approve_exception", "reapprove_exception"}:
-                approve_exception(row, request.POST.get("reason", ""))
+                approve_exception(
+                    row,
+                    request.POST.get("reason", ""),
+                    expected_evidence_token=request.POST.get(
+                        "evidence_token",
+                        "",
+                    ),
+                )
                 messages.success(request, f"{row['type_label']} exception allowed.")
             elif action == "remove_exception":
-                remove_exception(row)
+                remove_exception(
+                    row,
+                    expected_evidence_token=request.POST.get(
+                        "evidence_token",
+                        "",
+                    ),
+                )
                 messages.warning(request, f"{row['type_label']} exception removed.")
         except ValueError as exc:
             messages.error(request, str(exc))

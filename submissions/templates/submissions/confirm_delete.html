@@ -7,10 +7,15 @@
         <div class="cfm-page-subtitle">Confirm before removing this database record.</div>
     </div>
 </div>
+{% if blocked_message %}
+<div class="alert alert-danger cfm-attention">{{ blocked_message }}</div>
+{% else %}
 <div class="alert alert-warning cfm-attention">This removes the database record. Files already copied to report or storage folders are not deleted.</div>
+{% endif %}
 <form method="post" class="cfm-action-bar">
     {% csrf_token %}
-    <button class="btn btn-danger">Delete</button>
+    <input type="hidden" name="evidence_token" value="{{ evidence_token }}">
+    {% if can_delete %}<button class="btn btn-danger">Delete</button>{% endif %}
     <a class="btn btn-outline-secondary" href="javascript:history.back()">Cancel</a>
 </form>
 {% endblock %}

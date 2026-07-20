@@ -1,11 +1,13 @@
 import hashlib
 import json
+import logging
 import re
 import shutil
 import uuid
 from datetime import timedelta
 from pathlib import Path
 
+import pandas as pd
 from django.conf import settings as django_settings
 from django.core.files import File
 from django.db import transaction
@@ -20,9 +22,11 @@ from submissions.services.checks import (
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.import_export import (
     MASTER_SHEET_NAME,
+    MAPPING_SHEET_NAME,
     START2_SHEET_NAME,
     clean_value,
     classify_uploaded_file,
+    is_excel_file,
     normalize_columns,
     parse_upload_date,
     parse_submission_file_name,
@@ -30,6 +34,9 @@ from submissions.services.import_export import (
 )
 from submissions.services.audit import audit_failure, audit_preview, audit_success
 from submissions.services.final_submission_state import defer_submission_state_sync
+
+
+logger = logging.getLogger("submissions.services.import_preview")
 from submissions.services.text_utils import clean_note_text
 
 
@@ -161,19 +168,45 @@ def _stats(rows):
 
 def preview_initial_import(uploaded_file):
     frame = normalize_columns(read_table(uploaded_file, [MASTER_SHEET_NAME]))
+    rows, blocking_errors = _preview_initial_frame(frame)
+    return _make_payload("initial", rows, blocking_errors=blocking_errors)
+
+
+def _preview_initial_frame(frame):
     rows = []
     seen_ids = {}
     blocking_errors = []
+    existing_by_key = {}
+    existing_collisions = set()
+    for paper in InitialPaper.objects.all().order_by("paper_id", "pk"):
+        key = clean_value(paper.paper_id).casefold()
+        if key in existing_by_key:
+            existing_collisions.add(key)
+        else:
+            existing_by_key[key] = paper
     for index, row in enumerate(frame.to_dict("records"), start=2):
         paper_id = clean_value(row.get("paper_id") or row.get("submission id") or row.get("initial_submission_id"))
         if not paper_id:
             continue
-        if paper_id in seen_ids:
+        paper_id_key = paper_id.casefold()
+        if paper_id_key in seen_ids:
             blocking_errors.append(
-                f"Duplicate Paper ID '{paper_id}' in uploaded Master List rows {seen_ids[paper_id]} and {index}. Fix the file before applying."
+                f"Duplicate Paper ID '{paper_id}' in uploaded Master List rows "
+                f"{seen_ids[paper_id_key]} and {index}, including capitalization "
+                "variants. Fix the file before applying."
             )
             continue
-        seen_ids[paper_id] = index
+        seen_ids[paper_id_key] = index
+        if paper_id_key in existing_collisions:
+            blocking_errors.append(
+                f"Paper ID '{paper_id}' matches multiple existing Paper Master "
+                "records by capitalization. Resolve the existing collision before "
+                "importing."
+            )
+            continue
+        existing = existing_by_key.get(paper_id_key)
+        if existing:
+            paper_id = existing.paper_id
         new_values = {
             "paper_id": paper_id,
             "acceptance_status": clean_value(
@@ -183,7 +216,6 @@ def preview_initial_import(uploaded_file):
             "authors": clean_value(row.get("authors")),
             "notes": clean_note_text(row.get("notes")),
         }
-        existing = InitialPaper.objects.filter(paper_id=paper_id).first()
         if not existing:
             rows.append(
                 {
@@ -238,7 +270,7 @@ def preview_initial_import(uploaded_file):
             }
         )
     rows.sort(key=_initial_preview_sort_key)
-    return _make_payload("initial", rows, blocking_errors=blocking_errors)
+    return rows, blocking_errors
 
 
 def _initial_preview_sort_key(row):
@@ -254,20 +286,32 @@ def _initial_preview_sort_key(row):
 
 
 def preview_final_import(uploaded_file, submission_files=None):
-    frame = normalize_columns(read_table(uploaded_file, [START2_SHEET_NAME]))
+    frame, master_rows, import_errors, mapping_mode = _final_import_frames(
+        uploaded_file
+    )
     token = uuid.uuid4().hex
     token_dir = preview_root() / token
-    upload_lookup, invalid_files = _save_temp_submission_files(submission_files or [], token_dir)
+    upload_lookup, invalid_files, ambiguous_files = _save_temp_submission_files(
+        submission_files or [],
+        token_dir,
+    )
     rows = []
     seen_ids = {}
-    blocking_errors = []
+    blocking_errors = list(import_errors)
+    blocking_errors.extend(ambiguous_files)
+    future_master_ids = {
+        row["new"]["paper_id"]
+        for row in master_rows
+        if not row.get("skip_apply")
+    }
     for index, row in enumerate(frame.to_dict("records"), start=2):
         final_id = clean_value(row.get("final_submission_id") or row.get("submission id"))
         if not final_id:
             continue
         if final_id in seen_ids:
             blocking_errors.append(
-                f"Duplicate Final ID '{final_id}' in uploaded Final Submission rows {seen_ids[final_id]} and {index}. Fix the file before applying."
+                f"Duplicate Final ID '{final_id}' in uploaded Final Submission rows "
+                f"{seen_ids[final_id]} and {index}. Fix the file before applying."
             )
             continue
         seen_ids[final_id] = index
@@ -280,27 +324,179 @@ def preview_final_import(uploaded_file, submission_files=None):
         )
         final_submission_title = clean_value(row.get("final_submission_title") or row.get("title"))
         upload_date_raw = clean_value(row.get("upload_date"))
+        paper_id_override = clean_value(row.get("paper_id_override"))
         new_values = {
             "final_submission_id": final_id,
             "start2_paper_id_raw": raw_paper_id,
-            "paper_id_filled": resolve_official_paper_id(raw_paper_id, final_submission_title),
+            "paper_id_filled": (
+                paper_id_override
+                or resolve_official_paper_id(raw_paper_id, final_submission_title)
+            ),
             "final_submission_title": final_submission_title,
             "final_submission_authors": clean_value(row.get("final_submission_authors") or row.get("authors")),
             "upload_date": parse_upload_date(upload_date_raw).isoformat() if upload_date_raw else "",
+            "mapping_source": clean_value(row.get("mapping_source")),
+            "mapping_order": row.get("mapping_order"),
+            "original_file_name": clean_value(row.get("original_file_name")),
         }
         existing = FinalSubmission.objects.filter(final_submission_id=final_id).first()
         files = upload_lookup.get(final_id, {})
         if not existing:
-            rows.append(_new_final_row(final_id, new_values, files))
+            rows.append(
+                _new_final_row(
+                    final_id,
+                    new_values,
+                    files,
+                    future_master_ids=future_master_ids,
+                )
+            )
             continue
         if existing.submission_origin == "editor_upload":
             rows.append(_protected_editor_upload_row(existing, new_values))
             continue
         rows.append(_changed_final_row(existing, new_values, files))
     rows.sort(key=_final_preview_sort_key)
-    payload = _make_payload("final", rows, token=token, blocking_errors=blocking_errors)
+    display_rows = [*master_rows, *rows] if mapping_mode else rows
+    payload = _make_payload(
+        "final",
+        display_rows,
+        token=token,
+        blocking_errors=blocking_errors,
+    )
     payload["invalid_files"] = invalid_files
+    payload["master_rows"] = master_rows
+    payload["master_stats"] = _stats(master_rows)
+    payload["final_rows"] = rows
+    payload["final_stats"] = _stats(rows)
+    payload["mapping_workbook"] = mapping_mode
     return _write_payload(payload)
+
+
+def _final_import_frames(uploaded_file):
+    if not is_excel_file(uploaded_file):
+        return (
+            normalize_columns(read_table(uploaded_file, [START2_SHEET_NAME])),
+            [],
+            [],
+            False,
+        )
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+    excel = pd.ExcelFile(uploaded_file)
+    if MAPPING_SHEET_NAME not in excel.sheet_names:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+        return (
+            normalize_columns(read_table(uploaded_file, [START2_SHEET_NAME])),
+            [],
+            [],
+            False,
+        )
+
+    errors = []
+    master_rows = []
+    if MASTER_SHEET_NAME in excel.sheet_names:
+        master_frame = normalize_columns(
+            pd.read_excel(excel, sheet_name=MASTER_SHEET_NAME).fillna("")
+        )
+        master_rows, master_errors = _preview_initial_frame(master_frame)
+        errors.extend(master_errors)
+
+    start2_by_final_id = {}
+    start2_row_numbers = {}
+    if START2_SHEET_NAME in excel.sheet_names:
+        start2_frame = normalize_columns(
+            pd.read_excel(excel, sheet_name=START2_SHEET_NAME).fillna("")
+        )
+        for index, row in enumerate(start2_frame.to_dict("records"), start=2):
+            final_id = clean_value(
+                row.get("submission id") or row.get("final_submission_id")
+            )
+            if not final_id:
+                continue
+            if final_id in start2_by_final_id:
+                errors.append(
+                    f"Duplicate Final ID '{final_id}' in {START2_SHEET_NAME} "
+                    f"rows {start2_row_numbers[final_id]} and {index}."
+                )
+                continue
+            start2_by_final_id[final_id] = row
+            start2_row_numbers[final_id] = index
+
+    mapping_frame = pd.read_excel(
+        excel,
+        sheet_name=MAPPING_SHEET_NAME,
+        header=0,
+    ).fillna("")
+    mapped_rows = []
+    seen_mapping_ids = {}
+    known_master_ids = {
+        paper_id.casefold(): paper_id
+        for paper_id in InitialPaper.objects.values_list(
+            "paper_id",
+            flat=True,
+        )
+    }
+    known_master_ids.update(
+        {
+            row["new"]["paper_id"].casefold(): row["new"]["paper_id"]
+            for row in master_rows
+            if not row.get("skip_apply")
+        }
+    )
+    for index, row in mapping_frame.iterrows():
+        row_number = int(index) + 2
+        final_id = clean_value(row.iloc[0] if len(row) > 0 else "")
+        official_paper_id = clean_value(row.iloc[1] if len(row) > 1 else "")
+        if not final_id and not official_paper_id:
+            continue
+        if not final_id or not official_paper_id:
+            errors.append(
+                f"{MAPPING_SHEET_NAME} row {row_number} must contain both "
+                "Final ID and official Paper ID."
+            )
+            continue
+        if final_id in seen_mapping_ids:
+            errors.append(
+                f"Duplicate Final ID '{final_id}' in {MAPPING_SHEET_NAME} "
+                f"rows {seen_mapping_ids[final_id]} and {row_number}."
+            )
+            continue
+        canonical_paper_id = known_master_ids.get(
+            official_paper_id.casefold()
+        )
+        if canonical_paper_id is None:
+            errors.append(
+                f"{MAPPING_SHEET_NAME} row {row_number} refers to unknown "
+                f"Paper ID '{official_paper_id}'. Import it in Paper Master first."
+            )
+        else:
+            official_paper_id = canonical_paper_id
+        seen_mapping_ids[final_id] = row_number
+        start2_row = start2_by_final_id.get(final_id, {})
+        if not start2_row:
+            errors.append(
+                f"{MAPPING_SHEET_NAME} row {row_number} refers to Final ID "
+                f"'{final_id}', which is missing from {START2_SHEET_NAME}."
+            )
+        mapped_rows.append(
+            {
+                "final_submission_id": final_id,
+                "author_entered_paper_id": clean_value(
+                    start2_row.get("paper-id") or official_paper_id
+                ),
+                "paper_id_override": official_paper_id,
+                "final_submission_title": clean_value(start2_row.get("title")),
+                "final_submission_authors": clean_value(start2_row.get("authors")),
+                "upload_date": clean_value(start2_row.get("upload_date")),
+                "mapping_source": MAPPING_SHEET_NAME,
+                "mapping_order": row_number,
+                "original_file_name": clean_value(
+                    row.iloc[14] if len(row) > 14 else ""
+                ),
+            }
+        )
+    return pd.DataFrame(mapped_rows), master_rows, errors, True
 
 
 def _final_preview_sort_key(row):
@@ -359,13 +555,20 @@ def _make_payload(kind, rows, token=None, blocking_errors=None):
     return payload
 
 
-def _new_final_row(final_id, new_values, files):
+def _new_final_row(
+    final_id,
+    new_values,
+    files,
+    *,
+    future_master_ids=frozenset(),
+):
     pdf_change = "new" if files.get("pdf") else "missing"
     source_change = "new" if files.get("source") else "missing"
     has_pdf = bool(files.get("pdf"))
     has_source = bool(files.get("source"))
     invalid_master_id = bool(
         new_values["paper_id_filled"]
+        and new_values["paper_id_filled"] not in future_master_ids
         and not InitialPaper.objects.filter(paper_id=new_values["paper_id_filled"]).exists()
     )
     return {
@@ -382,6 +585,7 @@ def _new_final_row(final_id, new_values, files):
         "source_reset": has_source,
         "corrected_files_archived": False,
         "author_entered_id_changed": False,
+        "paper_id_changed": True,
         "invalid_master_id": invalid_master_id,
         "active_version_impact": "Active versions will be recalculated after apply.",
         "currently_discarded": False,
@@ -404,6 +608,7 @@ def _protected_editor_upload_row(existing, new_values):
         "source_reset": False,
         "corrected_files_archived": False,
         "author_entered_id_changed": False,
+        "paper_id_changed": False,
         "invalid_master_id": False,
         "active_version_impact": "Skipped: this is an Editor Upload and Start2 import will not modify it.",
         "currently_discarded": existing.discarded,
@@ -421,6 +626,13 @@ def _changed_final_row(existing, new_values, files):
             "Paper ID review will reset",
         ),
         _changed(
+            "paper_id_filled",
+            "Official Paper ID",
+            existing.paper_id_filled,
+            new_values["paper_id_filled"],
+            "Paper ID review will reset",
+        ),
+        _changed(
             "final_submission_title",
             "Final Title",
             existing.final_submission_title,
@@ -429,6 +641,32 @@ def _changed_final_row(existing, new_values, files):
         ),
         _changed("final_submission_authors", "Final Authors", existing.final_submission_authors, new_values["final_submission_authors"]),
     ]
+    if new_values.get("mapping_source"):
+        possible_changes.extend(
+            [
+                _changed(
+                    "mapping_source",
+                    "Mapping Source",
+                    existing.mapping_source,
+                    new_values["mapping_source"],
+                ),
+                _changed(
+                    "mapping_order",
+                    "Mapping Row",
+                    str(existing.mapping_order or ""),
+                    str(new_values.get("mapping_order") or ""),
+                ),
+            ]
+        )
+    if new_values.get("original_file_name"):
+        possible_changes.append(
+            _changed(
+                "original_file_name",
+                "Original PDF Filename",
+                existing.original_file_name,
+                new_values["original_file_name"],
+            )
+        )
     if new_values["upload_date"]:
         possible_changes.append(
             _changed_datetime(
@@ -449,7 +687,10 @@ def _changed_final_row(existing, new_values, files):
     pdf_changed = pdf_change in {"different", "new"}
     source_changed = source_change in {"different", "new"}
     corrected_archived = bool((pdf_changed or source_changed) and existing.has_corrected_files)
-    id_changed = any(change["field"] == "start2_paper_id_raw" for change in changes)
+    id_changed = any(
+        change["field"] in {"start2_paper_id_raw", "paper_id_filled"}
+        for change in changes
+    )
     title_changed = any(change["field"] == "final_submission_title" for change in changes)
     upload_date_changed = any(change["field"] == "upload_date" for change in changes)
     return {
@@ -466,6 +707,7 @@ def _changed_final_row(existing, new_values, files):
         "source_reset": source_changed,
         "corrected_files_archived": corrected_archived,
         "author_entered_id_changed": id_changed,
+        "paper_id_changed": id_changed,
         "active_version_impact": "Active versions will be recalculated after apply." if id_changed or upload_date_changed else "",
         "currently_discarded": existing.discarded,
         "skip_apply": False,
@@ -484,6 +726,7 @@ def _save_temp_submission_files(submission_files, token_dir):
     upload_dir.mkdir(parents=True, exist_ok=True)
     lookup = {}
     invalid = []
+    grouped = {}
     for uploaded_file in submission_files:
         original_name = clean_value(getattr(uploaded_file, "name", ""))
         parsed = parse_submission_file_name(original_name)
@@ -502,13 +745,24 @@ def _save_temp_submission_files(submission_files, token_dir):
                 digest.update(chunk)
                 size += len(chunk)
                 handle.write(chunk)
-        lookup.setdefault(final_id, {})[kind] = {
+        file_info = {
             "original_name": original_name,
             "temp_path": str(temp_path),
             "hash": digest.hexdigest(),
             "size": size,
         }
-    return lookup, invalid
+        grouped.setdefault((final_id, kind), []).append(file_info)
+    ambiguous = []
+    for (final_id, kind), items in sorted(grouped.items()):
+        if len(items) > 1:
+            names = ", ".join(item["original_name"] for item in items)
+            ambiguous.append(
+                f"Multiple {kind.upper()} files resolve to Final ID '{final_id}': "
+                f"{names}. Keep exactly one {kind.upper()} file for this Final ID."
+            )
+            continue
+        lookup.setdefault(final_id, {})[kind] = items[0]
+    return lookup, invalid, ambiguous
 
 
 def _uploaded_file_status(submission, file_info, kind):
@@ -524,13 +778,9 @@ def _current_original_file_path(submission, kind):
     if kind == "pdf":
         if submission.pdf_file and Path(submission.pdf_file.path).exists():
             return Path(submission.pdf_file.path)
-        if submission.current_file_path and Path(submission.current_file_path).exists():
-            return Path(submission.current_file_path)
     if kind == "source":
         if submission.source_file and Path(submission.source_file.path).exists():
             return Path(submission.source_file.path)
-        if submission.source_current_file_path and Path(submission.source_current_file_path).exists():
-            return Path(submission.source_current_file_path)
     return None
 
 
@@ -577,8 +827,13 @@ def apply_import_preview(token, **options):
 @transaction.atomic
 @defer_submission_state_sync()
 def _apply_initial(payload, notes_policy="preserve_existing_notes"):
+    _apply_initial_rows(payload["rows"], notes_policy=notes_policy)
+    return payload["stats"]
+
+
+def _apply_initial_rows(rows, *, notes_policy="preserve_existing_notes"):
     apply_imported_notes = notes_policy == "apply_imported_notes"
-    for row in payload["rows"]:
+    for row in rows:
         if row.get("skip_apply"):
             continue
         values = row["new"]
@@ -596,13 +851,21 @@ def _apply_initial(payload, notes_policy="preserve_existing_notes"):
         )
         if row.get("paper_id_review_reset"):
             _reset_paper_id_review_for_paper(paper.paper_id, "Master Title changed; Paper ID review required again.")
-    return payload["stats"]
 
 
 @transaction.atomic
 @defer_submission_state_sync()
 def _apply_final(payload):
-    for row in payload["rows"]:
+    master_rows = payload.get("master_rows", [])
+    if master_rows:
+        _apply_initial_rows(master_rows)
+    final_rows = payload.get("final_rows", payload["rows"])
+    upload_root = (
+        preview_root()
+        / payload["token"]
+        / "uploads"
+    ).resolve(strict=False)
+    for row in final_rows:
         if row.get("skip_apply"):
             continue
         values = row["new"]
@@ -619,10 +882,15 @@ def _apply_final(payload):
             submission.publication_exclusion_notes = ""
             submission.publication_excluded_at = None
         submission.start2_paper_id_raw = values["start2_paper_id_raw"]
-        if created or row.get("author_entered_id_changed"):
+        if created or row.get("paper_id_changed"):
             submission.paper_id_filled = values["paper_id_filled"]
         submission.final_submission_title = values["final_submission_title"]
         submission.final_submission_authors = values["final_submission_authors"]
+        if values.get("mapping_source"):
+            submission.mapping_source = values["mapping_source"]
+            submission.mapping_order = values.get("mapping_order")
+        if values.get("original_file_name"):
+            submission.original_file_name = values["original_file_name"]
         if values.get("upload_date"):
             submission.upload_date = timezone.datetime.fromisoformat(values["upload_date"])
         if row.get("paper_id_review_reset"):
@@ -643,23 +911,52 @@ def _apply_final(payload):
         submission.save()
         file_changes = row.get("file_changes", {})
         if file_changes.get("pdf", {}).get("status") in {"new", "different"}:
-            _attach_file(submission, file_changes["pdf"], "pdf")
+            _attach_file(
+                submission,
+                file_changes["pdf"],
+                "pdf",
+                upload_root=upload_root,
+            )
         if file_changes.get("source", {}).get("status") in {"new", "different"}:
-            _attach_file(submission, file_changes["source"], "source")
+            _attach_file(
+                submission,
+                file_changes["source"],
+                "source",
+                upload_root=upload_root,
+            )
     from submissions.services.import_export import evaluate_imported_submissions
     from submissions.services.checks import rebuild_paper_authors
     from submissions.services.recompute import recompute_active_and_duplicate_state
 
-    recompute_active_and_duplicate_state(refresh_author_cache=False)
+    duplicate_count = recompute_active_and_duplicate_state(
+        refresh_author_cache=False
+    )
     evaluate_imported_submissions()
     rebuild_paper_authors()
-    return payload["stats"]
+    result = dict(payload.get("final_stats", payload["stats"]))
+    if payload.get("mapping_workbook"):
+        master_stats = payload.get("master_stats", {})
+        result.update(
+            {
+                "created": result.get("new", 0),
+                "updated": result.get("metadata_updated", 0),
+                "imported": sum(
+                    1 for row in final_rows if not row.get("skip_apply")
+                ),
+                "duplicates": duplicate_count,
+                "initial_created": master_stats.get("new", 0),
+                "initial_updated": master_stats.get("metadata_updated", 0),
+            }
+        )
+    return result
 
 
 def _reset_paper_id_review_for_paper(paper_id, message):
-    for submission in FinalSubmission.objects.filter(paper_id_filled=paper_id):
-        _reset_paper_id_review(submission, message)
-        submission.save()
+    from submissions.services.verification import (
+        reset_paper_id_review_for_master_title_change,
+    )
+
+    reset_paper_id_review_for_master_title_change(paper_id, message)
 
 
 def _reset_paper_id_review(submission, message):
@@ -742,29 +1039,104 @@ def _archive_and_unlink_corrected_files(submission):
         django_settings.MEDIA_ROOT
         / "invalidated_corrected_files"
         / clean_value(submission.final_submission_id)
-        / _now().strftime("%Y%m%d_%H%M%S")
+        / f"{_now().strftime('%Y%m%d_%H%M%S_%f')}-{uuid.uuid4().hex[:8]}"
     )
     archive_dir.mkdir(parents=True, exist_ok=True)
     for field_name in ["formatted_pdf_file", "formatted_source_file"]:
         field_file = getattr(submission, field_name)
         if field_file:
             field_path = Path(field_file.path)
+            storage_name = field_file.name
             if field_path.exists():
-                shutil.move(str(field_path), archive_dir / field_path.name)
+                # Copy before changing database state. If the surrounding
+                # transaction rolls back, the reviewed file remains exactly
+                # where the restored row expects it.
+                shutil.copy2(field_path, archive_dir / field_path.name)
+
+                def remove_unreferenced_original(
+                    *,
+                    path=field_path,
+                    model_field=field_name,
+                    name=storage_name,
+                ):
+                    if FinalSubmission.objects.filter(
+                        **{model_field: name}
+                    ).exists():
+                        return
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        logger.exception(
+                            "Archived corrected file could not be removed: %s",
+                            path,
+                        )
+
+                transaction.on_commit(
+                    remove_unreferenced_original,
+                    robust=True,
+                )
             setattr(submission, field_name, "")
     submission.formatted_pdf_uploaded_at = None
     submission.formatted_source_uploaded_at = None
 
 
-def _attach_file(submission, file_info, kind):
-    path = Path(file_info["temp_path"])
-    with path.open("rb") as handle:
-        if kind == "pdf":
-            submission.pdf_file.save(file_info["original_name"], File(handle), save=False)
-            submission.original_file_name = file_info["original_name"]
-            submission.current_file_path = submission.pdf_file.path
-        else:
-            submission.source_file.save(file_info["original_name"], File(handle), save=False)
-            submission.source_original_file_name = file_info["original_name"]
-            submission.source_current_file_path = submission.source_file.path
-    submission.save()
+def _attach_file(submission, file_info, kind, *, upload_root):
+    staged = _validated_import_file_copy(file_info, upload_root)
+    try:
+        with staged.open("rb") as handle:
+            if kind == "pdf":
+                submission.pdf_file.save(
+                    file_info["original_name"],
+                    File(handle),
+                    save=False,
+                )
+                submission.original_file_name = file_info["original_name"]
+                submission.current_file_path = submission.pdf_file.path
+            else:
+                submission.source_file.save(
+                    file_info["original_name"],
+                    File(handle),
+                    save=False,
+                )
+                submission.source_original_file_name = file_info["original_name"]
+                submission.source_current_file_path = submission.source_file.path
+        submission.save()
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def _validated_import_file_copy(file_info, upload_root):
+    path = Path(file_info["temp_path"]).resolve(strict=False)
+    try:
+        path.relative_to(upload_root)
+    except ValueError as exc:
+        raise ValueError(
+            "Import preview file is outside its protected upload staging folder. "
+            "Upload and preview the files again."
+        ) from exc
+    if not path.is_file():
+        raise ValueError(
+            "Import preview file is missing. Upload and preview the files again."
+        )
+
+    staged = path.with_name(f".{path.name}.{uuid.uuid4().hex}.apply")
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with path.open("rb") as source, staged.open("xb") as target:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+                size += len(chunk)
+                target.write(chunk)
+        if (
+            size != file_info.get("size")
+            or digest.hexdigest() != file_info.get("hash")
+        ):
+            raise ValueError(
+                "Import preview file changed after preview. "
+                "Upload and preview the files again."
+            )
+        return staged
+    except Exception:
+        staged.unlink(missing_ok=True)
+        raise

@@ -1,6 +1,7 @@
 import json
 import shutil
 import uuid
+from collections import deque
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -174,30 +175,61 @@ def read_audit_log(query="", limit=300):
     if not path.exists():
         return []
     query = (query or "").strip().lower()
-    rows = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            if query and query not in line.lower():
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                event = {
-                    "timestamp": "",
-                    "action": "unparseable_log_line",
-                    "status": "error",
-                    "message": line[:500],
-                    "raw": line,
-                }
-            event["raw_json"] = json.dumps(event, ensure_ascii=False, sort_keys=True, indent=2)
-            rows.append(event)
-            if len(rows) > limit:
-                rows = rows[-limit:]
+    limit = max(1, int(limit))
+    if query:
+        with path.open("r", encoding="utf-8") as handle:
+            lines = deque(
+                (
+                    line.strip()
+                    for line in handle
+                    if line.strip() and query in line.lower()
+                ),
+                maxlen=limit,
+            )
+    else:
+        lines = _tail_utf8_lines(path, limit)
+    rows = [_parse_audit_line(line) for line in lines]
     rows.reverse()
     return rows
+
+
+def _tail_utf8_lines(path, limit, *, chunk_size=64 * 1024):
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        position = handle.tell()
+        buffer = b""
+        while position > 0 and buffer.count(b"\n") <= limit:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            buffer = handle.read(read_size) + buffer
+    if position > 0 and b"\n" in buffer:
+        buffer = buffer.split(b"\n", 1)[1]
+    return [
+        line
+        for line in buffer.decode("utf-8").splitlines()[-limit:]
+        if line.strip()
+    ]
+
+
+def _parse_audit_line(line):
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        event = {
+            "timestamp": "",
+            "action": "unparseable_log_line",
+            "status": "error",
+            "message": line[:500],
+            "raw": line,
+        }
+    event["raw_json"] = json.dumps(
+        event,
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+    )
+    return event
 
 
 def audit_log_info():
@@ -215,8 +247,11 @@ def archive_and_clear_audit_log(reason="clear_database"):
     archive_dir.mkdir(parents=True, exist_ok=True)
     archived_path = None
     if path.exists() and path.stat().st_size:
-        stamp = timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M%S")
-        archived_path = archive_dir / f"audit_before_{reason}_{stamp}.log"
+        stamp = timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M%S_%f")
+        archived_path = (
+            archive_dir
+            / f"audit_before_{reason}_{stamp}_{uuid.uuid4().hex}.log"
+        )
         shutil.move(str(path), archived_path)
     write_audit_event(
         action="audit_log_archived_and_cleared",

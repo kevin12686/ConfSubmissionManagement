@@ -128,6 +128,11 @@ from submissions.services.verification import (
     verification_rows,
     verify_submission,
 )
+from submissions.services.workflow_evidence import (
+    final_submission_edit_evidence,
+    make_evidence_token,
+    submission_group_evidence,
+)
 from submissions.application.commands import apply_final_submission_preview
 from submissions.application.pagination import paginate_worklist
 from submissions.application.selectors import final_submission_list_context, search_query
@@ -208,16 +213,56 @@ def _score_badge_level(value, threshold):
     return "danger" if value > threshold else "light"
 
 
+def _attach_version_decision_tokens(submissions):
+    submissions = list(submissions)
+    paper_ids = {
+        (submission.paper_id_filled or "").strip()
+        for submission in submissions
+        if (submission.paper_id_filled or "").strip()
+    }
+    blank_pks = [
+        submission.pk
+        for submission in submissions
+        if not (submission.paper_id_filled or "").strip()
+    ]
+    filters = Q(paper_id_filled__in=paper_ids)
+    if blank_pks:
+        filters |= Q(pk__in=blank_pks)
+    group_rows = list(
+        FinalSubmission.objects.filter(filters).order_by("pk")
+    ) if submissions else []
+    groups = {}
+    for row in group_rows:
+        paper_id = (row.paper_id_filled or "").strip()
+        if paper_id:
+            groups.setdefault(paper_id, []).append(row)
+    for submission in submissions:
+        paper_id = (submission.paper_id_filled or "").strip()
+        group = groups.get(paper_id, [submission]) if paper_id else [submission]
+        submission.version_decision_evidence_token = make_evidence_token(
+            "version-decision",
+            submission_group_evidence(submission, group),
+        )
+    return submissions
+
+
 def final_submission_list(request):
     if request.method == "POST":
         submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
         action = request.POST.get("action")
         try:
             if action == "discard_submission":
-                discard_submission(submission, request.POST.get("discard_notes", ""))
+                discard_submission(
+                    submission,
+                    request.POST.get("discard_notes", ""),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
                 messages.success(request, f"Final submission {submission.final_submission_id} discarded.")
             elif action == "undo_discard_submission":
-                undo_discard_submission(submission)
+                undo_discard_submission(
+                    submission,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
                 messages.success(request, f"Final submission {submission.final_submission_id} restored.")
             else:
                 messages.error(request, "Unknown final submission action.")
@@ -235,21 +280,23 @@ def final_submission_list(request):
     q = _search_query(request)
     current_filter = request.GET.get("filter", "all")
     current_sort = request.GET.get("sort", "paper_id_asc")
+    context = final_submission_list_context(
+        q,
+        _score_badge_level,
+        current_filter,
+        current_sort,
+        page_builder=lambda items: paginate_worklist(
+            request,
+            items,
+            hx_target="#final-submission-worklist",
+            indicator_id="final-submission-loading",
+        ),
+    )
+    _attach_version_decision_tokens(context["submissions"])
     return render(
         request,
         "submissions/final_submission_list.html",
-        final_submission_list_context(
-            q,
-            _score_badge_level,
-            current_filter,
-            current_sort,
-            page_builder=lambda items: paginate_worklist(
-                request,
-                items,
-                hx_target="#final-submission-worklist",
-                indicator_id="final-submission-loading",
-            ),
-        ),
+        context,
     )
 
 
@@ -262,10 +309,17 @@ def final_submission_form(request, pk=None):
     }:
         try:
             if request.POST.get("action") == "discard_submission":
-                discard_submission(submission, request.POST.get("discard_notes", ""))
+                discard_submission(
+                    submission,
+                    request.POST.get("discard_notes", ""),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
                 messages.success(request, f"Final submission {submission.final_submission_id} discarded.")
             else:
-                undo_discard_submission(submission)
+                undo_discard_submission(
+                    submission,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
                 messages.success(request, f"Final submission {submission.final_submission_id} restored.")
         except Exception as exc:
             audit_failure(
@@ -285,19 +339,30 @@ def final_submission_form(request, pk=None):
         request.POST or None, request.FILES or None, instance=submission
     )
     if request.method == "POST" and form.is_valid():
-        if submission is None:
-            _obj, summary = create_final_submission_manual(
-                form,
-                form.cleaned_data.get("plagiarism_report_file"),
+        try:
+            if submission is None:
+                _obj, summary = create_final_submission_manual(
+                    form,
+                    form.cleaned_data.get("plagiarism_report_file"),
+                )
+                saved_action = "created"
+            else:
+                _obj, summary = apply_final_submission_manual_edit(
+                    submission,
+                    form,
+                    form.cleaned_data.get("plagiarism_report_file"),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                saved_action = "saved"
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            edit_url = reverse(
+                "submissions:final_submission_edit",
+                args=[submission.pk],
             )
-            saved_action = "created"
-        else:
-            _obj, summary = apply_final_submission_manual_edit(
-                submission,
-                form,
-                form.cleaned_data.get("plagiarism_report_file"),
-            )
-            saved_action = "saved"
+            if return_url:
+                edit_url = f"{edit_url}?{urlencode({'next': return_url})}"
+            return redirect(edit_url)
         details = [
             label
             for key, label in [
@@ -321,6 +386,14 @@ def final_submission_form(request, pk=None):
     if submission:
         context["publication_pdf"] = publication_pdf_info(submission)
         context["publication_source"] = publication_source_info(submission)
+        context["evidence_token"] = make_evidence_token(
+            "final-submission-edit",
+            final_submission_edit_evidence(submission),
+        )
+        _attach_version_decision_tokens([submission])
+        context["version_decision_evidence_token"] = (
+            submission.version_decision_evidence_token
+        )
     return render(request, "submissions/final_submission_form.html", context)
 
 
@@ -441,21 +514,35 @@ def editor_upload_preview_pdf(request, token):
 def final_submission_delete(request, pk):
     submission = get_object_or_404(FinalSubmission, pk=pk)
     if request.method == "POST":
-        final_id = submission.final_submission_id
-        paper_id = submission.paper_id_filled
-        submission.delete()
-        audit_success(
-            "final_submission_delete",
-            "Final submission deleted.",
+        audit_failure(
+            "final_submission_delete_blocked",
+            "Hard delete is disabled.",
+            "Final Submission was preserved for version traceability.",
             request=request,
-            object_type="FinalSubmission",
-            paper_id=paper_id,
-            final_submission_id=final_id,
+            submission=submission,
         )
-        messages.success(request, "Final submission deleted.")
-        return redirect("submissions:final_submission_list")
+        messages.error(
+            request,
+            "Final Submission hard delete is disabled. Use Discard and record "
+            "the reason so the publication version history remains auditable.",
+        )
+        return redirect(
+            "submissions:final_submission_edit",
+            pk=submission.pk,
+        )
     return render(
-        request, "submissions/confirm_delete.html", {"object": submission, "type": "final submission"}
+        request,
+        "submissions/confirm_delete.html",
+        {
+            "object": submission,
+            "type": "final submission",
+            "can_delete": False,
+            "blocked_message": (
+                "Final Submission hard delete is disabled. Use Discard with a "
+                "reason to preserve publication version history."
+            ),
+            "evidence_token": "",
+        },
     )
 
 

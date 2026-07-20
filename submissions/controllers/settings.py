@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import json
 import uuid
 import logging
 from pathlib import Path
@@ -127,6 +129,11 @@ from submissions.services.audit import (
     audit_success,
 )
 from submissions.services.grobid_extractor import check_grobid_api
+from submissions.services.settings_workflow import (
+    apply_app_settings_form,
+    reset_app_setting_folders,
+    validate_settings_evidence,
+)
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -134,6 +141,10 @@ from submissions.services.verification import (
     undo_not_publishing,
     verification_rows,
     verify_submission,
+)
+from submissions.services.workflow_evidence import (
+    app_setting_evidence,
+    make_evidence_token,
 )
 
 
@@ -159,19 +170,21 @@ def app_settings(request):
     storage_cleanup_preview_token = ""
     storage_repair_result = None
     if request.method == "POST" and request.POST.get("action") == "reset_folders":
-        for field_name, default_value in DEFAULT_FOLDER_SETTINGS.items():
-            setattr(settings_obj, field_name, default_value)
-        if settings_obj._state.adding:
-            settings_obj.save()
-        else:
-            settings_obj.save(
-                update_fields=list(DEFAULT_FOLDER_SETTINGS)
+        try:
+            settings_obj, before = reset_app_setting_folders(
+                DEFAULT_FOLDER_SETTINGS,
+                expected_evidence_token=request.POST.get("evidence_token", ""),
             )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect("submissions:settings")
         audit_success(
             "settings_reset_folders",
             "Folder paths reset to defaults.",
             request=request,
             changed_fields=list(DEFAULT_FOLDER_SETTINGS),
+            before=before,
+            after=app_setting_evidence(settings_obj),
         )
         messages.success(request, "Folder paths reset to data/... defaults.")
         return redirect("submissions:settings")
@@ -266,22 +279,47 @@ def app_settings(request):
         if not preview or request.POST.get("preview_token") != preview.get("token"):
             messages.error(request, "Active version rule preview expired. Preview the change again.")
             return redirect("submissions:settings")
-        current_snapshot = _active_version_snapshot()
-        if current_snapshot != preview.get("before_snapshot"):
-            request.session.pop("active_version_rule_preview", None)
-            messages.error(
-                request,
-                "Active versions changed after the preview was created. Preview the rule change again before applying.",
-            )
-            return redirect("submissions:settings")
         form = AppSettingForm(preview["form_data"], instance=settings_obj)
         if form.is_valid():
-            saved_settings = form.save()
             from submissions.services.recompute import (
                 recompute_active_and_duplicate_state,
             )
 
-            recompute_active_and_duplicate_state()
+            try:
+                with transaction.atomic():
+                    # The rule and all derived active flags must become visible
+                    # together. This also keeps the preview candidate set stable.
+                    list(
+                        FinalSubmission.objects.select_for_update()
+                        .order_by("pk")
+                        .values_list("pk", flat=True)
+                    )
+                    current_snapshot = _active_version_snapshot()
+                    current_candidate_fingerprint = (
+                        _active_version_candidate_fingerprint()
+                    )
+                    if (
+                        current_snapshot != preview.get("before_snapshot")
+                        or current_candidate_fingerprint
+                        != preview.get("candidate_fingerprint")
+                    ):
+                        raise ValueError(
+                            "Active versions changed after the preview was created, "
+                            "or an active-version candidate changed. Preview the rule "
+                            "change again before applying."
+                        )
+                    saved_settings, settings_before = apply_app_settings_form(
+                        form,
+                        expected_evidence_token=preview.get(
+                            "settings_evidence_token",
+                            "",
+                        ),
+                    )
+                    recompute_active_and_duplicate_state()
+            except ValueError as exc:
+                request.session.pop("active_version_rule_preview", None)
+                messages.error(request, str(exc))
+                return redirect("submissions:settings")
             result_report = {
                 **preview["report"],
                 "applied": True,
@@ -293,8 +331,8 @@ def app_settings(request):
                 "Active final version rule change applied.",
                 request=request,
                 changed_fields=["active_version_rule"],
-                before={"active_version_rule": preview["report"]["old_rule"]},
-                after={"active_version_rule": preview["report"]["new_rule"]},
+                before=settings_before,
+                after=app_setting_evidence(saved_settings),
                 result_counts={"changed_count": result_report["changed_count"]},
                 extra={"changes": result_report["changes"][:50]},
             )
@@ -314,10 +352,23 @@ def app_settings(request):
     form = AppSettingForm(form_data, instance=settings_obj)
     if request.method == "POST" and request.POST.get("action") == "save_settings" and form.is_valid():
         if form.cleaned_data["active_version_rule"] != old_active_version_rule:
+            try:
+                validate_settings_evidence(request.POST.get("evidence_token", ""))
+            except ValueError as exc:
+                messages.error(request, str(exc))
+                return redirect("submissions:settings")
+            candidate_fingerprint = _active_version_candidate_fingerprint()
             before_active_versions = _active_version_snapshot()
             after_active_versions = _active_version_snapshot_for_rule(
                 form.cleaned_data["active_version_rule"]
             )
+            if candidate_fingerprint != _active_version_candidate_fingerprint():
+                messages.error(
+                    request,
+                    "Active-version candidates changed while the preview was being "
+                    "built. No settings were changed; preview the rule change again.",
+                )
+                return redirect("submissions:settings")
             changed_active_versions = _active_version_changes(
                 before_active_versions,
                 after_active_versions,
@@ -332,6 +383,11 @@ def app_settings(request):
                 "token": uuid.uuid4().hex,
                 "form_data": request.POST.copy(),
                 "before_snapshot": before_active_versions,
+                "candidate_fingerprint": candidate_fingerprint,
+                "settings_evidence_token": request.POST.get(
+                    "evidence_token",
+                    "",
+                ),
                 "report": report,
             }
             audit_preview(
@@ -352,12 +408,21 @@ def app_settings(request):
                 ),
             )
             return redirect("submissions:settings")
-        form.save()
+        try:
+            saved_settings, settings_before = apply_app_settings_form(
+                form,
+                expected_evidence_token=request.POST.get("evidence_token", ""),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect("submissions:settings")
         audit_success(
             "settings_save",
             "Settings saved.",
             request=request,
             changed_fields=form.changed_data,
+            before=settings_before,
+            after=app_setting_evidence(saved_settings),
         )
         messages.success(request, "Settings saved.")
         return redirect("submissions:settings")
@@ -381,6 +446,10 @@ def app_settings(request):
             "active_version_change_report": active_version_change_report,
             "active_version_rule_preview": active_version_rule_preview,
             "grobid_status": grobid_status,
+            "settings_evidence_token": make_evidence_token(
+                "app-settings-edit",
+                app_setting_evidence(AppSetting.read()),
+            ),
         },
     )
 
@@ -432,6 +501,44 @@ def _active_version_snapshot():
             discarded=False,
         ).exclude(paper_id_filled="")
     }
+
+
+def _active_version_candidate_fingerprint():
+    digest = hashlib.sha256()
+    candidates = FinalSubmission.objects.order_by("pk").values_list(
+        "pk",
+        "final_submission_id",
+        "paper_id_filled",
+        "submission_origin",
+        "upload_date",
+        "discarded",
+        "active_version",
+    )
+    for (
+        primary_key,
+        final_submission_id,
+        paper_id,
+        submission_origin,
+        upload_date,
+        discarded,
+        active_version,
+    ) in candidates.iterator(chunk_size=1000):
+        encoded_row = json.dumps(
+            [
+                primary_key,
+                final_submission_id,
+                paper_id,
+                submission_origin,
+                upload_date.isoformat() if upload_date else "",
+                discarded,
+                active_version,
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        digest.update(encoded_row)
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def _active_version_snapshot_for_rule(rule):
@@ -573,6 +680,18 @@ def clear_database(request):
             InitialPaper.objects.all().delete()
             AppSetting.objects.all().delete()
             AppSetting.load()
+            audit_requested(
+                "clear_database_apply",
+                "Clear Database changes validated; database commit pending.",
+                request=request,
+                result_counts=counts,
+                file_changes={
+                    "staged_folders": [
+                        str(row["quarantine"])
+                        for row in staged_result["staged"]
+                    ],
+                },
+            )
     except Exception as exc:
         restore_error = None
         if staged_result:
@@ -679,19 +798,31 @@ def clear_database(request):
                 "removed. Their recovery paths are recorded in Audit Log."
             ),
         )
-    audit_success(
-        "clear_database_applied",
-        "System wiped clean.",
-        request=request,
-        result_counts={**counts, "removed_file_items": removed_items},
-        file_changes={
-            "audit_log_archived": bool(archived_audit_path),
-            "audit_archive_path": str(archived_audit_path) if archived_audit_path else "",
-            "preserved_external_folders": staged_result[
-                "skipped_external"
-            ],
-            "retained_quarantines": retained_quarantines,
-            "audit_archive_error": audit_archive_error,
-        },
-    )
+    try:
+        audit_success(
+            "clear_database_applied",
+            "System wiped clean.",
+            request=request,
+            result_counts={**counts, "removed_file_items": removed_items},
+            file_changes={
+                "audit_log_archived": bool(archived_audit_path),
+                "audit_archive_path": (
+                    str(archived_audit_path) if archived_audit_path else ""
+                ),
+                "preserved_external_folders": staged_result[
+                    "skipped_external"
+                ],
+                "retained_quarantines": retained_quarantines,
+                "audit_archive_error": audit_archive_error,
+            },
+        )
+    except OSError:
+        logger.exception(
+            "Clear Database succeeded but the completion audit could not be written."
+        )
+        messages.warning(
+            request,
+            "Database and managed files were cleared, but the completion Audit "
+            "Log entry could not be written. The pre-commit audit entry remains.",
+        )
     return redirect("submissions:dashboard")

@@ -56,12 +56,14 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="submission_id" value="{{ focused_submission.pk }}">
+                <input type="hidden" name="evidence_token" value="{{ focused_submission.publication_decision_evidence_token }}">
                 <button class="btn btn-outline-secondary" name="action" value="undo_not_publishing">Undo Not Publishing</button>
             </form>
         {% else %}
             <form method="post" class="row g-3 align-items-end">
                 {% csrf_token %}
                 <input type="hidden" name="submission_id" value="{{ focused_submission.pk }}">
+                <input type="hidden" name="evidence_token" value="{{ focused_submission.publication_decision_evidence_token }}">
                 <div class="col-md-4">
                     <label class="form-label">Reason</label>
                     <select class="form-select" name="publication_exclusion_reason">
@@ -148,6 +150,7 @@
                         <form method="post" class="row g-2 align-items-end">
                             {% csrf_token %}
                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                            <input type="hidden" name="evidence_token" value="{{ submission.publication_decision_evidence_token }}">
                             <div class="col-md-4">
                                 <select class="form-select form-select-sm" name="publication_exclusion_reason">
                                     <option value="unpaid">Unpaid</option>
@@ -217,6 +220,7 @@
                             <form method="post">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ submission.publication_decision_evidence_token }}">
                                 <button class="btn btn-sm btn-outline-secondary" name="action" value="undo_not_publishing">Undo</button>
                             </form>
                             <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>

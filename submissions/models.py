@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.functions import Lower, Trim
 from django.utils import timezone
 
 from submissions.services.text_utils import clean_note_text
@@ -104,6 +105,19 @@ class InitialPaper(models.Model):
 
     class Meta:
         ordering = ["paper_id"]
+        constraints = [
+            models.UniqueConstraint(
+                Lower(Trim("paper_id")),
+                name="initialpaper_paper_id_normalized_unique",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(paper_id=Trim(models.F("paper_id")))
+                    & ~models.Q(paper_id="")
+                ),
+                name="initialpaper_paper_id_trimmed_nonempty",
+            ),
+        ]
 
     def __str__(self):
         return self.paper_id

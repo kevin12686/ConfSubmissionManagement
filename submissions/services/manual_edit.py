@@ -1,7 +1,10 @@
 import hashlib
+import os
+import uuid
 from pathlib import Path
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from submissions.models import AppSetting
@@ -22,6 +25,10 @@ from submissions.services.import_preview import (
 from submissions.services.recompute import recompute_active_and_duplicate_state
 from submissions.services.title_author_extraction import evaluate_extracted_title_match
 from submissions.services.verification import evaluate_submission, title_similarity, titles_identical
+from submissions.services.workflow_evidence import (
+    final_submission_edit_evidence,
+    require_evidence_token,
+)
 
 
 IDENTITY_FIELDS = {
@@ -243,10 +250,16 @@ def _write_plagiarism_report(submission, report_file):
     report_dir = resolve_folder(AppSetting.load().plagiarism_reports_folder)
     paper_part = sanitize_filename_part(submission.paper_id_filled or "NO_PAPER_ID")
     final_part = sanitize_filename_part(submission.final_submission_id or "NO_FINAL_ID")
-    target = report_dir / f"{paper_part}_{final_part}_report.pdf"
-    with target.open("wb") as output:
-        for chunk in report_file.chunks():
-            output.write(chunk)
+    identity = uuid.uuid4().hex
+    target = report_dir / f"{paper_part}_{final_part}_{identity}_report.pdf"
+    staged = report_dir / f".{target.name}.{uuid.uuid4().hex}.part"
+    try:
+        with staged.open("wb") as output:
+            for chunk in report_file.chunks():
+                output.write(chunk)
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
     submission.plagiarism_report_path = str(target)
     submission.plagiarism_report_stale = False
     submission.plagiarism_imported_at = timezone.now()
@@ -328,6 +341,62 @@ def _apply_publishing_decision(submission, changed_fields, summary):
         submission.verification_message = (
             "Not Publishing was undone; Paper ID must be reviewed again before publication."
         )
+
+
+def _locked_manual_edit_scope(submission, new_paper_id, paper_id_changed):
+    queryset = submission.__class__.objects.select_for_update()
+    filters = Q(pk=submission.pk)
+    if paper_id_changed:
+        probe = submission.__class__.objects.only("paper_id_filled").get(
+            pk=submission.pk
+        )
+        old_paper_id = (probe.paper_id_filled or "").strip()
+        paper_ids = {value for value in [old_paper_id, (new_paper_id or "").strip()] if value}
+        if paper_ids:
+            filters |= Q(paper_id_filled__in=paper_ids)
+    rows = list(queryset.filter(filters).order_by("pk"))
+    locked = next((row for row in rows if row.pk == submission.pk), None)
+    if locked is None:
+        raise ValueError("Final Submission no longer exists.")
+    return locked, rows
+
+
+def _guard_publication_decision_remap(locked, locked_scope, new_paper_id):
+    old_paper_id = (locked.paper_id_filled or "").strip()
+    new_paper_id = (new_paper_id or "").strip()
+    if old_paper_id == new_paper_id:
+        return
+    source_excluded = any(
+        item.excluded_from_publication
+        for item in locked_scope
+        if (item.paper_id_filled or "").strip() == old_paper_id
+    )
+    target_excluded = any(
+        item.excluded_from_publication
+        for item in locked_scope
+        if (item.paper_id_filled or "").strip() == new_paper_id
+    )
+    if source_excluded:
+        raise ValueError(
+            "Official Paper ID cannot be changed while the current Paper ID group "
+            "has a Not Publishing decision. Undo Not Publishing for that group, "
+            "then reload and remap the Final Submission."
+        )
+    if target_excluded:
+        raise ValueError(
+            "Official Paper ID cannot be changed into a Paper ID group marked Not "
+            "Publishing. Undo that group decision, then reload and remap."
+        )
+
+
+def _apply_cleaned_editable_fields(submission, form, changed_fields):
+    model_field_names = {
+        field.name
+        for field in submission._meta.concrete_fields
+        if not field.auto_created
+    }
+    for field_name in sorted(changed_fields & model_field_names):
+        setattr(submission, field_name, form.cleaned_data[field_name])
 
 
 @transaction.atomic
@@ -439,13 +508,35 @@ def create_final_submission_manual(form, report_file=None):
 
 
 @transaction.atomic
-def apply_final_submission_manual_edit(_submission, form, report_file=None):
+def apply_final_submission_manual_edit(
+    _submission,
+    form,
+    report_file=None,
+    *,
+    expected_evidence_token,
+):
     """Apply a FinalSubmission edit with publication-critical reset rules."""
     if _submission is None or not getattr(_submission, "pk", None):
         raise ValueError("Manual edit requires an existing Final Submission record.")
-    original = _submission.__class__.objects.get(pk=_submission.pk)
-    obj = form.save(commit=False)
     changed_fields = set(form.changed_data)
+    new_paper_id = form.cleaned_data.get(
+        "paper_id_filled",
+        _submission.paper_id_filled,
+    )
+    original, locked_scope = _locked_manual_edit_scope(
+        _submission,
+        new_paper_id,
+        "paper_id_filled" in changed_fields,
+    )
+    require_evidence_token(
+        expected_evidence_token,
+        "final-submission-edit",
+        final_submission_edit_evidence(original),
+    )
+    if "paper_id_filled" in changed_fields:
+        _guard_publication_decision_remap(original, locked_scope, new_paper_id)
+
+    obj = original
     report_file = (
         report_file
         if report_file is not None
@@ -467,6 +558,7 @@ def apply_final_submission_manual_edit(_submission, form, report_file=None):
         report_file,
     )
     audit_before = _audit_snapshot(original, audit_fields)
+    _apply_cleaned_editable_fields(obj, form, changed_fields)
 
     if identity_changed:
         _reset_identity_review(

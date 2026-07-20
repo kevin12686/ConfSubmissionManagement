@@ -72,6 +72,7 @@
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {% if return_url %}<input type="hidden" name="next" value="{{ return_url }}">{% endif %}
+    {% if evidence_token %}<input type="hidden" name="evidence_token" value="{{ evidence_token }}">{% endif %}
 
     <div class="vstack gap-3">
         <section class="card" aria-labelledby="submission-identity-heading">
@@ -239,6 +240,7 @@
             <form method="post">
                 {% csrf_token %}
                 {% if return_url %}<input type="hidden" name="next" value="{{ return_url }}">{% endif %}
+                <input type="hidden" name="evidence_token" value="{{ version_decision_evidence_token }}">
                 {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}<div class="mb-3"><strong>Editor upload note:</strong> {{ submission.editor_upload_notes|linebreaksbr }}</div>{% endif %}
                 {% if submission.discarded %}
                     <p>This version is retained for traceability but excluded from active version selection and publication exports.</p>

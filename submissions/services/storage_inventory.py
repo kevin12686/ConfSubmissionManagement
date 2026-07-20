@@ -275,6 +275,7 @@ def _report_cleanup_protected_roots(settings_obj):
         django_settings.BASE_DIR / "data" / "storage_cleanup_previews",
         django_settings.BASE_DIR / "data" / "system_state_backups",
         django_settings.BASE_DIR / "data" / "system_state_restore_previews",
+        django_settings.BASE_DIR / "data" / "crosscheck_provenance",
         django_settings.BASE_DIR / "data" / "restored_external",
         django_settings.BASE_DIR / "data" / "restored_external_folders",
     ]
@@ -330,11 +331,38 @@ def stage_application_data_clear(
         django_settings.BASE_DIR / "data"
     ).resolve(strict=False)
     media_root = Path(django_settings.MEDIA_ROOT).resolve(strict=False)
+    base_dir = Path(django_settings.BASE_DIR).resolve(strict=False)
+    audit_root = (base_data_root / "logs").resolve(strict=False)
+    filesystem_root = Path(base_dir.anchor)
+    if (
+        media_root in {filesystem_root, base_dir, base_data_root}
+        or _path_is_within(base_dir, media_root)
+    ):
+        raise ValueError(
+            f"MEDIA_ROOT is too broad for Clear Database: {media_root}"
+        )
     trusted_roots = (base_data_root, media_root)
     candidates = _application_data_clear_candidates(
         settings_obj,
         default_folder_values,
     )
+    unsafe = sorted(
+        {
+            folder
+            for folder in candidates
+            if folder in {filesystem_root, base_dir, base_data_root}
+            or _path_is_within(base_dir, folder)
+            or _path_is_within(folder, audit_root)
+            or _path_is_within(audit_root, folder)
+        },
+        key=str,
+    )
+    if unsafe:
+        raise ValueError(
+            "Clear Database blocked because a configured managed folder "
+            "overlaps the project, data, or audit root: "
+            + ", ".join(str(path) for path in unsafe)
+        )
     trusted = sorted(
         {
             folder

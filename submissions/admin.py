@@ -14,6 +14,19 @@ from .models import (
 )
 
 
+class WorkflowReadOnlyAdmin:
+    """Keep Django admin from bypassing audited publication workflows."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 class FinalSubmissionIdentityStateInline(admin.StackedInline):
     model = FinalSubmissionIdentityState
     can_delete = False
@@ -45,7 +58,7 @@ class FinalSubmissionPlagiarismStateInline(admin.StackedInline):
 
 
 @admin.register(InitialPaper)
-class InitialPaperAdmin(admin.ModelAdmin):
+class InitialPaperAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     list_display = ("paper_id", "acceptance_status", "title", "has_notes")
     search_fields = ("paper_id", "acceptance_status", "title", "authors", "notes")
 
@@ -55,7 +68,7 @@ class InitialPaperAdmin(admin.ModelAdmin):
 
 
 @admin.register(FinalSubmission)
-class FinalSubmissionAdmin(admin.ModelAdmin):
+class FinalSubmissionAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     inlines = (
         FinalSubmissionIdentityStateInline,
         FinalSubmissionFileStateInline,
@@ -123,13 +136,13 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
 
 
 @admin.register(PaperAuthor)
-class PaperAuthorAdmin(admin.ModelAdmin):
+class PaperAuthorAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     list_display = ("author_name", "normalized_author_name", "paper_id", "final_submission")
     search_fields = ("author_name", "normalized_author_name", "paper_id")
 
 
 @admin.register(AuthorLimitWaiver)
-class AuthorLimitWaiverAdmin(admin.ModelAdmin):
+class AuthorLimitWaiverAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     list_display = (
         "display_author_name",
         "normalized_author_name",
@@ -142,7 +155,7 @@ class AuthorLimitWaiverAdmin(admin.ModelAdmin):
 
 
 @admin.register(AppSetting)
-class AppSettingAdmin(admin.ModelAdmin):
+class AppSettingAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     fieldsets = (
         (
             "Conference",

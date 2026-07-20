@@ -156,6 +156,7 @@
                             <form method="post" class="d-flex gap-2">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ row.paper_id_evidence_token }}">
                                 <select class="form-select" name="corrected_paper_id">
                                     <option value="{{ row.submission.paper_id_filled }}">{{ row.submission.paper_id_filled|default:"Choose Paper ID" }}</option>
                                     {% for paper in papers %}
@@ -173,6 +174,7 @@
                                 <form method="post" class="mt-2 text-end">
                                     {% csrf_token %}
                                     <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                    <input type="hidden" name="evidence_token" value="{{ row.publication_decision_evidence_token }}">
                                     <span class="small text-muted me-2">
                                         Reason: {{ row.submission.get_publication_exclusion_reason_display }}
                                         {% if row.submission.publication_exclusion_notes %}- {{ row.submission.publication_exclusion_notes }}{% endif %}
@@ -183,6 +185,7 @@
                                 <form method="post" class="row g-2 align-items-end mt-2">
                                     {% csrf_token %}
                                     <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                    <input type="hidden" name="evidence_token" value="{{ row.publication_decision_evidence_token }}">
                                     <div class="col-md-3">
                                         <select class="form-select form-select-sm" name="publication_exclusion_reason">
                                             <option value="unpaid">Unpaid</option>
@@ -204,6 +207,7 @@
                             <form method="post" class="mt-2 text-end">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ row.paper_id_unverify_evidence_token }}">
                                 <button class="btn btn-sm btn-outline-danger" name="action" value="unverify">Move Back to Unverified</button>
                             </form>
                         {% endif %}

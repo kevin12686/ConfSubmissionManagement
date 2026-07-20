@@ -3,12 +3,13 @@ import json
 from dataclasses import dataclass
 from functools import cached_property
 
+from django.db.models import Count, Q
+
 from submissions.models import (
     AppSetting,
     AuthorLimitWaiver,
     FinalSubmission,
     InitialPaper,
-    PaperAuthor,
 )
 from submissions.services.file_inspection import FileInspectionContext
 
@@ -29,7 +30,6 @@ def publication_database_signature():
             AppSetting,
             InitialPaper,
             FinalSubmission,
-            PaperAuthor,
             AuthorLimitWaiver,
         )
     ]
@@ -139,3 +139,44 @@ class PublicationReadContext:
                 for submission in submissions
             )
         }
+
+    @cached_property
+    def mixed_publication_decision_groups(self):
+        candidates = FinalSubmission.objects.filter(discarded=False).exclude(
+            paper_id_filled=""
+        )
+        mixed_paper_ids = list(
+            candidates.values("paper_id_filled")
+            .annotate(
+                excluded_count=Count(
+                    "pk",
+                    filter=Q(excluded_from_publication=True),
+                ),
+                included_count=Count(
+                    "pk",
+                    filter=Q(excluded_from_publication=False),
+                ),
+            )
+            .filter(excluded_count__gt=0, included_count__gt=0)
+            .values_list("paper_id_filled", flat=True)
+        )
+        if not mixed_paper_ids:
+            return {}
+
+        grouped = {}
+        rows = (
+            candidates.filter(paper_id_filled__in=mixed_paper_ids)
+            .order_by("paper_id_filled", "final_submission_id")
+            .values_list(
+                "paper_id_filled",
+                "final_submission_id",
+                "excluded_from_publication",
+            )
+        )
+        for paper_id, final_id, excluded in rows:
+            group = grouped.setdefault(
+                paper_id,
+                {"excluded": [], "included": []},
+            )
+            group["excluded" if excluded else "included"].append(final_id)
+        return grouped

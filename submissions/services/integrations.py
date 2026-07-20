@@ -12,21 +12,30 @@ from submissions.services.import_preview import _clear_title_author_manual_overr
 def find_submission(row):
     final_id = clean_value(row.get("final_submission_id"))
     if final_id:
-        submission = FinalSubmission.objects.filter(final_submission_id=final_id).first()
-        if submission:
-            return submission
+        return (
+            FinalSubmission.objects.select_for_update()
+            .filter(final_submission_id=final_id)
+            .first()
+        )
 
     paper_id = clean_value(row.get("paper_id") or row.get("paper_id_filled"))
     if paper_id:
-        return (
-            FinalSubmission.objects.filter(
+        candidates = list(
+            FinalSubmission.objects.select_for_update()
+            .filter(
                 paper_id_filled=paper_id,
                 active_version=True,
                 discarded=False,
                 excluded_from_publication=False,
             )
-            .first()
+            .order_by("pk")[:2]
         )
+        if len(candidates) > 1:
+            raise ValueError(
+                f"Paper ID {paper_id} has multiple active Final Submissions. "
+                "Resolve version state before importing external results."
+            )
+        return candidates[0] if candidates else None
     return None
 
 
@@ -38,12 +47,21 @@ def import_external_results(uploaded_file):
     unmatched = 0
     changed_submissions = []
     changed_by_id = {}
+    imported_row_by_submission = {}
 
-    for row in frame.to_dict("records"):
+    for row_number, row in enumerate(frame.to_dict("records"), start=2):
         submission = find_submission(row)
         if not submission:
             unmatched += 1
             continue
+        previous_row = imported_row_by_submission.get(submission.pk)
+        if previous_row is not None:
+            raise ValueError(
+                f"External result rows {previous_row} and {row_number} both "
+                f"target Final Submission {submission.final_submission_id}. "
+                "Keep exactly one row per Final Submission."
+            )
+        imported_row_by_submission[submission.pk] = row_number
         submission = changed_by_id.setdefault(submission.pk, submission)
 
         title_author_changed = False

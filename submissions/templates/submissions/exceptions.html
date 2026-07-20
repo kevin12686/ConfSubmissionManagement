@@ -121,6 +121,7 @@
                         {% csrf_token %}
                         <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
                         <input type="hidden" name="exception_key" value="{{ row.key }}">
+                        <input type="hidden" name="evidence_token" value="{{ row.evidence_token }}">
                         <button class="btn btn-outline-danger" name="action" value="remove_exception">Remove exception</button>
                     </form>
                 {% else %}
@@ -128,6 +129,7 @@
                         {% csrf_token %}
                         <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
                         <input type="hidden" name="exception_key" value="{{ row.key }}">
+                        <input type="hidden" name="evidence_token" value="{{ row.evidence_token }}">
                         <div class="col-lg-9">
                             <label class="form-label" for="reason-{{ forloop.counter }}">Required reason</label>
                             <textarea id="reason-{{ forloop.counter }}" class="form-control" name="reason" rows="2">{% if row.status == "stale" %}{{ row.reason }}{% endif %}</textarea>

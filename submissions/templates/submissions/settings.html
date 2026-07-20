@@ -8,6 +8,7 @@
     </div>
     <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
         <button class="btn btn-outline-secondary" name="action" value="reset_folders">Reset folders to defaults</button>
     </form>
 </div>
@@ -115,6 +116,7 @@
 <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="save_settings">
+    <input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
 
     <div class="row g-3">
         <div class="col-12">

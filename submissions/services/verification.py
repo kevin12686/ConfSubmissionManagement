@@ -4,13 +4,25 @@ from difflib import SequenceMatcher
 from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils import timezone
+from django.db import transaction
+from django.db.models import Q
 
 from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.audit import audit_success
-from submissions.services.checks import resolve_official_paper_id
+from submissions.services.checks import (
+    duplicate_authors_in_paper,
+    resolve_official_paper_id,
+)
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.recompute import recompute_active_and_duplicate_state
+from submissions.services.workflow_evidence import (
+    duplicate_author_review_evidence,
+    make_evidence_token,
+    paper_id_review_evidence,
+    require_evidence_token,
+    submission_group_evidence,
+)
 
 
 def normalize_title(value):
@@ -31,6 +43,16 @@ def titles_identical(left, right):
     left_normalized = normalize_title(left)
     right_normalized = normalize_title(right)
     return bool(left_normalized and right_normalized and left_normalized == right_normalized)
+
+
+def _copy_submission_state(source, target):
+    if source is target:
+        return
+    for field in source._meta.concrete_fields:
+        value = getattr(source, field.attname)
+        if hasattr(value, "name"):
+            value = value.name
+        setattr(target, field.attname, value)
 
 
 def _diff_html(initial_text, final_text, *, word_level=False):
@@ -416,10 +438,70 @@ def _verification_display_details(submission, initial, *, include_display_detail
     }
 
 
-def verify_submission(submission, corrected_paper_id=None):
+def _paper_id_review_snapshot(submission, paper_candidates):
+    result = evaluate_submission(
+        submission,
+        save=False,
+        paper_candidates=paper_candidates,
+        initial_paper_by_id={
+            paper.paper_id: paper
+            for paper in paper_candidates
+        },
+        include_display_details=False,
+        include_suggestion=True,
+    )
+    return paper_id_review_evidence(
+        submission,
+        paper_candidates,
+        result.get("suggested_paper"),
+        result.get("suggested_score"),
+    ), result
+
+
+@transaction.atomic
+def verify_submission(
+    submission,
+    corrected_paper_id=None,
+    *,
+    use_suggestion=False,
+    expected_evidence_token=None,
+):
+    caller_submission = submission
+    if expected_evidence_token is None:
+        displayed_candidates = list(InitialPaper.objects.all())
+        displayed_evidence, _displayed_result = _paper_id_review_snapshot(
+            submission,
+            displayed_candidates,
+        )
+        expected_evidence_token = make_evidence_token(
+            "paper-id-review",
+            displayed_evidence,
+        )
+
+    paper_candidates = list(
+        InitialPaper.objects.select_for_update().order_by("pk")
+    )
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    current_evidence, current_result = _paper_id_review_snapshot(
+        submission,
+        paper_candidates,
+    )
+    require_evidence_token(
+        expected_evidence_token,
+        "paper-id-review",
+        current_evidence,
+    )
+
     if submission.excluded_from_publication:
         raise ValueError("Cannot verify: this final submission is marked Not Publishing.")
-    if corrected_paper_id:
+    if use_suggestion:
+        suggestion = current_result.get("suggested_paper")
+        if not suggestion:
+            raise ValueError(
+                "No current Paper ID suggestion is available. Reload and choose a Paper ID."
+            )
+        submission.paper_id_filled = suggestion.paper_id
+    elif corrected_paper_id:
         submission.paper_id_filled = corrected_paper_id
     elif submission.start2_paper_id_raw and not submission.paper_id_filled:
         submission.paper_id_filled = resolve_official_paper_id(
@@ -427,7 +509,8 @@ def verify_submission(submission, corrected_paper_id=None):
             submission.final_submission_title,
         )
 
-    if not InitialPaper.objects.filter(paper_id=submission.paper_id_filled).exists():
+    paper_ids = {paper.paper_id for paper in paper_candidates}
+    if submission.paper_id_filled not in paper_ids:
         raise ValueError("Cannot verify: ID not in Paper Master List.")
 
     submission.paper_id_verified = True
@@ -444,6 +527,8 @@ def verify_submission(submission, corrected_paper_id=None):
     )
     recompute_active_and_duplicate_state()
     result = evaluate_submission(submission, save=True)
+    submission.refresh_from_db()
+    _copy_submission_state(submission, caller_submission)
     audit_success(
         "verify_paper_id",
         "Paper ID verified.",
@@ -457,18 +542,42 @@ def verify_submission(submission, corrected_paper_id=None):
     return result
 
 
-def mark_not_publishing(submission, reason="unpaid", notes=""):
-    submission.excluded_from_publication = True
-    submission.publication_exclusion_reason = reason or "unpaid"
-    submission.publication_exclusion_notes = notes or ""
-    submission.publication_excluded_at = timezone.now()
-    submission.paper_id_verified = False
-    submission.auto_verify_blocked = True
-    submission.verified_at = None
-    submission.verification_status = "invalid_paper_id"
-    submission.verification_message = "Marked Not Publishing; excluded from publication readiness checks."
-    submission.save(
-        update_fields=[
+@transaction.atomic
+def mark_not_publishing(
+    submission,
+    reason="unpaid",
+    notes="",
+    *,
+    expected_evidence_token=None,
+):
+    caller_submission = submission
+    expected_evidence_token = _default_group_evidence_token(
+        submission,
+        expected_evidence_token,
+        "publication-decision",
+    )
+    submission, submissions = _locked_publication_decision_group(submission)
+    require_evidence_token(
+        expected_evidence_token,
+        "publication-decision",
+        submission_group_evidence(submission, submissions),
+    )
+    excluded_at = timezone.now()
+    for item in submissions:
+        item.excluded_from_publication = True
+        item.publication_exclusion_reason = reason or "unpaid"
+        item.publication_exclusion_notes = notes or ""
+        item.publication_excluded_at = excluded_at
+        item.paper_id_verified = False
+        item.auto_verify_blocked = True
+        item.verified_at = None
+        item.verification_status = "invalid_paper_id"
+        item.verification_message = (
+            "Marked Not Publishing; excluded from publication readiness checks."
+        )
+    bulk_update_submissions(
+        submissions,
+        [
             "excluded_from_publication",
             "publication_exclusion_reason",
             "publication_exclusion_notes",
@@ -478,11 +587,13 @@ def mark_not_publishing(submission, reason="unpaid", notes=""):
             "verified_at",
             "verification_status",
             "verification_message",
-            "updated_at",
-        ]
+        ],
     )
     recompute_active_and_duplicate_state()
+    submission.refresh_from_db()
     result = evaluate_submission(submission, save=True)
+    submission.refresh_from_db()
+    _copy_submission_state(submission, caller_submission)
     audit_success(
         "mark_not_publishing",
         "Final submission marked Not Publishing.",
@@ -491,22 +602,40 @@ def mark_not_publishing(submission, reason="unpaid", notes=""):
             "excluded_from_publication": True,
             "publication_exclusion_reason": submission.publication_exclusion_reason,
             "publication_exclusion_notes": submission.publication_exclusion_notes,
+            "affected_versions": len(submissions),
         },
     )
     return result
 
 
-def undo_not_publishing(submission):
-    submission.excluded_from_publication = False
-    submission.publication_exclusion_reason = ""
-    submission.publication_exclusion_notes = ""
-    submission.publication_excluded_at = None
-    submission.paper_id_verified = False
-    submission.auto_verify_blocked = True
-    submission.verified_at = None
-    submission.verification_message = "Not Publishing was undone; Paper ID review required again."
-    submission.save(
-        update_fields=[
+@transaction.atomic
+def undo_not_publishing(submission, *, expected_evidence_token=None):
+    caller_submission = submission
+    expected_evidence_token = _default_group_evidence_token(
+        submission,
+        expected_evidence_token,
+        "publication-decision",
+    )
+    submission, submissions = _locked_publication_decision_group(submission)
+    require_evidence_token(
+        expected_evidence_token,
+        "publication-decision",
+        submission_group_evidence(submission, submissions),
+    )
+    for item in submissions:
+        item.excluded_from_publication = False
+        item.publication_exclusion_reason = ""
+        item.publication_exclusion_notes = ""
+        item.publication_excluded_at = None
+        item.paper_id_verified = False
+        item.auto_verify_blocked = True
+        item.verified_at = None
+        item.verification_message = (
+            "Not Publishing was undone; Paper ID review required again."
+        )
+    bulk_update_submissions(
+        submissions,
+        [
             "excluded_from_publication",
             "publication_exclusion_reason",
             "publication_exclusion_notes",
@@ -515,22 +644,110 @@ def undo_not_publishing(submission):
             "auto_verify_blocked",
             "verified_at",
             "verification_message",
-            "updated_at",
-        ]
+        ],
     )
     recompute_active_and_duplicate_state()
+    submission.refresh_from_db()
     result = evaluate_submission(submission, save=True)
+    submission.refresh_from_db()
+    _copy_submission_state(submission, caller_submission)
     audit_success(
         "undo_not_publishing",
         "Final submission moved back to publication review.",
         submission=submission,
-        after={"excluded_from_publication": False},
+        after={
+            "excluded_from_publication": False,
+            "affected_versions": len(submissions),
+        },
         reset_flags={"paper_id_review": True},
     )
     return result
 
 
-def unverify_submission(submission):
+def _locked_publication_decision_group(submission):
+    probe = FinalSubmission.objects.only("pk", "paper_id_filled").get(pk=submission.pk)
+    paper_id = (probe.paper_id_filled or "").strip()
+    queryset = FinalSubmission.objects.select_for_update().order_by("pk")
+    if paper_id:
+        submissions = list(
+            queryset.filter(
+                Q(pk=probe.pk) | Q(paper_id_filled=paper_id)
+            )
+        )
+    else:
+        submissions = list(queryset.filter(pk=probe.pk))
+    if not submissions:
+        raise ValueError("Final Submission no longer exists.")
+    locked_submission = next(
+        (item for item in submissions if item.pk == probe.pk),
+        None,
+    )
+    if locked_submission is None:
+        raise ValueError("Final Submission no longer exists.")
+    current_paper_id = (locked_submission.paper_id_filled or "").strip()
+    if current_paper_id != paper_id:
+        raise ValueError(
+            "The Final Submission changed while this action was being applied. "
+            "Reload and review the current publication decision."
+        )
+    return locked_submission, submissions
+
+
+def _default_group_evidence_token(submission, token, kind):
+    if token is not None:
+        return token
+    paper_id = (submission.paper_id_filled or "").strip()
+    if paper_id:
+        group = list(
+            FinalSubmission.objects.filter(paper_id_filled=paper_id).order_by("pk")
+        )
+    else:
+        group = [submission]
+    return make_evidence_token(
+        kind,
+        submission_group_evidence(submission, group),
+    )
+
+
+def reset_paper_id_review_for_master_title_change(paper_id, message):
+    submissions = list(
+        FinalSubmission.objects.filter(paper_id_filled=paper_id)
+    )
+    for submission in submissions:
+        submission.paper_id_verified = False
+        submission.auto_verify_blocked = False
+        submission.verified_at = None
+        submission.verification_status = "pending"
+        submission.title_match_score = None
+        submission.verification_message = message
+    bulk_update_submissions(
+        submissions,
+        [
+            "paper_id_verified",
+            "auto_verify_blocked",
+            "verified_at",
+            "verification_status",
+            "title_match_score",
+            "verification_message",
+        ],
+    )
+    return len(submissions)
+
+
+@transaction.atomic
+def unverify_submission(submission, *, expected_evidence_token=None):
+    caller_submission = submission
+    if expected_evidence_token is None:
+        expected_evidence_token = make_evidence_token(
+            "paper-id-unverify",
+            duplicate_author_review_evidence(submission),
+        )
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    require_evidence_token(
+        expected_evidence_token,
+        "paper-id-unverify",
+        duplicate_author_review_evidence(submission),
+    )
     submission.paper_id_verified = False
     submission.auto_verify_blocked = True
     submission.verified_at = None
@@ -543,6 +760,8 @@ def unverify_submission(submission):
         ]
     )
     result = evaluate_submission(submission, save=True)
+    submission.refresh_from_db()
+    _copy_submission_state(submission, caller_submission)
     audit_success(
         "unverify_paper_id",
         "Paper ID moved back to unverified.",
@@ -550,6 +769,59 @@ def unverify_submission(submission):
         reset_flags={"paper_id_review": True},
     )
     return result
+
+
+@transaction.atomic
+def set_duplicate_author_review(
+    submission,
+    *,
+    reviewed,
+    notes="",
+    expected_evidence_token=None,
+):
+    caller_submission = submission
+    if expected_evidence_token is None:
+        expected_evidence_token = make_evidence_token(
+            "duplicate-author-review",
+            duplicate_author_review_evidence(submission),
+        )
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    require_evidence_token(
+        expected_evidence_token,
+        "duplicate-author-review",
+        duplicate_author_review_evidence(submission),
+    )
+    if reviewed and not duplicate_authors_in_paper(submission.extracted_authors):
+        raise ValueError(
+            "The current author list has no duplicate normalized names to review."
+        )
+    submission.duplicate_author_review_status = "review_ok" if reviewed else "pending"
+    submission.duplicate_author_review_notes = (notes or "").strip() if reviewed else ""
+    submission.duplicate_author_reviewed_at = timezone.now() if reviewed else None
+    submission.save(
+        update_fields=[
+            "duplicate_author_review_status",
+            "duplicate_author_review_notes",
+            "duplicate_author_reviewed_at",
+            "updated_at",
+        ]
+    )
+    audit_success(
+        "duplicate_author_review" if reviewed else "duplicate_author_review_reset",
+        (
+            "Duplicate author review marked OK."
+            if reviewed
+            else "Duplicate author review moved back to pending."
+        ),
+        submission=submission,
+        after={
+            "duplicate_author_review_status": submission.duplicate_author_review_status,
+            "notes": submission.duplicate_author_review_notes,
+        },
+        reset_flags={} if reviewed else {"duplicate_author_review": True},
+    )
+    _copy_submission_state(submission, caller_submission)
+    return submission
 
 
 def verification_rows(

@@ -16,7 +16,7 @@
         <div class="card h-100">
             <div class="card-header fw-semibold">Prepare CrossCheck PDFs</div>
             <div class="card-body">
-                <p class="text-muted">Creates a ZIP from current publication PDFs, named <code>PaperID_token.pdf</code>.</p>
+                <p class="text-muted">Creates a ZIP from current publication PDFs, named <code>PaperID_token.pdf</code>. A token/scope is permanently bound to the exported Final versions and PDF hashes; deleting generated ZIPs does not release it for reuse.</p>
                 <form method="post" class="vstack gap-3">
                     {% csrf_token %}
                     {% include "submissions/includes/form_field.html" with field=crosscheck_export_form.token %}
@@ -42,7 +42,7 @@
         <div class="card h-100">
             <div class="card-header fw-semibold">Import Plagiarism Results</div>
             <div class="card-body">
-                <p class="text-muted">Imports filename, Plagiarism %, and Single %. Reports are uploaded separately.</p>
+                <p class="text-muted">Imports filename, Plagiarism %, and Single %. Blank percentages explicitly mean missing and clear the previous value; malformed values reject that row without changing it. Reports are uploaded separately.</p>
                 <a href="{% url 'submissions:download_template' 'plagiarism' %}">Download result template</a>
                 <form method="post" enctype="multipart/form-data" class="vstack gap-3 mt-3">
                     {% csrf_token %}
@@ -50,7 +50,21 @@
                     {% include "submissions/includes/form_field.html" with field=crosscheck_result_form.file %}
                     <button class="btn btn-primary">Import Result CSV</button>
                 </form>
-                {% if crosscheck_result %}<hr><div>{{ crosscheck_result.updated }} rows updated</div><div class="small text-muted">{{ crosscheck_result.invalid|length }} invalid · {{ crosscheck_result.unmatched|length }} unmatched</div>{% endif %}
+                {% if crosscheck_result %}
+                    <hr>
+                    <div>{{ crosscheck_result.updated }} rows updated</div>
+                    <div class="small text-muted">{{ crosscheck_result.invalid|length }} invalid · {{ crosscheck_result.unmatched|length }} unmatched · {{ crosscheck_result.stale|length }} stale batch/version</div>
+                    {% if crosscheck_result.invalid or crosscheck_result.unmatched or crosscheck_result.stale %}
+                        <details class="mt-2">
+                            <summary>Review rejected rows</summary>
+                            <ul class="small mt-2 mb-0">
+                                {% for row in crosscheck_result.invalid %}<li>Row {{ row.row }} / {{ row.filename }}: {{ row.message }}</li>{% endfor %}
+                                {% for row in crosscheck_result.unmatched %}<li>Row {{ row.row }} / {{ row.filename }}: {{ row.message|default:"No matching batch item." }}</li>{% endfor %}
+                                {% for row in crosscheck_result.stale %}<li>Row {{ row.row }} / {{ row.filename }}: {{ row.message }}</li>{% endfor %}
+                            </ul>
+                        </details>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
@@ -65,7 +79,29 @@
                     {% include "submissions/includes/form_field.html" with field=report_upload_form.report_files %}
                     <button class="btn btn-primary">Upload Reports</button>
                 </form>
-                {% if report_upload_result %}<hr><div>{{ report_upload_result.updated }} reports matched</div><div class="small text-muted">{{ report_upload_result.invalid|length }} invalid · {{ report_upload_result.unmatched|length }} unmatched</div>{% endif %}
+                {% if report_upload_result %}
+                    <hr>
+                    <div>{{ report_upload_result.updated }} reports matched</div>
+                    <div class="small text-muted">{{ report_upload_result.invalid|length }} invalid · {{ report_upload_result.unmatched|length }} unmatched · {{ report_upload_result.stale|length }} stale batch/version</div>
+                    {% if report_upload_result.invalid or report_upload_result.unmatched or report_upload_result.stale %}
+                        <details class="mt-2">
+                            <summary>Review rejected reports</summary>
+                            <ul class="small mt-2 mb-0">
+                                {% for row in report_upload_result.invalid %}<li>{{ row.filename }}: {{ row.message }}</li>{% endfor %}
+                                {% for row in report_upload_result.unmatched %}<li>{{ row.filename }}: {{ row.message|default:"No matching batch item." }}</li>{% endfor %}
+                                {% for row in report_upload_result.stale %}<li>{{ row.filename }}: {{ row.message }}</li>{% endfor %}
+                            </ul>
+                        </details>
+                    {% endif %}
+                    {% if report_upload_result.warnings %}
+                        <div class="alert alert-warning mt-2 mb-0">
+                            <div class="fw-semibold">Report data was committed, but temporary backup cleanup needs attention:</div>
+                            <ul class="small mb-0">
+                                {% for warning in report_upload_result.warnings %}<li>{{ warning }}</li>{% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>

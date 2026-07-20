@@ -13,6 +13,7 @@
 <form method="post" class="card">
     <div class="card-body">
         {% csrf_token %}
+        {% if evidence_token %}<input type="hidden" name="evidence_token" value="{{ evidence_token }}">{% endif %}
         {{ form.as_p }}
     </div>
     <div class="card-footer cfm-action-bar">

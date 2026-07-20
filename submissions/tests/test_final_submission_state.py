@@ -309,7 +309,11 @@ class FinalSubmissionStatePersistenceTests(TestCase):
             content_type="text/csv",
         )
 
-        result = import_crosscheck_results(uploaded_file)
+        with patch(
+            "submissions.services.crosscheck._crosscheck_batch_submission",
+            return_value=(self.submission, "", False),
+        ):
+            result = import_crosscheck_results(uploaded_file)
 
         self.submission.refresh_from_db()
         self.submission.plagiarism_state.refresh_from_db()

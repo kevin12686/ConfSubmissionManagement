@@ -50,6 +50,11 @@ urlpatterns = [
         name="title_author_manual_override_form",
     ),
     path("reviews/formatting/", views.formatting, name="formatting"),
+    path(
+        "reviews/formatting/<int:pk>/preview/",
+        views.formatting_preview,
+        name="formatting_preview",
+    ),
     path("reviews/paper-ids/", views.verify_paper_ids, name="verify_paper_ids"),
     path("reviews/not-publishing/", views.not_publishing_list, name="not_publishing_list"),
     path("reports/active-versions/", views.active_versions, name="active_versions"),

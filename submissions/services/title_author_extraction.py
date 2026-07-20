@@ -1,7 +1,10 @@
 import struct
+import shutil
+import uuid
 from pathlib import Path
 
 from django.conf import settings as django_settings
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -9,6 +12,7 @@ from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.audit import audit_failure, audit_success
 from submissions.services.checks import reset_author_number_exception, split_authors
 from submissions.services.builtin_title_author_extractor import get_title_author
+from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.file_manager import publication_pdf_info, sanitize_filename_part, source_pdf_path
 from submissions.services.grobid_extractor import (
     GrobidExtractionError,
@@ -18,8 +22,46 @@ from submissions.services.grobid_extractor import (
 )
 from submissions.services.title_author_verification import generate_verification_image
 from submissions.services.verification import text_diff_html, title_similarity, titles_identical
+from submissions.services.workflow_evidence import (
+    final_submission_state_evidence,
+    make_evidence_token,
+    require_evidence_token,
+    title_author_manual_override_evidence,
+    title_author_review_evidence,
+)
 
 TITLE_AUTHOR_REVIEW_STATUSES = {"pending", "red_flag", "review_ok"}
+TITLE_AUTHOR_EXTRACTION_UPDATE_FIELDS = [
+    "extracted_title",
+    "extracted_authors",
+    "title_author_source",
+    "title_author_imported_at",
+    "title_author_extraction_status",
+    "title_author_extraction_message",
+    "title_author_verification_image",
+    "title_author_manual_override_reason",
+    "title_author_manual_override_at",
+    "title_author_review_status",
+    "title_author_verified",
+    "title_author_verified_at",
+    "duplicate_author_review_status",
+    "duplicate_author_review_notes",
+    "duplicate_author_reviewed_at",
+    "author_number_exception_approved",
+    "author_number_exception_reason",
+    "author_number_exception_author_count",
+    "author_number_exception_approved_at",
+    "extracted_title_match_status",
+    "extracted_title_match_score",
+    "extracted_title_match_message",
+    "extracted_title_verified",
+    "extracted_title_auto_verify_blocked",
+    "extracted_title_verified_at",
+]
+
+
+class ExtractionStateChanged(ValueError):
+    pass
 
 
 def publication_review_submissions():
@@ -103,18 +145,94 @@ def generate_text_verification_image(pdf_path, extracted_title, extracted_author
     )
 
 
-def extract_title_author_for_submission(submission, refresh_author_cache=True):
-    pdf_path = source_pdf_path(submission)
-    if not pdf_path:
-        submission.title_author_extraction_status = "error"
-        submission.title_author_extraction_message = "Missing PDF file."
-        submission.title_author_review_status = "pending"
-        submission.title_author_verified = False
-        submission.title_author_verified_at = None
-        submission.duplicate_author_review_status = "pending"
-        submission.duplicate_author_review_notes = ""
-        submission.duplicate_author_reviewed_at = None
-        submission.save(
+def _extraction_snapshot(submission):
+    current = FinalSubmission.objects.get(pk=submission.pk)
+    pdf_path = source_pdf_path(current)
+    signature = (
+        FileInspectionContext().status(pdf_path).signature
+        if pdf_path
+        else None
+    )
+    return {
+        "submission": current,
+        "state": final_submission_state_evidence(current),
+        "pdf_path": (
+            str(Path(pdf_path).resolve(strict=False))
+            if pdf_path
+            else ""
+        ),
+        "pdf_signature": signature,
+    }
+
+
+def _locked_extraction_target(snapshot):
+    current = FinalSubmission.objects.select_for_update().get(
+        pk=snapshot["submission"].pk
+    )
+    if final_submission_state_evidence(current) != snapshot["state"]:
+        raise ExtractionStateChanged(
+            "Final Submission changed while title/author extraction was running. "
+            "No extraction result was applied; review the current record and retry."
+        )
+    current_pdf = source_pdf_path(current)
+    current_path = (
+        str(Path(current_pdf).resolve(strict=False))
+        if current_pdf
+        else ""
+    )
+    current_signature = (
+        FileInspectionContext().status(current_pdf).signature
+        if current_pdf
+        else None
+    )
+    if (
+        current_path != snapshot["pdf_path"]
+        or current_signature != snapshot["pdf_signature"]
+    ):
+        raise ExtractionStateChanged(
+            "Publication PDF changed while title/author extraction was running. "
+            "No extraction result was applied; process and extract the current PDF."
+        )
+    return current
+
+
+def _promote_verification_image(image_path, submission, source_label):
+    image_path = Path(image_path)
+    if not image_path.exists():
+        return ""
+    target_dir = (
+        verification_root()
+        / sanitize_filename_part(submission.final_submission_id)
+    )
+    target_dir.mkdir(parents=True, exist_ok=True)
+    source_slug = sanitize_filename_part(source_label.lower())
+    target = target_dir / (
+        f"{sanitize_filename_part(image_path.stem)}-"
+        f"{source_slug}-{uuid.uuid4().hex}.png"
+    )
+    image_path.replace(target)
+    return str(target)
+
+
+def _copy_extraction_fields(source, target):
+    for field_name in TITLE_AUTHOR_EXTRACTION_UPDATE_FIELDS:
+        setattr(target, field_name, getattr(source, field_name))
+
+
+def _record_builtin_extraction_error(snapshot, exc):
+    with transaction.atomic():
+        current = _locked_extraction_target(snapshot)
+        current.title_author_extraction_status = "error"
+        current.title_author_extraction_message = (
+            f"Title/author extraction failed: {exc}"
+        )
+        current.title_author_review_status = "pending"
+        current.title_author_verified = False
+        current.title_author_verified_at = None
+        current.duplicate_author_review_status = "pending"
+        current.duplicate_author_review_notes = ""
+        current.duplicate_author_reviewed_at = None
+        current.save(
             update_fields=[
                 "title_author_extraction_status",
                 "title_author_extraction_message",
@@ -127,9 +245,23 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
                 "updated_at",
             ]
         )
+    return current
+
+
+def extract_title_author_for_submission(submission, refresh_author_cache=True):
+    snapshot = _extraction_snapshot(submission)
+    submission = snapshot["submission"]
+    pdf_path = source_pdf_path(submission)
+    if not pdf_path:
+        _record_builtin_extraction_error(
+            snapshot,
+            ValueError("Missing PDF file."),
+        )
         return False
 
-    target_dir = verification_root() / sanitize_filename_part(submission.final_submission_id)
+    target_dir = verification_root() / (
+        f".staging-{submission.pk}-{uuid.uuid4().hex}"
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -153,7 +285,7 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
         if missing_authors:
             message += " Some extracted authors could not be highlighted on first page."
         submission.title_author_extraction_message = message
-        submission.title_author_verification_image = str(image_path) if image_path.exists() else ""
+        submission.title_author_verification_image = ""
         submission.title_author_manual_override_reason = ""
         submission.title_author_manual_override_at = None
         submission.title_author_review_status = "pending"
@@ -167,36 +299,23 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
         submission.extracted_title_verified_at = None
         submission.extracted_title_auto_verify_blocked = False
         evaluate_extracted_title_match(submission, save=False)
-        submission.save(
-            update_fields=[
-                "extracted_title",
-                "extracted_authors",
-                "title_author_source",
-                "title_author_imported_at",
-                "title_author_extraction_status",
-                "title_author_extraction_message",
-                "title_author_verification_image",
-                "title_author_manual_override_reason",
-                "title_author_manual_override_at",
-                "title_author_review_status",
-                "title_author_verified",
-                "title_author_verified_at",
-                "duplicate_author_review_status",
-                "duplicate_author_review_notes",
-                "duplicate_author_reviewed_at",
-                "author_number_exception_approved",
-                "author_number_exception_reason",
-                "author_number_exception_author_count",
-                "author_number_exception_approved_at",
-                "extracted_title_match_status",
-                "extracted_title_match_score",
-                "extracted_title_match_message",
-                "extracted_title_verified",
-                "extracted_title_auto_verify_blocked",
-                "extracted_title_verified_at",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            current = _locked_extraction_target(snapshot)
+            _copy_extraction_fields(submission, current)
+            current.title_author_verification_image = (
+                _promote_verification_image(
+                    image_path,
+                    current,
+                    "built-in",
+                )
+            )
+            current.save(
+                update_fields=[
+                    *TITLE_AUTHOR_EXTRACTION_UPDATE_FIELDS,
+                    "updated_at",
+                ]
+            )
+        submission = current
         if refresh_author_cache:
             from submissions.services.checks import rebuild_paper_authors
 
@@ -219,28 +338,22 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
             file_changes={"verification_image": submission.title_author_verification_image},
         )
         return True
-    except Exception as exc:
-        submission.title_author_extraction_status = "error"
-        submission.title_author_extraction_message = f"Title/author extraction failed: {exc}"
-        submission.title_author_review_status = "pending"
-        submission.title_author_verified = False
-        submission.title_author_verified_at = None
-        submission.duplicate_author_review_status = "pending"
-        submission.duplicate_author_review_notes = ""
-        submission.duplicate_author_reviewed_at = None
-        submission.save(
-            update_fields=[
-                "title_author_extraction_status",
-                "title_author_extraction_message",
-                "title_author_review_status",
-                "title_author_verified",
-                "title_author_verified_at",
-                "duplicate_author_review_status",
-                "duplicate_author_review_notes",
-                "duplicate_author_reviewed_at",
-                "updated_at",
-            ]
+    except ExtractionStateChanged as exc:
+        audit_failure(
+            "title_author_extract",
+            exc,
+            "Title/author extraction result was rejected because the record changed.",
+            submission=submission,
         )
+        return False
+    except Exception as exc:
+        try:
+            submission = _record_builtin_extraction_error(
+                snapshot,
+                exc,
+            )
+        except ExtractionStateChanged as stale_exc:
+            exc = stale_exc
         audit_failure(
             "title_author_extract",
             exc,
@@ -249,9 +362,12 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
             after={"extraction_status": "error", "message": submission.title_author_extraction_message},
         )
         return False
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
 
 
 def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip_health_check=False):
+    caller_submission = submission
     submission._last_grobid_service_unavailable = False
     settings_obj = AppSetting.load()
     if not skip_health_check:
@@ -282,11 +398,13 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         )
         return False
 
+    snapshot = _extraction_snapshot(submission)
+    submission = snapshot["submission"]
     pdf_path = source_pdf_path(submission)
     if not pdf_path:
         error = GrobidExtractionError("Missing PDF file.")
-        submission._last_grobid_error = str(error)
-        submission._last_grobid_service_unavailable = False
+        caller_submission._last_grobid_error = str(error)
+        caller_submission._last_grobid_service_unavailable = False
         audit_failure(
             "grobid_title_author_extract",
             error,
@@ -295,7 +413,9 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         )
         return False
 
-    target_dir = verification_root() / sanitize_filename_part(submission.final_submission_id)
+    target_dir = verification_root() / (
+        f".staging-grobid-{submission.pk}-{uuid.uuid4().hex}"
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -321,7 +441,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         submission.title_author_imported_at = timezone.now()
         submission.title_author_extraction_status = "extracted"
         submission.title_author_extraction_message = message
-        submission.title_author_verification_image = str(image_path) if image_path.exists() else ""
+        submission.title_author_verification_image = ""
         submission.title_author_manual_override_reason = ""
         submission.title_author_manual_override_at = None
         submission.title_author_review_status = "pending"
@@ -335,36 +455,23 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         submission.extracted_title_verified_at = None
         submission.extracted_title_auto_verify_blocked = False
         evaluate_extracted_title_match(submission, save=False)
-        submission.save(
-            update_fields=[
-                "extracted_title",
-                "extracted_authors",
-                "title_author_source",
-                "title_author_imported_at",
-                "title_author_extraction_status",
-                "title_author_extraction_message",
-                "title_author_verification_image",
-                "title_author_manual_override_reason",
-                "title_author_manual_override_at",
-                "title_author_review_status",
-                "title_author_verified",
-                "title_author_verified_at",
-                "duplicate_author_review_status",
-                "duplicate_author_review_notes",
-                "duplicate_author_reviewed_at",
-                "author_number_exception_approved",
-                "author_number_exception_reason",
-                "author_number_exception_author_count",
-                "author_number_exception_approved_at",
-                "extracted_title_match_status",
-                "extracted_title_match_score",
-                "extracted_title_match_message",
-                "extracted_title_verified",
-                "extracted_title_auto_verify_blocked",
-                "extracted_title_verified_at",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            current = _locked_extraction_target(snapshot)
+            _copy_extraction_fields(submission, current)
+            current.title_author_verification_image = (
+                _promote_verification_image(
+                    image_path,
+                    current,
+                    "grobid",
+                )
+            )
+            current.save(
+                update_fields=[
+                    *TITLE_AUTHOR_EXTRACTION_UPDATE_FIELDS,
+                    "updated_at",
+                ]
+            )
+        submission = current
         if refresh_author_cache:
             from submissions.services.checks import rebuild_paper_authors
 
@@ -389,19 +496,35 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         )
         return True
     except Exception as exc:
-        submission._last_grobid_error = str(exc)
-        submission._last_grobid_service_unavailable = is_grobid_service_unavailable_error(exc)
+        caller_submission._last_grobid_error = str(exc)
+        caller_submission._last_grobid_service_unavailable = (
+            is_grobid_service_unavailable_error(exc)
+        )
         audit_failure(
             "grobid_title_author_extract",
             exc,
             "GROBID title/author extraction failed without changing existing extraction.",
             submission=submission,
-            extra={"service_unavailable": submission._last_grobid_service_unavailable},
+            extra={
+                "service_unavailable": (
+                    caller_submission._last_grobid_service_unavailable
+                )
+            },
         )
         return False
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
 
 
-def apply_title_author_manual_override(submission, title, authors, reason, refresh_author_cache=True):
+def apply_title_author_manual_override(
+    submission,
+    title,
+    authors,
+    reason,
+    refresh_author_cache=True,
+    *,
+    expected_evidence_token=None,
+):
     title = (title or "").strip()
     authors = (authors or "").strip()
     reason = (reason or "").strip()
@@ -410,113 +533,163 @@ def apply_title_author_manual_override(submission, title, authors, reason, refre
     if not title and not authors:
         raise ManualOverrideError("Manual override requires an extracted title or extracted authors.")
 
+    caller_submission = submission
+    if expected_evidence_token is None:
+        expected_evidence_token = make_evidence_token(
+            "title-author-manual-override",
+            title_author_manual_override_evidence(submission),
+        )
+    current = FinalSubmission.objects.get(pk=submission.pk)
+    require_evidence_token(
+        expected_evidence_token,
+        "title-author-manual-override",
+        title_author_manual_override_evidence(current),
+    )
+
     before = {
-        "extracted_title": submission.extracted_title,
-        "extracted_authors": submission.extracted_authors,
-        "title_author_source": submission.title_author_source,
-        "title_author_review_status": submission.title_author_review_status,
-        "extracted_title_verified": submission.extracted_title_verified,
+        "extracted_title": current.extracted_title,
+        "extracted_authors": current.extracted_authors,
+        "title_author_source": current.title_author_source,
+        "title_author_review_status": current.title_author_review_status,
+        "extracted_title_verified": current.extracted_title_verified,
     }
-    pdf_path = source_pdf_path(submission)
-    image_path = ""
+    pdf_path = source_pdf_path(current)
+    pending_root = None
+    generated_image = None
     image_message = ""
     if pdf_path:
+        pending_root = verification_root() / ".pending" / uuid.uuid4().hex
         try:
             generated_image, missing_authors = generate_text_verification_image(
                 pdf_path,
                 title,
                 authors,
                 "MANUAL OVERRIDE",
-                verification_root() / sanitize_filename_part(submission.final_submission_id),
+                pending_root,
             )
-            image_path = str(generated_image) if generated_image.exists() else ""
             if missing_authors:
                 image_message = " Some manually entered authors could not be highlighted on first page."
         except Exception as exc:
             image_message = f" Verification image generation failed: {exc}"
 
-    submission.extracted_title = title
-    submission.extracted_authors = authors
-    submission.title_author_source = "manual_override"
-    submission.title_author_imported_at = timezone.now()
-    submission.title_author_extraction_status = "extracted"
-    submission.title_author_extraction_message = (
-        "Title/authors manually overridden by editor." + image_message
-    )
-    submission.title_author_manual_override_reason = reason
-    submission.title_author_manual_override_at = timezone.now()
-    submission.title_author_verification_image = image_path
-    submission.title_author_review_status = "pending"
-    submission.title_author_verified = False
-    submission.title_author_verified_at = None
-    submission.duplicate_author_review_status = "pending"
-    submission.duplicate_author_review_notes = ""
-    submission.duplicate_author_reviewed_at = None
-    reset_author_number_exception(submission)
-    submission.extracted_title_verified = False
-    submission.extracted_title_verified_at = None
-    submission.extracted_title_auto_verify_blocked = False
-    evaluate_extracted_title_match(submission, save=False)
-    submission.save(
-        update_fields=[
-            "extracted_title",
-            "extracted_authors",
-            "title_author_source",
-            "title_author_imported_at",
-            "title_author_extraction_status",
-            "title_author_extraction_message",
-            "title_author_manual_override_reason",
-            "title_author_manual_override_at",
-            "title_author_verification_image",
-            "title_author_review_status",
-            "title_author_verified",
-            "title_author_verified_at",
-            "duplicate_author_review_status",
-            "duplicate_author_review_notes",
-            "duplicate_author_reviewed_at",
-            "author_number_exception_approved",
-            "author_number_exception_reason",
-            "author_number_exception_author_count",
-            "author_number_exception_approved_at",
-            "extracted_title_match_status",
-            "extracted_title_match_score",
-            "extracted_title_match_message",
-            "extracted_title_verified",
-            "extracted_title_auto_verify_blocked",
-            "extracted_title_verified_at",
-            "updated_at",
-        ]
-    )
-    if refresh_author_cache:
-        from submissions.services.checks import rebuild_paper_authors
+    promoted_image = None
+    try:
+        with transaction.atomic():
+            submission = FinalSubmission.objects.select_for_update().get(
+                pk=caller_submission.pk
+            )
+            require_evidence_token(
+                expected_evidence_token,
+                "title-author-manual-override",
+                title_author_manual_override_evidence(submission),
+            )
+            if generated_image and generated_image.exists():
+                target_dir = (
+                    verification_root()
+                    / sanitize_filename_part(submission.final_submission_id)
+                )
+                target_dir.mkdir(parents=True, exist_ok=True)
+                promoted_image = target_dir / (
+                    f"{generated_image.stem}-{uuid.uuid4().hex}.png"
+                )
+                generated_image.replace(promoted_image)
 
-        rebuild_paper_authors()
-    audit_success(
-        "title_author_manual_override",
-        "Title/author extracted metadata manually overridden.",
-        submission=submission,
-        changed_fields=[
-            "extracted_title",
-            "extracted_authors",
-            "title_author_source",
-            "title_author_manual_override_reason",
-        ],
-        before=before,
-        after={
-            "extracted_title": submission.extracted_title,
-            "extracted_authors": submission.extracted_authors,
-            "title_author_source": submission.title_author_source,
-            "title_author_review_status": submission.title_author_review_status,
-            "extracted_title_verified": submission.extracted_title_verified,
-            "reason": reason,
-        },
-        reset_flags={
-            "title_author_review": True,
-            "duplicate_author_review": True,
-            "author_number_exception": True,
-        },
-        file_changes={"verification_image": submission.title_author_verification_image},
-    )
+            submission.extracted_title = title
+            submission.extracted_authors = authors
+            submission.title_author_source = "manual_override"
+            submission.title_author_imported_at = timezone.now()
+            submission.title_author_extraction_status = "extracted"
+            submission.title_author_extraction_message = (
+                "Title/authors manually overridden by editor." + image_message
+            )
+            submission.title_author_manual_override_reason = reason
+            submission.title_author_manual_override_at = timezone.now()
+            submission.title_author_verification_image = (
+                str(promoted_image) if promoted_image else ""
+            )
+            submission.title_author_review_status = "pending"
+            submission.title_author_verified = False
+            submission.title_author_verified_at = None
+            submission.duplicate_author_review_status = "pending"
+            submission.duplicate_author_review_notes = ""
+            submission.duplicate_author_reviewed_at = None
+            reset_author_number_exception(submission)
+            submission.extracted_title_verified = False
+            submission.extracted_title_verified_at = None
+            submission.extracted_title_auto_verify_blocked = False
+            evaluate_extracted_title_match(submission, save=False)
+            update_fields = [
+                "extracted_title",
+                "extracted_authors",
+                "title_author_source",
+                "title_author_imported_at",
+                "title_author_extraction_status",
+                "title_author_extraction_message",
+                "title_author_manual_override_reason",
+                "title_author_manual_override_at",
+                "title_author_verification_image",
+                "title_author_review_status",
+                "title_author_verified",
+                "title_author_verified_at",
+                "duplicate_author_review_status",
+                "duplicate_author_review_notes",
+                "duplicate_author_reviewed_at",
+                "author_number_exception_approved",
+                "author_number_exception_reason",
+                "author_number_exception_author_count",
+                "author_number_exception_approved_at",
+                "extracted_title_match_status",
+                "extracted_title_match_score",
+                "extracted_title_match_message",
+                "extracted_title_verified",
+                "extracted_title_auto_verify_blocked",
+                "extracted_title_verified_at",
+                "updated_at",
+            ]
+            submission.save(update_fields=update_fields)
+            if refresh_author_cache:
+                from submissions.services.checks import rebuild_paper_authors
+
+                rebuild_paper_authors()
+            audit_success(
+                "title_author_manual_override",
+                "Title/author extracted metadata manually overridden.",
+                submission=submission,
+                changed_fields=[
+                    "extracted_title",
+                    "extracted_authors",
+                    "title_author_source",
+                    "title_author_manual_override_reason",
+                ],
+                before=before,
+                after={
+                    "extracted_title": submission.extracted_title,
+                    "extracted_authors": submission.extracted_authors,
+                    "title_author_source": submission.title_author_source,
+                    "title_author_review_status": submission.title_author_review_status,
+                    "extracted_title_verified": submission.extracted_title_verified,
+                    "reason": reason,
+                },
+                reset_flags={
+                    "title_author_review": True,
+                    "duplicate_author_review": True,
+                    "author_number_exception": True,
+                },
+                file_changes={
+                    "verification_image": submission.title_author_verification_image
+                },
+            )
+    except Exception:
+        if promoted_image and promoted_image.exists():
+            promoted_image.unlink()
+        raise
+    finally:
+        if pending_root:
+            shutil.rmtree(pending_root, ignore_errors=True)
+
+    for field_name in update_fields:
+        if field_name != "updated_at":
+            setattr(caller_submission, field_name, getattr(submission, field_name))
     return submission
 
 
@@ -643,17 +816,46 @@ def extract_grobid_for_suspicious_rows():
     return result
 
 
-def verify_title_author(submission):
-    set_title_author_review_status(submission, "review_ok")
+def verify_title_author(submission, *, expected_evidence_token=None):
+    set_title_author_review_status(
+        submission,
+        "review_ok",
+        expected_evidence_token=expected_evidence_token,
+    )
 
 
-def unverify_title_author(submission):
-    set_title_author_review_status(submission, "pending")
+def unverify_title_author(submission, *, expected_evidence_token=None):
+    set_title_author_review_status(
+        submission,
+        "pending",
+        expected_evidence_token=expected_evidence_token,
+    )
 
 
-def set_title_author_review_status(submission, status):
+@transaction.atomic
+def set_title_author_review_status(
+    submission,
+    status,
+    *,
+    expected_evidence_token=None,
+):
     if status not in TITLE_AUTHOR_REVIEW_STATUSES:
         raise ValueError(f"Unsupported title/author review status: {status}")
+    caller_submission = submission
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    if expected_evidence_token is not None:
+        require_evidence_token(
+            expected_evidence_token,
+            "title-author-review",
+            title_author_review_evidence(submission),
+        )
+    if status == "review_ok" and (
+        not submission.extracted_title.strip()
+        or not submission.extracted_authors.strip()
+    ):
+        raise ValueError(
+            "Review OK requires both an extracted title and extracted authors."
+        )
     submission.title_author_review_status = status
     if status == "review_ok":
         submission.title_author_verified = True
@@ -687,6 +889,19 @@ def set_title_author_review_status(submission, status):
         submission=submission,
         after={"title_author_review_status": status},
     )
+    for field_name in (
+        "title_author_review_status",
+        "title_author_verified",
+        "title_author_verified_at",
+        "extracted_title_verified",
+        "extracted_title_auto_verify_blocked",
+        "extracted_title_verified_at",
+        "extracted_title_match_status",
+        "extracted_title_match_score",
+        "extracted_title_match_message",
+    ):
+        setattr(caller_submission, field_name, getattr(submission, field_name))
+    return submission
 
 
 def evaluate_extracted_title_match(
@@ -891,6 +1106,10 @@ def hydrate_title_author_extraction_rows(rows):
         hydrated.append(
             {
                 **row,
+                "evidence_token": make_evidence_token(
+                    "title-author-review",
+                    title_author_review_evidence(submission),
+                ),
                 "publication_pdf": publication_pdf_info(submission),
                 "image_url": verification_image_url(submission),
                 "image_dimensions": verification_image_dimensions(submission),

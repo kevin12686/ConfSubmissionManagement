@@ -279,18 +279,21 @@
                             <form method="post" class="d-inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ row.evidence_token }}">
                                 <input type="hidden" name="review_status" value="pending">
                                 <button class="btn btn-sm {% if item.title_author_review_status == 'pending' %}btn-warning{% else %}btn-outline-warning{% endif %}" name="action" value="set_review_status">Pending</button>
                             </form>
                             <form method="post" class="d-inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ row.evidence_token }}">
                                 <input type="hidden" name="review_status" value="red_flag">
                                 <button class="btn btn-sm {% if item.title_author_review_status == 'red_flag' %}btn-danger{% else %}btn-outline-danger{% endif %}" name="action" value="set_review_status">Red Flag</button>
                             </form>
                             <form method="post" class="d-inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ item.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ row.evidence_token }}">
                                 <input type="hidden" name="review_status" value="review_ok">
                                 <button class="btn btn-sm {% if item.title_author_review_status == 'review_ok' %}btn-success{% else %}btn-outline-success{% endif %}" name="action" value="set_review_status">Review OK</button>
                             </form>

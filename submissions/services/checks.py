@@ -2,6 +2,7 @@ import re
 import string
 import unicodedata
 from collections import defaultdict
+from dataclasses import dataclass
 
 from django.db import transaction
 
@@ -34,6 +35,7 @@ ERROR_GROUPS = {
             "Missing Final Submission",
             "Replaced Final Submission",
             "Multiple Active Final Submissions",
+            "Mixed Not Publishing Decision",
             "Start2/Editor Version Conflict",
         },
     },
@@ -126,6 +128,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Unverified Paper ID": "critical",
     "Missing Final Submission": "critical",
     "Multiple Active Final Submissions": "critical",
+    "Mixed Not Publishing Decision": "critical",
     "Start2/Editor Version Conflict": "critical",
     "Missing PDF": "critical",
     "Corrected PDF Not Processed": "critical",
@@ -174,6 +177,7 @@ ERROR_REPORT_AREA_CATEGORIES = {
         "Final Title / Paper Master Title Mismatch",
         "Missing Final Submission",
         "Multiple Active Final Submissions",
+        "Mixed Not Publishing Decision",
         "Start2/Editor Version Conflict",
     },
     "files": {
@@ -505,6 +509,36 @@ def _has_any_pdf_file(submission, inspection):
     )
 
 
+def _persisted_publication_hash(submission, kind):
+    """Return a workflow-bound hash without touching publication files."""
+    if kind == "pdf":
+        has_selected_file = bool(
+            submission.formatted_pdf_file or submission.pdf_file
+        )
+        if not (
+            has_selected_file
+            and submission.processing_status == "processed"
+            and submission.page_count is not None
+            and submission.thumbnail_status == "processed"
+            and submission.thumbnail_folder
+            and submission.pdf_hash
+        ):
+            return ""
+        return submission.pdf_hash
+    if kind == "source":
+        has_selected_file = bool(
+            submission.formatted_source_file or submission.source_file
+        )
+        if not (
+            has_selected_file
+            and submission.format_status == "review_ok"
+            and submission.source_hash
+        ):
+            return ""
+        return submission.source_hash
+    raise ValueError(f"Unsupported publication hash kind: {kind}")
+
+
 def publication_duplicate_groups(context=None, *, strict_hash=False):
     context = context or PublicationReadContext.load()
     title_groups = defaultdict(list)
@@ -516,31 +550,39 @@ def publication_duplicate_groups(context=None, *, strict_hash=False):
         if title_key:
             title_groups[title_key].append(submission)
 
-        pdf_info = publication_pdf_info(
-            submission,
-            context.file_inspection,
-            include_url=False,
-        )
-        if pdf_info["exists"]:
-            pdf_groups[
-                context.file_inspection.sha256(
-                    pdf_info["path"],
-                    fresh=strict_hash,
-                )
-            ].append(submission)
+        if strict_hash:
+            pdf_info = publication_pdf_info(
+                submission,
+                context.file_inspection,
+                include_url=False,
+            )
+            if pdf_info["exists"]:
+                pdf_groups[
+                    context.file_inspection.sha256(
+                        pdf_info["path"],
+                        fresh=True,
+                    )
+                ].append(submission)
 
-        source_info = publication_source_info(
-            submission,
-            context.file_inspection,
-            include_url=False,
-        )
-        if source_info["exists"]:
-            source_groups[
-                context.file_inspection.sha256(
-                    source_info["path"],
-                    fresh=strict_hash,
-                )
-            ].append(submission)
+            source_info = publication_source_info(
+                submission,
+                context.file_inspection,
+                include_url=False,
+            )
+            if source_info["exists"]:
+                source_groups[
+                    context.file_inspection.sha256(
+                        source_info["path"],
+                        fresh=True,
+                    )
+                ].append(submission)
+        else:
+            pdf_hash = _persisted_publication_hash(submission, "pdf")
+            if pdf_hash:
+                pdf_groups[pdf_hash].append(submission)
+            source_hash = _persisted_publication_hash(submission, "source")
+            if source_hash:
+                source_groups[source_hash].append(submission)
 
     groups = []
     for kind, category, label, source in [
@@ -713,6 +755,23 @@ def publication_readiness_rows(
     rows = []
     valid_ids = context.valid_paper_ids
     active_valid_submissions = context.master_submissions
+    for paper_id, decision_group in context.mixed_publication_decision_groups.items():
+        excluded_ids = ", ".join(decision_group["excluded"])
+        included_ids = ", ".join(decision_group["included"])
+        rows.append(
+            {
+                "category": "Mixed Not Publishing Decision",
+                "paper_id": paper_id,
+                "final_submission_id": ", ".join(
+                    decision_group["excluded"] + decision_group["included"]
+                ),
+                "message": (
+                    "Versions for this Paper ID disagree on the Not Publishing "
+                    "decision. Re-apply Mark Not Publishing or Undo Not Publishing "
+                    f"before export. Excluded: {excluded_ids}; included: {included_ids}."
+                ),
+            }
+        )
     active_groups = defaultdict(list)
     for submission in context.active_submissions:
         if submission.paper_id_filled in valid_ids:
@@ -1229,9 +1288,16 @@ def resolve_official_paper_id(raw_paper_id, final_title=""):
     if not raw:
         return ""
 
-    exact = InitialPaper.objects.filter(paper_id__iexact=raw).first()
-    if exact:
-        return exact.paper_id
+    exact_matches = list(
+        InitialPaper.objects.filter(paper_id__iexact=raw).order_by(
+            "paper_id",
+            "pk",
+        )[:2]
+    )
+    if len(exact_matches) == 1:
+        return exact_matches[0].paper_id
+    if len(exact_matches) > 1:
+        return raw
 
     key = canonical_paper_id_key(raw)
     matches = [
@@ -1322,6 +1388,7 @@ def rebuild_paper_authors():
             active_version=True,
             excluded_from_publication=False,
             discarded=False,
+            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
         ).exclude(
             extracted_authors=""
         ):
@@ -1341,13 +1408,46 @@ def rebuild_paper_authors():
     return len(rows)
 
 
+@dataclass(frozen=True)
+class PublicationAuthorEntry:
+    final_submission: FinalSubmission
+    paper_id: str
+    author_name: str
+    normalized_author_name: str
+    author_order: int
+
+
+def _publication_author_entries(context):
+    entries = []
+    for submission in context.master_submissions:
+        for index, author_name in enumerate(
+            split_authors(submission.extracted_authors),
+            start=1,
+        ):
+            normalized = normalize_author_name(author_name)
+            if normalized:
+                entries.append(
+                    PublicationAuthorEntry(
+                        final_submission=submission,
+                        paper_id=submission.paper_id_filled,
+                        author_name=author_name,
+                        normalized_author_name=normalized,
+                        author_order=index,
+                    )
+                )
+    return entries
+
+
 def author_count_rows(*, context=None, include_file_links=True):
     context = context or PublicationReadContext.load()
     setting = context.settings
-    authors = list(
-        PaperAuthor.objects.select_related("final_submission").order_by(
-            "normalized_author_name", "id"
-        )
+    authors = sorted(
+        _publication_author_entries(context),
+        key=lambda author: (
+            author.normalized_author_name,
+            author.paper_id,
+            author.author_order,
+        ),
     )
     grouped = defaultdict(list)
     for author in authors:

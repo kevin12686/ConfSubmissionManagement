@@ -56,7 +56,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <div class="alert alert-success border py-2">No publication blockers in the current view.</div>
+        <div class="alert alert-success border py-2">No persisted publication blockers in the current view. Final export performs strict full-scope file validation.</div>
     {% endif %}
 </section>
 <section class="mb-3" aria-labelledby="organized-tracked-heading">
@@ -130,6 +130,14 @@
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
                     <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
                     {% if row.row_type == 'unmatched' %}<div class="small text-danger">Not in Paper Master</div>{% endif %}
+                    {% if row.multiple_active_final_ids %}
+                        <div class="small text-danger">Finals: {{ row.multiple_active_final_ids|join:", " }}</div>
+                        <div class="small"><a href="{% url 'submissions:active_versions' %}">Recalculate active versions</a></div>
+                    {% endif %}
+                    {% if row.publication_decision_conflict %}
+                        <div><span class="badge text-bg-danger">Mixed Not Publishing decision</span></div>
+                        <div class="small"><a href="{% url 'submissions:not_publishing_list' %}">Resolve publication decision</a></div>
+                    {% endif %}
 	                    {% if row.version_conflict %}
 	                        <div><span class="badge text-bg-warning">Start2/Editor conflict</span></div>
 	                        <div class="small"><a href="{% url 'submissions:final_submission_list' %}?filter=version_conflicts">Resolve versions</a></div>
@@ -370,6 +378,7 @@
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
+                                                            <input type="hidden" name="evidence_token" value="{{ section.exception.evidence_token }}">
                                                             <button class="btn btn-outline-danger btn-sm" name="action" value="remove_exception">Remove exception</button>
                                                         </form>
                                                     {% else %}
@@ -377,6 +386,7 @@
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
+                                                            <input type="hidden" name="evidence_token" value="{{ section.exception.evidence_token }}">
                                                             <div class="col-lg-8">
                                                                 <label class="form-label small" for="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}">Required reason</label>
                                                                 <textarea id="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="form-control" name="reason" rows="2">{% if section.exception.status == "stale" %}{{ section.exception.reason }}{% endif %}</textarea>
@@ -409,6 +419,7 @@
                                                         <form method="post" class="row g-2 align-items-end">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
                                                             <div class="col-lg-8">
                                                                 <label class="form-label small" for="duplicate-note-{{ forloop.parentloop.counter }}">Review note</label>
                                                                 <textarea id="duplicate-note-{{ forloop.parentloop.counter }}" class="form-control" name="duplicate_author_review_notes" rows="2" placeholder="Reason, e.g. confirmed different people"></textarea>
@@ -421,6 +432,7 @@
                                                         <form method="post" class="d-flex justify-content-end">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                                            <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
                                                             <button class="btn btn-outline-danger btn-sm" name="action" value="reset_duplicate_author_review">Back to pending</button>
                                                         </form>
                                                     {% endif %}
@@ -606,6 +618,27 @@
     <div class="col-lg-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill">Search</button>{% if q %}<a class="btn btn-outline-secondary" href="{% url 'submissions:organized_list' %}?view=compact">Clear</a>{% endif %}</div>
     {% include "submissions/partials/loading_indicator.html" with indicator_id="organized-compact-loading" message="Updating publication candidates..." %}
 </form>
+{% if summary.multiple_active_conflicts %}
+<div class="alert alert-danger border" role="alert">
+    <div class="fw-semibold mb-2">Version conflicts require resolution</div>
+    <div class="small mb-2">These Paper Master records have multiple active Final Submissions. No publication PDF or source is selected until the active version state is repaired.</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-2">
+            <thead><tr><th>Paper ID</th><th>Active Final IDs</th><th>Publication files</th></tr></thead>
+            <tbody>
+            {% for conflict in summary.multiple_active_conflicts %}
+                <tr>
+                    <td><strong>{{ conflict.paper_id }}</strong></td>
+                    <td>{{ conflict.final_ids|join:", " }}</td>
+                    <td><span class="badge text-bg-danger">No file selected</span></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:active_versions' %}">Resolve active versions</a>
+</div>
+{% endif %}
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky cfm-compact-candidates-table">

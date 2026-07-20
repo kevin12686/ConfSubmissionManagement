@@ -100,6 +100,10 @@ from submissions.services.title_author_extraction import (
 )
 from submissions.services import reports
 from submissions.services.audit import audit_failure, audit_success
+from submissions.services.paper_master import (
+    apply_initial_paper_manual_edit,
+    delete_initial_paper,
+)
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -107,6 +111,11 @@ from submissions.services.verification import (
     undo_not_publishing,
     verification_rows,
     verify_submission,
+)
+from submissions.services.workflow_evidence import (
+    make_evidence_token,
+    paper_master_delete_evidence,
+    paper_master_edit_evidence,
 )
 from submissions.application.commands import apply_paper_master_preview
 from submissions.application.pagination import paginate_worklist
@@ -151,35 +160,97 @@ def initial_paper_form(request, pk=None):
     paper = get_object_or_404(InitialPaper, pk=pk) if pk else None
     form = InitialPaperForm(request.POST or None, instance=paper)
     if request.method == "POST" and form.is_valid():
-        paper = form.save()
-        audit_success(
-            "paper_master_save",
-            "Paper master record saved.",
-            request=request,
-            object_type="InitialPaper",
-            paper_id=paper.paper_id,
-            changed_fields=form.changed_data,
-        )
+        try:
+            if paper:
+                paper, _summary = apply_initial_paper_manual_edit(
+                    paper,
+                    form,
+                    expected_evidence_token=request.POST.get(
+                        "evidence_token",
+                        "",
+                    ),
+                    request=request,
+                )
+            else:
+                paper = form.save()
+                audit_success(
+                    "paper_master_save",
+                    "Paper master record saved.",
+                    request=request,
+                    object_type="InitialPaper",
+                    paper_id=paper.paper_id,
+                    changed_fields=form.changed_data,
+                )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect("submissions:initial_paper_edit", pk=paper.pk)
         messages.success(request, "Paper master record saved.")
         return redirect("submissions:initial_paper_list")
-    return render(request, "submissions/initial_paper_form.html", {"form": form, "paper": paper})
+    evidence_token = (
+        make_evidence_token(
+            "paper-master-edit",
+            paper_master_edit_evidence(paper),
+        )
+        if paper
+        else ""
+    )
+    return render(
+        request,
+        "submissions/initial_paper_form.html",
+        {
+            "form": form,
+            "paper": paper,
+            "evidence_token": evidence_token,
+        },
+    )
 
 
 def initial_paper_delete(request, pk):
     paper = get_object_or_404(InitialPaper, pk=pk)
+    mapped_submissions = list(
+        FinalSubmission.objects.filter(
+            paper_id_filled=paper.paper_id
+        ).order_by("pk")
+    )
+    evidence_token = make_evidence_token(
+        "paper-master-delete",
+        paper_master_delete_evidence(paper, mapped_submissions),
+    )
     if request.method == "POST":
-        paper_id = paper.paper_id
-        paper.delete()
-        audit_success(
-            "paper_master_delete",
-            "Paper master record deleted.",
-            request=request,
-            object_type="InitialPaper",
-            paper_id=paper_id,
-        )
+        try:
+            delete_initial_paper(
+                paper,
+                expected_evidence_token=request.POST.get(
+                    "evidence_token",
+                    "",
+                ),
+                request=request,
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect(
+                "submissions:initial_paper_delete",
+                pk=paper.pk,
+            )
         messages.success(request, "Paper master record deleted.")
         return redirect("submissions:initial_paper_list")
-    return render(request, "submissions/confirm_delete.html", {"object": paper, "type": "paper master record"})
+    blocked_message = (
+        "This Paper Master record has mapped Final Submissions. Remap them "
+        "before deleting the publication-scope record."
+        if mapped_submissions
+        else ""
+    )
+    return render(
+        request,
+        "submissions/confirm_delete.html",
+        {
+            "object": paper,
+            "type": "paper master record",
+            "can_delete": not mapped_submissions,
+            "blocked_message": blocked_message,
+            "evidence_token": evidence_token,
+        },
+    )
 
 
 def import_initial_papers_view(request):
