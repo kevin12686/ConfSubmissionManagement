@@ -108,8 +108,10 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
                 "Firstname Lastname",
                 page.rect,
             )
+            source_word = page.get_text("words", sort=True)[-1]
 
             self.assertTrue(matches)
+            self.assertLess(matches[-1].x1, source_word[2])
         finally:
             document.close()
 
@@ -124,8 +126,10 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
                 "Firstname Lastname",
                 page.rect,
             )
+            source_word = page.get_text("words", sort=True)[-1]
 
             self.assertTrue(matches)
+            self.assertLess(matches[-1].x1, source_word[2])
         finally:
             document.close()
 

@@ -376,6 +376,7 @@ def _find_author_text_rects(page, text, clip):
         clip,
         target_normalizer=_normalized_author_target_text,
         word_normalizer=_normalized_author_pdf_word,
+        trim_author_affiliations=True,
     )
 
 
@@ -386,6 +387,7 @@ def _find_normalized_text_rects(
     *,
     target_normalizer=None,
     word_normalizer=None,
+    trim_author_affiliations=False,
 ):
     text = (text or "").strip()
     if not text:
@@ -410,7 +412,12 @@ def _find_normalized_text_rects(
             combined += word_normalizer(word[4])
             matched.append(word)
             if combined == target:
-                matches.extend(_merge_word_rects(matched))
+                if trim_author_affiliations:
+                    matches.extend(
+                        _merge_author_word_rects(page, matched, clip)
+                    )
+                else:
+                    matches.extend(_merge_word_rects(matched))
                 break
             if not target.startswith(combined):
                 break
@@ -434,6 +441,68 @@ def _merge_word_rects(words):
     if current is not None:
         merged.append(current)
     return merged
+
+
+def _merge_author_word_rects(page, words, clip):
+    raw_lines = _raw_line_characters(page, clip)
+    adjusted_words = []
+    for word in words:
+        rect = _author_word_base_rect(word, raw_lines)
+        adjusted_words.append(
+            (rect.x0, rect.y0, rect.x1, rect.y1, *word[4:])
+        )
+    return _merge_word_rects(adjusted_words)
+
+
+def _raw_line_characters(page, clip):
+    lines = {}
+    raw_text = page.get_text("rawdict", clip=clip, sort=False)
+    for block_index, block in enumerate(raw_text.get("blocks", [])):
+        block_number = block.get("number", block_index)
+        for line_index, line in enumerate(block.get("lines", [])):
+            lines[(block_number, line_index)] = [
+                character
+                for span in line.get("spans", [])
+                for character in span.get("chars", [])
+            ]
+    return lines
+
+
+def _author_word_base_rect(word, raw_lines):
+    word_rect = fitz.Rect(word[:4])
+    expected = _normalized_author_pdf_word(word[4])
+    if not expected:
+        return word_rect
+
+    characters = raw_lines.get((word[5], word[6]), [])
+    matched_rects = []
+    combined = ""
+    for character in characters:
+        character_rect = fitz.Rect(character["bbox"])
+        character_center = fitz.Point(
+            (character_rect.x0 + character_rect.x1) / 2,
+            (character_rect.y0 + character_rect.y1) / 2,
+        )
+        if not word_rect.contains(character_center):
+            continue
+        normalized_character = _normalized_author_target_text(character["c"])
+        if not normalized_character:
+            continue
+        candidate = combined + normalized_character
+        if not expected.startswith(candidate):
+            continue
+        matched_rects.append(character_rect)
+        combined = candidate
+        if combined == expected:
+            break
+
+    if combined != expected or not matched_rects:
+        return word_rect
+
+    base_rect = fitz.Rect(matched_rects[0])
+    for character_rect in matched_rects[1:]:
+        base_rect.include_rect(character_rect)
+    return base_rect
 
 
 def _normalized_match_text(value):
