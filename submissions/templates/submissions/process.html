@@ -16,6 +16,39 @@
         top: 0;
         z-index: 4;
     }
+    .cfm-pdf-preview-identity {
+        min-width: min(100%, 28rem);
+    }
+    .cfm-pdf-preview-actions {
+        align-items: flex-end;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-left: auto;
+    }
+    .cfm-pdf-preview-action-row {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+    .cfm-formatting-triage {
+        border-top: 1px solid var(--cfm-border-strong);
+        margin-top: 1rem;
+        padding-top: 1rem;
+    }
+    .cfm-formatting-triage-layout {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(9rem, 0.3fr) minmax(18rem, 1fr);
+    }
+    .cfm-formatting-current-notes {
+        background: var(--cfm-surface-subtle);
+        border-left: 3px solid var(--cfm-border-strong);
+        color: var(--cfm-secondary-text);
+        padding: 0.625rem 0.75rem;
+    }
     .cfm-page-thumbnail-button {
         background: transparent;
         border: 0;
@@ -44,6 +77,19 @@
         max-height: 78vh;
         object-fit: contain;
         width: 100%;
+    }
+    @media (max-width: 767.98px) {
+        .cfm-pdf-preview-actions {
+            align-items: flex-start;
+            margin-left: 0;
+            width: 100%;
+        }
+        .cfm-pdf-preview-action-row {
+            justify-content: flex-start;
+        }
+        .cfm-formatting-triage-layout {
+            grid-template-columns: minmax(0, 1fr);
+        }
     }
 </style>
 <div class="cfm-page-header">
@@ -212,8 +258,8 @@
 <div class="vstack gap-3">
     {% for row in processed_rows %}
         <div id="paper-preview-{{ row.submission.pk }}" class="card cfm-review-card cfm-pdf-preview-card {% if row.submission.processing_status == 'error' %}cfm-processing-error{% elif row.page_issue or row.needs_processing %}cfm-page-issue{% endif %}">
-            <div class="card-header cfm-pdf-preview-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
-                <div>
+            <div class="card-header cfm-pdf-preview-header d-flex flex-wrap gap-3 justify-content-between align-items-start">
+                <div class="cfm-pdf-preview-identity">
                     <strong>{{ row.submission.paper_id_filled|default:"No Paper ID" }}</strong>
                     <span class="text-muted ms-2">Final ID {{ row.submission.final_submission_id }}</span>
                     {% if row.submission.page_count != None %}<span class="badge {% if row.page_issue %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">Page count: {{ row.submission.page_count }} pages</span>{% endif %}
@@ -221,7 +267,25 @@
                     {% if row.missing_pdf %}<span class="badge text-bg-danger">No PDF</span>{% endif %}
                     <div class="small text-muted mt-1">{{ row.submission.final_submission_title|default:"Missing title" }}</div>
                 </div>
-                <div class="small text-muted">{{ row.submission.processing_message }}</div>
+                <div class="cfm-pdf-preview-actions">
+                    <div class="cfm-pdf-preview-action-row">
+                        <span class="small text-muted">Formatting</span>
+                        <span class="badge text-bg-{% if row.submission.format_status == 'review_ok' %}success{% elif row.submission.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">
+                            {{ row.submission.get_format_status_display }}
+                        </span>
+                        {% if not row.missing_pdf %}
+                            <button class="btn btn-sm btn-outline-danger" type="button" data-bs-toggle="collapse" data-bs-target="#formatting-triage-{{ row.submission.pk }}" aria-expanded="false" aria-controls="formatting-triage-{{ row.submission.pk }}">
+                                Record formatting issue
+                            </button>
+                        {% endif %}
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:formatting' %}?mode=focus&amp;submission={{ row.submission.pk }}">
+                            Open Formatting Review
+                        </a>
+                    </div>
+                    {% if row.submission.processing_message %}
+                        <div class="small text-muted text-end">{{ row.submission.processing_message }}</div>
+                    {% endif %}
+                </div>
             </div>
             <div class="card-body">
                 {% if row.thumbnail_urls %}
@@ -241,6 +305,48 @@
                         <div class="small text-muted">Preview unavailable</div>
                     </div>
                 {% endif %}
+                {% if not row.missing_pdf %}
+                    <div class="collapse cfm-formatting-triage" id="formatting-triage-{{ row.submission.pk }}" data-formatting-triage-panel>
+                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+                            <div>
+                                <h3 class="h5 mb-1">Record formatting issue</h3>
+                                <div class="small text-muted">This records the issue in Formatting Review and changes the workflow to Needs edit. PDF files and processing results are not changed.</div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#formatting-triage-{{ row.submission.pk }}">Close</button>
+                        </div>
+                        {% if row.submission.format_notes %}
+                            <div class="cfm-formatting-current-notes small mb-3">
+                                <div class="fw-semibold mb-1">Current formatting notes</div>
+                                {{ row.submission.format_notes|linebreaksbr }}
+                            </div>
+                        {% endif %}
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="record_format_issue">
+                            <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
+                            <input type="hidden" name="return_to" value="{{ request.get_full_path }}#paper-preview-{{ row.submission.pk }}">
+                            <div class="cfm-formatting-triage-layout">
+                                <div>
+                                    <label class="form-label" for="formatting-page-{{ row.submission.pk }}">Page</label>
+                                    <select class="form-select" id="formatting-page-{{ row.submission.pk }}" name="page_number" data-formatting-page-select>
+                                        <option value="">General paper issue</option>
+                                        {% for page_number in row.page_numbers %}
+                                            <option value="{{ page_number }}">Page {{ page_number }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label" for="formatting-note-{{ row.submission.pk }}">Issue note</label>
+                                    <textarea class="form-control" id="formatting-note-{{ row.submission.pk }}" name="issue_note" rows="3" required data-formatting-note placeholder="Describe the formatting problem that must be corrected."></textarea>
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 justify-content-end align-items-center mt-3">
+                                <a class="btn btn-outline-secondary" href="{% url 'submissions:formatting' %}?mode=focus&amp;submission={{ row.submission.pk }}">Open full Formatting Review</a>
+                                <button class="btn btn-danger" type="submit">Save as Needs edit</button>
+                            </div>
+                        </form>
+                    </div>
+                {% endif %}
             </div>
         </div>
     {% empty %}
@@ -255,6 +361,10 @@
         <div class="modal-content">
             <div class="modal-header"><h2 class="modal-title h5" id="thumbnail-preview-title">PDF page preview</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body text-center"><img class="cfm-thumbnail-modal-image" src="" alt="Expanded PDF page preview"></div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Close</button>
+                <button class="btn btn-outline-danger" id="record-preview-formatting-issue" type="button">Record issue for this page</button>
+            </div>
         </div>
     </div>
 </div>
@@ -262,13 +372,34 @@
 document.addEventListener("DOMContentLoaded", function () {
     const modal = document.getElementById("thumbnail-preview-modal");
     if (!modal) return;
+    const recordIssueButton = modal.querySelector("#record-preview-formatting-issue");
     modal.addEventListener("show.bs.modal", function (event) {
         const trigger = event.relatedTarget;
         modal.querySelector("img").src = trigger.dataset.previewSrc || "";
         modal.querySelector("#thumbnail-preview-title").textContent = trigger.dataset.previewLabel || "PDF page preview";
+        const card = trigger.closest(".cfm-pdf-preview-card");
+        const panel = card ? card.querySelector("[data-formatting-triage-panel]") : null;
+        const pageLabel = trigger.dataset.previewLabel || "";
+        const pageMatch = pageLabel.match(/Page\s+(\d+)$/);
+        recordIssueButton.dataset.panelId = panel ? panel.id : "";
+        recordIssueButton.dataset.pageNumber = pageMatch ? pageMatch[1] : "";
+        recordIssueButton.disabled = !panel;
     });
     modal.addEventListener("hidden.bs.modal", function () {
         modal.querySelector("img").src = "";
+    });
+    recordIssueButton.addEventListener("click", function () {
+        const panel = document.getElementById(recordIssueButton.dataset.panelId || "");
+        if (!panel) return;
+        const pageSelect = panel.querySelector("[data-formatting-page-select]");
+        const note = panel.querySelector("[data-formatting-note]");
+        if (pageSelect) pageSelect.value = recordIssueButton.dataset.pageNumber || "";
+        bootstrap.Modal.getOrCreateInstance(modal).hide();
+        modal.addEventListener("hidden.bs.modal", function revealIssuePanel() {
+            bootstrap.Collapse.getOrCreateInstance(panel, {toggle: false}).show();
+            panel.scrollIntoView({behavior: "smooth", block: "center"});
+            if (note) note.focus({preventScroll: true});
+        }, {once: true});
     });
 });
 </script>

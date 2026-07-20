@@ -428,10 +428,16 @@ def processed_pdf_rows(
 
 
 def hydrate_processed_pdf_rows(rows):
-    return [
-        {
-            **row,
-            "thumbnail_urls": thumbnail_urls(row["submission"]),
-        }
-        for row in rows
-    ]
+    hydrated = []
+    for row in rows:
+        submission = row["submission"]
+        urls = thumbnail_urls(submission)
+        page_total = submission.page_count or len(urls)
+        hydrated.append(
+            {
+                **row,
+                "thumbnail_urls": urls,
+                "page_numbers": range(1, page_total + 1),
+            }
+        )
+    return hydrated

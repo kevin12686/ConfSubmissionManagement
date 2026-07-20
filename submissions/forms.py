@@ -267,6 +267,26 @@ class FormattingUploadForm(BootstrapMixin, forms.Form):
         return cleaned_data
 
 
+class ProcessFormattingIssueForm(BootstrapMixin, forms.Form):
+    submission_id = forms.IntegerField(widget=forms.HiddenInput)
+    page_number = forms.IntegerField(required=False, min_value=1, label="Page")
+    issue_note = forms.CharField(
+        label="Issue note",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "Describe the formatting problem that must be corrected.",
+            }
+        ),
+    )
+
+    def clean_issue_note(self):
+        note = clean_note_text(self.cleaned_data.get("issue_note"))
+        if not note:
+            raise forms.ValidationError("Formatting issue note is required.")
+        return note
+
+
 class AppSettingForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = AppSetting

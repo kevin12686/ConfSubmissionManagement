@@ -209,6 +209,21 @@ Run Process PDFs whenever Dashboard or the global alert says it is needed. Corre
 
 The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or search to narrow papers; use `Jump to paper` for long runs. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
 
+Each preview card also shows the current Formatting status. If you notice a
+problem while scanning, use `Record formatting issue` on the card, or open a
+page thumbnail and choose `Record issue for this page`. Entering a note:
+
+- appends the note to that Final Submission's existing Formatting notes;
+- records the selected page number when applicable;
+- changes Formatting status to `Needs edit`;
+- clears a previous Formatting Review OK source binding;
+- does not alter the PDF, page count, hash, thumbnails, Title/Author review, or
+  plagiarism results.
+
+Use `Open Formatting Review` when you are ready to download files, upload a
+corrected version, or complete Review OK. Process PDFs deliberately does not
+offer corrected-file upload or Review OK actions.
+
 The Process PDFs status area uses the full page width when only one issue type is
 present. It splits into two columns only when both unprocessed PDFs and missing-PDF
 issues need to be shown at the same time.

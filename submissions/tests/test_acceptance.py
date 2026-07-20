@@ -5198,6 +5198,96 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(issues, "P001")
         self.assertNotContains(issues, "P002")
 
+    def test_process_preview_records_formatting_issue_in_existing_workflow(self):
+        self.make_master_paper("P001", "Formatting Issue Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Formatting Issue Paper",
+            page_count=8,
+            format_status="review_ok",
+            format_notes="Previously checked title spacing.",
+            source_hash="reviewed-source-hash",
+            title_author_review_status="review_ok",
+            extracted_title_verified=True,
+        )
+        return_to = (
+            f"{reverse('submissions:process')}?filter=all"
+            f"#paper-preview-{submission.pk}"
+        )
+
+        page = self.client.get(reverse("submissions:process"))
+        self.assertContains(page, "Record formatting issue")
+        self.assertContains(page, "Open Formatting Review")
+        self.assertContains(page, "Current formatting notes")
+        self.assertContains(page, "Record issue for this page")
+        self.assertContains(page, f'id="formatting-triage-{submission.pk}"')
+
+        response = self.client.post(
+            reverse("submissions:process"),
+            {
+                "action": "record_format_issue",
+                "submission_id": submission.pk,
+                "page_number": "3",
+                "issue_note": "  Bottom margin is too small.  ",
+                "return_to": return_to,
+            },
+        )
+
+        self.assertRedirects(response, return_to, fetch_redirect_response=False)
+        submission.refresh_from_db()
+        self.assertEqual(submission.format_status, "needs_edit")
+        self.assertEqual(
+            submission.format_notes,
+            "Previously checked title spacing.\n\nPage 3: Bottom margin is too small.",
+        )
+        self.assertEqual(submission.source_hash, "")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertTrue(submission.extracted_title_verified)
+        self.assertEqual(
+            submission.review_state.format_status,
+            "needs_edit",
+        )
+        self.assertEqual(
+            submission.review_state.format_notes,
+            submission.format_notes,
+        )
+        event = self.latest_audit_event(
+            "formatting_issue_recorded_from_pdf_preview"
+        )
+        self.assertEqual(event["paper_id"], "P001")
+        self.assertEqual(event["extra"]["page_number"], 3)
+        self.assertTrue(
+            event["reset_flags"]["format_review_reset_from_review_ok"]
+        )
+
+    def test_process_preview_rejects_invalid_formatting_issue_without_changes(self):
+        self.make_master_paper("P001", "Formatting Issue Paper", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Formatting Issue Paper",
+            page_count=8,
+            format_status="pending",
+            format_notes="Keep this note.",
+        )
+
+        response = self.client.post(
+            reverse("submissions:process"),
+            {
+                "action": "record_format_issue",
+                "submission_id": submission.pk,
+                "page_number": "9",
+                "issue_note": "Out-of-range page.",
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "Page 9 is outside this 8-page PDF.")
+        submission.refresh_from_db()
+        self.assertEqual(submission.format_status, "pending")
+        self.assertEqual(submission.format_notes, "Keep this note.")
+
     def test_process_preview_filters_needs_processing_and_processed_candidates(self):
         self.make_master_paper("P001", "Needs Processing", "Ada")
         self.make_master_paper("P002", "Processed Paper", "Grace")

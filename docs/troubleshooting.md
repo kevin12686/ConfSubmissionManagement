@@ -104,6 +104,16 @@ page-size control, and `Jump to paper`. Select `All` only when the complete
 filtered set must be inspected together. Images use fixed-size lazy-loaded
 tiles, so rapid scrolling should not change the layout.
 
+### I found a formatting problem while scanning Process PDFs
+
+Use `Record formatting issue` on that paper card. If the issue belongs to a
+specific page, open its enlarged thumbnail and choose
+`Record issue for this page`. The note is stored in the existing Formatting
+Review notes and the paper becomes `Needs edit`; no PDF or processing metadata
+is changed. Open Formatting Review from the same card to correct files or
+complete Review OK. If a previous Review OK existed, recording the issue
+intentionally invalidates that approval until the paper is reviewed again.
+
 ### Formatting queue filter did not update
 
 Formatting, Process PDFs, Organized List, Final Submissions, Author Count,

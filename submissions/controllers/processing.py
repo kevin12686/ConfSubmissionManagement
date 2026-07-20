@@ -11,6 +11,7 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from submissions.forms import (
     AppSettingForm,
@@ -21,6 +22,7 @@ from submissions.forms import (
     FormattingUploadForm,
     ImportFileForm,
     InitialPaperForm,
+    ProcessFormattingIssueForm,
     SystemStateRestoreForm,
 )
 from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
@@ -68,11 +70,14 @@ from submissions.services.system_state import (
 )
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
+    FormattingWorkflowError,
     formatting_filter_counts,
     formatting_preview_info,
     formatting_rows,
+    record_formatting_issue_from_pdf_preview,
     update_formatting_submission,
 )
+from submissions.services.audit import audit_failure
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
     publication_pdf_info,
@@ -126,10 +131,69 @@ DEFAULT_FOLDER_SETTINGS = {
     "plagiarism_reports_folder": "data/plagiarism_reports",
 }
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
+
+
+def _process_return_url(request, submission_id=""):
+    candidate = request.POST.get("return_to", "").strip()
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    anchor = f"#paper-preview-{submission_id}" if submission_id else ""
+    return f"{reverse('submissions:process')}{anchor}"
+
+
 def process_pdfs_view(request):
     context = {"process_result": None}
     if request.method == "POST":
         action = request.POST.get("action")
+        if action == "record_format_issue":
+            form = ProcessFormattingIssueForm(request.POST)
+            submission = None
+            try:
+                if not form.is_valid():
+                    raise FormattingWorkflowError(
+                        " ".join(
+                            error
+                            for errors in form.errors.values()
+                            for error in errors
+                        )
+                    )
+                submission = get_object_or_404(
+                    FinalSubmission,
+                    pk=form.cleaned_data["submission_id"],
+                )
+                record_formatting_issue_from_pdf_preview(
+                    submission,
+                    form.cleaned_data["issue_note"],
+                    page_number=form.cleaned_data.get("page_number"),
+                    request=request,
+                )
+                messages.success(
+                    request,
+                    (
+                        f"Formatting issue recorded for "
+                        f"{submission.paper_id_filled or submission.final_submission_id}. "
+                        "Formatting status is now Needs edit."
+                    ),
+                )
+            except FormattingWorkflowError as exc:
+                audit_failure(
+                    "formatting_issue_recorded_from_pdf_preview",
+                    exc,
+                    "Formatting issue was not recorded.",
+                    request=request,
+                    submission=submission,
+                )
+                messages.error(request, str(exc))
+            submission_id = (
+                submission.pk
+                if submission
+                else request.POST.get("submission_id", "").strip()
+            )
+            return redirect(_process_return_url(request, submission_id))
         context.update(run_pdf_processing_action(action))
         if action == "process":
             messages.success(request, "PDF processing completed.")

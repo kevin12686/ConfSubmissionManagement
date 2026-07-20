@@ -337,6 +337,15 @@ Use app-managed file helpers instead of ad hoc path logic.
 
 Process PDFs is not a read-only page-count operation. It recalculates active versions, then processes only Paper Master publication candidates that are active, undiscarded, and not Not Publishing. For those candidates it calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, rebuilds author cache, and syncs the publication PDF debug folder. Historical, discarded, Not Publishing, and invalid-ID records must not create processing errors. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
 
+Process PDFs also exposes formatting triage through
+`record_formatting_issue_from_pdf_preview()`. Keep this action in the Formatting
+service and persist only through the existing `format_status`, `format_notes`,
+and `source_hash` fields. Notes are appended after `clean_note_text()`;
+Review OK becomes Needs edit and its source binding is cleared. The action must
+not reset Title/Author, Paper ID, plagiarism, page, hash, thumbnail, or file
+state. It must reject records that are no longer current Paper Master
+publication candidates and must write an audit event.
+
 ## Audit Logging Requirements
 
 Any new workflow that changes records, files, review status, publication readiness, settings, exports, cleanup, or backup/restore must write an audit event through `submissions/services/audit.py`.

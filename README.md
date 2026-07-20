@@ -180,7 +180,7 @@ System State ZIP files are portable. They restore settings, conference name, dat
    title safety check compares the uploaded PDF title vertically against Paper
    Master and Final titles, combines identical references, and lets you open,
    replace, or cancel the temporary PDF before confirming a mismatch.
-5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies.
+5. Run Process PDFs to refresh page count, hash, thumbnails, and publication debug PDF copies. If a thumbnail reveals a formatting problem, record it directly from the paper card or enlarged page preview; the note is added to the existing Formatting Review workflow as `Needs edit`.
 6. Run Title/Author Review. Extraction, the verification image, title comparison, and authors are reviewed together; `Review OK` is the single completion state. Built-in, GROBID, and Manual Override results use the same collision-safe verification renderer: a review header lists the source, filename, extracted title, and numbered authors, reuses verified blank space above the PDF title, and expands upward only when needed. The PDF evidence uses title underlines and separate author boundaries. Use optional GROBID fallback only for suspicious rows or individual papers that the built-in extractor handles poorly. Use Manual override only as a documented exception when extraction cannot be fixed through formatting/re-extraction.
 7. Review formatting, upload corrected PDF/source files when needed, and re-run Process PDFs after corrected PDFs.
 8. Export PDFs for CrossCheck/plagiarism, import Plagiarism % and Single %, and upload optional report PDFs.
@@ -202,8 +202,11 @@ time plus a stable Single Paper Mode queue. Starting Single Paper Mode snapshots
 the selected filter/search order; Save stays on the same paper, and changing its
 status does not remove or reorder the queue's Previous/Next destinations. Exact
 links from another workflow open a separate focused review instead of silently
-creating a queue. Process PDFs keeps every page thumbnail for each
-paper on the current page expanded. Organized List separates publication
+creating a queue. Process PDFs keeps every page thumbnail for each paper on the
+current page expanded. Its integrated formatting triage appends page-specific or
+paper-level notes to the same Formatting Review record, clears a previous Review
+OK source binding, and leaves the PDF, processing result, and unrelated review
+states unchanged. Organized List separates publication
 blockers from tracked information and keeps stable table widths.
 
 Paper Master List and Final Submissions provide server-side Sort controls next

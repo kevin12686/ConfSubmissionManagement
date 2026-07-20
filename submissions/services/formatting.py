@@ -29,7 +29,7 @@ from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
     _reset_source_dependent_state,
 )
-from submissions.services.text_utils import natural_text_key
+from submissions.services.text_utils import clean_note_text, natural_text_key
 from submissions.services.verification import build_title_guard_context, titles_identical
 
 
@@ -57,6 +57,84 @@ FORMATTING_SNAPSHOT_LIMIT = 5000
 
 class FormattingWorkflowError(ValueError):
     pass
+
+
+@transaction.atomic
+def record_formatting_issue_from_pdf_preview(
+    submission,
+    issue_note,
+    *,
+    page_number=None,
+    request=None,
+):
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    if (
+        not submission.active_version
+        or submission.discarded
+        or submission.excluded_from_publication
+        or not InitialPaper.objects.filter(
+            paper_id=submission.paper_id_filled
+        ).exists()
+    ):
+        raise FormattingWorkflowError(
+            "This record is no longer a current Paper Master publication candidate."
+        )
+
+    note = clean_note_text(issue_note)
+    if not note:
+        raise FormattingWorkflowError("Formatting issue note is required.")
+    if page_number is not None:
+        if page_number < 1:
+            raise FormattingWorkflowError("Page number must be at least 1.")
+        if submission.page_count is not None and page_number > submission.page_count:
+            raise FormattingWorkflowError(
+                f"Page {page_number} is outside this {submission.page_count}-page PDF."
+            )
+        note = f"Page {page_number}: {note}"
+
+    previous_status = submission.format_status
+    previous_notes = submission.format_notes
+    previous_source_hash = submission.source_hash
+    submission.format_status = "needs_edit"
+    submission.format_notes = clean_note_text(
+        "\n\n".join(
+            value
+            for value in (submission.format_notes, note)
+            if str(value or "").strip()
+        )
+    )
+    submission.source_hash = ""
+    submission.save(
+        update_fields=[
+            "format_status",
+            "format_notes",
+            "source_hash",
+            "updated_at",
+        ]
+    )
+    audit_success(
+        "formatting_issue_recorded_from_pdf_preview",
+        "Formatting issue recorded from Process PDFs.",
+        request=request,
+        submission=submission,
+        changed_fields=["format_status", "format_notes", "source_hash"],
+        before={
+            "format_status": previous_status,
+            "format_notes": previous_notes,
+            "source_hash": previous_source_hash,
+        },
+        after={
+            "format_status": submission.format_status,
+            "format_notes": submission.format_notes,
+            "source_hash": submission.source_hash,
+        },
+        reset_flags={
+            "format_review_reset_from_review_ok": previous_status == "review_ok",
+            "format_review_source_binding_cleared": bool(previous_source_hash),
+        },
+        extra={"page_number": page_number},
+    )
+    return submission
 
 
 def source_file_type_label(file_name):
