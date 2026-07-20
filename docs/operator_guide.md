@@ -275,6 +275,9 @@ covering it. The PDF evidence marks title text in yellow with a blue underline
 and gives every parsed author an independent green box and underline. Compare
 the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
 boxes can reveal that one person's name was incorrectly parsed as two authors.
+Superscript and trailing numeric affiliation markers beside author names are
+ignored only while locating author evidence; they do not change extracted
+authors, the PDF, or title comparison.
 Hold `Ctrl` while pointing at the verification image to inspect the title
 underline and individual author boundaries with the same magnifier used by
 Formatting Review. Its `3:2` landscape shape preserves horizontal title and

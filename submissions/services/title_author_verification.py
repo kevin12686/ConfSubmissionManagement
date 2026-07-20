@@ -51,7 +51,7 @@ def generate_verification_image(
         title_rects = _find_text_rects(source_page, extracted_title, search_clip)
         author_rects = []
         for author in authors:
-            matches = _find_text_rects(source_page, author, search_clip)
+            matches = _find_author_text_rects(source_page, author, search_clip)
             author_rects.append(matches)
             if not matches:
                 missing_authors.append(author)
@@ -363,25 +363,51 @@ def _translated_rect(source_rect, source_offset, source_clip):
 
 
 def _find_text_rects(page, text, clip):
+    return _find_normalized_text_rects(page, text, clip)
+
+
+def _find_author_text_rects(page, text, clip):
+    strict_matches = _find_normalized_text_rects(page, text, clip)
+    if strict_matches:
+        return strict_matches
+    return _find_normalized_text_rects(
+        page,
+        text,
+        clip,
+        target_normalizer=_normalized_author_target_text,
+        word_normalizer=_normalized_author_pdf_word,
+    )
+
+
+def _find_normalized_text_rects(
+    page,
+    text,
+    clip,
+    *,
+    target_normalizer=None,
+    word_normalizer=None,
+):
     text = (text or "").strip()
     if not text:
         return []
 
-    target = _normalized_match_text(text)
+    target_normalizer = target_normalizer or _normalized_match_text
+    word_normalizer = word_normalizer or _normalized_match_text
+    target = target_normalizer(text)
     if not target:
         return []
 
     words = [
         word
         for word in page.get_text("words", clip=clip, sort=True)
-        if _normalized_match_text(word[4])
+        if word_normalizer(word[4])
     ]
     matches = []
     for start in range(len(words)):
         combined = ""
         matched = []
         for word in words[start:]:
-            combined += _normalized_match_text(word[4])
+            combined += word_normalizer(word[4])
             matched.append(word)
             if combined == target:
                 matches.extend(_merge_word_rects(matched))
@@ -413,6 +439,23 @@ def _merge_word_rects(words):
 def _normalized_match_text(value):
     normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
     return "".join(character for character in normalized if character.isalnum())
+
+
+def _normalized_author_target_text(value):
+    return _normalized_match_text(_without_unicode_superscripts(value))
+
+
+def _normalized_author_pdf_word(value):
+    normalized = _normalized_author_target_text(value)
+    return re.sub(r"\d+$", "", normalized)
+
+
+def _without_unicode_superscripts(value):
+    return "".join(
+        character
+        for character in str(value or "")
+        if "SUPERSCRIPT" not in unicodedata.name(character, "")
+    )
 
 
 def _wrap_text(text, max_width, font_size):

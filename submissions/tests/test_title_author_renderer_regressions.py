@@ -7,6 +7,7 @@ from django.test import SimpleTestCase
 from submissions.services.title_author_verification import (
     _build_header_layout,
     _draw_header,
+    _find_author_text_rects,
     _find_text_rects,
     _verification_font,
     generate_verification_image,
@@ -93,6 +94,87 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
 
             self.assertTrue(ada_matches)
             self.assertTrue(jean_luc_matches)
+        finally:
+            document.close()
+
+    def test_author_match_ignores_merged_unicode_superscript_affiliation(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname¹", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname",
+                page.rect,
+            )
+
+            self.assertTrue(matches)
+        finally:
+            document.close()
+
+    def test_author_match_ignores_merged_plain_numeric_affiliation(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname1,2", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname",
+                page.rect,
+            )
+
+            self.assertTrue(matches)
+        finally:
+            document.close()
+
+    def test_verification_image_accepts_author_with_superscript_affiliation(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            pdf_path = root / "superscript-author.pdf"
+            document = fitz.open()
+            try:
+                page = document.new_page(width=420, height=300)
+                page.insert_text((72, 72), "A Publication Title", fontsize=16)
+                page.insert_text((72, 110), "Firstname Lastname¹", fontsize=12)
+                document.save(pdf_path)
+            finally:
+                document.close()
+
+            output_path, missing_authors = generate_verification_image(
+                pdf_path,
+                "A Publication Title",
+                "Firstname Lastname",
+                "BUILT-IN",
+                root / "evidence",
+                ["Firstname Lastname"],
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(missing_authors, [])
+
+    def test_author_affiliation_fallback_does_not_match_longer_surname(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "John Smithson¹", fontsize=12)
+
+            matches = _find_author_text_rects(page, "John Smith", page.rect)
+
+            self.assertFalse(matches)
+        finally:
+            document.close()
+
+    def test_strict_title_match_does_not_ignore_trailing_number(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Model1", fontsize=12)
+
+            matches = _find_text_rects(page, "Model", page.rect)
+
+            self.assertFalse(matches)
         finally:
             document.close()
 
