@@ -364,6 +364,10 @@ Use app-managed file helpers instead of ad hoc path logic.
 - `source_pdf_path()` is processing/extraction input: corrected PDF, then original PDF.
 - `publication_pdf_info()` is publication-facing output: corrected PDF, then original PDF.
 - `publication_source_info()` is publication-facing output: corrected source, then original source.
+- Organized List source classification must not infer a source-file issue only
+  because Formatting is Pending/Needs edit and `source_hash` is empty. Source
+  review binding is required only after Formatting Review OK; the independent
+  Format Not OK status remains the blocker before then.
 - `publication_debug_pdf_info()` describes generated inspection copies. It is never the source for publication package export or CrossCheck export.
 - Publication package export, CrossCheck export, duplicate checks, and both Organized List views use publication-facing helpers.
 - Final Submissions list file links are row-scoped display links and intentionally show only Original/Corrected files for that row, not another active submission's publication files.

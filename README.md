@@ -212,8 +212,11 @@ every page thumbnail for each paper on the current page expanded. Its integrated
 formatting triage appends page-specific or paper-level notes to the same
 Formatting Review record, clears a previous Review
 OK source binding, and leaves the PDF, processing result, and unrelated review
-states unchanged. Organized List separates publication
-blockers from tracked information and keeps stable table widths.
+states unchanged. Organized List separates publication blockers from tracked
+information and keeps stable table widths. Its `Source File Issues` view is
+reserved for missing or review-integrity problems; an available Original or
+Corrected source that is still Pending/Needs edit appears under `Format Not OK`
+instead of being counted twice.
 
 Paper Master List and Final Submissions provide server-side Sort controls next
 to Search. Paper ID and Final ID options use natural numeric ordering, so `P2`

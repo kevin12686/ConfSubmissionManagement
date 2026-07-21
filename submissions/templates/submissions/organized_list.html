@@ -240,9 +240,6 @@
                 <td data-column="source">
                     {% if submission %}
                         <span class="badge text-bg-{{ row.source_level }}">{{ row.source_label }}</span>
-                        {% if row.publication_source.source == "corrected" and submission.format_status != "review_ok" %}
-                            <div><span class="badge text-bg-warning">Not OK yet</span></div>
-                        {% endif %}
                     {% else %}
                         <span class="text-muted">--</span>
                     {% endif %}

@@ -152,6 +152,10 @@ Create Final Submission records and files:
 - Formatting Review `Review OK` stores the current publication source hash.
   A Pending/Needs Edit record with no source hash reports only `Formatting Not
   Review OK`; it must not also report `Source Review Hash Missing`.
+  Confirm Organized List follows the same split: an available Original or
+  Corrected source is not counted under `Source File Issues` merely because
+  Formatting is not Review OK, while a genuinely missing source appears in both
+  Source File Issues and Format Not OK when both conditions apply.
   Replacing that source externally, clearing the hash, or deleting a selected
   Corrected PDF/source must block final export; no Original fallback is allowed
   while a Corrected file is selected.

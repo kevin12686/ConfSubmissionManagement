@@ -39,7 +39,7 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "author_over_limit", "label": "Author over limit"},
     {"value": "page_issues", "label": "Page issues"},
     {"value": "pdf_issues", "label": "PDF issues"},
-    {"value": "source_issues", "label": "Source issues"},
+    {"value": "source_issues", "label": "Source file issues"},
     {"value": "extraction_issues", "label": "Extraction issues"},
     {"value": "missing_plagiarism", "label": "Missing plagiarism"},
     {"value": "plagiarism_issues", "label": "Plagiarism issues"},
@@ -259,16 +259,20 @@ def _source_status(
         if source_info["source"] == "corrected_missing":
             return "Corrected missing", "danger"
         return "No source", "danger"
-    if not submission.source_hash:
-        return "Review source", "danger"
-    if verify_content:
-        try:
-            if inspection.sha256(source_info["path"]) != submission.source_hash:
-                return "Changed after review", "danger"
-        except Exception:
-            return "Source unreadable", "danger"
+    if submission.format_status == "review_ok":
+        if not submission.source_hash:
+            return "Review hash missing", "danger"
+        if verify_content:
+            try:
+                if inspection.sha256(source_info["path"]) != submission.source_hash:
+                    return "Changed after review", "danger"
+            except Exception:
+                return "Source unreadable", "danger"
     if source_info["source"] == "corrected":
-        return "Corrected", "success" if submission.format_status == "review_ok" else "warning"
+        return (
+            "Corrected",
+            "success" if submission.format_status == "review_ok" else "secondary",
+        )
     if source_info["source"] == "original":
         return "Original", "secondary"
     return "No source", "danger"
@@ -463,16 +467,7 @@ def _has_pdf_issue(row):
 
 
 def _has_source_issue(row):
-    return bool(
-        row["submission"]
-        and (
-            row["source_level"] == "danger"
-            or (
-                row["publication_source"]["source"] == "corrected"
-                and row["submission"].format_status != "review_ok"
-            )
-        )
-    )
+    return bool(row["submission"] and row["source_level"] == "danger")
 
 
 def _has_extraction_issue(row):
@@ -1109,7 +1104,7 @@ def organized_list_rows(
         ("Paper ID Review", summary["unverified"], "danger", "paper_id_review"),
         ("PDF Issues", summary["pdf_issues"], "danger", "pdf_issues"),
         ("Page Issues", summary["page_errors"], "warning", "page_issues"),
-        ("Source Issues", summary["source_issues"], "danger", "source_issues"),
+        ("Source File Issues", summary["source_issues"], "danger", "source_issues"),
         ("Extraction Review", summary["extraction_issues"], "warning", "extraction_issues"),
         ("No Plagiarism", summary["missing_plagiarism"], "warning", "missing_plagiarism"),
         ("P/S Issues", summary["plagiarism_issues"], "danger", "plagiarism_issues"),

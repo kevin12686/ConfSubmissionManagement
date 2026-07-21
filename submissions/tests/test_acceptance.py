@@ -3651,6 +3651,14 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             source_hash="",
         )
 
+        organized_rows, summary, _settings, _filter, _sort = organized_list_rows()
+        source_row = next(
+            row for row in organized_rows if row["submission"].pk == submission.pk
+        )
+        self.assertEqual(source_row["source_label"], "Review hash missing")
+        self.assertEqual(source_row["source_level"], "danger")
+        self.assertEqual(summary["source_issues"], 1)
+        self.assertEqual(summary["format_issues"], 0)
         self.assert_publication_blocked("Source Review Hash Missing")
         update_formatting_submission(
             submission,
@@ -3687,6 +3695,93 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertNotIn("Source Review Hash Missing", categories)
         self.assertNotIn("Source Changed After Review", categories)
         self.assert_publication_blocked("Formatting Not Review OK")
+
+    def test_organized_list_separates_valid_sources_from_format_review_status(self):
+        self.make_master_paper("P001", "Original Source Pending", "Ada")
+        original_submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Original Source Pending",
+            extracted_title="Original Source Pending",
+            format_status="pending",
+            source_hash="",
+        )
+        self.make_master_paper("P002", "Corrected Source Pending", "Grace")
+        corrected_submission = self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="Corrected Source Pending",
+            extracted_title="Corrected Source Pending",
+            format_status="needs_edit",
+            source_hash="",
+        )
+        corrected_submission.formatted_source_file.save(
+            "corrected-source.docx",
+            ContentFile(b"corrected source"),
+            save=True,
+        )
+
+        rows, summary, _settings, _filter, _sort = organized_list_rows()
+        rows_by_id = {
+            row["submission"].paper_id_filled: row
+            for row in rows
+            if row["submission"]
+        }
+        self.assertEqual(rows_by_id["P001"]["source_label"], "Original")
+        self.assertEqual(rows_by_id["P001"]["source_level"], "secondary")
+        self.assertEqual(rows_by_id["P002"]["source_label"], "Corrected")
+        self.assertEqual(rows_by_id["P002"]["source_level"], "secondary")
+        self.assertEqual(summary["source_issues"], 0)
+        self.assertEqual(summary["format_issues"], 2)
+
+        source_rows, *_rest = organized_list_rows(current_filter="source_issues")
+        format_rows, *_rest = organized_list_rows(current_filter="format_not_ok")
+        self.assertEqual(source_rows, [])
+        self.assertEqual(
+            {row["submission"].pk for row in format_rows},
+            {original_submission.pk, corrected_submission.pk},
+        )
+        readiness_categories = {
+            row["category"] for row in publication_readiness_rows()
+        }
+        self.assertIn("Formatting Not Review OK", readiness_categories)
+        self.assertNotIn("Source Review Hash Missing", readiness_categories)
+
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(response, "Source file issues")
+        self.assertNotContains(response, "Not OK yet")
+
+    def test_missing_source_and_pending_format_remain_separate_issues(self):
+        self.make_master_paper("P001", "Missing Source Pending", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Missing Source Pending",
+            extracted_title="Missing Source Pending",
+            format_status="pending",
+            source_hash="",
+            source_file="",
+            source_current_file_path="",
+        )
+
+        rows, summary, _settings, _filter, _sort = organized_list_rows()
+        source_row = next(
+            row for row in rows if row["submission"].pk == submission.pk
+        )
+        self.assertEqual(source_row["source_label"], "No source")
+        self.assertEqual(source_row["source_level"], "danger")
+        self.assertEqual(summary["source_issues"], 1)
+        self.assertEqual(summary["format_issues"], 1)
+
+        source_rows, *_rest = organized_list_rows(current_filter="source_issues")
+        format_rows, *_rest = organized_list_rows(current_filter="format_not_ok")
+        self.assertEqual([row["submission"].pk for row in source_rows], [submission.pk])
+        self.assertEqual([row["submission"].pk for row in format_rows], [submission.pk])
+        readiness_categories = {
+            row["category"] for row in publication_readiness_rows()
+        }
+        self.assertIn("Missing Source File", readiness_categories)
+        self.assertIn("Formatting Not Review OK", readiness_categories)
 
     def test_missing_corrected_files_never_fall_back_to_original_files(self):
         self.make_master_paper("P001", "No Silent Fallback", "Ada")

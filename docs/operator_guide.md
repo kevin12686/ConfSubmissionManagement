@@ -52,6 +52,11 @@ labels rather than machine-specific absolute paths.
 
 Its summary is split into `Publication blockers` and `Tracked information`. Blocker cards link to focused filters and only appear when the current view contains that issue. Tracked information remains visible without competing with work that can stop final export.
 
+`Source File Issues` identifies a missing source or a source-integrity problem
+after Review OK. An available Original or Corrected source with Formatting still
+Pending/Needs edit is shown only under `Format Not OK`; both categories appear
+together only when both the file and the Formatting workflow need attention.
+
 Use the `Checklist / Compact candidates` control to switch views. Both use the same active Paper Master publication rows and publication-facing Corrected-to-Original file helpers. The old `/reports/active-versions/` link redirects to Compact candidates.
 
 ## Dashboard And Readiness
