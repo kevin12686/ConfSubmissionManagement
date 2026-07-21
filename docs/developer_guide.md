@@ -319,7 +319,11 @@ Shared image magnification lives in
 `submissions/static/submissions/image_magnifier.css`. Formatting previews and
 Title/Author verification images opt in with `data-cfm-image-magnifier`; do not
 create page-specific lens implementations. New rendering paths must initialize
-correctly after Bootstrap collapse lazy loading and HTMX swaps, remain disabled
+correctly after Bootstrap collapse lazy loading and HTMX swaps. HTMX worklist
+replacement must initialize from the canonical `htmx:load` event's
+`event.detail.elt`; `htmx:afterSwap`'s old `detail.target` may be detached
+after an `outerHTML` swap. The shared `WeakSet` prevents duplicate
+initialization. Magnification must remain disabled
 for coarse/touch pointers, require `Ctrl`, clear modifier state on key
 release/window blur, and must not write review or publication state. Supply hint
 text through `data-cfm-image-magnifier-hint`; do not use the native image

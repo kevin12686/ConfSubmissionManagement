@@ -206,9 +206,11 @@ status does not remove or reorder the queue's Previous/Next destinations. Exact
 links from another workflow open a separate focused review instead of silently
 creating a queue. Formatting previews and Title/Author verification images use
 the same `Ctrl`-activated desktop magnifier; touch devices keep the normal
-static image and full-file link. Process PDFs keeps every page thumbnail for each paper on the
-current page expanded. Its integrated formatting triage appends page-specific or
-paper-level notes to the same Formatting Review record, clears a previous Review
+static image and full-file link. The shared magnifier is reinitialized whenever
+a filter or pagination action replaces a review worklist. Process PDFs keeps
+every page thumbnail for each paper on the current page expanded. Its integrated
+formatting triage appends page-specific or paper-level notes to the same
+Formatting Review record, clears a previous Review
 OK source binding, and leaves the PDF, processing result, and unrelated review
 states unchanged. Organized List separates publication
 blockers from tracked information and keeps stable table widths.

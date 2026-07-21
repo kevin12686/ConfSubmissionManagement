@@ -283,6 +283,8 @@ Hold `Ctrl` while pointing at the verification image to inspect the title
 underline and individual author boundaries with the same magnifier used by
 Formatting Review. Its `3:2` landscape shape preserves horizontal title and
 author context. A normal click still opens the complete verification image.
+The magnifier remains available after changing a review filter, page, or page
+size; those actions replace the worklist without requiring a browser refresh.
 
 ## Formatting Review
 

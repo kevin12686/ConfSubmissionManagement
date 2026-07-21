@@ -221,8 +221,8 @@
     document.addEventListener("shown.bs.collapse", function (event) {
         initializeWithin(event.target);
     });
-    document.addEventListener("htmx:afterSwap", function (event) {
-        initializeWithin(event.detail && event.detail.target);
+    document.addEventListener("htmx:load", function (event) {
+        initializeWithin(event.detail && event.detail.elt);
     });
     document.addEventListener("keydown", function (event) {
         if (event.key === "Control") {
