@@ -367,57 +367,69 @@ def _find_text_rects(page, text, clip):
 
 
 def _find_author_text_rects(page, text, clip):
-    strict_matches = _find_normalized_text_rects(page, text, clip)
-    if strict_matches:
-        return strict_matches
-    return _find_normalized_text_rects(
-        page,
-        text,
-        clip,
-        target_normalizer=_normalized_author_target_text,
-        word_normalizer=_normalized_author_pdf_word,
-        trim_author_affiliations=True,
-    )
+    text = unicodedata.normalize("NFC", str(text or "").strip())
+    target_words = re.findall(r"\S+", text)
+    if not target_words:
+        return []
+
+    words = [
+        word
+        for word in page.get_text("words", clip=clip, sort=True)
+        if str(word[4]).strip()
+    ]
+    raw_lines = _raw_line_characters(page, clip)
+    matches = []
+    word_count = len(target_words)
+    for start in range(len(words) - word_count + 1):
+        candidate_words = words[start : start + word_count]
+        adjusted_words = []
+        for index, (word, target_word) in enumerate(
+            zip(candidate_words, target_words, strict=True)
+        ):
+            rect = _author_word_match_rect(
+                word,
+                target_word,
+                raw_lines,
+                allow_leading_marker=index == 0,
+                allow_trailing_marker=index == word_count - 1,
+            )
+            if rect is None:
+                break
+            adjusted_words.append(
+                (rect.x0, rect.y0, rect.x1, rect.y1, *word[4:])
+            )
+        else:
+            matches.extend(_merge_word_rects(adjusted_words))
+    return matches
 
 
 def _find_normalized_text_rects(
     page,
     text,
     clip,
-    *,
-    target_normalizer=None,
-    word_normalizer=None,
-    trim_author_affiliations=False,
 ):
     text = (text or "").strip()
     if not text:
         return []
 
-    target_normalizer = target_normalizer or _normalized_match_text
-    word_normalizer = word_normalizer or _normalized_match_text
-    target = target_normalizer(text)
+    target = _normalized_match_text(text)
     if not target:
         return []
 
     words = [
         word
         for word in page.get_text("words", clip=clip, sort=True)
-        if word_normalizer(word[4])
+        if _normalized_match_text(word[4])
     ]
     matches = []
     for start in range(len(words)):
         combined = ""
         matched = []
         for word in words[start:]:
-            combined += word_normalizer(word[4])
+            combined += _normalized_match_text(word[4])
             matched.append(word)
             if combined == target:
-                if trim_author_affiliations:
-                    matches.extend(
-                        _merge_author_word_rects(page, matched, clip)
-                    )
-                else:
-                    matches.extend(_merge_word_rects(matched))
+                matches.extend(_merge_word_rects(matched))
                 break
             if not target.startswith(combined):
                 break
@@ -443,17 +455,6 @@ def _merge_word_rects(words):
     return merged
 
 
-def _merge_author_word_rects(page, words, clip):
-    raw_lines = _raw_line_characters(page, clip)
-    adjusted_words = []
-    for word in words:
-        rect = _author_word_base_rect(word, raw_lines)
-        adjusted_words.append(
-            (rect.x0, rect.y0, rect.x1, rect.y1, *word[4:])
-        )
-    return _merge_word_rects(adjusted_words)
-
-
 def _raw_line_characters(page, clip):
     lines = {}
     raw_text = page.get_text("rawdict", clip=clip, sort=False)
@@ -468,63 +469,86 @@ def _raw_line_characters(page, clip):
     return lines
 
 
-def _author_word_base_rect(word, raw_lines):
+def _author_word_match_rect(
+    word,
+    target_word,
+    raw_lines,
+    *,
+    allow_leading_marker,
+    allow_trailing_marker,
+):
     word_rect = fitz.Rect(word[:4])
-    expected = _normalized_author_pdf_word(word[4])
-    if not expected:
-        return word_rect
-
     characters = raw_lines.get((word[5], word[6]), [])
-    matched_rects = []
-    combined = ""
+    word_characters = []
     for character in characters:
         character_rect = fitz.Rect(character["bbox"])
         character_center = fitz.Point(
             (character_rect.x0 + character_rect.x1) / 2,
             (character_rect.y0 + character_rect.y1) / 2,
         )
-        if not word_rect.contains(character_center):
-            continue
-        normalized_character = _normalized_author_target_text(character["c"])
-        if not normalized_character:
-            continue
-        candidate = combined + normalized_character
-        if not expected.startswith(candidate):
-            continue
-        matched_rects.append(character_rect)
-        combined = candidate
-        if combined == expected:
-            break
+        if word_rect.contains(character_center):
+            word_characters.append((character["c"], character_rect))
 
-    if combined != expected or not matched_rects:
-        return word_rect
+    units = _normalized_author_character_units(word_characters)
+    candidate = "".join(character for character, _rect in units)
+    target = unicodedata.normalize("NFC", target_word)
+    if not candidate or not target:
+        return None
 
-    base_rect = fitz.Rect(matched_rects[0])
-    for character_rect in matched_rects[1:]:
-        base_rect.include_rect(character_rect)
-    return base_rect
+    search_start = 0
+    while True:
+        match_start = candidate.find(target, search_start)
+        if match_start < 0:
+            return None
+        match_end = match_start + len(target)
+        prefix = candidate[:match_start]
+        suffix = candidate[match_end:]
+        if (
+            (not prefix or allow_leading_marker and _is_external_author_prefix(prefix))
+            and (
+                not suffix
+                or allow_trailing_marker and _is_external_author_suffix(suffix)
+            )
+        ):
+            matched_rects = [rect for _character, rect in units[match_start:match_end]]
+            if not matched_rects:
+                return None
+            matched_rect = fitz.Rect(matched_rects[0])
+            for character_rect in matched_rects[1:]:
+                matched_rect.include_rect(character_rect)
+            return matched_rect
+        search_start = match_start + 1
+
+
+def _normalized_author_character_units(characters):
+    clusters = []
+    for character, rect in characters:
+        if not character:
+            continue
+        if clusters and unicodedata.category(character).startswith("M"):
+            clusters[-1][0] += character
+            clusters[-1][1].include_rect(rect)
+        else:
+            clusters.append([character, fitz.Rect(rect)])
+
+    units = []
+    for cluster_text, cluster_rect in clusters:
+        for character in unicodedata.normalize("NFC", cluster_text):
+            units.append((character, fitz.Rect(cluster_rect)))
+    return units
+
+
+def _is_external_author_prefix(value):
+    return all(not character.isalnum() for character in value)
+
+
+def _is_external_author_suffix(value):
+    return all(not character.isalpha() for character in value)
 
 
 def _normalized_match_text(value):
     normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
     return "".join(character for character in normalized if character.isalnum())
-
-
-def _normalized_author_target_text(value):
-    return _normalized_match_text(_without_unicode_superscripts(value))
-
-
-def _normalized_author_pdf_word(value):
-    normalized = _normalized_author_target_text(value)
-    return re.sub(r"\d+$", "", normalized)
-
-
-def _without_unicode_superscripts(value):
-    return "".join(
-        character
-        for character in str(value or "")
-        if "SUPERSCRIPT" not in unicodedata.name(character, "")
-    )
 
 
 def _wrap_text(text, max_width, font_size):

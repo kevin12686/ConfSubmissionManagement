@@ -133,6 +133,110 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
         finally:
             document.close()
 
+    def test_author_match_excludes_trailing_symbol_not_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname*", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertLess(matches[-1].x1, source_word[2])
+        finally:
+            document.close()
+
+    def test_author_match_includes_symbol_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname*", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname*",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertAlmostEqual(matches[-1].x1, source_word[2], delta=0.5)
+        finally:
+            document.close()
+
+    def test_author_match_requires_internal_punctuation_to_match(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Jean-Luc Picard", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Jean Luc Picard",
+                page.rect,
+            )
+
+            self.assertFalse(matches)
+        finally:
+            document.close()
+
+    def test_author_match_is_case_sensitive(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "firstname lastname",
+                page.rect,
+            )
+
+            self.assertFalse(matches)
+        finally:
+            document.close()
+
+    def test_author_match_excludes_trailing_list_punctuation(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname,", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertLess(matches[-1].x1, source_word[2])
+        finally:
+            document.close()
+
+    def test_author_match_includes_superscript_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Firstname Lastname¹", fontsize=12)
+
+            matches = _find_author_text_rects(
+                page,
+                "Firstname Lastname¹",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertAlmostEqual(matches[-1].x1, source_word[2], delta=0.5)
+        finally:
+            document.close()
+
     def test_verification_image_accepts_author_with_superscript_affiliation(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             root = Path(temporary_dir)

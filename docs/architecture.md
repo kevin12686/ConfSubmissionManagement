@@ -420,12 +420,16 @@ renderer. It uses a conservative grayscale scan of the rendered first-page
 upper area to measure genuinely blank top space. The dynamically sized header
 uses that space first and shifts the source page down only by the remaining
 required height. A fixed safety gap keeps the header away from the first
-non-white PDF content; uncertain or occupied space is never reused. Normalized
-word-sequence fallback matching tolerates
-punctuation/spacing differences when locating text without changing the stored
-extraction. Title evidence uses yellow marking plus blue underlines; each
-parsed author receives an independent green outline/underline and a numbered
-header legend.
+non-white PDF content; uncertain or occupied space is never reused. Title
+evidence keeps its normalized word-sequence locator. Author evidence uses a
+separate case-sensitive character locator: the complete extracted word
+sequence and internal punctuation must match, while only external list or
+affiliation markers may remain outside the target. Its outline is built solely
+from raw PDF character boxes corresponding to extracted characters; unavailable
+or ambiguous geometry produces no author outline rather than a whole-word
+fallback. This evidence rule does not modify stored extraction. Title evidence
+uses yellow marking plus blue underlines; each parsed author receives an
+independent green outline/underline and a numbered header legend.
 
 The Title/Author worklist keeps its large verification images lazy-loaded and
 reads each PNG header for its actual intrinsic dimensions, avoiding distortion
