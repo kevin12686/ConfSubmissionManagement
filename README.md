@@ -255,6 +255,13 @@ decisions, publication files, active versions, review resets, exceptions, and
 state-changing actions remain server-owned; no publication-changing action
 uses optimistic browser state.
 
+Organized List exception actions refresh the complete paper row from the
+server without reloading the full page. Persisted exception/review data always
+wins; reason text typed into another unsaved exception section is carried
+through the request as a display-only draft and is not written until that
+section's own action is submitted. Normal non-HTMX POST/redirect behavior
+remains available as the fallback.
+
 Links opened from a specific Final Submission use exact record identifiers rather
 than the normal fuzzy search box. Paper ID Review, Process PDFs, Title/Author
 Review, Formatting Review, Not Publishing, Organized List, and Exceptions show a

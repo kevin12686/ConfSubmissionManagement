@@ -377,6 +377,15 @@ Plagiarism exceptions are per FinalSubmission publication-version decisions. `Pl
 
 Organized List exposes row-level exception panels for page count, authors-in-paper, plagiarism scores, and duplicate-author review. Those panels reuse the same exception service rows and approve/remove commands as Exceptions Center. Author paper-count exceptions remain author-level records and are not attached to a single Organized List row.
 
+Each Organized List checklist record is a stable per-submission table body.
+An exception action remains a normal audited Django POST, then reloads and
+hydrates that complete row from current database/file state. HTMX selects only
+the matching row body from the server-rendered response. Other unsaved reason
+fields are submitted as typed drafts; the controller reattaches a draft only
+when no stored reason exists, while stored data, successful remove/reset, and
+validation errors follow explicit server-side precedence. The browser never
+calculates exception validity or merges persisted workflow state.
+
 ## Audit Log
 
 Audit logging is file-based, not database-backed. The active log is `data/logs/audit.log`, written as JSON Lines. Keeping it outside the database lets Clear Database preserve the trail by default.

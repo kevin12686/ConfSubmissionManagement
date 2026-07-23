@@ -210,6 +210,12 @@ def _exception_panel_sections(submission, settings_obj):
                 "status_level": exception_row["status_level"],
                 "exception": exception_row,
                 "is_plagiarism": exception_row["type"] in {"plagiarism_percent", "single_percent"},
+                "draft_reason": (
+                    exception_row["reason"]
+                    if exception_row["status"] == "stale"
+                    else ""
+                ),
+                "inline_error": "",
             }
         )
     duplicate_authors = duplicate_authors_in_paper(submission.extracted_authors)
@@ -224,6 +230,8 @@ def _exception_panel_sections(submission, settings_obj):
                 "status_level": "danger" if unresolved else "secondary",
                 "duplicate_authors": duplicate_authors,
                 "reason": submission.duplicate_author_review_notes,
+                "draft_reason": "",
+                "inline_error": "",
             }
         )
     return sections

@@ -9521,6 +9521,18 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Plagiarism % exception")
         self.assertContains(response, "Duplicate author review")
         self.assertContains(response, "Open publication PDF")
+        self.assertContains(
+            response,
+            f'id="organized-row-submission-{page_issue.pk}"',
+        )
+        self.assertContains(
+            response,
+            f'hx-target="#organized-row-submission-{page_issue.pk}"',
+        )
+        self.assertContains(
+            response,
+            f'hx-include="#exceptions-{page_issue.pk} textarea"',
+        )
 
         url = reverse("submissions:organized_list") + "?filter=page_issues&sort=page_count_desc&q=P002"
         response = self.client.post(
@@ -9586,6 +9598,226 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(response.status_code, 302)
         duplicate_author.refresh_from_db()
         self.assertEqual(duplicate_author.duplicate_author_review_status, "review_ok")
+
+    def test_organized_list_exception_htmx_refresh_preserves_unsaved_sibling_drafts(self):
+        self.make_master_paper("P001", "Two Score Exceptions", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Two Score Exceptions",
+            extracted_title="Two Score Exceptions",
+            similarity_score=42,
+            single_similarity_score=15,
+            single_percent_exception_approved=True,
+            single_percent_exception_reason="Stored Single approval reason.",
+            single_percent_exception_approved_score=12,
+            single_percent_exception_approved_at=timezone.now(),
+        )
+        url = reverse("submissions:organized_list") + "?filter=plagiarism_issues"
+
+        response = self.client.post(
+            url,
+            {
+                "submission_id": submission.pk,
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "approve_exception",
+                "draft_reason_plagiarism_percent": "Chair approved P score.",
+                "draft_reason_single_percent": "Unsaved replacement reason.",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{submission.pk}"
+                ),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertTrue(submission.plagiarism_percent_exception_approved)
+        self.assertEqual(
+            submission.plagiarism_percent_exception_reason,
+            "Chair approved P score.",
+        )
+        self.assertEqual(
+            submission.single_percent_exception_reason,
+            "Stored Single approval reason.",
+        )
+        self.assertContains(
+            response,
+            f'id="organized-row-submission-{submission.pk}"',
+        )
+        self.assertContains(
+            response,
+            f'id="exceptions-{submission.pk}"',
+        )
+        self.assertContains(response, "collapse show")
+        self.assertContains(response, "P allowed")
+        self.assertContains(response, "Stored Single approval reason.")
+        self.assertNotContains(response, "Unsaved replacement reason.")
+
+    def test_organized_list_exception_htmx_validation_keeps_all_reason_drafts(self):
+        self.make_master_paper("P001", "Two Score Exceptions", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Two Score Exceptions",
+            extracted_title="Two Score Exceptions",
+            similarity_score=42,
+            single_similarity_score=15,
+        )
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": submission.pk,
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "approve_exception",
+                "draft_reason_plagiarism_percent": "",
+                "draft_reason_single_percent": "Review the single-source match.",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{submission.pk}"
+                ),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertContains(response, "Exception requires a reason note.")
+        self.assertContains(response, "is-invalid")
+        self.assertContains(response, "Review the single-source match.")
+
+    def test_organized_list_exception_htmx_remove_clears_only_removed_reason(self):
+        self.make_master_paper("P001", "Two Score Exceptions", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Two Score Exceptions",
+            extracted_title="Two Score Exceptions",
+            similarity_score=42,
+            single_similarity_score=15,
+            plagiarism_percent_exception_approved=True,
+            plagiarism_percent_exception_reason="Old P approval.",
+            plagiarism_percent_exception_approved_score=42,
+            plagiarism_percent_exception_approved_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": submission.pk,
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "remove_exception",
+                "draft_reason_plagiarism_percent": "Do not keep this.",
+                "draft_reason_single_percent": "Keep this Single draft.",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{submission.pk}"
+                ),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertContains(response, "Keep this Single draft.")
+        self.assertNotContains(response, "Do not keep this.")
+        sections = {
+            section["exception"]["type"]: section
+            for section in response.context["rows"][0]["exception_panel_sections"]
+            if section["kind"] == "exception"
+        }
+        self.assertEqual(
+            sections["plagiarism_percent"]["draft_reason"],
+            "",
+        )
+
+    def test_organized_list_exception_action_rejects_a_key_from_another_submission(self):
+        self.make_master_paper("P001", "First Exception", "Ada")
+        first = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="First Exception",
+            extracted_title="First Exception",
+            similarity_score=42,
+            single_similarity_score=4,
+        )
+        self.make_master_paper("P002", "Second Exception", "Grace")
+        second = self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Second Exception",
+            extracted_title="Second Exception",
+            similarity_score=45,
+            single_similarity_score=4,
+        )
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": first.pk,
+                "exception_key": f"plagiarism_percent:{second.pk}",
+                "action": "approve_exception",
+                "draft_reason_plagiarism_percent": "Wrong row.",
+                "evidence_token": self.exception_evidence_token(
+                    f"plagiarism_percent:{second.pk}"
+                ),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertFalse(first.plagiarism_percent_exception_approved)
+        self.assertFalse(second.plagiarism_percent_exception_approved)
+        self.assertContains(
+            response,
+            "Exception row was not found. Refresh and try again.",
+        )
+
+    def test_organized_list_exception_htmx_stale_evidence_reloads_current_row(self):
+        self.make_master_paper("P001", "Concurrent Exception", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Concurrent Exception",
+            extracted_title="Concurrent Exception",
+            similarity_score=42,
+            single_similarity_score=4,
+        )
+        stale_token = self.exception_evidence_token(
+            f"plagiarism_percent:{submission.pk}"
+        )
+        submission.similarity_score = 47
+        submission.save(update_fields=["similarity_score", "updated_at"])
+
+        response = self.client.post(
+            reverse("submissions:organized_list"),
+            {
+                "submission_id": submission.pk,
+                "exception_key": f"plagiarism_percent:{submission.pk}",
+                "action": "approve_exception",
+                "draft_reason_plagiarism_percent": "Keep this draft.",
+                "evidence_token": stale_token,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertContains(response, "record changed")
+        self.assertContains(response, "Keep this draft.")
+        section = next(
+            section
+            for section in response.context["rows"][0]["exception_panel_sections"]
+            if (
+                section["kind"] == "exception"
+                and section["exception"]["type"] == "plagiarism_percent"
+            )
+        )
+        self.assertEqual(section["exception"]["current_value"], 47)
 
     def test_settings_active_version_rule_change_reports_changed_papers_without_resetting_flags(self):
         self.make_master_paper("P001", "Rule Change", "Ada")

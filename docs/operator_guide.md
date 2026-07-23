@@ -402,6 +402,15 @@ Default status is Not allowed. Only Allowed exception with a required reason not
 
 For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show a `Manage exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
 
+Saving or removing one Organized List exception refreshes that paper's complete
+row from the system without reloading the full page. Other reason fields that
+you have typed in the same panel remain visible if they do not yet have stored
+data. Stored reasons and approval state always replace browser drafts, and only
+the action you clicked is written to the database. Validation errors stay
+beside the affected section so you can correct them without finding the paper
+again. A normal page refresh recalculates list summaries, filtering, and
+sorting from the latest state.
+
 Exceptions also supports Paper/Final ID text search and exception-type filtering. Author Count supports focused views for over-limit authors, duplicate names inside a paper, allowed exceptions, and all authors. These filters are review aids only and do not change exception validity.
 
 `Manage exception` from Author Count opens the exact author exception. Row-level

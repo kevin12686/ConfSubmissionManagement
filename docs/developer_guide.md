@@ -196,6 +196,17 @@ one-to-one state tables mirror its lifecycle domains.
 
 Organized List may expose paper-level exception actions, but it must reuse `exceptions.py` row builders and approve/remove services. Do not duplicate page/author/plagiarism exception validity rules in templates or controllers. Author paper-count exceptions remain author-level and belong in Author Count / Exceptions, not a single paper row.
 
+Organized List exception POSTs replace one stable per-submission `<tbody>`.
+After every action, rebuild and hydrate the complete row from a fresh
+`PublicationReadContext`; do not patch badge text from JavaScript. Every
+exception textarea has a type-specific draft field. The controller may carry
+those drafts into the replacement row only when that section has no persisted
+reason. Persisted backend state wins, successful remove/reset clears the target
+draft, and validation failure preserves the submitted target draft with an
+inline error. Drafts are presentation state only and must never be passed to
+another exception service or stored implicitly. Keep ordinary POST/redirect as
+the no-HTMX fallback.
+
 Organized List `Details` is the publication-record view for the active row. Its
 authors must come from that submission's `extracted_authors`, and its files must
 come from the publication-facing helpers. Do not substitute Paper Master authors,

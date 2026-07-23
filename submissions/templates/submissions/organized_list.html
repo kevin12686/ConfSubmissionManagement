@@ -122,9 +122,9 @@
                 <th></th>
             </tr>
         </thead>
-        <tbody>
         {% for row in rows %}
             {% with paper=row.paper submission=row.submission %}
+            <tbody id="{% if submission %}organized-row-submission-{{ submission.pk }}{% else %}organized-row-paper-{{ paper.pk }}{% endif %}" class="cfm-organized-row-group">
             <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid or row.row_type == 'unmatched' or not submission %}cfm-row-blocker{% endif %}">
                 <td>
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
@@ -297,17 +297,22 @@
                 <td>
                     <div class="cfm-table-actions">
                         {% if row.exception_panel_sections %}
-                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#exceptions-{{ forloop.counter }}" aria-expanded="false" aria-controls="exceptions-{{ forloop.counter }}">Manage exceptions</button>
+                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#exceptions-{{ submission.pk }}" aria-expanded="{% if row.exception_panel_open %}true{% else %}false{% endif %}" aria-controls="exceptions-{{ submission.pk }}">Manage exceptions</button>
                         {% endif %}
-                        <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ forloop.counter }}" aria-expanded="false" aria-controls="details-{{ forloop.counter }}">Details</button>
+                        <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}" aria-expanded="false" aria-controls="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">Details</button>
                         {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}
                     </div>
                 </td>
             </tr>
             {% if row.exception_panel_sections %}
-                <tr class="collapse" id="exceptions-{{ forloop.counter }}">
+                <tr class="collapse{% if row.exception_panel_open %} show{% endif %}" id="exceptions-{{ submission.pk }}">
                     <td colspan="10">
                         <div class="cfm-exception-panel">
+                            {% if row.exception_feedback.message %}
+                                <div class="alert alert-{{ row.exception_feedback.level }} py-2 mb-3" role="status">
+                                    {{ row.exception_feedback.message }}
+                                </div>
+                            {% endif %}
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                                 <div>
                                     <div class="fw-semibold">Manage row-level exceptions</div>
@@ -315,6 +320,7 @@
                                         {% if paper %}{{ paper.paper_id }}{% else %}{{ submission.paper_id_filled|default:"No Paper ID" }}{% endif %}
                                         {% if submission %}/ Final {{ submission.final_submission_id }}{% endif %}
                                     </div>
+                                    <div class="small text-muted">Each action refreshes this paper from the system while preserving other unsaved reason drafts.</div>
                                 </div>
                                 <div class="d-flex flex-wrap gap-2">
                                     {% if row.publication_pdf.exists %}
@@ -371,7 +377,14 @@
                                                         <div class="text-muted mb-3">No exception reason recorded.</div>
                                                     {% endif %}
                                                     {% if section.exception.status == "allowed" %}
-                                                        <form method="post" class="d-flex justify-content-end">
+                                                        <form method="post"
+                                                              class="d-flex justify-content-end"
+                                                              hx-post="{{ request.get_full_path }}"
+                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-swap="outerHTML"
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
+                                                              hx-disabled-elt="button">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
@@ -379,14 +392,24 @@
                                                             <button class="btn btn-outline-danger btn-sm" name="action" value="remove_exception">Remove exception</button>
                                                         </form>
                                                     {% else %}
-                                                        <form method="post" class="row g-2 align-items-end">
+                                                        <form method="post"
+                                                              class="row g-2 align-items-end"
+                                                              hx-post="{{ request.get_full_path }}"
+                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-swap="outerHTML"
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
+                                                              hx-disabled-elt="button">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
                                                             <input type="hidden" name="evidence_token" value="{{ section.exception.evidence_token }}">
                                                             <div class="col-lg-8">
-                                                                <label class="form-label small" for="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}">Required reason</label>
-                                                                <textarea id="reason-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="form-control" name="reason" rows="2">{% if section.exception.status == "stale" %}{{ section.exception.reason }}{% endif %}</textarea>
+                                                                <label class="form-label small" for="reason-{{ submission.pk }}-{{ section.exception.type }}">Required reason</label>
+                                                                <textarea id="reason-{{ submission.pk }}-{{ section.exception.type }}" class="form-control{% if section.inline_error %} is-invalid{% endif %}" name="draft_reason_{{ section.exception.type }}" rows="2">{{ section.draft_reason }}</textarea>
+                                                                {% if section.inline_error %}
+                                                                    <div class="invalid-feedback">{{ section.inline_error }}</div>
+                                                                {% endif %}
                                                             </div>
                                                             <div class="col-lg-4 d-grid gap-2">
                                                                 <button class="btn btn-success btn-sm" name="action" value="{% if section.exception.status == 'stale' %}reapprove_exception{% else %}approve_exception{% endif %}">
@@ -413,20 +436,37 @@
                                                         <div class="border rounded bg-light p-2 mb-3 text-break">{{ section.reason|linebreaksbr }}</div>
                                                     {% endif %}
                                                     {% if section.status == "not_allowed" %}
-                                                        <form method="post" class="row g-2 align-items-end">
+                                                        <form method="post"
+                                                              class="row g-2 align-items-end"
+                                                              hx-post="{{ request.get_full_path }}"
+                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-swap="outerHTML"
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
+                                                              hx-disabled-elt="button">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
                                                             <div class="col-lg-8">
-                                                                <label class="form-label small" for="duplicate-note-{{ forloop.parentloop.counter }}">Review note</label>
-                                                                <textarea id="duplicate-note-{{ forloop.parentloop.counter }}" class="form-control" name="duplicate_author_review_notes" rows="2" placeholder="Reason, e.g. confirmed different people"></textarea>
+                                                                <label class="form-label small" for="duplicate-note-{{ submission.pk }}">Review note</label>
+                                                                <textarea id="duplicate-note-{{ submission.pk }}" class="form-control{% if section.inline_error %} is-invalid{% endif %}" name="draft_reason_duplicate_author" rows="2" placeholder="Reason, e.g. confirmed different people">{{ section.draft_reason }}</textarea>
+                                                                {% if section.inline_error %}
+                                                                    <div class="invalid-feedback">{{ section.inline_error }}</div>
+                                                                {% endif %}
                                                             </div>
                                                             <div class="col-lg-4 d-grid">
                                                                 <button class="btn btn-outline-success btn-sm" name="action" value="mark_duplicate_author_reviewed">Mark reviewed</button>
                                                             </div>
                                                         </form>
                                                     {% else %}
-                                                        <form method="post" class="d-flex justify-content-end">
+                                                        <form method="post"
+                                                              class="d-flex justify-content-end"
+                                                              hx-post="{{ request.get_full_path }}"
+                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-swap="outerHTML"
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
+                                                              hx-disabled-elt="button">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
@@ -443,7 +483,7 @@
                     </td>
                 </tr>
             {% endif %}
-            <tr class="collapse" id="details-{{ forloop.counter }}">
+            <tr class="collapse" id="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">
                 <td colspan="10">
                     <div class="cfm-publication-record">
                         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -588,8 +628,8 @@
 
                         {% if row.publication_pdf.exists or row.publication_source.exists or row.debug_pdf.exists %}
                             <div class="cfm-record-technical">
-                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#technical-details-{{ forloop.counter }}" aria-expanded="false" aria-controls="technical-details-{{ forloop.counter }}">Technical details</button>
-                                <div class="collapse mt-2" id="technical-details-{{ forloop.counter }}">
+                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#technical-details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}" aria-expanded="false" aria-controls="technical-details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">Technical details</button>
+                                <div class="collapse mt-2" id="technical-details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">
                                     <dl class="row small mb-0">
                                         <dt class="col-md-2">File selection</dt><dd class="col-md-10">Publication links above use the corrected file when available, otherwise the original file for this active submission.</dd>
                                     </dl>
@@ -599,11 +639,11 @@
                     </div>
                 </td>
             </tr>
+            </tbody>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="10" class="text-muted">No records found.</td></tr>
+            <tbody><tr><td colspan="10" class="text-muted">No records found.</td></tr></tbody>
         {% endfor %}
-        </tbody>
     </table>
 </div>
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}

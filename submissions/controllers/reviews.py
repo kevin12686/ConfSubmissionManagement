@@ -194,6 +194,69 @@ def _group_for_submission(submission, groups):
     return groups.get(paper_id, [submission]) if paper_id else [submission]
 
 
+def _is_htmx_request(request):
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def _organized_exception_drafts(request, target_type=""):
+    draft_types = {
+        "page",
+        "author_number",
+        "plagiarism_percent",
+        "single_percent",
+        "duplicate_author",
+    }
+    drafts = {
+        draft_type: request.POST.get(f"draft_reason_{draft_type}", "")
+        for draft_type in draft_types
+        if f"draft_reason_{draft_type}" in request.POST
+    }
+    if target_type and target_type != "duplicate_author" and target_type not in drafts:
+        drafts[target_type] = request.POST.get("reason", "")
+    if (
+        target_type == "duplicate_author"
+        and target_type not in drafts
+        and "duplicate_author_review_notes" in request.POST
+    ):
+        drafts[target_type] = request.POST.get("duplicate_author_review_notes", "")
+    return drafts
+
+
+def _apply_organized_exception_drafts(
+    row,
+    *,
+    drafts=None,
+    cleared_types=None,
+    error_type="",
+    error_message="",
+    feedback=None,
+):
+    drafts = drafts or {}
+    cleared_types = cleared_types or set()
+    row["exception_panel_open"] = True
+    row["exception_feedback"] = feedback
+    for section in row.get("exception_panel_sections", []):
+        section_type = (
+            section["exception"]["type"]
+            if section["kind"] == "exception"
+            else "duplicate_author"
+        )
+        persisted_reason = (
+            section["exception"].get("reason", "")
+            if section["kind"] == "exception"
+            else section.get("reason", "")
+        )
+        if section_type in cleared_types:
+            section["draft_reason"] = ""
+        elif persisted_reason:
+            section["draft_reason"] = persisted_reason
+        else:
+            section["draft_reason"] = drafts.get(section_type, "")
+        section["inline_error"] = (
+            error_message if error_type == section_type else ""
+        )
+
+
 def _load_submission_groups_for_targets(targets):
     targets = list(targets)
     paper_ids = {
@@ -216,69 +279,16 @@ def _load_submission_groups_for_targets(targets):
     )
 
 
-def organized_list(request):
-    if request.method == "POST":
-        submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
-        action = request.POST.get("action")
-        if action in {"approve_exception", "reapprove_exception", "remove_exception"}:
-            rebuild_paper_authors()
-            all_exception_rows, _ = exception_rows("all")
-            exception_key = request.POST.get("exception_key", "")
-            row = next((item for item in all_exception_rows if item["key"] == exception_key), None)
-            if not row:
-                messages.error(request, "Exception row was not found. Refresh and try again.")
-            else:
-                try:
-                    if action in {"approve_exception", "reapprove_exception"}:
-                        approve_exception(
-                            row,
-                            request.POST.get("reason", ""),
-                            expected_evidence_token=request.POST.get(
-                                "evidence_token",
-                                "",
-                            ),
-                        )
-                        messages.success(request, f"{row['type_label']} exception allowed.")
-                    else:
-                        remove_exception(
-                            row,
-                            expected_evidence_token=request.POST.get(
-                                "evidence_token",
-                                "",
-                            ),
-                        )
-                        messages.warning(request, f"{row['type_label']} exception removed.")
-                except ValueError as exc:
-                    messages.error(request, str(exc))
-        elif action == "mark_duplicate_author_reviewed":
-            try:
-                set_duplicate_author_review(
-                    submission,
-                    reviewed=True,
-                    notes=request.POST.get("duplicate_author_review_notes", ""),
-                    expected_evidence_token=request.POST.get("evidence_token", ""),
-                )
-                messages.success(
-                    request,
-                    f"Duplicate author review marked OK for {submission.final_submission_id}.",
-                )
-            except ValueError as exc:
-                messages.error(request, str(exc))
-        elif action == "reset_duplicate_author_review":
-            try:
-                set_duplicate_author_review(
-                    submission,
-                    reviewed=False,
-                    expected_evidence_token=request.POST.get("evidence_token", ""),
-                )
-                messages.warning(
-                    request,
-                    f"Duplicate author review moved back to pending for {submission.final_submission_id}.",
-                )
-            except ValueError as exc:
-                messages.error(request, str(exc))
-        return redirect(request.get_full_path())
-
+def _organized_list_context(
+    request,
+    *,
+    exact_submission_id=None,
+    exception_drafts=None,
+    cleared_exception_types=None,
+    exception_error_type="",
+    exception_error_message="",
+    exception_feedback=None,
+):
     q = _search_query(request)
     exact_paper_id = request.GET.get("paper_id", "").strip()
     view_mode = request.GET.get("view", "checklist")
@@ -286,6 +296,16 @@ def organized_list(request):
         view_mode = "checklist"
     current_filter = request.GET.get("filter", "all") if view_mode == "checklist" else "all"
     current_sort = request.GET.get("sort", "needs_attention") if view_mode == "checklist" else "paper_id_asc"
+    if exact_submission_id is not None:
+        focused_submission = get_object_or_404(
+            FinalSubmission,
+            pk=exact_submission_id,
+        )
+        exact_paper_id = (focused_submission.paper_id_filled or "").strip()
+        q = ""
+        view_mode = "checklist"
+        current_filter = "all"
+        current_sort = "paper_id_asc"
     publication_context = PublicationReadContext.load()
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q,
@@ -295,6 +315,12 @@ def organized_list(request):
         context=publication_context,
         hydrate=False,
     )
+    if exact_submission_id is not None:
+        rows = [
+            row
+            for row in rows
+            if row.get("submission") and row["submission"].pk == exact_submission_id
+        ]
     if view_mode == "compact":
         rows = [
             row
@@ -319,6 +345,15 @@ def organized_list(request):
             row["duplicate_author_evidence_token"] = make_evidence_token(
                 "duplicate-author-review",
                 duplicate_author_review_evidence(submission),
+            )
+        if exact_submission_id is not None and submission and submission.pk == exact_submission_id:
+            _apply_organized_exception_drafts(
+                row,
+                drafts=exception_drafts,
+                cleared_types=cleared_exception_types,
+                error_type=exception_error_type,
+                error_message=exception_error_message,
+                feedback=exception_feedback,
             )
     note_summary = paper_note_summary()
     focused_context = None
@@ -362,26 +397,157 @@ def organized_list(request):
                 "back_url": reverse("submissions:organized_list"),
                 "edit_url": "",
             }
+    return {
+        "rows": rows,
+        "summary": summary,
+        "settings_obj": settings_obj,
+        "q": q,
+        "current_filter": current_filter,
+        "current_sort": current_sort,
+        "view_mode": view_mode,
+        "filter_options": ORGANIZED_LIST_FILTER_OPTIONS,
+        "sort_options": ORGANIZED_LIST_SORT_OPTIONS,
+        "note_summary": note_summary,
+        "note_count": len(note_summary),
+        "focused_context": focused_context,
+        "exact_paper_id": exact_paper_id,
+        "pagination": page,
+    }
+
+
+def organized_list(request):
+    if request.method == "POST":
+        submission = get_object_or_404(
+            FinalSubmission,
+            pk=request.POST.get("submission_id"),
+        )
+        action = request.POST.get("action")
+        target_type = ""
+        cleared_types = set()
+        feedback_level = "success"
+        feedback_message = ""
+        error_message = ""
+        if action in {"approve_exception", "reapprove_exception", "remove_exception"}:
+            rebuild_paper_authors()
+            all_exception_rows, _ = exception_rows("all")
+            exception_key = request.POST.get("exception_key", "")
+            row = next(
+                (item for item in all_exception_rows if item["key"] == exception_key),
+                None,
+            )
+            if (
+                row
+                and (
+                    not row.get("submission")
+                    or row["submission"].pk != submission.pk
+                )
+            ):
+                row = None
+            target_type = (
+                row["type"]
+                if row
+                else exception_key.partition(":")[0]
+            )
+            if not row:
+                error_message = "Exception row was not found. Refresh and try again."
+            else:
+                try:
+                    if action in {"approve_exception", "reapprove_exception"}:
+                        approve_exception(
+                            row,
+                            request.POST.get(
+                                f"draft_reason_{target_type}",
+                                request.POST.get("reason", ""),
+                            ),
+                            expected_evidence_token=request.POST.get(
+                                "evidence_token",
+                                "",
+                            ),
+                        )
+                        feedback_message = f"{row['type_label']} exception allowed."
+                    else:
+                        remove_exception(
+                            row,
+                            expected_evidence_token=request.POST.get(
+                                "evidence_token",
+                                "",
+                            ),
+                        )
+                        cleared_types.add(target_type)
+                        feedback_level = "warning"
+                        feedback_message = f"{row['type_label']} exception removed."
+                except ValueError as exc:
+                    error_message = str(exc)
+        elif action == "mark_duplicate_author_reviewed":
+            target_type = "duplicate_author"
+            try:
+                set_duplicate_author_review(
+                    submission,
+                    reviewed=True,
+                    notes=request.POST.get(
+                        "draft_reason_duplicate_author",
+                        request.POST.get("duplicate_author_review_notes", ""),
+                    ),
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                feedback_message = (
+                    "Duplicate author review marked OK for "
+                    f"{submission.final_submission_id}."
+                )
+            except ValueError as exc:
+                error_message = str(exc)
+        elif action == "reset_duplicate_author_review":
+            target_type = "duplicate_author"
+            try:
+                set_duplicate_author_review(
+                    submission,
+                    reviewed=False,
+                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                )
+                cleared_types.add(target_type)
+                feedback_level = "warning"
+                feedback_message = (
+                    "Duplicate author review moved back to pending for "
+                    f"{submission.final_submission_id}."
+                )
+            except ValueError as exc:
+                error_message = str(exc)
+
+        drafts = _organized_exception_drafts(request, target_type)
+        if _is_htmx_request(request):
+            feedback = {
+                "level": "danger" if error_message else feedback_level,
+                "message": error_message or feedback_message,
+            }
+            return render(
+                request,
+                "submissions/organized_list.html",
+                _organized_list_context(
+                    request,
+                    exact_submission_id=submission.pk,
+                    exception_drafts=drafts,
+                    cleared_exception_types=cleared_types,
+                    exception_error_type=target_type if error_message else "",
+                    exception_error_message=error_message,
+                    exception_feedback=feedback,
+                ),
+            )
+
+        if error_message:
+            messages.error(request, error_message)
+        elif feedback_level == "warning":
+            messages.warning(request, feedback_message)
+        elif feedback_message:
+            messages.success(request, feedback_message)
+        return redirect(request.get_full_path())
+
     return render(
         request,
         "submissions/organized_list.html",
-        {
-            "rows": rows,
-            "summary": summary,
-            "settings_obj": settings_obj,
-            "q": q,
-            "current_filter": current_filter,
-            "current_sort": current_sort,
-            "view_mode": view_mode,
-            "filter_options": ORGANIZED_LIST_FILTER_OPTIONS,
-            "sort_options": ORGANIZED_LIST_SORT_OPTIONS,
-            "note_summary": note_summary,
-            "note_count": len(note_summary),
-            "focused_context": focused_context,
-            "exact_paper_id": exact_paper_id,
-            "pagination": page,
-        },
+        _organized_list_context(request),
     )
+
+
 def verify_paper_ids(request):
     submissions = FinalSubmission.objects.all()
     q = _search_query(request)
