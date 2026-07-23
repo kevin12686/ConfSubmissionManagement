@@ -198,8 +198,14 @@ behavior when a full comparison is required. Filtering and sorting happen
 before pagination, while expensive row details and diffs are built only for the
 displayed page. Pagination controls appear above and below each worklist, and
 changing the page or page size returns the viewport to the worklist controls
-instead of leaving the editor at the bottom of the new page. Final Submissions keeps `Import / Re-upload` collapsed until
-needed. Formatting Review uses a compact list with one expanded paper at a
+instead of leaving the editor at the bottom of the new page. State-changing
+actions in Paper ID Review, Title/Author Review, and Formatting Review return to
+the same paper card; if the selected filter removes that paper after the change,
+the worklist continues at the next visible card. Formatting also restores the
+expanded review workspace. Short-lived save/update feedback appears as a Toast,
+while persistent workflow alerts, validation, confirmations, and publication
+blockers remain in the page. Final Submissions keeps `Import / Re-upload`
+collapsed until needed. Formatting Review uses a compact list with one expanded paper at a
 time plus a stable Single Paper Mode queue. Starting Single Paper Mode snapshots
 the selected filter/search order; Save stays on the same paper, and changing its
 status does not remove or reorder the queue's Previous/Next destinations. Exact

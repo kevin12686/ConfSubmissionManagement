@@ -67,7 +67,7 @@
     {% endif %}
 {% endif %}
 
-<div id="title-author-worklist" class="cfm-worklist-anchor">
+<div id="title-author-worklist" class="cfm-worklist-anchor" data-cfm-worklist="title-author-review">
 {% if not focused_context %}
 <div class="cfm-filter-groups">
     <div class="cfm-filter-group">
@@ -117,7 +117,11 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 {% for row in rows %}
     {% with item=row.submission %}
-    <div class="card cfm-review-card {% if item.title_author_review_status == 'red_flag' or item.title_author_extraction_status == 'error' %}border-danger extraction-red-flag{% elif row.needs_verification %}border-warning{% endif %}">
+    <div
+        id="title-author-review-{{ item.pk }}"
+        class="card cfm-review-card {% if item.title_author_review_status == 'red_flag' or item.title_author_extraction_status == 'error' %}border-danger extraction-red-flag{% elif row.needs_verification %}border-warning{% endif %}"
+        data-cfm-worklist-card="{{ item.pk }}"
+    >
         <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
             <div>
                 <strong>{{ item.paper_id_filled }}</strong>

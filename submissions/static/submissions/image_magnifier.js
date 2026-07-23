@@ -221,6 +221,9 @@
     document.addEventListener("shown.bs.collapse", function (event) {
         initializeWithin(event.target);
     });
+    document.addEventListener("cfm:worklist-expanded", function (event) {
+        initializeWithin(event.target);
+    });
     document.addEventListener("htmx:load", function (event) {
         initializeWithin(event.detail && event.detail.elt);
     });

@@ -991,6 +991,7 @@ def formatting(request):
                             "filter": current_filter,
                             "q": q,
                             "queue": queue_token,
+                            "return_to": request.POST.get("return_to", ""),
                         }
                     elif preview.get("token"):
                         apply_formatting_upload_preview(preview["token"])
@@ -1208,6 +1209,9 @@ def _formatting_redirect_after_save(
     *,
     queue_token="",
 ):
+    if mode == "list":
+        return redirect(_worklist_return_url(request, "formatting"))
+
     query = {"filter": current_filter}
     if q:
         query["q"] = q

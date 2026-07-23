@@ -8,8 +8,9 @@ import shutil
 import tempfile
 import zipfile
 from datetime import date, timedelta
+from html import unescape
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 from unittest.mock import patch
 
 import pandas as pd
@@ -5230,6 +5231,273 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         data.update(overrides)
         return data
 
+    def test_review_worklists_expose_shared_position_restoration_hooks(self):
+        self.make_master_paper("P001", "Positioned Review", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="POSITION1",
+            paper_id_filled="P001",
+            final_submission_title="Positioned Review",
+            extracted_title="Positioned Review",
+        )
+
+        paper_id_page = self.client.get(
+            reverse("submissions:verify_paper_ids"),
+            {"filter": "all", "q": "POSITION1"},
+        )
+        title_author_page = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "all", "q": "POSITION1"},
+        )
+        formatting_page = self.open_formatting_review(
+            submission,
+            status_filter="all",
+            query="POSITION1",
+        )
+
+        self.assertContains(
+            paper_id_page,
+            'data-cfm-worklist="paper-id-review"',
+        )
+        self.assertContains(
+            paper_id_page,
+            f'id="paper-id-review-{submission.pk}"',
+        )
+        self.assertContains(
+            title_author_page,
+            'data-cfm-worklist="title-author-review"',
+        )
+        self.assertContains(
+            title_author_page,
+            f'id="title-author-review-{submission.pk}"',
+        )
+        self.assertContains(
+            formatting_page,
+            'data-cfm-worklist="formatting-review"',
+        )
+        self.assertContains(
+            formatting_page,
+            f'id="formatting-review-{submission.pk}"',
+        )
+        self.assertContains(
+            formatting_page,
+            f'data-cfm-worklist-collapse="format-review-{submission.pk}"',
+        )
+        self.assertContains(
+            formatting_page,
+            "/static/submissions/worklist_navigation.js",
+        )
+        self.assertContains(formatting_page, "cfm:worklist-expanded")
+        worklist_asset_path = finders.find(
+            "submissions/worklist_navigation.js"
+        )
+        self.assertIsNotNone(worklist_asset_path)
+        worklist_asset = Path(worklist_asset_path).read_text(encoding="utf-8")
+        self.assertIn("cfm:worklist-expanded", worklist_asset)
+
+    def test_review_post_redirects_preserve_full_worklist_return_context(self):
+        self.make_master_paper("P001", "Return Context Review", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="RETURN1",
+            paper_id_filled="P001",
+            final_submission_title="Return Context Review",
+            extracted_title="Return Context Review",
+            title_author_review_status="pending",
+            title_author_verified=False,
+        )
+
+        paper_id_return = (
+            f'{reverse("submissions:verify_paper_ids")}'
+            f"?filter=all&page=2&page_size=50&q=RETURN1"
+            f"#paper-id-review-{submission.pk}"
+        )
+        paper_id_response = self.client.post(
+            reverse("submissions:verify_paper_ids"),
+            {
+                "submission_id": submission.pk,
+                "action": "unverify",
+                "evidence_token": self.paper_id_review_token(
+                    submission,
+                    "paper_id_unverify_evidence_token",
+                ),
+                "return_to": paper_id_return,
+            },
+        )
+        self.assertRedirects(
+            paper_id_response,
+            paper_id_return,
+            fetch_redirect_response=False,
+        )
+
+        title_page = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "all", "q": "RETURN1"},
+        )
+        title_row = next(
+            row
+            for row in title_page.context["rows"]
+            if row["submission"].pk == submission.pk
+        )
+        title_return = (
+            f'{reverse("submissions:title_author_extraction")}'
+            f"?filter=all&page=3&page_size=25&q=RETURN1"
+            f"#title-author-review-{submission.pk}"
+        )
+        title_response = self.client.post(
+            reverse("submissions:title_author_extraction"),
+            {
+                "submission_id": submission.pk,
+                "action": "set_review_status",
+                "review_status": "red_flag",
+                "evidence_token": title_row["evidence_token"],
+                "return_to": title_return,
+            },
+        )
+        self.assertRedirects(
+            title_response,
+            title_return,
+            fetch_redirect_response=False,
+        )
+
+        formatting_page = self.open_formatting_review(
+            submission,
+            status_filter="all",
+            query="RETURN1",
+        )
+        formatting_return = (
+            f'{reverse("submissions:formatting")}'
+            f"?filter=all&page=4&page_size=50&q=RETURN1"
+            f"#formatting-review-{submission.pk}"
+        )
+        formatting_response = self.client.post(
+            reverse("submissions:formatting"),
+            self.formatting_post_data(
+                formatting_page,
+                submission,
+                format_notes="Preserve this worklist position.",
+                return_to=formatting_return,
+            ),
+        )
+        self.assertRedirects(
+            formatting_response,
+            formatting_return,
+            fetch_redirect_response=False,
+        )
+
+    def test_transient_django_messages_render_as_toasts(self):
+        self.make_master_paper("P001", "Toast Review", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="TOAST1",
+            paper_id_filled="P001",
+            final_submission_title="Toast Review",
+            extracted_title="Toast Review",
+            title_author_review_status="pending",
+            title_author_verified=False,
+        )
+        page = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "all", "q": "TOAST1"},
+        )
+        row = next(
+            row
+            for row in page.context["rows"]
+            if row["submission"].pk == submission.pk
+        )
+
+        response = self.client.post(
+            reverse("submissions:title_author_extraction"),
+            {
+                "submission_id": submission.pk,
+                "action": "set_review_status",
+                "review_status": "red_flag",
+                "evidence_token": row["evidence_token"],
+                "return_to": (
+                    f'{reverse("submissions:title_author_extraction")}'
+                    f"?filter=all&q=TOAST1#title-author-review-{submission.pk}"
+                ),
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "data-cfm-toast")
+        self.assertContains(response, "toast show cfm-toast")
+        self.assertContains(
+            response,
+            "toast-container position-fixed cfm-toast-container",
+        )
+        self.assertContains(response, "data-cfm-toast-close")
+        self.assertNotContains(response, "bootstrap.Toast")
+        self.assertContains(response, "Updated")
+        self.assertContains(response, "Title/author review status updated")
+        self.assertNotContains(
+            response,
+            "alert alert-success alert-dismissible",
+        )
+
+    def test_formatting_title_guard_preserves_worklist_return_context(self):
+        self.make_master_paper("P001", "Guard Return Review", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="GUARDRETURN1",
+            paper_id_filled="P001",
+            final_submission_title="Guard Return Review",
+            extracted_title="Guard Return Review",
+        )
+        page = self.open_formatting_review(
+            submission,
+            status_filter="all",
+            query="GUARDRETURN1",
+        )
+        return_to = (
+            f'{reverse("submissions:formatting")}'
+            f"?filter=all&page=2&page_size=25&q=GUARDRETURN1"
+            f"#formatting-review-{submission.pk}"
+        )
+
+        with patch(
+            "submissions.services.formatting.get_title_author",
+            return_value=("Wrong Uploaded Paper", "Ada", 1),
+        ):
+            preview = self.client.post(
+                reverse("submissions:formatting"),
+                self.formatting_post_data(
+                    page,
+                    submission,
+                    corrected_pdf=self.uploaded_file(
+                        "guard-return.pdf",
+                        b"%PDF guard return",
+                    ),
+                    return_to=return_to,
+                ),
+            )
+
+        self.assertEqual(preview.status_code, 200)
+        confirmation = preview.context["formatting_confirmation"]
+        self.assertEqual(confirmation["return_to"], return_to)
+        self.assertContains(preview, "data-cfm-worklist-return-deferred")
+        self.assertContains(
+            preview,
+            f'name="return_to" value="{return_to.replace("&", "&amp;")}"',
+            count=2,
+            html=False,
+        )
+
+        canceled = self.client.post(
+            reverse("submissions:formatting"),
+            {
+                "action": "cancel_formatting_upload",
+                "preview_token": confirmation["token"],
+                "submission_id": submission.pk,
+                "mode": "list",
+                "filter": "all",
+                "q": "GUARDRETURN1",
+                "return_to": return_to,
+            },
+        )
+        self.assertRedirects(
+            canceled,
+            return_to,
+            fetch_redirect_response=False,
+        )
+
     def test_gunicorn_deployment_collects_and_serves_local_static_assets(self):
         self.assertIn(
             "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -6683,6 +6951,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         asset = Path(asset_path).read_text(encoding="utf-8")
         self.assertIn("requestAnimationFrame", asset)
         self.assertIn("shown.bs.collapse", asset)
+        self.assertIn("cfm:worklist-expanded", asset)
         self.assertIn('document.addEventListener("htmx:load"', asset)
         self.assertIn("event.detail && event.detail.elt", asset)
         self.assertNotIn("event.detail && event.detail.target", asset)
@@ -6820,6 +7089,58 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         saved_page = self.client.get(save_response["Location"])
         self.assertContains(saved_page, "First Format Paper")
         self.assertContains(saved_page, f"current={second.pk}")
+
+    def test_formatting_single_mode_entry_uses_current_filter_and_search(self):
+        self.make_master_paper("P001", "Filtered Queue Pending", "Ada")
+        self.make_master_paper("P002", "Filtered Queue Reviewed", "Grace")
+        self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Filtered Queue Pending",
+            extracted_title="Filtered Queue Pending",
+            format_status="pending",
+        )
+        reviewed = self.make_final_submission(
+            final_submission_id="102",
+            paper_id_filled="P002",
+            final_submission_title="Filtered Queue Reviewed",
+            extracted_title="Filtered Queue Reviewed",
+            format_status="review_ok",
+        )
+
+        response = self.client.get(
+            reverse("submissions:formatting"),
+            {"filter": "review_ok", "q": "Filtered Queue"},
+        )
+
+        html = response.content.decode()
+        worklist_start = html.index('id="formatting-worklist"')
+        single_mode_label = html.index(">Single Paper Mode</a>", worklist_start)
+        href_start = html.rfind('href="', worklist_start, single_mode_label) + len(
+            'href="'
+        )
+        href_end = html.index('"', href_start)
+        single_mode_url = unescape(html[href_start:href_end])
+        single_mode_query = parse_qs(urlparse(single_mode_url).query)
+        self.assertEqual(single_mode_query["mode"], ["single"])
+        self.assertEqual(single_mode_query["filter"], ["review_ok"])
+        self.assertEqual(single_mode_query["q"], ["Filtered Queue"])
+
+        start = self.client.get(
+            reverse("submissions:formatting"),
+            {
+                "mode": "single",
+                "filter": "review_ok",
+                "q": "Filtered Queue",
+            },
+        )
+        self.assertEqual(start.status_code, 302)
+        queue_page = self.client.get(start["Location"])
+        navigation = queue_page.context["single_navigation"]
+        self.assertEqual(queue_page.context["current_filter"], "review_ok")
+        self.assertEqual(queue_page.context["q"], "Filtered Queue")
+        self.assertEqual(navigation["total"], 1)
+        self.assertEqual(navigation["current"].pk, reviewed.pk)
 
     def test_formatting_single_queue_stays_stable_after_review_ok(self):
         self.make_master_paper("P002", "First Pending Paper", "Ada")

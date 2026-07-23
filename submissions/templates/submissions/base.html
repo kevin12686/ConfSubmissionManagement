@@ -371,6 +371,104 @@
         .cfm-alert-stack > :last-child {
             margin-bottom: 0;
         }
+        .cfm-toast-container {
+            max-width: calc(100vw - 2rem);
+            pointer-events: none;
+            position: fixed;
+            right: 0.75rem;
+            top: 0.75rem;
+            width: 30rem;
+            z-index: 1090;
+        }
+        .cfm-toast {
+            --cfm-toast-accent: #60a5fa;
+            background: #172033;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-left: 0.35rem solid var(--cfm-toast-accent);
+            border-radius: 0.5rem;
+            box-shadow: 0 0.8rem 2rem rgba(15, 23, 42, 0.36);
+            color: #f8fafc;
+            overflow: hidden;
+            pointer-events: auto;
+            width: 100%;
+        }
+        .cfm-toast.show {
+            animation: cfm-toast-enter 160ms ease-out;
+        }
+        .cfm-toast-success {
+            --cfm-toast-accent: #4ade80;
+        }
+        .cfm-toast-info {
+            --cfm-toast-accent: #60a5fa;
+        }
+        .cfm-toast-warning {
+            --cfm-toast-accent: #fbbf24;
+        }
+        .cfm-toast-error {
+            --cfm-toast-accent: #fb7185;
+        }
+        .cfm-toast .toast-header {
+            background: rgba(255, 255, 255, 0.04);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+            color: #ffffff;
+            padding: 0.65rem 0.85rem 0.55rem;
+        }
+        .cfm-toast-status-dot {
+            background: var(--cfm-toast-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--cfm-toast-accent) 20%, transparent);
+            flex: 0 0 auto;
+            height: 0.55rem;
+            margin-right: 0.65rem;
+            width: 0.55rem;
+        }
+        .cfm-toast .toast-header strong {
+            color: #ffffff;
+            font-size: 0.95rem;
+            letter-spacing: 0;
+        }
+        .cfm-toast .toast-body {
+            color: #e5edf7;
+            font-size: 1rem;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+            padding: 0.75rem 0.85rem 0.85rem;
+        }
+        .cfm-toast-close {
+            align-items: center;
+            align-self: stretch;
+            background: transparent;
+            border: 0;
+            color: #ffffff;
+            display: inline-flex;
+            font-size: 1.55rem;
+            font-weight: 400;
+            justify-content: center;
+            line-height: 1;
+            margin: -0.2rem -0.15rem -0.2rem 0.65rem;
+            opacity: 0.9;
+            padding: 0.1rem 0.25rem;
+        }
+        .cfm-toast-close:hover,
+        .cfm-toast-close:focus-visible {
+            color: #ffffff;
+            opacity: 1;
+        }
+        @keyframes cfm-toast-enter {
+            from {
+                opacity: 0;
+                transform: translateY(-0.4rem);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .cfm-toast.show {
+                animation: none;
+            }
+        }
         .bg-light {
             background-color: var(--cfm-surface-subtle) !important;
         }
@@ -1295,6 +1393,13 @@
             }
         }
         @media (max-width: 575.98px) {
+            .cfm-toast-container {
+                left: 0.75rem;
+                max-width: none;
+                right: 0.75rem;
+                top: 0.75rem;
+                width: auto;
+            }
             .cfm-header-identity {
                 gap: 0.55rem;
             }
@@ -1436,12 +1541,38 @@
          hx-trigger="load"
          hx-swap="outerHTML"></div>
     {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        {% endfor %}
+        <div class="toast-container position-fixed cfm-toast-container" aria-live="polite" aria-atomic="true">
+            {% for message in messages %}
+                <div
+                    class="toast show cfm-toast cfm-toast-{{ message.level_tag|default:'info' }}"
+                    role="{% if message.level_tag == 'error' or message.level_tag == 'warning' %}alert{% else %}status{% endif %}"
+                    aria-live="{% if message.level_tag == 'error' or message.level_tag == 'warning' %}assertive{% else %}polite{% endif %}"
+                    aria-atomic="true"
+                    data-cfm-toast
+                    data-bs-autohide="{% if message.level_tag == 'success' or message.level_tag == 'info' %}true{% else %}false{% endif %}"
+                    data-bs-delay="{% if message.level_tag == 'success' %}5000{% else %}7000{% endif %}"
+                >
+                    <div class="toast-header">
+                        <span class="cfm-toast-status-dot" aria-hidden="true"></span>
+                        <strong class="me-auto">
+                            {% if message.level_tag == "success" %}
+                                Updated
+                            {% elif message.level_tag == "warning" %}
+                                Attention
+                            {% elif message.level_tag == "error" %}
+                                Action failed
+                            {% else %}
+                                Information
+                            {% endif %}
+                        </strong>
+                        <button type="button" class="cfm-toast-close" data-cfm-toast-close aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="toast-body">{{ message }}</div>
+                </div>
+            {% endfor %}
+        </div>
     {% endif %}
     {% block content %}{% endblock %}
 </main>
@@ -1456,6 +1587,7 @@
 <script src="{% static 'submissions/vendor/htmx-2.0.10.min.js' %}"></script>
 <script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>
 <script src="{% static 'submissions/image_magnifier.js' %}"></script>
+<script src="{% static 'submissions/worklist_navigation.js' %}"></script>
 <script>
 let cfmFullPageNavigationPending = false;
 let cfmPendingPaginationScroll = "";
@@ -1471,6 +1603,44 @@ document.body.addEventListener("htmx:beforeRequest", function () {
 });
 document.body.addEventListener("htmx:responseError", cfmShowHtmxRequestError);
 document.body.addEventListener("htmx:sendError", cfmShowHtmxRequestError);
+function cfmDismissToast(element) {
+    element.classList.remove("show");
+    window.setTimeout(function () {
+        element.remove();
+    }, 150);
+}
+
+const cfmToastContainers = document.querySelectorAll(".cfm-toast-container");
+if (cfmToastContainers.length) {
+    let cfmToastPositionFrame = null;
+    const updateToastPosition = function () {
+        cfmToastPositionFrame = null;
+        const headerBottom =
+            document.querySelector(".cfm-app-header")?.getBoundingClientRect().bottom || 0;
+        const top = Math.max(12, headerBottom + 12);
+        cfmToastContainers.forEach(function (container) {
+            container.style.top = `${top}px`;
+        });
+    };
+    const scheduleToastPosition = function () {
+        if (cfmToastPositionFrame !== null) return;
+        cfmToastPositionFrame = window.requestAnimationFrame(updateToastPosition);
+    };
+    updateToastPosition();
+    window.addEventListener("scroll", scheduleToastPosition, { passive: true });
+    window.addEventListener("resize", scheduleToastPosition);
+}
+
+document.querySelectorAll("[data-cfm-toast]").forEach(function (element) {
+    element.querySelector("[data-cfm-toast-close]")?.addEventListener("click", function () {
+        cfmDismissToast(element);
+    });
+    if (element.dataset.bsAutohide === "true") {
+        window.setTimeout(function () {
+            cfmDismissToast(element);
+        }, Number(element.dataset.bsDelay || 5000));
+    }
+});
 window.addEventListener("pagehide", function () {
     cfmFullPageNavigationPending = true;
 });

@@ -84,11 +84,13 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
   and a separate exact-record Focus mode. List rows show publication
   file/status context before expansion, Bootstrap's shared parent keeps one
   paper expanded at a time, and HTMX enhances GET-only filter/search navigation
-  without owning workflow state. Starting Single Paper Mode stores an
-  ephemeral, naturally sorted snapshot of matching submission IDs plus the
-  filter/search in the Django session. Status changes do not reorder that
-  snapshot. Previous/Next skip IDs that later leave publication scope, and the
-  queue expires after two hours. Focus mode never creates or mutates a queue.
+  without owning workflow state. The Single Paper Mode entry lives inside that
+  swapped worklist so it always carries the filter/search currently on screen.
+  Starting the mode stores an ephemeral, naturally sorted snapshot of matching
+  submission IDs plus the filter/search in the Django session. Status changes
+  do not reorder that snapshot. Previous/Next skip IDs that later leave
+  publication scope, and the queue expires after two hours. Focus mode never
+  creates or mutates a queue.
 - Formatting previews and Title/Author verification images use one shared native
   Image Magnifier component. It initializes after lazy Bootstrap collapse
   loading and HTMX worklist swaps, runs only for fine hover pointers, requires
@@ -102,6 +104,12 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Organized List separates current-view publication blockers from tracked information and uses stable table columns. Paper Master rows whose active final is Not Publishing are omitted from this publication-current view, while replaced versions remain inactive history. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
 - Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.
 - `Review OK` is the single Title/Author completion decision. The Final-versus-extracted title comparison remains visible evidence; a reviewed difference is tracked but does not create a second blocker.
+- Paper ID Review, Title/Author Review, and Formatting Review share one
+  presentation-only post-action navigation component. Ordinary audited POSTs
+  remain server-owned; the browser records the active card, adjacent cards,
+  viewport offset, and expanded collapse state. The safe server redirect retains
+  the complete worklist URL. After reload, the component returns to the same
+  card or the next/previous visible card if the selected filter removed it.
 
 The UI remains server-rendered. Tabler 1.4.0 and HTMX 2.0.10 are vendored
 locally. Normal worklist URLs support GET filter/search/tab/pagination
@@ -113,7 +121,7 @@ readiness and exports never do. State-changing POST actions remain normal
 audited Django requests.
 
 Large worklists use the shared `WorklistPage` boundary. The complete lightweight
-scope is classified and sorted first, then the selected `50 / 100 / 200` page
+scope is classified and sorted first, then the selected `25 / 50 / 100 / 200` page
 is hydrated with file checks, previews, suggestions, and diffs. `page_size=all`
 hydrates the complete filtered result and is the explicit compatibility path
 for full-list inspection. Organized List, Process PDFs, Author Count,
@@ -228,7 +236,10 @@ alert flexbox is overridden so ordinary alerts use vertical document flow.
 Templates opt in with `.d-flex` only for a short message/action row. Alerts
 containing tables, lists, confirmation forms, or several content blocks use
 `.cfm-alert-stack`, which keeps their children and responsive tables at full
-available width.
+available width. One-time Django operation messages use the shared Toast stack;
+success/info feedback autohides, while warning/error feedback remains until
+dismissed. Global workflow state, form errors, confirmations, and readiness
+issues remain inline and are never converted to transient Toasts.
 
 ## Current Publication Resolution
 

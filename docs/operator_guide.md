@@ -108,7 +108,19 @@ respond faster because file checks, previews, suggestions, and text diffs are
 prepared only for visible rows. The same pagination controls appear above and
 below the worklist. Changing page or page size returns to the worklist controls,
 so an editor can continue from the top of the new page without manually
-scrolling back. Dashboard readiness and global workflow alerts
+scrolling back. Paper ID Review, Title/Author Review, and Formatting Review also
+remember the paper card used for a state-changing action. If the paper remains
+in the selected filter, the page returns to that card at the same viewport
+position. If the update removes it from the filter, the page continues at the
+next visible card; Formatting reopens the relevant review workspace.
+
+Short-lived operation feedback such as `Settings saved`, review status updates,
+and upload results appears in the upper-right Toast stack. Success and
+informational Toasts close automatically; warning and failure Toasts remain
+until dismissed. Toasts are one-time Django messages and disappear after a
+refresh. Persistent workflow alerts, field validation, preview confirmations,
+and publication blocker lists remain inline because they must not disappear
+while action is still required. Dashboard readiness and global workflow alerts
 load just after the page shell, but remain server-calculated from the same
 rules used by publication export.
 
@@ -252,6 +264,9 @@ Use `/reviews/paper-ids/` to compare author-entered IDs and titles against the P
 - IDs not in Paper Master cannot be verified.
 - If a paper is intentionally not publishing, mark it in the Not Publishing workflow instead of verifying an invalid ID.
 - Verified hard title differences remain visible but are lower priority than unverified mappings.
+- After Verify, Unverify, or publication-decision actions, the worklist returns
+  to the same card or continues with the next visible card when the current
+  filter no longer includes it.
 
 ## Title/Author Review
 
@@ -264,6 +279,11 @@ Review statuses:
 - Review OK: title/authors have been checked.
 
 The page also shows extracted title vs Final Submission title while you review the card. Missing metadata or a Pending/Red Flag review can block final export. Marking the card Review OK records that the displayed title difference was accepted; the difference remains visible and tracked but does not create a second blocker.
+
+Single-row extraction, GROBID, Manual override, and review-status actions return
+to the same card. When a status change moves the paper out of the selected view,
+the worklist continues at the next visible card rather than jumping to the page
+header.
 
 The built-in extractor is the default path. Settings can enable an optional GROBID fallback for local/internal GROBID services; the Settings page shows a green/red API health indicator beside the GROBID API URL and refreshes it while you edit the URL. The Title/Author page checks GROBID health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction is not started, so rows are not incorrectly turned into extraction errors. During a suspicious-row batch, rows are processed one at a time; if the GROBID service becomes unavailable mid-run, the batch stops, successful rows remain saved, and unprocessed rows are skipped rather than marked as paper-level errors. Use `Try GROBID` on individual rows, or `Try GROBID for suspicious rows` for rows with extraction errors or Red Flag status. If a row has missing/truncated authors but is not an extraction error, mark it Red Flag first or use the single-row button. A successful GROBID extraction overwrites extracted title/authors, creates a verification image, resets Title/Author Review back to Pending, and recalculates Extracted Title Match the same way the built-in extractor does. A failed GROBID attempt does not overwrite the current extraction.
 
@@ -302,9 +322,11 @@ Use `/reviews/formatting/` to review title/author formatting visually.
 
 - List mode is a compact worklist; select `Review paper` to expand one full workspace.
 - Single Paper Mode shows one paper at a time to reduce wrong-file uploads.
-  When it starts, the system snapshots the papers matching the current filter
-  and search in natural Paper ID order. That sequence remains stable even after
-  a paper changes from Pending/Needs edit to Review OK.
+  Its entry is part of the current worklist toolbar, so changing a tab or search
+  also updates which list will be reviewed. When it starts, the system snapshots
+  the papers matching that filter and search in natural Paper ID order. That
+  sequence remains stable even after a paper changes from Pending/Needs edit to
+  Review OK.
 - Corrected PDF upload performs the same responsive title safety check in dry-run
   mode before the file is saved. It compares with the Final Submission title without
   replacing stored extracted metadata.
@@ -317,6 +339,10 @@ Use `/reviews/formatting/` to review title/author formatting visually.
   inspection is needed.
 - Review OK means the current publication version's format is acceptable.
 - Edited means corrected PDF/source files exist.
+- In List mode, Save and title-guard confirm/cancel return to the same expanded
+  paper workspace. If the saved status removes that paper from the current tab,
+  the next visible paper is opened instead. The first-page preview and its
+  magnifier load automatically in the restored workspace.
 
 If corrected files are uploaded, related review flags reset as needed and Process PDFs may be required.
 

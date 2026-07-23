@@ -36,7 +36,7 @@
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 
-<div id="verify-paper-id-worklist" class="cfm-worklist-anchor">
+<div id="verify-paper-id-worklist" class="cfm-worklist-anchor" data-cfm-worklist="paper-id-review">
 {% if not focused_context %}
 <ul class="nav nav-tabs cfm-tabs">
     {% for option in filter_options %}
@@ -73,7 +73,11 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="vstack gap-3">
     {% for row in rows %}
-        <div class="card cfm-review-card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}">
+        <div
+            id="paper-id-review-{{ row.submission.pk }}"
+            class="card cfm-review-card {% if row.status == 'title_mismatch' or row.status == 'invalid_paper_id' or row.verified_with_diff %}border-warning{% endif %}"
+            data-cfm-worklist-card="{{ row.submission.pk }}"
+        >
             <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
                 <div>
                     <strong>Final ID {{ row.submission.final_submission_id }}</strong>

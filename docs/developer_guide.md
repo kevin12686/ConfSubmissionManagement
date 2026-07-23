@@ -213,6 +213,11 @@ rewrite `extracted_authors` while preparing the display list.
   `.d-flex`. Use `.cfm-alert-stack` for alerts containing tables, lists,
   multi-step forms, or several content blocks. Reserve explicit `.d-flex`
   alerts for a short message paired with a compact action group.
+- Django `messages` are rendered centrally as Toasts in `base.html`. Success and
+  info may autohide; warning and error messages remain dismissible until the
+  user closes them. Do not use Django messages for persistent workflow state,
+  field validation, confirmation content, issue tables, or publication
+  blockers; those remain inline alerts or page content.
 - Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
 - Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
 - System-generated cross-page links must use exact identifiers: `submission=<pk>`
@@ -229,10 +234,25 @@ rewrite `extracted_authors` while preparing the display list.
   `services/formatting.py`; do not recalculate Previous/Next from the current
   status order after every Save. Queue order is natural Paper ID/Final ID order,
   while the saved filter/search is used only to create the snapshot and return
-  to the originating list. Exact cross-page links use Focus mode and must not
-  create a sequential queue. Single and Focus modes do not render normal
-  worklist pagination.
+  to the originating list. Keep the Single Paper Mode entry inside the
+  HTMX-swapped Formatting worklist so its URL always reflects the displayed
+  filter/search. Exact cross-page links use Focus mode and must not create a
+  sequential queue. Single and Focus modes do not render normal worklist
+  pagination.
 - Worklist GET filters/search/pagination are progressively enhanced with pinned local HTMX. Every worklist URL must remain a valid normal GET, preserve URL query state, and render its named container; never move service decisions into HTMX event handlers.
+- Shared post-action position restoration lives in
+  `submissions/static/submissions/worklist_navigation.js`. Worklists opt in with
+  `data-cfm-worklist`, and row cards use a stable
+  `data-cfm-worklist-card` plus DOM id. The component adds the current same-site
+  return URL to ordinary POSTs, restores the original viewport offset, falls
+  forward/back when a filter removes the changed row, and can reopen a
+  card-owned Bootstrap collapse through `data-cfm-worklist-collapse`. Keep
+  workflow mutation, evidence validation, audit, filtering, and publication
+  decisions server-side. Formatting title-guard confirmation defers restoration
+  until confirm/cancel completes. Programmatic collapse restoration dispatches
+  `cfm:worklist-expanded`; lazy Formatting previews and the shared image
+  magnifier must listen for this event as well as normal
+  `shown.bs.collapse`, so restored cards never display an unloaded image.
 - Heavy worklist evidence should not be eagerly decoded or rendered. Title/Author verification images use native lazy loading and dimensions read from the PNG header; do not decode each image just to size the worklist. Built-in, GROBID, and Manual Override must all use `submissions/services/title_author_verification.py`; extractor-specific renderers are not allowed. The renderer conservatively scans for visibly blank top-page pixels, reuses only verified whitespace, and computes `source_offset` so `header height + safety margin` never reaches the first non-white source content. If the invariant cannot be met with existing whitespace, extend upward. Author evidence uses one conservative, case-sensitive character path: the complete extracted word sequence and its internal punctuation must match the PDF. Leading list punctuation and trailing list/affiliation markers may remain outside the target, but only PDF characters represented by the extracted author are outlined. If reliable raw character geometry is unavailable, return no author evidence instead of falling back to a whole-word box. This rule applies only to author evidence rendering; do not alter title evidence, extraction output, or title comparison. Each Manual Override form is fetched only when its collapsed panel is opened. The partial endpoint is read-only; the existing audited POST workflow remains the only mutation path.
 - Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `25`, `50`, `100`, `200`, and `all`, with 25 as the centralized default. Individual worklists do not define their own default size. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result. Every paginated worklist renders the shared partial above and below its rows. Give the worklist a stable `.cfm-worklist-anchor`; pagination links retain GET state and return full-page or HTMX navigation to that anchor.
 - Paper Master and Final Submission list sorting is defined in
@@ -311,6 +331,13 @@ rewrite `extracted_authors` while preparing the display list.
   Avoid transferring every historical Final row to Python on routine GETs.
 
 Return-context coverage includes Organized List (both views), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions. Use `url_has_allowed_host_and_scheme()` at the Final Submission controller boundary; do not trust or redirect directly to arbitrary `next` values. The normal edit form and version-action danger-zone form remain separate POST forms even though they share the same controller endpoint.
+
+Paper ID Review and Title/Author Review continue to use the existing
+`_worklist_return_url()` controller helper. Formatting List mode uses the same
+helper from its dedicated `_formatting_redirect_after_save()` path so
+`filter/q/page/page_size` and the card fragment survive Save and title-guard
+confirm/cancel. Do not change `_worklist_return_url()` semantics casually: Not
+Publishing and Exceptions also call it.
 
 Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Worklists use `hx-select` on normal server pages. Dashboard readiness and global workflow alerts use dedicated read-only partial endpoints so expensive global scans do not block every page response. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. UI caches must never feed publication/export decisions.
 

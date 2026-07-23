@@ -11,8 +11,6 @@
             <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.back_url }}">Back to list</a>
         {% elif mode == "focus" %}
             <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}">Back to list</a>
-        {% else %}
-            <a class="btn btn-outline-dark" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Single Paper Mode</a>
         {% endif %}
         <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
     </div>
@@ -52,7 +50,7 @@
 
 <form method="get" class="row g-2 align-items-end cfm-filter-panel" {% if mode != "single" %}hx-get="{% url 'submissions:formatting' %}" hx-target="#formatting-worklist" hx-select="#formatting-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#formatting-loading"{% endif %}>
     <input type="hidden" name="filter" value="{{ current_filter }}">
-    <div class="col-lg-9">
+    <div class="{% if q or current_filter != 'needs_attention' %}col-lg-6{% else %}col-lg-7{% endif %}">
         <label class="form-label" for="formatting-search">Search</label>
         <input id="formatting-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, title, or authors">
     </div>
@@ -64,12 +62,15 @@
             <a class="btn btn-outline-secondary w-100" href="{% url 'submissions:formatting' %}">Clear</a>
         </div>
     {% endif %}
+    <div class="col-lg-3">
+        <a class="btn btn-outline-dark w-100" href="{% url 'submissions:formatting' %}?mode=single&filter={{ current_filter }}{% if q %}&q={{ q|urlencode }}{% endif %}">Single Paper Mode</a>
+    </div>
     <div class="col-12"><span id="formatting-loading" class="cfm-loading-indicator" role="status">Updating queue...</span></div>
 </form>
 {% endif %}
 
 {% if formatting_confirmation %}
-    <div class="cfm-title-guard">
+    <div class="cfm-title-guard" data-cfm-worklist-return-deferred>
         <div class="cfm-title-guard-header">
             <div>
                 <h2 class="h4 mb-1">Corrected PDF Title Safety Check</h2>
@@ -93,6 +94,7 @@
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">
                 <input type="hidden" name="q" value="{{ formatting_confirmation.q }}">
                 <input type="hidden" name="queue" value="{{ formatting_confirmation.queue }}">
+                <input type="hidden" name="return_to" value="{{ formatting_confirmation.return_to }}">
                 <button class="btn btn-warning">Confirm save corrected files anyway</button>
             </form>
             <form method="post">
@@ -104,6 +106,7 @@
                 <input type="hidden" name="filter" value="{{ formatting_confirmation.filter }}">
                 <input type="hidden" name="q" value="{{ formatting_confirmation.q }}">
                 <input type="hidden" name="queue" value="{{ formatting_confirmation.queue }}">
+                <input type="hidden" name="return_to" value="{{ formatting_confirmation.return_to }}">
                 <button class="btn btn-outline-secondary">Cancel upload</button>
             </form>
         </div>
@@ -146,7 +149,11 @@
     </div>
 {% endif %}
 
-<div id="formatting-queue">
+<div
+    id="formatting-queue"
+    data-cfm-worklist="formatting-review"
+    {% if bound_submission_id %}data-cfm-worklist-active-card="{{ bound_submission_id }}"{% endif %}
+>
 {% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}{% endif %}
 {% if single_out_of_scope %}
     <div class="alert alert-warning border d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -156,7 +163,12 @@
 {% endif %}
 {% for row in rows %}
     {% with item=row.submission form=row.form %}
-    <div class="card cfm-review-card">
+    <div
+        id="formatting-review-{{ item.pk }}"
+        class="card cfm-review-card"
+        data-cfm-worklist-card="{{ item.pk }}"
+        data-cfm-worklist-collapse="format-review-{{ item.pk }}"
+    >
         <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
             <div class="cfm-status-line">
                 <strong>{{ item.paper_id_filled }}</strong>
@@ -327,11 +339,17 @@
 </div>
 {% if mode == "list" %}
 <script>
-document.addEventListener("shown.bs.collapse", function (event) {
-    event.target.querySelectorAll("img[data-format-preview-src]").forEach(function (image) {
+function loadFormattingPreview(root) {
+    root.querySelectorAll("img[data-format-preview-src]").forEach(function (image) {
         image.src = image.dataset.formatPreviewSrc;
         image.removeAttribute("data-format-preview-src");
     });
+}
+document.addEventListener("shown.bs.collapse", function (event) {
+    loadFormattingPreview(event.target);
+});
+document.addEventListener("cfm:worklist-expanded", function (event) {
+    loadFormattingPreview(event.target);
 });
 </script>
 {% endif %}
