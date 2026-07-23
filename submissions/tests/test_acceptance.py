@@ -5271,6 +5271,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             f'id="title-author-review-{submission.pk}"',
         )
         self.assertContains(
+            title_author_page,
+            'hx-trigger="cfm:worklist-expanded once"',
+        )
+        self.assertNotContains(
+            title_author_page,
+            'hx-trigger="click once"',
+        )
+        self.assertContains(
             formatting_page,
             'data-cfm-worklist="formatting-review"',
         )
@@ -5293,6 +5301,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIsNotNone(worklist_asset_path)
         worklist_asset = Path(worklist_asset_path).read_text(encoding="utf-8")
         self.assertIn("cfm:worklist-expanded", worklist_asset)
+        self.assertIn("shown.bs.collapse", worklist_asset)
 
     def test_review_post_redirects_preserve_full_worklist_return_context(self):
         self.make_master_paper("P001", "Return Context Review", "Ada")
@@ -8907,6 +8916,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 args=[submission.pk],
             ),
         )
+        self.assertContains(
+            response,
+            'hx-trigger="cfm:worklist-expanded once"',
+        )
+        self.assertNotContains(response, 'hx-trigger="click once"')
         self.assertNotContains(response, 'name="manual_extracted_title"')
         self.assertNotContains(response, 'name="manual_extracted_authors"')
         self.assertNotContains(response, 'name="manual_override_reason"')

@@ -103,13 +103,14 @@
         }
     }
 
+    function notifyExpanded(element) {
+        element.dispatchEvent(
+            new CustomEvent("cfm:worklist-expanded", { bubbles: true })
+        );
+    }
+
     function showCollapse(element) {
         if (!element || element.classList.contains("show")) return;
-        const notifyExpanded = function () {
-            element.dispatchEvent(
-                new CustomEvent("cfm:worklist-expanded", { bubbles: true })
-            );
-        };
         const markTriggerExpanded = function () {
             if (!element.id) return;
             document
@@ -122,9 +123,6 @@
                 });
         };
         if (window.bootstrap?.Collapse) {
-            element.addEventListener("shown.bs.collapse", notifyExpanded, {
-                once: true,
-            });
             window.bootstrap.Collapse.getOrCreateInstance(element, {
                 toggle: false,
             }).show();
@@ -132,7 +130,7 @@
         }
         element.classList.add("show");
         markTriggerExpanded();
-        notifyExpanded();
+        notifyExpanded(element);
     }
 
     function restoreExpandedState(card, payload, isOriginalCard) {
@@ -215,6 +213,15 @@
             return;
         }
         captureWorklistPosition(form);
+    });
+
+    document.addEventListener("shown.bs.collapse", function (event) {
+        if (
+            event.target instanceof Element &&
+            event.target.closest("[data-cfm-worklist]")
+        ) {
+            notifyExpanded(event.target);
+        }
     });
 
     if (document.readyState === "loading") {

@@ -275,10 +275,6 @@
                         data-bs-target="#manual-override-{{ item.pk }}"
                         aria-expanded="false"
                         aria-controls="manual-override-{{ item.pk }}"
-                        hx-get="{% url 'submissions:title_author_manual_override_form' item.pk %}"
-                        hx-target="#manual-override-body-{{ item.pk }}"
-                        hx-swap="innerHTML"
-                        hx-trigger="click once"
                     >
                         Manual override
                     </button>
@@ -312,7 +308,14 @@
                     </div>
                 </div>
             </div>
-            <div class="collapse mt-3" id="manual-override-{{ item.pk }}">
+            <div
+                class="collapse mt-3"
+                id="manual-override-{{ item.pk }}"
+                hx-get="{% url 'submissions:title_author_manual_override_form' item.pk %}"
+                hx-target="#manual-override-body-{{ item.pk }}"
+                hx-swap="innerHTML"
+                hx-trigger="cfm:worklist-expanded once"
+            >
                 <div
                     id="manual-override-body-{{ item.pk }}"
                     class="border rounded bg-light p-3 cfm-manual-override-panel"
