@@ -433,14 +433,20 @@ uses that space first and shifts the source page down only by the remaining
 required height. A fixed safety gap keeps the header away from the first
 non-white PDF content; uncertain or occupied space is never reused. Title
 evidence keeps its normalized word-sequence locator. Author evidence uses a
-separate case-sensitive character locator: the complete extracted word
-sequence and internal punctuation must match, while only external list or
-affiliation markers may remain outside the target. Its outline is built solely
-from raw PDF character boxes corresponding to extracted characters; unavailable
-or ambiguous geometry produces no author outline rather than a whole-word
-fallback. This evidence rule does not modify stored extraction. Title evidence
-uses yellow marking plus blue underlines; each parsed author receives an
-independent green outline/underline and a numbered header legend.
+separate case-sensitive character locator. Internal extracted words and
+punctuation must match; the final extracted word may be a prefix of the PDF
+word so attached affiliations, ORCIDs, separators, and alphabetic continuations
+cannot suppress otherwise visible evidence. Its outline is built solely from
+raw PDF character boxes corresponding to extracted characters. Numeric or
+symbolic trailing metadata remains green; an alphabetic continuation is orange
+to expose a partial word such as `Smith` in `Smithson`. Unavailable or ambiguous
+geometry produces no author outline rather than a whole-word fallback. This
+evidence rule does not modify stored extraction. Title evidence uses yellow
+marking plus blue underlines; each parsed author receives an independent
+outline/underline and a numbered header legend. If an author has any complete
+green match, orange partial matches for that author are suppressed. The header
+legend reflects the selected evidence state: green for complete/metadata,
+orange for partial-only, and red when no evidence was found.
 
 The Title/Author worklist keeps its large verification images lazy-loaded and
 reads each PNG header for its actual intrinsic dimensions, avoiding distortion

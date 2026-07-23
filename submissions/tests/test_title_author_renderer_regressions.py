@@ -7,6 +7,7 @@ from django.test import SimpleTestCase
 from submissions.services.title_author_verification import (
     _build_header_layout,
     _draw_header,
+    _find_author_text_matches,
     _find_author_text_rects,
     _find_text_rects,
     _verification_font,
@@ -237,6 +238,50 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
         finally:
             document.close()
 
+    def test_author_match_ignores_orcid_check_digit_x_after_name(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text(
+                (72, 100),
+                "Hiroshi Igaki2[0009-0009-0810-983X]",
+                fontsize=12,
+            )
+
+            matches = _find_author_text_matches(
+                page,
+                "Hiroshi Igaki",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertFalse(matches[0].partial)
+            self.assertLess(matches[0].rects[-1].x1, source_word[2])
+        finally:
+            document.close()
+
+    def test_author_match_ignores_orcid_and_joined_conjunction_after_name(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text(
+                (72, 100),
+                "Florian Leitner-Fischer1[0009-0006-8797-188X]*and",
+                fontsize=12,
+            )
+
+            matches = _find_author_text_matches(
+                page,
+                "Florian Leitner-Fischer",
+                page.rect,
+            )
+
+            self.assertTrue(matches)
+            self.assertFalse(matches[0].partial)
+        finally:
+            document.close()
+
     def test_verification_image_accepts_author_with_superscript_affiliation(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             root = Path(temporary_dir)
@@ -262,17 +307,66 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
             self.assertTrue(output_path.exists())
             self.assertEqual(missing_authors, [])
 
-    def test_author_affiliation_fallback_does_not_match_longer_surname(self):
+    def test_longer_surname_is_an_orange_partial_match(self):
         document = fitz.open()
         try:
             page = document.new_page()
             page.insert_text((72, 100), "John Smithson¹", fontsize=12)
 
-            matches = _find_author_text_rects(page, "John Smith", page.rect)
+            matches = _find_author_text_matches(page, "John Smith", page.rect)
 
-            self.assertFalse(matches)
+            self.assertTrue(matches)
+            self.assertTrue(matches[0].partial)
+            source_word = page.get_text("words", sort=True)[-1]
+            self.assertLess(matches[0].rects[-1].x1, source_word[2])
         finally:
             document.close()
+
+    def test_single_word_prefix_is_an_orange_partial_match(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Linear", fontsize=12)
+
+            matches = _find_author_text_matches(page, "Li", page.rect)
+
+            self.assertTrue(matches)
+            self.assertTrue(matches[0].partial)
+        finally:
+            document.close()
+
+    def test_complete_match_suppresses_partial_matches_for_same_author(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Li Linear Li", fontsize=12)
+
+            matches = _find_author_text_matches(page, "Li", page.rect)
+
+            self.assertEqual(len(matches), 2)
+            self.assertTrue(all(not match.partial for match in matches))
+            matched_text = [
+                page.get_textbox(match.rects[0]).strip()
+                for match in matches
+            ]
+            self.assertEqual(matched_text, ["Li", "Li"])
+        finally:
+            document.close()
+
+    def test_header_layout_carries_author_evidence_states(self):
+        layout = _build_header_layout(
+            420,
+            "paper.pdf",
+            "A Publication Title",
+            ["Exact Author", "Partial Author", "Missing Author"],
+            "BUILT-IN",
+            ["matched", "partial", "missing"],
+        )
+
+        self.assertEqual(
+            layout["author_match_states"],
+            ["matched", "partial", "missing"],
+        )
 
     def test_strict_title_match_does_not_ignore_trailing_number(self):
         document = fitz.open()

@@ -300,14 +300,19 @@ covering it. The PDF evidence marks title text in yellow with a blue underline
 and gives every parsed author an independent green box and underline. Compare
 the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
 boxes can reveal that one person's name was incorrectly parsed as two authors.
-Author evidence is intentionally conservative and case-sensitive. The complete
-extracted word sequence and internal punctuation must appear in the PDF. A
-trailing list or affiliation marker such as `,`, `*`, `1,2`, or a superscript
-may remain outside the green boundary when it is not part of the extracted
-name. If the extracted name contains that marker, the marker must match and is
-included. A partial longer surname or a different internal hyphen does not
-match. If reliable PDF character coordinates are unavailable, the renderer
-leaves the author unmarked rather than drawing a misleading whole-word box.
+Author evidence is case-sensitive, and internal extracted words and punctuation
+must appear in the PDF. The final extracted word may match the beginning of a
+longer PDF word, but the renderer outlines only extracted characters. Attached
+list markers, affiliations, ORCIDs, and symbols therefore stay outside a green
+boundary. If the remaining characters begin with a letter, the boundary is
+orange: for example, `John Smith` is visibly outlined only through `Smith` in
+`John Smithson`. A different internal hyphen still does not match. If reliable
+PDF character coordinates are unavailable, the renderer leaves the author
+unmarked rather than drawing a misleading whole-word box.
+When the same author has both a complete match and a partial match elsewhere on
+the page, only the complete green evidence is shown. The numbered author legend
+uses the same state colors as the PDF: green for complete/attached metadata,
+orange when only partial evidence exists, and red when no evidence was found.
 This does not change extracted authors, the PDF, or title comparison.
 Hold `Ctrl` while pointing at the verification image to inspect the title
 underline and individual author boundaries with the same magnifier used by

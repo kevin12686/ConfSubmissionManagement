@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,6 +19,18 @@ MAX_CONTENT_FRACTION = 0.60
 BLANK_PIXEL_THRESHOLD = 252
 VERIFICATION_FONT_ALIAS = "verification_unicode"
 VERIFICATION_FONT_NAME = "cjk"
+
+
+@dataclass(frozen=True)
+class _AuthorWordMatch:
+    rect: fitz.Rect
+    partial: bool
+
+
+@dataclass(frozen=True)
+class _AuthorTextMatch:
+    rects: tuple[fitz.Rect, ...]
+    partial: bool
 
 
 def generate_verification_image(
@@ -49,12 +62,29 @@ def generate_verification_image(
             source_rect.y0 + (source_rect.height * MAX_CONTENT_FRACTION),
         )
         title_rects = _find_text_rects(source_page, extracted_title, search_clip)
+        author_matches = []
         author_rects = []
         for author in authors:
-            matches = _find_author_text_rects(source_page, author, search_clip)
-            author_rects.append(matches)
+            matches = _find_author_text_matches(source_page, author, search_clip)
+            rects = [
+                rect
+                for match in matches
+                for rect in match.rects
+            ]
+            author_matches.append(matches)
+            author_rects.append(rects)
             if not matches:
                 missing_authors.append(author)
+        author_match_states = [
+            (
+                "missing"
+                if not matches
+                else "partial"
+                if any(match.partial for match in matches)
+                else "matched"
+            )
+            for matches in author_matches
+        ]
         source_clip = _content_clip(source_rect, title_rects, author_rects)
 
         header_layout = _build_header_layout(
@@ -63,6 +93,7 @@ def generate_verification_image(
             extracted_title,
             authors,
             source_label,
+            author_match_states,
         )
         header_height = header_layout["height"]
         top_blank_height = _safe_top_blank_height(source_page, source_clip)
@@ -88,7 +119,12 @@ def generate_verification_image(
             )
             _draw_header(output_page, header_layout, source_rect.width)
             _draw_title_evidence(output_page, title_rects, source_offset, source_clip)
-            _draw_author_evidence(output_page, author_rects, source_offset, source_clip)
+            _draw_author_evidence(
+                output_page,
+                author_matches,
+                source_offset,
+                source_clip,
+            )
 
             pixmap = output_page.get_pixmap(dpi=300, alpha=False)
             pixmap.save(output_path)
@@ -139,7 +175,14 @@ def _content_clip(source_rect, title_rects, author_rect_groups):
     return fitz.Rect(source_rect.x0, source_rect.y0, source_rect.x1, bottom)
 
 
-def _build_header_layout(page_width, filename, title, authors, source_label):
+def _build_header_layout(
+    page_width,
+    filename,
+    title,
+    authors,
+    source_label,
+    author_match_states=None,
+):
     content_width = max(page_width - (HEADER_PADDING * 2), 120)
     filename_lines = _wrap_text(filename, content_width, BODY_FONT_SIZE)
     title_lines = _wrap_text(
@@ -153,6 +196,18 @@ def _build_header_layout(page_width, filename, title, authors, source_label):
     ]
     if not author_lines:
         author_lines = [["Missing extracted authors"]]
+        author_match_states = ["missing"]
+    else:
+        provided_states = list(author_match_states or [])
+        author_match_states = [
+            (
+                provided_states[index]
+                if index < len(provided_states)
+                and provided_states[index] in {"matched", "partial", "missing"}
+                else "matched"
+            )
+            for index in range(len(author_lines))
+        ]
 
     y = HEADER_PADDING
     source_badge_height = 19
@@ -183,6 +238,7 @@ def _build_header_layout(page_width, filename, title, authors, source_label):
         "title_label_top": title_label_top,
         "title_top": title_top,
         "author_lines": author_lines,
+        "author_match_states": author_match_states,
         "authors_label_top": authors_label_top,
         "authors_top": authors_top,
     }
@@ -255,6 +311,22 @@ def _draw_header(page, layout, page_width):
                 (0.64, 0.08, 0.10),
             )
         else:
+            match_state = layout["author_match_states"][index - 1]
+            if match_state == "partial":
+                badge_border = (0.88, 0.36, 0.02)
+                badge_fill = (1.00, 0.92, 0.78)
+                badge_text = (0.66, 0.24, 0.01)
+                author_text = (0.55, 0.22, 0.04)
+            elif match_state == "missing":
+                badge_border = (0.72, 0.10, 0.12)
+                badge_fill = (1.00, 0.88, 0.88)
+                badge_text = (0.58, 0.05, 0.07)
+                author_text = (0.58, 0.05, 0.07)
+            else:
+                badge_border = (0.07, 0.38, 0.20)
+                badge_fill = (0.88, 0.97, 0.90)
+                badge_text = (0.04, 0.31, 0.15)
+                author_text = (0.12, 0.25, 0.17)
             badge_rect = fitz.Rect(
                 HEADER_PADDING,
                 y - 1,
@@ -263,8 +335,8 @@ def _draw_header(page, layout, page_width):
             )
             page.draw_rect(
                 badge_rect,
-                color=(0.07, 0.38, 0.20),
-                fill=(0.88, 0.97, 0.90),
+                color=badge_border,
+                fill=badge_fill,
                 width=0.8,
             )
             page.insert_text(
@@ -272,7 +344,7 @@ def _draw_header(page, layout, page_width):
                 f"A{index}",
                 fontname=VERIFICATION_FONT_ALIAS,
                 fontsize=7,
-                color=(0.04, 0.31, 0.15),
+                color=badge_text,
             )
             _draw_lines(
                 page,
@@ -280,7 +352,7 @@ def _draw_header(page, layout, page_width):
                 HEADER_PADDING + AUTHOR_BADGE_WIDTH + 8,
                 y,
                 BODY_FONT_SIZE,
-                (0.12, 0.25, 0.17),
+                author_text,
             )
         y += max(len(lines), 1) * BODY_LINE_HEIGHT + 3
 
@@ -332,25 +404,34 @@ def _draw_title_evidence(page, rects, source_offset, source_clip):
         )
 
 
-def _draw_author_evidence(page, author_rect_groups, source_offset, source_clip):
-    for rects in author_rect_groups:
-        for source_rect in rects:
-            rect = _translated_rect(source_rect, source_offset, source_clip)
-            page.draw_rect(
-                rect,
-                color=(0.05, 0.45, 0.20),
-                fill=(0.25, 0.95, 0.35),
-                fill_opacity=0.30,
-                width=1.1,
-                overlay=True,
-            )
-            page.draw_line(
-                fitz.Point(rect.x0, rect.y1 + 0.6),
-                fitz.Point(rect.x1, rect.y1 + 0.6),
-                color=(0.03, 0.35, 0.15),
-                width=1.2,
-                overlay=True,
-            )
+def _draw_author_evidence(page, author_match_groups, source_offset, source_clip):
+    for matches in author_match_groups:
+        for match in matches:
+            if match.partial:
+                outline_color = (0.88, 0.36, 0.02)
+                fill_color = (1.00, 0.68, 0.18)
+                underline_color = (0.78, 0.28, 0.01)
+            else:
+                outline_color = (0.05, 0.45, 0.20)
+                fill_color = (0.25, 0.95, 0.35)
+                underline_color = (0.03, 0.35, 0.15)
+            for source_rect in match.rects:
+                rect = _translated_rect(source_rect, source_offset, source_clip)
+                page.draw_rect(
+                    rect,
+                    color=outline_color,
+                    fill=fill_color,
+                    fill_opacity=0.30,
+                    width=1.1,
+                    overlay=True,
+                )
+                page.draw_line(
+                    fitz.Point(rect.x0, rect.y1 + 0.6),
+                    fitz.Point(rect.x1, rect.y1 + 0.6),
+                    color=underline_color,
+                    width=1.2,
+                    overlay=True,
+                )
 
 
 def _translated_rect(source_rect, source_offset, source_clip):
@@ -367,6 +448,14 @@ def _find_text_rects(page, text, clip):
 
 
 def _find_author_text_rects(page, text, clip):
+    return [
+        rect
+        for match in _find_author_text_matches(page, text, clip)
+        for rect in match.rects
+    ]
+
+
+def _find_author_text_matches(page, text, clip):
     text = unicodedata.normalize("NFC", str(text or "").strip())
     target_words = re.findall(r"\S+", text)
     if not target_words:
@@ -383,24 +472,33 @@ def _find_author_text_rects(page, text, clip):
     for start in range(len(words) - word_count + 1):
         candidate_words = words[start : start + word_count]
         adjusted_words = []
+        partial = False
         for index, (word, target_word) in enumerate(
             zip(candidate_words, target_words, strict=True)
         ):
-            rect = _author_word_match_rect(
+            word_match = _author_word_match_rect(
                 word,
                 target_word,
                 raw_lines,
                 allow_leading_marker=index == 0,
-                allow_trailing_marker=index == word_count - 1,
+                allow_trailing_text=index == word_count - 1,
             )
-            if rect is None:
+            if word_match is None:
                 break
+            rect = word_match.rect
+            partial = partial or word_match.partial
             adjusted_words.append(
                 (rect.x0, rect.y0, rect.x1, rect.y1, *word[4:])
             )
         else:
-            matches.extend(_merge_word_rects(adjusted_words))
-    return matches
+            matches.append(
+                _AuthorTextMatch(
+                    rects=tuple(_merge_word_rects(adjusted_words)),
+                    partial=partial,
+                )
+            )
+    complete_matches = [match for match in matches if not match.partial]
+    return complete_matches or matches
 
 
 def _find_normalized_text_rects(
@@ -475,7 +573,7 @@ def _author_word_match_rect(
     raw_lines,
     *,
     allow_leading_marker,
-    allow_trailing_marker,
+    allow_trailing_text,
 ):
     word_rect = fitz.Rect(word[:4])
     characters = raw_lines.get((word[5], word[6]), [])
@@ -505,10 +603,7 @@ def _author_word_match_rect(
         suffix = candidate[match_end:]
         if (
             (not prefix or allow_leading_marker and _is_external_author_prefix(prefix))
-            and (
-                not suffix
-                or allow_trailing_marker and _is_external_author_suffix(suffix)
-            )
+            and (not suffix or allow_trailing_text)
         ):
             matched_rects = [rect for _character, rect in units[match_start:match_end]]
             if not matched_rects:
@@ -516,7 +611,10 @@ def _author_word_match_rect(
             matched_rect = fitz.Rect(matched_rects[0])
             for character_rect in matched_rects[1:]:
                 matched_rect.include_rect(character_rect)
-            return matched_rect
+            return _AuthorWordMatch(
+                rect=matched_rect,
+                partial=bool(suffix and suffix[0].isalpha()),
+            )
         search_start = match_start + 1
 
 
@@ -540,10 +638,6 @@ def _normalized_author_character_units(characters):
 
 def _is_external_author_prefix(value):
     return all(not character.isalnum() for character in value)
-
-
-def _is_external_author_suffix(value):
-    return all(not character.isalpha() for character in value)
 
 
 def _normalized_match_text(value):
