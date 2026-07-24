@@ -2,6 +2,11 @@
 
 Use this guide when the local app behaves unexpectedly.
 
+For normal task order, use the [Operator Guide](operator_guide.md). For the
+rules behind publication blockers and selected files, use
+[Publication Rules](publication_rules.md). This guide focuses on symptoms,
+diagnosis, and recovery.
+
 ## Startup
 
 ### Python was not found

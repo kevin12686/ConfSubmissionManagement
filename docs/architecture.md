@@ -2,6 +2,10 @@
 
 Conference Final Manager is a local Django application with SQLite storage and local file management. The application is intentionally no-login and single-machine.
 
+This document explains system boundaries and safety rationale. The canonical
+business rules are in [Publication Rules](publication_rules.md), and shared
+presentation behavior is in [UI Conventions](ui_conventions.md).
+
 ## Application Boundaries
 
 - Controllers handle HTTP forms, redirects, Django messages, downloads, and template rendering.
@@ -229,21 +233,17 @@ scrolls the swapped worklist into view after a successful page change.
 
 Final Submission and Paper Master upload zones are presentation helpers only. File extension/hash validation and preview/apply remain server-owned. The browser may summarize selected files or remove them before submit, but cannot classify publication files or bypass import preview.
 
-Color and typography are centralized in `base.html`. Red is reserved for publication blockers/danger, amber for manual attention, blue for tracked/informational state, green for completed review, and gray for inactive/history. Semantic fills are deliberately muted so dense worklists do not become a collection of competing color blocks. The same tokens drive page background, muted cool-gray surfaces, cards, tables, forms, tabs, badges, alerts, diff panels, buttons, navbar, footer, inline code, and expanded code/JSON blocks. Large work surfaces intentionally avoid pure white: the page background is darkest, cards/tables use a middle surface, headers provide another visible layer, and editable controls are only slightly lighter. The fixed type scale uses 15px body/table text, 14px labels/buttons, 13px supporting text, and 12px badges; `.small` is rem-based so nested helpers cannot shrink repeatedly. Primary text uses dark ink, while secondary/help text uses a darker blue-gray instead of low-contrast gray. Inline code and multi-line JSON use explicit dark foreground colors on the same muted surface family; do not rely on Tabler's `pre` or theme-dependent code colors. Text labels always accompany color. Non-interactive status/category badges are compact borderless pills with no shadow; actionable buttons are taller rectangles with stronger borders, shadow, focus, and hover behavior. Button hierarchy is explicit: primary commands use solid fills, ordinary outline actions use a lightly tinted surface with a strong border, solid success/danger commands use dark semantic fills with white text, warning commands use dark text on amber, semantic actions retain their named color, and disabled controls remain visibly inactive. All tables use uniform row surfaces with horizontal separators and hover-only highlighting; zebra striping and its record-index classes are intentionally absent, so expandable child rows cannot disrupt row color. Organized List uses a red left-edge marker plus explicit issue labels for blockers, while routine author count, page OK, and original-source states stay neutral. The application header separates system/conference identity from workflow navigation. Its light navigation strip uses explicit high-contrast hover, focus, active, mobile-collapse, and dropdown states instead of relying on framework defaults; dropdown descriptions clarify destination purpose without changing route ownership.
-
-Alert layout is centralized in `base.html` as well. Tabler's default horizontal
-alert flexbox is overridden so ordinary alerts use vertical document flow.
-Templates opt in with `.d-flex` only for a short message/action row. Alerts
-containing tables, lists, confirmation forms, or several content blocks use
-`.cfm-alert-stack`, which keeps their children and responsive tables at full
-available width. One-time Django operation messages use the shared Toast stack;
-success/info feedback autohides, while warning/error feedback remains until
-dismissed. Global workflow state, form errors, confirmations, and readiness
-issues remain inline and are never converted to transient Toasts.
+Presentation tokens, alert behavior, accessibility, and shared component rules
+are centralized in `base.html` and documented in
+[UI Conventions](ui_conventions.md). These are presentation boundaries only:
+they must not alter publication scope, readiness, active versions, review state,
+or file selection.
 
 ## Current Publication Resolution
 
-Current active-version selection is implemented in `submissions/services/pdf_processor.py`.
+The canonical selection and file rules are in
+[Publication Rules](publication_rules.md). Active-version selection is
+implemented in `submissions/services/pdf_processor.py`.
 
 1. All `active_version` flags are cleared.
 2. Discarded submissions are excluded.

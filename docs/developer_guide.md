@@ -2,6 +2,12 @@
 
 This guide is for maintaining the Django project.
 
+Use this guide for environment setup, service ownership, data dependencies,
+tests, and release work. Shared presentation rules live in
+[UI Conventions](ui_conventions.md); publication-facing business rules live in
+[Publication Rules](publication_rules.md). Architecture rationale lives in
+[Architecture Notes](architecture.md).
+
 ## Local Environment
 
 Use the same virtual environment as the app:
@@ -101,6 +107,7 @@ Run these before finishing code changes:
 ```bash
 .venv/bin/python manage.py check
 .venv/bin/python manage.py makemigrations --check --dry-run
+.venv/bin/python scripts/check_docs.py
 .venv/bin/python manage.py test submissions
 .venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
 ```
@@ -110,6 +117,7 @@ For documentation-only changes, run at least:
 ```bash
 .venv/bin/python manage.py check
 .venv/bin/python manage.py makemigrations --check --dry-run
+.venv/bin/python scripts/check_docs.py
 ```
 
 ## Project Structure
@@ -217,158 +225,32 @@ For display, the Details author list is parsed with the shared `split_authors()`
 helper and numbered in publication order. This is presentation only; never
 rewrite `extracted_authors` while preparing the display list.
 
-## Worklist UI Conventions
+## Shared UI And Worklists
 
-- Tabler renders `.alert` as a horizontal flex row by default, but CFM alerts
-  use normal vertical document flow unless the template explicitly adds
-  `.d-flex`. Use `.cfm-alert-stack` for alerts containing tables, lists,
-  multi-step forms, or several content blocks. Reserve explicit `.d-flex`
-  alerts for a short message paired with a compact action group.
-- Django `messages` are rendered centrally as Toasts in `base.html`. Success and
-  info may autohide; warning and error messages remain dismissible until the
-  user closes them. Do not use Django messages for persistent workflow state,
-  field validation, confirmation content, issue tables, or publication
-  blockers; those remain inline alerts or page content.
-- Long editorial tables use the shared `cfm-table-sticky` class so column ownership remains visible while scrolling.
-- Contextual links to Final Submission Edit pass a same-site `next` URL. Save must return to the originating worklist without accepting external redirects.
-- System-generated cross-page links must use exact identifiers: `submission=<pk>`
-  for Final Submission work, `paper_id=<exact Paper Master ID>` for Organized
-  List, and `exception_key=<service row key>` for Exceptions. Reserve `q` for
-  user-entered fuzzy search. Exact focus must never fall back to the first or
-  nearest matching record.
-- Exact-target worklists render the shared
-  `partials/focused_worklist.html` context. When a target is outside a
-  publication worklist's scope, render an explicit read-only explanation; do
-  not widen the service queryset or change active/review state to make it appear.
-- Formatting list mode is a compact worklist with one Bootstrap-collapse paper
-  open at a time. Single Paper Mode must use the session-backed stable queue in
-  `services/formatting.py`; do not recalculate Previous/Next from the current
-  status order after every Save. Queue order is natural Paper ID/Final ID order,
-  while the saved filter/search is used only to create the snapshot and return
-  to the originating list. Keep the Single Paper Mode entry inside the
-  HTMX-swapped Formatting worklist so its URL always reflects the displayed
-  filter/search. Exact cross-page links use Focus mode and must not create a
-  sequential queue. Single and Focus modes do not render normal worklist
-  pagination.
-- Worklist GET filters/search/pagination are progressively enhanced with pinned local HTMX. Every worklist URL must remain a valid normal GET, preserve URL query state, and render its named container; never move service decisions into HTMX event handlers.
-- Shared post-action position restoration lives in
-  `submissions/static/submissions/worklist_navigation.js`. Worklists opt in with
-  `data-cfm-worklist`, and row cards use a stable
-  `data-cfm-worklist-card` plus DOM id. The component adds the current same-site
-  return URL to ordinary POSTs, restores the original viewport offset, falls
-  forward/back when a filter removes the changed row, and can reopen a
-  card-owned Bootstrap collapse through `data-cfm-worklist-collapse`. Keep
-  workflow mutation, evidence validation, audit, filtering, and publication
-  decisions server-side. Formatting title-guard confirmation defers restoration
-  until confirm/cancel completes. Programmatic collapse restoration dispatches
-  `cfm:worklist-expanded`; the shared component also translates normal
-  Bootstrap collapse expansion into that event. Lazy Formatting previews,
-  Manual Override forms, and the shared image magnifier use this lifecycle so
-  normal clicks and restored cards load the same content instead of leaving an
-  unloaded placeholder.
-- Heavy worklist evidence should not be eagerly decoded or rendered. Title/Author verification images use native lazy loading and dimensions read from the PNG header; do not decode each image just to size the worklist. Built-in, GROBID, and Manual Override must all use `submissions/services/title_author_verification.py`; extractor-specific renderers are not allowed. The renderer conservatively scans for visibly blank top-page pixels, reuses only verified whitespace, and computes `source_offset` so `header height + safety margin` never reaches the first non-white source content. If the invariant cannot be met with existing whitespace, extend upward. Author evidence uses one case-sensitive character path: internal extracted words and punctuation must match, while the final extracted word may match the beginning of a longer PDF word. Draw only raw character boxes represented by the extraction. A numeric or symbolic continuation is normal green metadata; an alphabetic continuation is an orange partial-word warning. Complete matches take precedence and suppress partial matches for the same author. Pass the resulting matched/partial/missing state into the shared header so each `A1...AN` legend entry uses the same green/orange/red evidence status. Do not normalize case, punctuation, hyphens, superscripts, or digits in this locator. If reliable raw character geometry is unavailable, return no author evidence instead of falling back to a whole-word box. This rule applies only to author evidence rendering; do not alter title evidence, extraction output, or title comparison. Each Manual Override form is fetched only when its collapsed panel is opened, including when the worklist restores that panel after a POST. The partial endpoint is read-only; the existing audited POST workflow remains the only mutation path.
-- Shared pagination lives in `submissions/application/pagination.py`. Supported sizes are `25`, `50`, `100`, `200`, and `all`, with 25 as the centralized default. Individual worklists do not define their own default size. Filter and sort the complete lightweight result before pagination, then hydrate expensive file information, suggestions, previews, and diffs only for the selected page. Focused exact-record views force the complete focused result. Every paginated worklist renders the shared partial above and below its rows. Give the worklist a stable `.cfm-worklist-anchor`; pagination links retain GET state and return full-page or HTMX navigation to that anchor.
-- Paper Master and Final Submission list sorting is defined in
-  `submissions/application/selectors.py`; templates only submit the selected
-  `sort` value. Identifier sorts use `natural_text_key()` so numeric chunks are
-  ordered numerically. Search, filter tabs, sorting, and pagination must retain
-  one another's GET parameters.
-- Worklist tabs use `nav nav-tabs cfm-tabs` and the shared active/inactive count
-  badge treatment. Do not create page-specific tab styling. A tab that changes
-  the result set must be a server-side GET filter applied before pagination;
-  client-only Bootstrap tabs must not partition only the current page.
-- Worklists with expensive row details must expose separate lightweight row
-  selection and hydration functions. Controllers paginate between them. Do not
-  call PDF previews, thumbnail enumeration, publication links, exception
-  panels, or text diff builders while classifying rows that will not be shown.
-- Signed evidence tokens follow the same rule: generate them only for the
-  hydrated page or exact focused record, never for the complete pre-pagination
-  result set. Token creation and validation must perform zero database queries
-  and zero publication-file reads. Paper ID review must compute the canonical
-  Paper Master digest once per response and reuse it for every displayed row;
-  do not serialize and hash the complete Master list once per token.
-- Publication-wide read pages share
-  `submissions.services.publication_read.PublicationReadContext`. Pass its
-  `FileInspectionContext` through publication-facing helpers so a path is
-  inspected once per request. Do not replace this explicit request context
-  with module globals, controller-specific caches, or database writes from GET.
-- Cross-request SHA-256 reuse is valid only through `FileInspectionContext`,
-  whose cache key includes the complete stat signature and whose reader
-  verifies that signature after hashing. Final publication export uses strict
-  fresh hashing. UI caches and compact Error Report messages must never feed
-  export decisions.
-- Final publication export must reuse one `PublicationReadContext` for
-  readiness, active submission selection, manifest data, and file selection.
-  Write ZIP entries from `FileInspectionContext.read_snapshot_bytes()`, not a
-  later `ZipFile.write(path)` call. Keep the sanitized, case-insensitive
-  publication filename collision check and the start/end database fingerprint
-  check in the central export path.
-- Formatting `Review OK` must persist the SHA-256 of the selected publication
-  source in `source_hash`. Source replacement clears it. Readiness compares the
-  current source bytes with that hash only after Formatting status is
-  `review_ok`. Pending/Needs Edit records are blocked by `Formatting Not Review
-  OK`; an empty hash is expected before review and must not create a duplicate
-  `Source Review Hash Missing` issue. A missing Corrected PDF/source is a
-  blocker rather than permission to fall back to Original.
-- Every formatting POST must provide a short-lived review snapshot created for
-  the rendered row. `save_formatting_review()` rechecks active publication scope,
-  the row update timestamp, and the selected PDF/source filesystem identity
-  under `select_for_update()`. Corrected-PDF title-guard confirmation must reuse
-  that snapshot and verify temporary upload size/SHA-256. Never bypass these
-  checks with a direct controller call to `update_formatting_submission()`.
-- Editor Upload and Formatting preview writes calculate SHA-256 while streaming
-  the upload to disk. Confirmation must still fresh-hash the stored preview.
-  Their token directories expire after two hours, and changed/missing preview
-  bytes are rejected and removed. Do not trade away the confirmation hash to
-  reduce low-frequency POST cost. TTL cleanup may remove only a directory with
-  a complete parseable payload; an in-progress directory without one must not
-  be deleted by another request.
-- Formatting upload validation accepts a known PDF/source pair even if the two
-  fields were swapped, but rejects two PDFs, two recognized source files, or an
-  unknown file in the PDF field. Bound status/notes and field errors must remain
-  visible after validation failure; browsers require file inputs to be selected
-  again.
-- Process PDF thumbnail strips remain expanded by design. `Needs processing`, `Page issues`, `Processed`, `All`, search, and paper jump may narrow or navigate display rows, but the UI must not hide pages inside a matching paper. Fixed thumbnail dimensions are required so lazy loading cannot shift the page.
-- Organized List summary metrics must keep publication blockers separate from tracked information. Stable column widths and row panels are display concerns only and must not alter `_needs_attention()`, active candidates, or readiness services.
-- Organized List is the only current-publication roster UI. `view=checklist` provides readiness detail and `view=compact` provides the former Publication Candidates roster. Keep the legacy route as a redirect, not a second query/template implementation.
-- Final Submissions must keep Import/Re-upload collapsed by default and preserve preview-before-apply behavior.
-- Upload zones may summarize/remove browser-selected files, but the server must continue extension/hash validation and preview-before-apply. Do not add direct-to-model uploads or bypass the import preview token.
-- Final import compares uploaded bytes only with the canonical original
-  `pdf_file` / `source_file`. If either canonical file is absent, a re-upload is
-  `new` and must restore it even when a matching legacy
-  `current_file_path` / `source_current_file_path` still exists.
-- Destructive actions such as discard belong in a clearly separated, collapsed action area rather than before normal edit fields.
-- Search/filter logic belongs in selectors/controllers and must not alter publication candidates, active-version rules, review flags, or export scope.
-- Mixed Not Publishing and Start2/Editor conflict discovery must use database
-  conditional aggregation and load detail rows only for conflicting Paper IDs.
-  Avoid transferring every historical Final row to Python on routine GETs.
+[UI Conventions](ui_conventions.md) is the canonical guide for worklists,
+feedback, exact navigation, pagination, partial updates, evidence rendering,
+and accessibility. Keep the following implementation boundaries when applying
+that guide:
 
-Return-context coverage includes Organized List (both views), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions. Use `url_has_allowed_host_and_scheme()` at the Final Submission controller boundary; do not trust or redirect directly to arbitrary `next` values. The normal edit form and version-action danger-zone form remain separate POST forms even though they share the same controller endpoint.
-
-Paper ID Review and Title/Author Review continue to use the existing
-`_worklist_return_url()` controller helper. Formatting List mode uses the same
-helper from its dedicated `_formatting_redirect_after_save()` path so
-`filter/q/page/page_size` and the card fragment survive Save and title-guard
-confirm/cancel. Do not change `_worklist_return_url()` semantics casually: Not
-Publishing and Exceptions also call it.
-
-Tabler 1.4.0 and HTMX 2.0.10 live under `submissions/static/submissions/vendor/` with third-party licenses. Worklists use `hx-select` on normal server pages. Dashboard readiness and global workflow alerts use dedicated read-only partial endpoints so expensive global scans do not block every page response. Keep normal links/forms as fallback, retain CSRF on state-changing forms, and show the global partial-update error alert on transport/server failure. POST forms use a shared duplicate-submit guard but remain ordinary audited Django requests. UI caches must never feed publication/export decisions.
-
-Shared image magnification lives in
-`submissions/static/submissions/image_magnifier.js` and
-`submissions/static/submissions/image_magnifier.css`. Formatting previews and
-Title/Author verification images opt in with `data-cfm-image-magnifier`; do not
-create page-specific lens implementations. New rendering paths must initialize
-correctly after Bootstrap collapse lazy loading and HTMX swaps. HTMX worklist
-replacement must initialize from the canonical `htmx:load` event's
-`event.detail.elt`; `htmx:afterSwap`'s old `detail.target` may be detached
-after an `outerHTML` swap. The shared `WeakSet` prevents duplicate
-initialization. Magnification must remain disabled
-for coarse/touch pointers, require `Ctrl`, clear modifier state on key
-release/window blur, and must not write review or publication state. Supply hint
-text through `data-cfm-image-magnifier-hint`; do not use the native image
-`title` tooltip because browsers cannot dismiss an already-open tooltip
-immediately.
+- Controllers perform lightweight selection, filtering, sorting, and
+  pagination before expensive row hydration.
+- Signed evidence is generated only for the displayed page or exact focused
+  record.
+- `PublicationReadContext` and its `FileInspectionContext` remain explicit
+  request-scoped objects; do not replace them with controller caches, globals,
+  or writes from GET requests.
+- Final export uses strict fresh file validation and snapshot byte reads as
+  defined in [Publication Rules](publication_rules.md#export-integrity).
+- `_worklist_return_url()` and `_formatting_redirect_after_save()` preserve
+  filter, search, page size, page, and card context for audited POST redirects.
+- Final Submission return URLs are same-site only and validated with
+  `url_has_allowed_host_and_scheme()`.
+- Tabler 1.4.0 and HTMX 2.0.10 remain pinned under
+  `submissions/static/submissions/vendor/` with their licenses.
+- Shared behavior belongs in the existing pagination, navigation, magnifier,
+  focus, tabs, and alert components; do not create page-specific alternatives.
+- Normal links and forms remain the fallback, CSRF remains enabled, and UI
+  caches never feed publication or export decisions.
 
 ## Data And Review Reset Rules
 
@@ -513,10 +395,14 @@ Before release:
 
 1. Run regression commands.
 2. Confirm docs match current routes and feature names.
-3. Confirm `README.md` points to new or changed docs.
-4. Export a System State ZIP and verify manifest version fields.
-5. If publication export changed, test both final and draft package paths.
+3. Update the canonical owner for each changed rule:
+   `docs/publication_rules.md` for publication behavior,
+   `docs/ui_conventions.md` for shared UI behavior, and this guide for
+   implementation and release requirements.
+4. Confirm `README.md` points to new or renamed docs and update `CHANGELOG.md`.
+5. Export a System State ZIP and verify manifest version fields.
+6. If publication export changed, test both final and draft package paths.
    Draft export may include ordinary readiness warnings, but structural ambiguity
    (`Multiple Active Final Submissions` or `Duplicate Publication Filename`) must
    fail closed rather than selecting or overwriting a file.
-6. Commit code, migrations, templates, docs, and sample data together when they describe one user-facing change.
+7. Commit code, migrations, templates, docs, and sample data together when they describe one user-facing change.

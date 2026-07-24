@@ -25,8 +25,11 @@ mistakes can be severe and effectively irreversible after IEEE release.
 
 ## See Also
 
+- `docs/publication_rules.md`
 - `docs/operator_guide.md`
 - `docs/developer_guide.md`
 - `docs/architecture.md`
+- `docs/ui_conventions.md`
 - `docs/troubleshooting.md`
 - `docs/editorial_acceptance_runbook.md`
+- `CHANGELOG.md`

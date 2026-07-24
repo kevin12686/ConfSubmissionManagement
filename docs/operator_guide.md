@@ -2,6 +2,11 @@
 
 This guide is for editors running the local system to prepare final submissions for publication.
 
+It explains what to do and what result to expect. For the authoritative rules
+that determine publication scope, active versions, selected files, readiness,
+and export safety, see [Publication Rules](publication_rules.md). For setup or
+failure recovery, see [Troubleshooting](troubleshooting.md).
+
 ## Start And Restore
 
 1. Start the app with `start.command`, `start_windows.bat`, or `./scripts/start_local.sh`.
@@ -185,33 +190,19 @@ editorial worklists.
 
 ## Final Publication Version Rules
 
-The Paper Master List is the publication scope. A final submission is publication-relevant only when its Paper ID is in Paper Master List, it is not discarded, and it is not marked Not Publishing.
-When the active final is marked Not Publishing, Organized List omits that Paper Master
-row instead of reporting a missing final; inactive replaced versions remain history and
-are never restored as publication candidates.
+The complete rules are maintained in
+[Publication Rules](publication_rules.md). Operationally:
 
-Active version selection is per Paper ID:
+- Paper Master defines publication scope.
+- Discarded and Not Publishing records do not enter publication output.
+- Editor Upload wins active selection over Start2, but a mixed undiscarded
+  source conflict blocks final export until one side is discarded with a reason.
+- Corrected PDF/source wins over Original. If a selected Corrected file is
+  missing, publication is blocked rather than falling back.
+- Generated debug copies and legacy path fields never select publication input.
 
-1. Discarded versions are ignored.
-2. Undiscarded Editor Uploads have priority over Start2/imported submissions.
-3. If Editor Uploads exist, the newest Editor Upload becomes active.
-4. If no Editor Upload exists, the newest Start2/imported submission becomes active.
-5. Newest follows the active-version rule in Settings: Final ID order or upload date, with Final ID as tie-breaker.
-6. If Start2 and Editor Upload are both undiscarded, the Editor Upload is temporarily active, but the conflict blocks final export until one side is discarded with a note.
-
-Publication-facing PDF priority is:
-
-1. Corrected PDF.
-2. Original PDF for the active submission.
-
-Publication-facing source priority is:
-
-1. Corrected source.
-2. Original source for the active submission.
-
-`data/publication_pdf_debug/` is a generated inspection folder. It is useful for quickly checking renamed PDFs, but it is not the source of truth. Publication links, CrossCheck export, duplicate checks, and publication package export use the active submission's Corrected PDF or Original PDF directly.
-
-Legacy `current_file_path`, `active_final_folder`, and `old_versions_folder` data can still exist after restoring older state archives, but those values no longer decide final publication output.
+Use Organized List and Error Report to resolve these conditions. Do not decide
+the publication version by browsing files under `data/`.
 
 ## PDF And Source Workflow
 
