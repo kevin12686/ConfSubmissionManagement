@@ -116,6 +116,15 @@ Supported page sizes are `25`, `50`, `100`, `200`, and `all`; the default is
 25. Pagination uses `submissions/application/pagination.py` and renders the
 shared component above and below the rows.
 
+Top pagination preserves its visible viewport position when the user changes
+page or page size, so a table or card-list header that is already visible does
+not move unnecessarily. Bottom pagination returns immediately to the refreshed
+worklist start. Both behaviors also protect against invalid absolute scroll
+offsets when the next page is shorter. Pagination and worklist restoration must
+not inherit framework-level smooth scrolling: routine navigation should not
+visibly travel across replaced content. Keep this policy in the shared
+pagination component and `worklist_navigation.js`, not in page-specific scripts.
+
 Filtering, sorting, tabs, and pagination preserve one another's query
 parameters. Natural identifier sorting uses `natural_text_key()`, so `P2`
 precedes `P10`.

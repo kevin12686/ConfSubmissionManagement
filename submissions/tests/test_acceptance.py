@@ -4690,6 +4690,28 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
             'aria-label="Bottom worklist pagination"',
             count=1,
         )
+        self.assertContains(
+            medium_first,
+            'data-cfm-pagination-position="top"',
+            count=1,
+        )
+        self.assertContains(
+            medium_first,
+            'data-cfm-pagination-position="bottom"',
+            count=1,
+        )
+        html = medium_first.content.decode()
+        top_pagination = html.split(
+            'aria-label="Top worklist pagination"',
+            1,
+        )[1].split("</nav>", 1)[0]
+        bottom_pagination = html.split(
+            'aria-label="Bottom worklist pagination"',
+            1,
+        )[1].split("</nav>", 1)[0]
+        self.assertIn('hx-swap="outerHTML"', top_pagination)
+        self.assertNotIn("show:top", top_pagination)
+        self.assertIn('hx-swap="outerHTML show:top"', bottom_pagination)
 
     def test_error_report_area_and_severity_filters_compose(self):
         rows = [
@@ -5535,6 +5557,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         worklist_asset = Path(worklist_asset_path).read_text(encoding="utf-8")
         self.assertIn("cfm:worklist-expanded", worklist_asset)
         self.assertIn("shown.bs.collapse", worklist_asset)
+        self.assertIn("capturePaginationPosition", worklist_asset)
+        self.assertIn("restoreTopPaginationPosition", worklist_asset)
+        self.assertIn("htmx:afterSwap", worklist_asset)
+        self.assertIn("htmx:afterSettle", worklist_asset)
+        self.assertNotIn("pendingPaginationScroll", worklist_asset)
+        self.assertNotContains(formatting_page, "cfmPendingPaginationScroll")
 
     def test_review_post_redirects_preserve_full_worklist_return_context(self):
         self.make_master_paper("P001", "Return Context Review", "Ada")
@@ -7647,14 +7675,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         single = self.open_formatting_review(submission, mode="single")
         focus = self.open_formatting_review(submission, mode="focus")
 
-        self.assertNotContains(single, 'data-pagination-position="top"')
-        self.assertNotContains(single, 'data-pagination-position="bottom"')
+        self.assertNotContains(single, 'data-cfm-pagination-position="top"')
+        self.assertNotContains(single, 'data-cfm-pagination-position="bottom"')
         self.assertNotContains(single, "Focused Formatting review")
         self.assertContains(focus, "Focused Formatting review")
         self.assertContains(focus, "Start Single Paper Mode here")
         self.assertContains(focus, "data-formatting-single-form")
-        self.assertNotContains(focus, 'data-pagination-position="top"')
-        self.assertNotContains(focus, 'data-pagination-position="bottom"')
+        self.assertNotContains(focus, 'data-cfm-pagination-position="top"')
+        self.assertNotContains(focus, 'data-cfm-pagination-position="bottom"')
 
     def test_formatting_save_rejects_changed_publication_file_snapshot(self):
         self.make_master_paper("P001", "Snapshot Paper", "Ada")

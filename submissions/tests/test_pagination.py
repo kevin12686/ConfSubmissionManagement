@@ -284,7 +284,50 @@ class WorklistPaginationViewTests(TestCase):
                     'aria-label="Bottom worklist pagination"',
                     count=1,
                 )
-                self.assertContains(first, "data-cfm-pagination-scroll")
+                self.assertContains(
+                    first,
+                    'data-cfm-pagination-position="top"',
+                    count=1,
+                )
+                self.assertContains(
+                    first,
+                    'data-cfm-pagination-position="bottom"',
+                    count=1,
+                )
+                html = first.content.decode()
+                top_pagination = html.split(
+                    'aria-label="Top worklist pagination"',
+                    1,
+                )[1].split("</nav>", 1)[0]
+                bottom_pagination = html.split(
+                    'aria-label="Bottom worklist pagination"',
+                    1,
+                )[1].split("</nav>", 1)[0]
+                self.assertIn('hx-swap="outerHTML"', top_pagination)
+                self.assertNotIn("show:top", top_pagination)
+                self.assertNotRegex(top_pagination, r'href="[^"]*#')
+                self.assertIn(
+                    'hx-swap="outerHTML show:top"',
+                    bottom_pagination,
+                )
+
+    def test_full_page_pagination_keeps_scroll_anchor_fallback(self):
+        response = self.client.get(reverse("submissions:initial_paper_list"))
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        top_pagination = html.split(
+            'aria-label="Top worklist pagination"',
+            1,
+        )[1].split("</nav>", 1)[0]
+        bottom_pagination = html.split(
+            'aria-label="Bottom worklist pagination"',
+            1,
+        )[1].split("</nav>", 1)[0]
+        self.assertIn("#paper-master-worklist", top_pagination)
+        self.assertIn("#paper-master-worklist", bottom_pagination)
+        self.assertNotIn("hx-get=", top_pagination)
+        self.assertNotIn("hx-get=", bottom_pagination)
 
     def test_error_author_and_exception_worklists_paginate_full_counts(self):
         error_response = self.client.get(

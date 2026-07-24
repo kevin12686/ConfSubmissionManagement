@@ -55,6 +55,9 @@
             --cfm-neutral-border: #9ca3af;
             --cfm-neutral-bg: #dce3ea;
         }
+        html {
+            scroll-behavior: auto !important;
+        }
         body {
             background: var(--cfm-bg);
             color: var(--cfm-text);
@@ -1752,13 +1755,11 @@
 <script src="{% static 'submissions/vendor/htmx-2.0.10.min.js' %}"></script>
 <script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>
 <script src="{% static 'submissions/image_magnifier.js' %}"></script>
-<script src="{% static 'submissions/worklist_navigation.js' %}"></script>
+<script src="{% static 'submissions/worklist_navigation.js' %}?v={{ app_version }}"></script>
 <script>
 let cfmFullPageNavigationPending = false;
-let cfmPendingPaginationScroll = "";
 
 function cfmShowHtmxRequestError() {
-    cfmPendingPaginationScroll = "";
     if (cfmFullPageNavigationPending) return;
     document.getElementById("htmx-request-error")?.classList.remove("d-none");
 }
@@ -1880,12 +1881,6 @@ document.addEventListener("submit", function (event) {
     }
 });
 
-document.addEventListener("click", function (event) {
-    const link = event.target.closest("[data-cfm-pagination-scroll]");
-    if (!link) return;
-    cfmPendingPaginationScroll = link.dataset.cfmPaginationScroll || "";
-});
-
 function initializeUploadZones(root) {
     root.querySelectorAll("[data-upload-zone]").forEach(function (zone) {
         if (zone.dataset.uploadInitialized === "true") return;
@@ -1953,10 +1948,6 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 document.body.addEventListener("htmx:afterSwap", function (event) {
     initializeUploadZones(event.target);
-    if (!cfmPendingPaginationScroll) return;
-    const target = document.querySelector(cfmPendingPaginationScroll);
-    cfmPendingPaginationScroll = "";
-    if (target) target.scrollIntoView({block: "start"});
 });
 </script>
 </body>

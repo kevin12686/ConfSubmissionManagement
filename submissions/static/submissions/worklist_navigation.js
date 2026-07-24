@@ -2,7 +2,10 @@
     "use strict";
 
     const STORAGE_PREFIX = "cfm:worklist-return:";
+    const PAGINATION_STORAGE_PREFIX = "cfm:pagination-return:";
     const MAX_AGE_MS = 5 * 60 * 1000;
+    let pendingPaginationPosition = null;
+    let settlingPaginationPosition = null;
 
     function storageKey() {
         return `${STORAGE_PREFIX}${window.location.pathname}`;
@@ -30,6 +33,132 @@
         } catch (error) {
             // Position restoration is progressive enhancement.
         }
+    }
+
+    function paginationStorageKey(url) {
+        return `${PAGINATION_STORAGE_PREFIX}${url.pathname}${url.search}`;
+    }
+
+    function visibleInViewport(element) {
+        const bounds = element.getBoundingClientRect();
+        return bounds.bottom > 0 && bounds.top < window.innerHeight;
+    }
+
+    function paginationPositionPayload(navigation, link) {
+        const targetSelector = link.getAttribute("hx-target") || "";
+        return {
+            timestamp: Date.now(),
+            viewportOffset: navigation.getBoundingClientRect().top,
+            targetSelector,
+        };
+    }
+
+    function restoreTopPaginationPosition(payload, root) {
+        if (!payload || Date.now() - Number(payload.timestamp || 0) > MAX_AGE_MS) {
+            return;
+        }
+        const searchRoot = root instanceof Element ? root : document;
+        const navigation = searchRoot.matches?.(
+            '[data-cfm-pagination-position="top"]'
+        )
+            ? searchRoot
+            : searchRoot.querySelector(
+                  '[data-cfm-pagination-position="top"]'
+              );
+        if (!navigation) return;
+
+        const absoluteTop =
+            navigation.getBoundingClientRect().top + window.scrollY;
+        window.scrollTo({
+            top: Math.max(0, absoluteTop - Number(payload.viewportOffset || 0)),
+            behavior: "auto",
+        });
+    }
+
+    function capturePaginationPosition(event) {
+        if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+        ) {
+            return;
+        }
+        const eventTarget =
+            event.target instanceof Element ? event.target : null;
+        const link = eventTarget?.closest(
+            '[data-cfm-pagination-position="top"] a'
+        );
+        const navigation = link?.closest(
+            '[data-cfm-pagination-position="top"]'
+        );
+        if (!link || !navigation || !visibleInViewport(navigation)) return;
+
+        const payload = paginationPositionPayload(navigation, link);
+        if (link.hasAttribute("hx-get") || link.hasAttribute("data-hx-get")) {
+            pendingPaginationPosition = payload;
+            return;
+        }
+
+        const destination = new URL(link.href, window.location.href);
+        safeSessionSet(
+            paginationStorageKey(destination),
+            JSON.stringify(payload)
+        );
+    }
+
+    function restoreFullPagePaginationPosition() {
+        const key = paginationStorageKey(new URL(window.location.href));
+        const raw = safeSessionGet(key);
+        if (!raw) return;
+        safeSessionRemove(key);
+        try {
+            const payload = JSON.parse(raw);
+            window.requestAnimationFrame(function () {
+                restoreTopPaginationPosition(payload, document);
+            });
+        } catch (error) {
+            // Ignore stale or malformed progressive-enhancement state.
+        }
+    }
+
+    function paginationEventTarget(event, payload) {
+        const target = event.detail?.target || event.target;
+        const selector = payload?.targetSelector;
+        if (
+            selector &&
+            target instanceof Element &&
+            !target.matches(selector)
+        ) {
+            return null;
+        }
+        return target;
+    }
+
+    function restoreSwappedPaginationPosition(event) {
+        if (!pendingPaginationPosition) return;
+        const target = paginationEventTarget(event, pendingPaginationPosition);
+        if (!target) return;
+        const payload = pendingPaginationPosition;
+        pendingPaginationPosition = null;
+        settlingPaginationPosition = payload;
+        restoreTopPaginationPosition(payload, target);
+    }
+
+    function restoreSettledPaginationPosition(event) {
+        if (!settlingPaginationPosition) return;
+        const target = paginationEventTarget(event, settlingPaginationPosition);
+        if (!target) return;
+        const payload = settlingPaginationPosition;
+        settlingPaginationPosition = null;
+        window.requestAnimationFrame(function () {
+            const currentTarget = payload.targetSelector
+                ? document.querySelector(payload.targetSelector)
+                : document;
+            restoreTopPaginationPosition(payload, currentTarget || document);
+        });
     }
 
     function ensureReturnInput(form, value) {
@@ -215,6 +344,24 @@
         captureWorklistPosition(form);
     });
 
+    document.addEventListener("click", capturePaginationPosition, true);
+    document.body.addEventListener(
+        "htmx:afterSwap",
+        restoreSwappedPaginationPosition
+    );
+    document.body.addEventListener(
+        "htmx:afterSettle",
+        restoreSettledPaginationPosition
+    );
+    document.body.addEventListener("htmx:responseError", function () {
+        pendingPaginationPosition = null;
+        settlingPaginationPosition = null;
+    });
+    document.body.addEventListener("htmx:sendError", function () {
+        pendingPaginationPosition = null;
+        settlingPaginationPosition = null;
+    });
+
     document.addEventListener("shown.bs.collapse", function (event) {
         if (
             event.target instanceof Element &&
@@ -225,8 +372,12 @@
     });
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", restoreWorklistPosition);
+        document.addEventListener("DOMContentLoaded", function () {
+            restoreFullPagePaginationPosition();
+            restoreWorklistPosition();
+        });
     } else {
+        restoreFullPagePaginationPosition();
         restoreWorklistPosition();
     }
 })();

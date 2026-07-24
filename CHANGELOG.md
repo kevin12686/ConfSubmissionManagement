@@ -3,6 +3,17 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.25 - 2026-07-23
+
+### Pagination
+
+- Removed the visible smooth-scroll trip after changing pages or page size.
+- Top pagination now keeps its visible position when the worklist header is
+  already on screen; bottom pagination returns immediately to the refreshed
+  worklist start, including when the next page is shorter.
+- Centralized pagination positioning in the shared worklist component so every
+  paginated review and report page follows the same behavior.
+
 ## 1.10.24 - 2026-07-23
 
 ### Error Report
