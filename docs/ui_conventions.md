@@ -205,6 +205,17 @@ Hint text comes from `data-cfm-image-magnifier-hint`, not the browser-native
 - Upload zones may summarize and remove browser-selected files, but server
   extension/hash validation and preview-before-apply remain authoritative.
 - Destructive version actions live in a separate collapsed danger area.
+- Export Reports keeps Final Deliverable visually and behaviorally separate
+  from Excel reporting. The Editorial Publication Workbook presents its
+  mandatory core sheet and optional supporting sheets in one selector; raw
+  active/old-version spreadsheets live in one collapsed Advanced / Debug Excel
+  area and are never mixed into the editorial workbook.
+- POST forms that return file attachments use the shared
+  `data-cfm-download-form="true"` lifecycle. The browser adds a one-use token,
+  prevents duplicate submission while the server prepares the file, and
+  re-enables only the controls it temporarily disabled after the matching
+  completion cookie arrives. Do not add page-specific download-button reset
+  scripts.
 
 ## Review Checklist
 

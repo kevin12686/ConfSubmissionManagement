@@ -65,6 +65,18 @@ does not change publication file selection rules. Dynamic response gzip uses
 allowlist is compressed. Binary and unknown MIME types must bypass gzip so
 download responses such as publication ZIPs retain their `Content-Length`.
 
+POST attachment responses must use the shared download lifecycle rather than
+the ordinary full-page submit lock:
+
+- mark the form with `data-cfm-download-form="true"`;
+- preserve the submitted `download_token`;
+- pass the `FileResponse` through
+  `submissions.controllers.exports._mark_download_response_ready()`.
+
+The completion cookie is a UI signal only. It must be added after the export
+service has produced the file and must not alter export selection, readiness,
+or file contents.
+
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
 existing Compose `web` container created from this checkout. It reads Docker
 labels, the published host port, the `/app/data` bind or named-volume mount, and
@@ -149,7 +161,11 @@ Put reusable workflow behavior in services:
 - Signed multi-editor evidence: `workflow_evidence.py`.
 - Readiness and author checks: `checks.py`.
 - Exceptions: `exceptions.py`.
-- Reports and publication ZIPs: `reports.py`.
+- Report data and publication ZIPs: `reports.py`.
+- Shared XLSX presentation: `excel_workbook.py`. Keep CSV/package output out of
+  this formatter; CSV schemas are machine-readable contracts. Editorial
+  Workbook supporting sheets must use the whitelist in `reports.py`; raw/debug
+  sheets stay separate from the workbook selector.
 - Storage cleanup: `storage_inventory.py`.
 - Backup/restore: `system_state.py`.
 - Audit logging: `audit.py`.

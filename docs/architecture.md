@@ -174,6 +174,16 @@ case-insensitive ZIP base name for more than one publication record. Therefore
 validated files cannot be silently replaced or overwritten by a later path
 read or duplicate archive entry.
 
+Editorial Excel reports are read-only views built separately from package
+assembly. `reports.py` may reuse `PublicationReadContext`, readiness rows, and
+exception rows to describe the current state, while `excel_workbook.py` owns
+XLSX-only presentation such as headers, widths, wrapping, filters, and number
+formats. `Publication Detail` is the mandatory editorial-workbook core;
+supporting sheets are selected from an explicit whitelist, while raw active and
+old-version data remain separate debug exports. Excel formatting and report
+sheets must not feed publication selection or modify Final/Draft package CSV
+schemas.
+
 Final export also fingerprints publication-critical database state before
 loading the snapshot and after ZIP assembly. A concurrent editor change to
 Paper Master, submissions, settings, or author waivers deletes the

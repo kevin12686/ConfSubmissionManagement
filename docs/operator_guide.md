@@ -413,10 +413,23 @@ than the full Error Report or a broad Needs Attention list.
 
 Use `/reports/` for exports.
 
-- Active Publishable Versions and Editorial Review Workbook are internal review outputs.
 - Final Publication Package ZIP is strict and should be used only when readiness is clean.
 - Draft Publication Package ZIP can be downloaded after warnings. It may skip missing files and includes a warnings CSV.
 - Final package manifest contains ID, extracted title, extracted authors, author number, page number, Plagiarism %, and Single %. It does not include editorial notes.
+- Editorial Publication Workbook is the primary internal Excel output. Its
+  Publication Detail sheet uses Extracted Title as the primary publication
+  title, keeps Master and Final titles as references, and lists each paper's
+  current exceptions and readiness findings. Publication Detail is always
+  included. Select only the supporting sheets needed for the current task:
+  Exception Detail, Readiness Issues, Paper Master, Not Publishing, or Author
+  Count. Unchecked supporting sheets are omitted.
+- Raw Active Submission Data and Raw Old Version Data are technical/debug
+  exports. They are collapsed under Advanced / Debug Excel and are not
+  included in the Editorial Publication Workbook. They are not publication
+  deliverables or complete backups.
+- Generated XLSX files share frozen/filterable headers, bounded column widths,
+  wrapped long text, whole-number percentage display, and consistent readable
+  styling. CSV files remain unformatted machine-readable data.
 - Final and draft package PDFs use the publication-facing priority above: Corrected PDF, then Original PDF. They do not read the publication debug folder or legacy active-final/current-file paths.
 - Draft export can carry ordinary readiness warnings, but it still blocks when one Paper ID has multiple active finals or when sanitized ZIP filenames collide; those conditions cannot select an unambiguous file.
 - Final export blocks if two records would receive the same sanitized ZIP

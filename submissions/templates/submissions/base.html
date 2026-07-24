@@ -1654,7 +1654,8 @@ document.addEventListener("submit", function (event) {
     if (event.defaultPrevented || !(form instanceof HTMLFormElement) || form.method.toLowerCase() !== "post") return;
     const htmxManaged = form.matches("[hx-post], [data-hx-post]")
         || form.closest("[hx-boost='true'], [data-hx-boost='true']");
-    if (!htmxManaged) cfmFullPageNavigationPending = true;
+    const downloadManaged = form.dataset.cfmDownloadForm === "true";
+    if (!htmxManaged && !downloadManaged) cfmFullPageNavigationPending = true;
     if (form.dataset.cfmSubmitting === "true") {
         event.preventDefault();
         return;
@@ -1668,6 +1669,49 @@ document.addEventListener("submit", function (event) {
         submittedAction.value = submitter.value;
         submittedAction.dataset.cfmSubmitterCopy = "true";
         form.appendChild(submittedAction);
+    }
+    if (downloadManaged) {
+        const token = (
+            window.crypto?.randomUUID?.()
+            || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        ).replace(/[^A-Za-z0-9-]/g, "").slice(0, 64);
+        const downloadToken = document.createElement("input");
+        downloadToken.type = "hidden";
+        downloadToken.name = "download_token";
+        downloadToken.value = token;
+        downloadToken.dataset.cfmDownloadToken = "true";
+        form.appendChild(downloadToken);
+        form.querySelectorAll('button:not([type="button"]), button[type="submit"], input[type="submit"]').forEach((control) => {
+            if (control.disabled) return;
+            control.disabled = true;
+            control.dataset.cfmDownloadDisabled = "true";
+        });
+
+        const cookieName = `cfm_download_${token}`;
+        const startedAt = Date.now();
+        const releaseDownloadForm = function () {
+            delete form.dataset.cfmSubmitting;
+            form.querySelectorAll("[data-cfm-submitter-copy], [data-cfm-download-token]").forEach((input) => {
+                input.remove();
+            });
+            form.querySelectorAll("[data-cfm-download-disabled]").forEach((control) => {
+                control.disabled = false;
+                delete control.dataset.cfmDownloadDisabled;
+            });
+        };
+        const completionPoll = window.setInterval(function () {
+            const completed = document.cookie
+                .split("; ")
+                .some((cookie) => cookie.startsWith(`${cookieName}=`));
+            if (completed) {
+                document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+                window.clearInterval(completionPoll);
+                releaseDownloadForm();
+            } else if (Date.now() - startedAt >= 120000) {
+                window.clearInterval(completionPoll);
+                releaseDownloadForm();
+            }
+        }, 250);
     }
 });
 

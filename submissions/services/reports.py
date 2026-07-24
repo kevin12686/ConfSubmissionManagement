@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import io
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -18,6 +19,8 @@ from submissions.services.checks import (
     rebuild_paper_authors,
     split_authors,
 )
+from submissions.services.excel_workbook import write_formatted_workbook
+from submissions.services.exceptions import exception_rows
 from submissions.services.file_manager import (
     publication_file_base_name,
     publication_pdf_info,
@@ -27,7 +30,17 @@ from submissions.services.file_manager import (
 from submissions.services.import_export import submissions_to_frame
 from submissions.services.audit import audit_blocked, audit_failure, audit_success
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.verification import normalize_title
 from submissions.services.version_history import old_version_rows
+
+
+EDITORIAL_WORKBOOK_SUPPORTING_SHEETS = {
+    "exception_detail": "Exception Detail",
+    "readiness_issues": "Readiness Issues",
+    "paper_master": "Paper Master",
+    "not_publishing": "Not Publishing",
+    "author_count": "Author Count",
+}
 
 
 class PublicationPackageBlocked(ValueError):
@@ -77,12 +90,21 @@ def _whole_percent(value):
     return int(value)
 
 
-def error_report_frame():
-    return pd.DataFrame(error_report_rows())
+def error_report_frame(*, context=None, author_rows=None):
+    return pd.DataFrame(
+        error_report_rows(
+            context=context,
+            author_rows=author_rows,
+        )
+    )
 
 
-def author_count_frame():
-    rows = author_count_rows()
+def author_count_frame(*, context=None, rows=None):
+    if rows is None:
+        rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
     return pd.DataFrame(
         [
             {
@@ -167,6 +189,248 @@ def paper_master_frame():
     )
 
 
+def _title_comparison_label(paper, submission):
+    master_title = (paper.title or "").strip()
+    final_title = (
+        (submission.final_submission_title or "").strip()
+        if submission
+        else ""
+    )
+    extracted_title = (
+        (submission.extracted_title or "").strip()
+        if submission
+        else ""
+    )
+    titles = {
+        "Master": master_title,
+        "Final": final_title,
+        "Extracted": extracted_title,
+    }
+    missing = [label for label, value in titles.items() if not value]
+    if missing:
+        return "Missing " + ", ".join(missing)
+    if len(set(titles.values())) == 1:
+        return "All titles match"
+    normalized = {label: normalize_title(value) for label, value in titles.items()}
+    if all(normalized.values()) and len(set(normalized.values())) == 1:
+        return "Formatting-only difference"
+    differences = [
+        f"{label} title differs"
+        for label in ("Master", "Final")
+        if normalized[label] != normalized["Extracted"]
+    ]
+    return "; ".join(differences) or "Master and Final titles differ"
+
+
+def _exception_paper_ids(row, valid_paper_ids):
+    candidates = []
+    for value in (row.get("paper_id"), row.get("paper_ids")):
+        candidates.extend(
+            part.strip()
+            for part in str(value or "").split(",")
+            if part.strip()
+        )
+    return [
+        paper_id
+        for paper_id in dict.fromkeys(candidates)
+        if paper_id in valid_paper_ids
+    ]
+
+
+def _exception_value_label(row, value):
+    if value in (None, ""):
+        return ""
+    if row.get("type") in {"plagiarism_percent", "single_percent"}:
+        return f"{_whole_percent(value)}%"
+    return str(value)
+
+
+def _exception_summary(row):
+    current = _exception_value_label(row, row.get("current_value"))
+    approved = _exception_value_label(row, row.get("approved_value"))
+    details = [row.get("status_label") or row.get("status") or ""]
+    if current:
+        details.append(f"current {current}")
+    if row.get("limit_label"):
+        details.append(str(row["limit_label"]))
+    if approved:
+        details.append(f"approved {approved}")
+    summary = f"{row.get('type_label') or row.get('type')}: " + " - ".join(
+        detail for detail in details if detail
+    )
+    if row.get("reason"):
+        summary += f"\nReason: {row['reason']}"
+    return summary
+
+
+def exception_detail_frame(rows):
+    columns = [
+        "Paper ID",
+        "Final ID",
+        "Exception Type",
+        "Subject",
+        "Status",
+        "Current Value",
+        "Limit",
+        "Approved Value",
+        "Reason",
+        "Approved At",
+        "Related Paper IDs",
+    ]
+    return pd.DataFrame(
+        [
+            {
+                "Paper ID": row.get("paper_id") or "",
+                "Final ID": row.get("final_submission_id") or "",
+                "Exception Type": row.get("type_label") or row.get("type") or "",
+                "Subject": row.get("subject") or "",
+                "Status": row.get("status_label") or row.get("status") or "",
+                "Current Value": row.get("current_value"),
+                "Limit": row.get("limit_label") or "",
+                "Approved Value": row.get("approved_value"),
+                "Reason": row.get("reason") or "",
+                "Approved At": row.get("approved_at"),
+                "Related Paper IDs": row.get("paper_ids") or row.get("paper_id") or "",
+            }
+            for row in rows
+        ],
+        columns=columns,
+    )
+
+
+def publication_detail_frame(
+    *,
+    context=None,
+    author_rows=None,
+    readiness_rows=None,
+    all_exception_rows=None,
+):
+    context = context or PublicationReadContext.load()
+    author_rows = author_rows or author_count_rows(
+        context=context,
+        include_file_links=False,
+    )
+    readiness_rows = (
+        readiness_rows
+        if readiness_rows is not None
+        else publication_readiness_rows(
+            context=context,
+            author_rows=author_rows,
+        )
+    )
+    if all_exception_rows is None:
+        all_exception_rows, _status_filter = exception_rows(
+            "all",
+            context=context,
+            hydrate=False,
+        )
+
+    valid_paper_ids = context.valid_paper_ids
+    blockers_by_paper = defaultdict(list)
+    for row in readiness_rows:
+        for paper_id in _exception_paper_ids(row, valid_paper_ids):
+            blockers_by_paper[paper_id].append(row)
+
+    exceptions_by_paper = defaultdict(list)
+    for row in all_exception_rows:
+        for paper_id in _exception_paper_ids(row, valid_paper_ids):
+            exceptions_by_paper[paper_id].append(row)
+
+    active_by_paper = defaultdict(list)
+    for submission in context.active_submissions:
+        if submission.paper_id_filled in valid_paper_ids:
+            active_by_paper[submission.paper_id_filled].append(submission)
+
+    columns = [
+        "Paper ID",
+        "Final ID",
+        "Version Origin",
+        "Extracted Title",
+        "Master Title",
+        "Final Title",
+        "Title Comparison",
+        "Extracted Authors",
+        "Number of Authors",
+        "Number of Pages",
+        "Plagiarism %",
+        "Single %",
+        "Exceptions",
+        "Publication Readiness",
+        "Blocking Issues",
+    ]
+    rows = []
+    for paper in sorted(context.papers, key=lambda item: item.paper_id):
+        active_group = active_by_paper.get(paper.paper_id, [])
+        submission = active_group[0] if len(active_group) == 1 else None
+        blockers = blockers_by_paper.get(paper.paper_id, [])
+        if paper.paper_id in context.excluded_paper_ids:
+            readiness = "Not publishing"
+        elif blockers or not submission:
+            readiness = "Not ready"
+        else:
+            readiness = "Ready"
+        final_ids = (
+            ", ".join(
+                sorted(item.final_submission_id for item in active_group)
+            )
+            if len(active_group) > 1
+            else (submission.final_submission_id if submission else "")
+        )
+        rows.append(
+            {
+                "Paper ID": paper.paper_id,
+                "Final ID": final_ids,
+                "Version Origin": (
+                    submission.get_submission_origin_display()
+                    if submission
+                    else ""
+                ),
+                "Extracted Title": submission.extracted_title if submission else "",
+                "Master Title": paper.title,
+                "Final Title": (
+                    submission.final_submission_title if submission else ""
+                ),
+                "Title Comparison": _title_comparison_label(paper, submission),
+                "Extracted Authors": (
+                    submission.extracted_authors if submission else ""
+                ),
+                "Number of Authors": (
+                    len(split_authors(submission.extracted_authors))
+                    if submission and submission.extracted_authors
+                    else ""
+                ),
+                "Number of Pages": submission.page_count if submission else "",
+                "Plagiarism %": (
+                    _whole_percent(submission.similarity_score)
+                    if submission
+                    else ""
+                ),
+                "Single %": (
+                    _whole_percent(submission.single_similarity_score)
+                    if submission
+                    else ""
+                ),
+                "Exceptions": "\n\n".join(
+                    _exception_summary(row)
+                    for row in exceptions_by_paper.get(paper.paper_id, [])
+                ),
+                "Publication Readiness": readiness,
+                "Blocking Issues": "\n".join(
+                    f"{row.get('category')}: {row.get('message')}"
+                    for row in blockers
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _write_single_sheet(path, sheet_name, frame):
+    return write_formatted_workbook(
+        path,
+        [(sheet_name, _excel_safe_frame(frame))],
+    )
+
+
 def export_active_versions():
     path = _reports_folder() / f"active_publishable_versions_{_timestamp()}.xlsx"
     frame = submissions_to_frame(
@@ -174,7 +438,7 @@ def export_active_versions():
             active_version=True, excluded_from_publication=False, discarded=False
         )
     )
-    _excel_safe_frame(frame).to_excel(path, index=False)
+    _write_single_sheet(path, "Active Raw Data", frame)
     audit_success(
         "export_active_versions",
         "Active publishable versions exported.",
@@ -187,7 +451,7 @@ def export_active_versions():
 def export_old_versions():
     path = _reports_folder() / f"old_versions_{_timestamp()}.xlsx"
     frame = old_versions_frame()
-    _excel_safe_frame(frame).to_excel(path, index=False)
+    _write_single_sheet(path, "Old Versions", frame)
     audit_success(
         "export_old_versions",
         "Old versions exported.",
@@ -225,7 +489,7 @@ def export_error_report():
     rebuild_paper_authors()
     path = _reports_folder() / f"readiness_issues_{_timestamp()}.xlsx"
     frame = error_report_frame()
-    _excel_safe_frame(frame).to_excel(path, index=False)
+    _write_single_sheet(path, "Readiness Issues", frame)
     audit_success(
         "export_error_report",
         "Readiness issues exported.",
@@ -239,7 +503,7 @@ def export_author_count():
     rebuild_paper_authors()
     path = _reports_folder() / f"author_count_{_timestamp()}.xlsx"
     frame = author_count_frame()
-    _excel_safe_frame(frame).to_excel(path, index=False)
+    _write_single_sheet(path, "Author Count", frame)
     audit_success(
         "export_author_count",
         "Author count exported.",
@@ -571,35 +835,81 @@ def export_publication_package(force=False):
         raise
 
 
-def export_all_reports():
+def export_all_reports(*, supporting_sheets=None):
+    requested_sheets = set(supporting_sheets or ())
+    selected_supporting_sheets = [
+        key
+        for key in EDITORIAL_WORKBOOK_SUPPORTING_SHEETS
+        if key in requested_sheets
+    ]
     rebuild_paper_authors()
-    path = _reports_folder() / f"editorial_review_workbook_{_timestamp()}.xlsx"
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        active_frame = submissions_to_frame(
-            FinalSubmission.objects.filter(
-                active_version=True, excluded_from_publication=False, discarded=False
-            )
+    path = (
+        _reports_folder()
+        / f"editorial_publication_workbook_{_timestamp()}.xlsx"
+    )
+    context = PublicationReadContext.load()
+    author_rows = author_count_rows(
+        context=context,
+        include_file_links=False,
+    )
+    readiness_rows = publication_readiness_rows(
+        context=context,
+        author_rows=author_rows,
+    )
+    all_exception_rows, _status_filter = exception_rows(
+        "all",
+        context=context,
+        hydrate=False,
+    )
+    sheets = [
+        (
+            "Publication Detail",
+            publication_detail_frame(
+                context=context,
+                author_rows=author_rows,
+                readiness_rows=readiness_rows,
+                all_exception_rows=all_exception_rows,
+            ),
+        ),
+    ]
+    supporting_frames = {
+        "exception_detail": lambda: exception_detail_frame(all_exception_rows),
+        "readiness_issues": lambda: error_report_frame(
+            context=context,
+            author_rows=author_rows,
+        ),
+        "paper_master": paper_master_frame,
+        "not_publishing": not_publishing_frame,
+        "author_count": lambda: author_count_frame(
+            context=context,
+            rows=author_rows,
+        ),
+    }
+    sheets.extend(
+        (
+            EDITORIAL_WORKBOOK_SUPPORTING_SHEETS[key],
+            supporting_frames[key](),
         )
-        old_frame = old_versions_frame()
-        _excel_safe_frame(error_report_frame()).to_excel(
-            writer, sheet_name="Readiness Issues", index=False
-        )
-        _excel_safe_frame(active_frame).to_excel(
-            writer, sheet_name="Active Publishable", index=False
-        )
-        _excel_safe_frame(paper_master_frame()).to_excel(
-            writer, sheet_name="Paper Master", index=False
-        )
-        _excel_safe_frame(not_publishing_frame()).to_excel(
-            writer, sheet_name="Not Publishing", index=False
-        )
-        _excel_safe_frame(author_count_frame()).to_excel(
-            writer, sheet_name="Author Count", index=False
-        )
-        _excel_safe_frame(old_frame).to_excel(writer, sheet_name="Old Versions", index=False)
+        for key in selected_supporting_sheets
+    )
+    write_formatted_workbook(
+        path,
+        [
+            (sheet_name, _excel_safe_frame(frame))
+            for sheet_name, frame in sheets
+        ],
+    )
     audit_success(
         "export_editorial_review_workbook",
-        "Editorial review workbook exported.",
-        file_changes={"path": str(path)},
+        "Editorial publication workbook exported.",
+        result_counts={
+            "publication_rows": len(sheets[0][1]),
+            "exception_rows": len(all_exception_rows),
+            "supporting_sheets": len(selected_supporting_sheets),
+        },
+        file_changes={
+            "path": str(path),
+            "sheets": [sheet_name for sheet_name, _frame in sheets],
+        },
     )
     return Path(path)

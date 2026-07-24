@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from unittest.mock import patch
 
 import pandas as pd
+from openpyxl import load_workbook
 from django.conf import settings as django_settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
@@ -87,9 +88,12 @@ from submissions.services.pdf_processor import calculate_pdf_hash, determine_act
 from submissions.services import publication_read
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.reports import (
+    EDITORIAL_WORKBOOK_SUPPORTING_SHEETS,
     author_count_frame,
     export_active_versions,
     export_all_reports,
+    export_author_count,
+    export_error_report,
     export_old_versions,
     export_publication_package,
 )
@@ -493,7 +497,20 @@ class EditorialAcceptanceTestCase(TestCase):
             self.assertEqual(len(names), len(set(names)), "ZIP entries must be unique.")
             manifest_name = next(name for name in names if name.startswith("publication_manifest_"))
             manifest_text = archive.read(manifest_name).decode("utf-8-sig")
-            rows = list(csv.DictReader(io.StringIO(manifest_text)))
+            reader = csv.DictReader(io.StringIO(manifest_text))
+            rows = list(reader)
+            self.assertEqual(
+                reader.fieldnames,
+                [
+                    "ID",
+                    "Extracted Title",
+                    "Extracted Author",
+                    "Author Number",
+                    "Page Number",
+                    "Similarity (P)",
+                    "Similarity (S)",
+                ],
+            )
             self.assertEqual(len(rows), len(expected_rows))
             for expected in expected_rows:
                 row = next(item for item in rows if item["ID"] == expected["paper_id"])
@@ -5645,6 +5662,103 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 else:
                     self.assertEqual(response.status_code, 200)
 
+    def test_export_reports_separates_editorial_and_debug_excel_without_changing_final_action(self):
+        response = self.client.get(reverse("submissions:export_reports"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Final Publication Package ZIP")
+        self.assertContains(
+            response,
+            'name="action" value="publication_package"',
+        )
+        self.assertContains(response, "Editorial Excel Reports")
+        self.assertContains(response, "Editorial Publication Workbook")
+        self.assertContains(response, "Publication Detail")
+        self.assertContains(response, "Exception Detail")
+        self.assertContains(
+            response,
+            'type="checkbox" name="supporting_sheets"',
+            count=len(EDITORIAL_WORKBOOK_SUPPORTING_SHEETS),
+        )
+        self.assertContains(
+            response,
+            'name="action" value="editorial_workbook"',
+        )
+        self.assertContains(response, "Only checked sheets will be added")
+        self.assertContains(response, "Select all")
+        self.assertContains(response, "Clear")
+        self.assertContains(response, "Advanced / Debug Excel")
+        self.assertContains(response, 'id="advanced-excel-exports"')
+        self.assertContains(response, "Raw Active Submission Data")
+        self.assertContains(response, "Raw Old Version Data")
+        self.assertContains(
+            response,
+            'data-cfm-download-form="true"',
+            count=4,
+        )
+        self.assertContains(response, "cfm_download_")
+        self.assertNotContains(response, "Readiness Issues Excel")
+        self.assertNotContains(response, "Author Count Excel")
+        self.assertNotContains(response, "Audit / Backup")
+        self.assertNotContains(response, "System State Backup")
+
+    def test_export_reports_passes_selected_supporting_sheets_to_workbook(self):
+        exported_path = self.root / "selected_editorial_workbook.xlsx"
+        exported_path.write_bytes(b"test workbook")
+
+        with patch(
+            "submissions.controllers.exports.reports.export_all_reports",
+            return_value=exported_path,
+        ) as exporter:
+            response = self.client.post(
+                reverse("submissions:export_reports"),
+                {
+                    "action": "editorial_workbook",
+                    "supporting_sheets": [
+                        "exception_detail",
+                        "paper_master",
+                    ],
+                    "download_token": "download-token-1",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertIn("cfm_download_download-token-1", response.cookies)
+        self.assertEqual(
+            response.cookies["cfm_download_download-token-1"].value,
+            "1",
+        )
+        exporter.assert_called_once_with(
+            supporting_sheets=[
+                "exception_detail",
+                "paper_master",
+            ],
+        )
+        response.close()
+
+    def test_export_reports_ignores_invalid_download_completion_token(self):
+        exported_path = self.root / "editorial_workbook.xlsx"
+        exported_path.write_bytes(b"test workbook")
+
+        with patch(
+            "submissions.controllers.exports.reports.export_all_reports",
+            return_value=exported_path,
+        ):
+            response = self.client.post(
+                reverse("submissions:export_reports"),
+                {
+                    "action": "editorial_workbook",
+                    "download_token": "bad token;",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            any(name.startswith("cfm_download_") for name in response.cookies)
+        )
+        response.close()
+
     def test_verify_paper_ids_defers_suggestions_for_hidden_rows(self):
         self.make_master_paper("P001", title="Ready Paper")
         self.make_final_submission(
@@ -10087,9 +10201,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         first = self.make_final_submission(
             final_submission_id="1",
             paper_id_filled="P001",
-            final_submission_title="Ready Paper",
+            final_submission_title="Final Auxiliary Title",
             extracted_title="Ready Paper",
             title_author_verified_at=timezone.now(),
+            page_count=13,
+            page_limit_exception_approved=True,
+            page_limit_exception_reason="Approved extended paper.",
+            page_limit_exception_page_count=13,
+            page_limit_exception_approved_at=timezone.now(),
         )
         self.make_final_submission(
             final_submission_id="2",
@@ -10102,7 +10221,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         first.save(update_fields=["publication_excluded_at"])
 
         active_path = export_active_versions()
-        workbook_path = export_all_reports()
+        workbook_path = export_all_reports(
+            supporting_sheets=EDITORIAL_WORKBOOK_SUPPORTING_SHEETS,
+        )
 
         self.assertTrue(Path(active_path).exists())
         self.assertTrue(Path(workbook_path).exists())
@@ -10110,7 +10231,26 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("paper_master_notes", active_frame.columns)
         self.assertEqual(active_frame.loc[0, "paper_master_notes"], "Internal editorial note")
         workbook = pd.ExcelFile(workbook_path)
+        self.assertEqual(workbook.sheet_names[0], "Publication Detail")
+        self.assertIn("Exception Detail", workbook.sheet_names)
         self.assertIn("Paper Master", workbook.sheet_names)
+        detail_frame = pd.read_excel(workbook, sheet_name="Publication Detail")
+        detail_row = detail_frame.loc[
+            detail_frame["Paper ID"] == "P001"
+        ].iloc[0]
+        self.assertEqual(detail_row["Extracted Title"], "Ready Paper")
+        self.assertEqual(detail_row["Master Title"], "Ready Paper")
+        self.assertEqual(detail_row["Final Title"], "Final Auxiliary Title")
+        self.assertEqual(detail_row["Title Comparison"], "Final title differs")
+        self.assertIn("Page count: Allowed exception", detail_row["Exceptions"])
+        self.assertIn("Approved extended paper.", detail_row["Exceptions"])
+        exception_frame = pd.read_excel(workbook, sheet_name="Exception Detail")
+        page_exception = exception_frame.loc[
+            exception_frame["Paper ID"] == "P001"
+        ].iloc[0]
+        self.assertEqual(page_exception["Exception Type"], "Page count")
+        self.assertEqual(page_exception["Status"], "Allowed exception")
+        self.assertEqual(page_exception["Reason"], "Approved extended paper.")
         master_frame = pd.read_excel(workbook, sheet_name="Paper Master")
         self.assertIn("notes", master_frame.columns)
         self.assertIn("Internal editorial note", set(master_frame["notes"].fillna("")))
@@ -10119,6 +10259,98 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("version_state", not_publishing_frame.columns)
         self.assertIn("submission_origin", not_publishing_frame.columns)
         self.assertIn("active_replacement_final_id", not_publishing_frame.columns)
+
+        formatted_workbook = load_workbook(workbook_path)
+        detail_sheet = formatted_workbook["Publication Detail"]
+        self.assertEqual(detail_sheet.freeze_panes, "A2")
+        self.assertEqual(detail_sheet.auto_filter.ref, detail_sheet.dimensions)
+        self.assertTrue(detail_sheet["A1"].font.bold)
+        self.assertEqual(detail_sheet["A1"].font.color.rgb, "00FFFFFF")
+        self.assertFalse(detail_sheet.sheet_view.showGridLines)
+        headers = {
+            cell.value: cell.column
+            for cell in detail_sheet[1]
+        }
+        extracted_title_cell = detail_sheet.cell(
+            row=2,
+            column=headers["Extracted Title"],
+        )
+        self.assertTrue(extracted_title_cell.alignment.wrap_text)
+        plagiarism_cell = detail_sheet.cell(
+            row=2,
+            column=headers["Plagiarism %"],
+        )
+        self.assertEqual(plagiarism_cell.number_format, '0"%"')
+
+    def test_editorial_workbook_defaults_to_core_and_only_adds_selected_sheets(self):
+        self.make_master_paper("P001", "Focused Workbook", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Focused Workbook",
+            extracted_title="Focused Workbook",
+        )
+
+        core_path = export_all_reports()
+        core_workbook = load_workbook(core_path)
+        self.assertEqual(core_workbook.sheetnames, ["Publication Detail"])
+
+        selected_path = export_all_reports(
+            supporting_sheets=[
+                "readiness_issues",
+                "author_count",
+                "active_raw_data",
+                "unknown_sheet",
+            ],
+        )
+        selected_workbook = load_workbook(selected_path)
+        self.assertEqual(
+            selected_workbook.sheetnames,
+            [
+                "Publication Detail",
+                "Readiness Issues",
+                "Author Count",
+            ],
+        )
+        self.assertNotIn("Active Raw Data", selected_workbook.sheetnames)
+        self.assertNotIn("Old Versions", selected_workbook.sheetnames)
+
+    def test_all_excel_report_downloads_use_shared_readable_formatting(self):
+        self.make_master_paper("P001", "Formatted Export", "Ada")
+        self.make_master_paper("P002", "Missing Final", "Grace")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Formatted Export",
+            extracted_title="Formatted Export",
+        )
+        self.make_final_submission(
+            final_submission_id="9",
+            paper_id_filled="P001",
+            final_submission_title="Old Formatted Export",
+            extracted_title="Old Formatted Export",
+            active_version=False,
+            duplicate_submission=True,
+        )
+
+        exports = [
+            (export_active_versions(), "Active Raw Data"),
+            (export_old_versions(), "Old Versions"),
+            (export_error_report(), "Readiness Issues"),
+            (export_author_count(), "Author Count"),
+            (export_all_reports(), "Publication Detail"),
+        ]
+
+        for path, first_sheet_name in exports:
+            with self.subTest(path=Path(path).name):
+                workbook = load_workbook(path)
+                self.assertEqual(workbook.sheetnames[0], first_sheet_name)
+                sheet = workbook[first_sheet_name]
+                self.assertEqual(sheet.freeze_panes, "A2")
+                self.assertEqual(sheet.auto_filter.ref, sheet.dimensions)
+                self.assertTrue(sheet["A1"].font.bold)
+                self.assertEqual(sheet["A1"].font.color.rgb, "00FFFFFF")
+                self.assertFalse(sheet.sheet_view.showGridLines)
 
     def test_editor_conflict_alert_and_final_submission_filters(self):
         paper = self.make_master_paper("P001", "Conflict UI", "Ada")
@@ -10357,6 +10589,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(blocked, "Missing Final Submission")
         self.assertContains(blocked, "Unclassified Final Not In Master")
         self.assertContains(blocked, "Download Draft Package Anyway")
+        self.assertContains(
+            blocked,
+            'data-cfm-download-form="true"',
+            count=6,
+        )
 
         draft = self.client.post(
             reverse("submissions:export_reports"),

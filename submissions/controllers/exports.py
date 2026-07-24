@@ -1,5 +1,6 @@
 import csv
 import logging
+import re
 import shutil
 from pathlib import Path
 from urllib.parse import urlencode
@@ -119,6 +120,22 @@ from submissions.application.pagination import paginate_worklist
 
 
 logger = logging.getLogger("submissions.views")
+
+_DOWNLOAD_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+def _mark_download_response_ready(response, request):
+    token = request.POST.get("download_token", "")
+    if _DOWNLOAD_TOKEN_PATTERN.fullmatch(token):
+        response.set_cookie(
+            f"cfm_download_{token}",
+            "1",
+            max_age=120,
+            path="/",
+            samesite="Lax",
+        )
+    return response
+
 
 DEFAULT_FOLDER_SETTINGS = {
     "incoming_folder": "data/incoming",
@@ -391,6 +408,11 @@ def author_count(request):
 def export_reports(request):
     if request.method == "POST":
         action = request.POST.get("action")
+        exporter = None
+        if action == "editorial_workbook":
+            exporter = lambda: reports.export_all_reports(
+                supporting_sheets=request.POST.getlist("supporting_sheets"),
+            )
         exporters = {
             "active": reports.export_active_versions,
             "old": reports.export_old_versions,
@@ -398,11 +420,11 @@ def export_reports(request):
             "authors": reports.export_author_count,
             "publication_package": reports.export_publication_package,
             "publication_package_force": lambda: reports.export_publication_package(force=True),
-            "all": reports.export_all_reports,
         }
-        if action in exporters:
+        exporter = exporter or exporters.get(action)
+        if exporter:
             try:
-                exported_path = Path(exporters[action]())
+                exported_path = Path(exporter())
             except reports.PublicationPackageBlocked as exc:
                 logger.warning("Publication package blocked: %s", exc)
                 if action == "publication_package_force":
@@ -436,11 +458,12 @@ def export_reports(request):
             if not exported_path.exists():
                 messages.error(request, f"Export failed. File was not created: {exported_path}")
                 return redirect("submissions:export_reports")
-            return FileResponse(
+            response = FileResponse(
                 exported_path.open("rb"),
                 as_attachment=True,
                 filename=exported_path.name,
             )
+            return _mark_download_response_ready(response, request)
         messages.error(request, "Unknown export type.")
         return redirect("submissions:export_reports")
     return render(request, "submissions/export_reports.html")

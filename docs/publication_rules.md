@@ -171,6 +171,10 @@ Binary downloads such as ZIP, PDF, image, and Office files are not dynamically
 gzip-compressed. Publication ZIP responses retain their normal content type and
 length.
 
+Editorial XLSX reports are internal read-only snapshots. Their formatting,
+sheet order, and additional review/exception columns do not define publication
+scope and must not change the Final or Draft Publication Package manifest.
+
 ## Concurrency And Preview Safety
 
 Long-running processing and extraction capture semantic row/file evidence and

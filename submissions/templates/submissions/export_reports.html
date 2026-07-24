@@ -4,7 +4,7 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Export Reports</h1>
-        <div class="cfm-page-subtitle">Choose the output by purpose: final delivery, review/fix work, or audit backup.</div>
+        <div class="cfm-page-subtitle">Choose the output by purpose: final delivery, editorial review, or technical data inspection.</div>
     </div>
     <div class="cfm-page-actions">
         <a class="btn btn-outline-primary" href="{% url 'submissions:error_report' %}">View Readiness Issues</a>
@@ -20,12 +20,12 @@
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a class="btn btn-sm btn-danger" href="{% url 'submissions:error_report' %}">Open Readiness Issues</a>
-            <form method="post" class="d-inline">
+            <form method="post" class="d-inline" data-cfm-download-form="true">
                 {% csrf_token %}
                 <button class="btn btn-sm btn-outline-danger" name="action" value="errors">Download Issues Excel</button>
             </form>
             {% if export_error.allow_force_download %}
-            <form method="post" class="d-inline">
+            <form method="post" class="d-inline" data-cfm-download-form="true">
                 {% csrf_token %}
                 <button class="btn btn-sm btn-warning" name="action" value="publication_package_force">Download Draft Package Anyway</button>
             </form>
@@ -78,122 +78,198 @@
         </div>
         <span class="badge text-bg-success">Recommended final output</span>
     </div>
-    <div class="row g-3">
-        <div class="col-xl-8">
-            <div class="card h-100 border-success">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h5 mb-0">Final Publication Package ZIP</h3>
-                        <span class="badge text-bg-success">ZIP</span>
+    <div class="card border-success">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+                <div>
+                    <h3 class="h5 mb-1">Final Publication Package ZIP</h3>
+                    <div class="text-muted">The publisher-facing package assembled from current publication files.</div>
+                </div>
+                <span class="badge text-bg-success">ZIP</span>
+            </div>
+            <div class="row g-3 small">
+                <div class="col-lg-6">
+                    <div class="fw-semibold mb-1">Package contents</div>
+                    <div class="text-muted">Renamed publication PDFs, renamed source files, and the final manifest CSV.</div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="fw-semibold mb-1">Readiness required</div>
+                    <div class="text-muted">
+                        Paper IDs, files, title/authors, formatting, plagiarism, author limits, duplicates, and exception reviews must be ready.
                     </div>
-                    <p class="text-muted mb-2">Contains renamed publication PDFs, renamed source files, and a manifest CSV.</p>
-                    <div class="small mb-3">
-                        <div><strong>Use this when:</strong> readiness checks are clean and you need the final package.</div>
-                        <div><strong>Blocked if:</strong> Paper IDs, PDFs, source files, title/authors, formatting, plagiarism, author limits, duplicates, or exception reviews still need work.</div>
-                        <div><strong>Need an intermediate copy?</strong> Try this button first. If it is blocked, the warning will offer a draft package download.</div>
-                    </div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-success" name="action" value="publication_package">Download Final Publication Package ZIP</button>
-                    </form>
                 </div>
             </div>
+        </div>
+        <div class="card-footer d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <div class="small text-muted">If blocked, the page will show the issues and offer a clearly marked draft package for intermediate work.</div>
+            <form method="post" data-cfm-download-form="true">
+                {% csrf_token %}
+                <button class="btn btn-success" name="action" value="publication_package">Download Final Publication Package ZIP</button>
+            </form>
         </div>
     </div>
 </section>
 
 <section class="cfm-section">
     <div class="mb-3">
-        <h2 class="h5 mb-1">Review & Fix</h2>
-        <div class="text-muted small">Use these to identify what still needs attention before creating the final package.</div>
+        <h2 class="h5 mb-1">Editorial Excel Reports</h2>
+        <div class="text-muted small">Readable internal reports for publication review and editorial handoff. These files do not change publication state.</div>
     </div>
-    <div class="row g-3">
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h6 mb-0">Readiness Issues Excel</h3>
-                        <span class="badge text-bg-warning">XLSX</span>
+    <div class="card border-primary">
+        <form method="post" data-cfm-download-form="true">
+            {% csrf_token %}
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+                    <div>
+                        <h3 class="h5 mb-1">Editorial Publication Workbook</h3>
+                        <div class="text-muted">Build one focused workbook for the current editorial task.</div>
                     </div>
-                    <p class="text-muted mb-2">Lists publication blockers and allowed exceptions by category, Paper ID, Final ID, and message.</p>
-                    <div class="small mb-3"><strong>Use this when:</strong> you need a fix list before exporting the final ZIP.</div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-outline-primary" name="action" value="errors">Download Readiness Issues Excel</button>
-                    </form>
+                    <span class="badge text-bg-primary">XLSX</span>
                 </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h6 mb-0">Author Count Excel</h3>
-                        <span class="badge text-bg-warning">XLSX</span>
+
+                <div class="border-start border-primary border-3 bg-primary-subtle rounded-2 p-3 mb-4">
+                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">Publication Detail</div>
+                            <div class="small text-muted mt-1">
+                                Always included. Extracted Title is primary, with Master and Final titles, authors, page and plagiarism values, per-paper exceptions, and current readiness.
+                            </div>
+                        </div>
+                        <span class="small fw-semibold text-primary">Core sheet</span>
                     </div>
-                    <p class="text-muted mb-2">Shows normalized author names, publication paper count, duplicate-author flags, and exception status.</p>
-                    <div class="small mb-3"><strong>Use this when:</strong> you need to review author-count limits or exception approvals.</div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-outline-primary" name="action" value="authors">Download Author Count Excel</button>
-                    </form>
                 </div>
+
+                <fieldset>
+                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                        <div>
+                            <legend class="h6 mb-0">Include supporting sheets</legend>
+                            <div class="small text-muted mt-1">Only checked sheets will be added to the workbook.</div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-workbook-sheets="select">Select all</button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-workbook-sheets="clear">Clear</button>
+                        </div>
+                    </div>
+                    <div class="row g-2" id="editorial-workbook-sheets">
+                        <div class="col-md-6 col-xl-4">
+                            <label class="d-flex gap-2 border rounded-2 p-3 h-100" for="sheet-exception-detail">
+                                <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="supporting_sheets" value="exception_detail" id="sheet-exception-detail">
+                                <span>
+                                    <span class="fw-semibold d-block">Exception Detail</span>
+                                    <span class="small text-muted fw-normal">One row per allowed, stale, or unresolved exception.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="col-md-6 col-xl-4">
+                            <label class="d-flex gap-2 border rounded-2 p-3 h-100" for="sheet-readiness-issues">
+                                <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="supporting_sheets" value="readiness_issues" id="sheet-readiness-issues">
+                                <span>
+                                    <span class="fw-semibold d-block">Readiness Issues</span>
+                                    <span class="small text-muted fw-normal">Current blockers and allowed informational records.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="col-md-6 col-xl-4">
+                            <label class="d-flex gap-2 border rounded-2 p-3 h-100" for="sheet-paper-master">
+                                <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="supporting_sheets" value="paper_master" id="sheet-paper-master">
+                                <span>
+                                    <span class="fw-semibold d-block">Paper Master</span>
+                                    <span class="small text-muted fw-normal">Master List titles, authors, acceptance state, and notes.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="col-md-6 col-xl-4">
+                            <label class="d-flex gap-2 border rounded-2 p-3 h-100" for="sheet-not-publishing">
+                                <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="supporting_sheets" value="not_publishing" id="sheet-not-publishing">
+                                <span>
+                                    <span class="fw-semibold d-block">Not Publishing</span>
+                                    <span class="small text-muted fw-normal">Excluded publication decisions and retained version context.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="col-md-6 col-xl-4">
+                            <label class="d-flex gap-2 border rounded-2 p-3 h-100" for="sheet-author-count">
+                                <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="supporting_sheets" value="author_count" id="sheet-author-count">
+                                <span>
+                                    <span class="fw-semibold d-block">Author Count</span>
+                                    <span class="small text-muted fw-normal">Per-author publication counts and author-level exceptions.</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </fieldset>
             </div>
-        </div>
+            <div class="card-footer d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <div class="small text-muted">Raw Active and Old Version data remain separate technical exports below.</div>
+                <button class="btn btn-primary" name="action" value="editorial_workbook">Download Editorial Publication Workbook</button>
+            </div>
+        </form>
     </div>
 </section>
 
+<script>
+(() => {
+    const sheetGroup = document.getElementById("editorial-workbook-sheets");
+    if (!sheetGroup) return;
+
+    document.querySelectorAll("[data-workbook-sheets]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const checked = button.dataset.workbookSheets === "select";
+            sheetGroup.querySelectorAll('input[name="supporting_sheets"]').forEach((input) => {
+                input.checked = checked;
+            });
+        });
+    });
+})();
+</script>
+
 <section class="cfm-section">
-    <div class="mb-3">
-        <h2 class="h5 mb-1">Audit / Backup</h2>
-        <div class="text-muted small">Use these when you need a traceable workbook or raw active/old version exports.</div>
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
+        <div>
+            <h2 class="h5 mb-1">Advanced / Debug Excel</h2>
+            <div class="text-muted small">Raw technical data for diagnosis and data inspection. These are not publication deliverables or system backups.</div>
+        </div>
+        <button
+            class="btn btn-outline-secondary"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#advanced-excel-exports"
+            aria-expanded="false"
+            aria-controls="advanced-excel-exports"
+        >
+            Show technical exports
+        </button>
     </div>
-    <div class="row g-3">
-        <div class="col-md-6 col-xl-4">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h6 mb-0">Editorial Review Workbook</h3>
-                        <span class="badge text-bg-primary">XLSX</span>
+    <div class="collapse" id="advanced-excel-exports">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
+                            <h3 class="h6 mb-0">Raw Active Submission Data</h3>
+                            <span class="badge text-bg-secondary">XLSX</span>
+                        </div>
+                        <p class="text-muted mb-3">Technical export of active Final Submission records and their stored workflow fields.</p>
+                        <form method="post" class="mt-auto" data-cfm-download-form="true">
+                            {% csrf_token %}
+                            <button class="btn btn-outline-secondary" name="action" value="active">Download Raw Active Data</button>
+                        </form>
                     </div>
-                    <p class="text-muted mb-2">Multi-sheet workbook for review: Readiness Issues, Active Publishable Versions, Not Publishing, Author Count, and Old Versions.</p>
-                    <div class="small mb-3"><strong>Use this when:</strong> you need one workbook for editorial review or handoff.</div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-primary" name="action" value="all">Download Editorial Review Workbook</button>
-                    </form>
                 </div>
             </div>
-        </div>
-        <div class="col-md-6 col-xl-4">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h6 mb-0">Active Publishable Versions</h3>
-                        <span class="badge text-bg-secondary">XLSX</span>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
+                            <h3 class="h6 mb-0">Raw Old Version Data</h3>
+                            <span class="badge text-bg-secondary">XLSX</span>
+                        </div>
+                        <p class="text-muted mb-3">Technical export of replaced, discarded, and otherwise inactive Final Submission records.</p>
+                        <form method="post" class="mt-auto" data-cfm-download-form="true">
+                            {% csrf_token %}
+                            <button class="btn btn-outline-secondary" name="action" value="old">Download Raw Old Version Data</button>
+                        </form>
                     </div>
-                    <p class="text-muted mb-2">Raw export of active final submissions that are not marked Not Publishing.</p>
-                    <div class="small mb-3"><strong>Use this when:</strong> you need a data backup of current publishable records.</div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-outline-secondary" name="action" value="active">Download Active Publishable Versions</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 col-xl-4">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-2">
-                        <h3 class="h6 mb-0">Old Versions</h3>
-                        <span class="badge text-bg-secondary">XLSX</span>
-                    </div>
-                    <p class="text-muted mb-2">Raw export of replaced or inactive final submissions retained for traceability.</p>
-                    <div class="small mb-3"><strong>Use this when:</strong> you need an audit trail for older uploads.</div>
-                    <form method="post" class="mt-auto">
-                        {% csrf_token %}
-                        <button class="btn btn-outline-secondary" name="action" value="old">Download Old Versions</button>
-                    </form>
                 </div>
             </div>
         </div>
