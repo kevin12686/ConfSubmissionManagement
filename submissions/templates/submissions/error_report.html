@@ -4,7 +4,7 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Error Report</h1>
-        <div class="cfm-page-subtitle">Grouped by severity first, then workflow area.</div>
+        <div class="cfm-page-subtitle">Filter by severity and one or more issue categories, then review results grouped by workflow area.</div>
     </div>
 </div>
 {% if current_area %}
@@ -37,7 +37,13 @@
         {% for option in severity_filter_options %}
             <li class="nav-item">
                 <a class="nav-link {% if current_severity == option.value %}active{% endif %}"
-                   href="{{ option.url }}">
+                   href="{{ option.url }}"
+                   hx-get="{{ option.url }}"
+                   hx-target="#error-report-worklist"
+                   hx-select="#error-report-worklist"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   hx-indicator="#error-report-loading">
                     {{ option.label }}
                     <span class="badge cfm-tab-count text-bg-{{ option.level }}">{{ option.count }}</span>
                 </a>
@@ -45,65 +51,152 @@
         {% endfor %}
     </ul>
 
-    {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
-    {% for section in severity_sections %}
-        {% if section.count %}
-            <div class="vstack gap-3">
-                {% for group in section.groups %}
-                    <div class="card cfm-review-card">
-                        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
-                            <div>
-                                <span class="badge text-bg-{{ section.level }}">{{ section.label }}</span>
-                                <span class="badge text-bg-{{ group.level }}">{{ group.group }}</span>
-                            </div>
-                            <span class="text-muted small">{{ group.count }} issue{{ group.count|pluralize }}</span>
-                        </div>
-                        <div class="table-responsive border-0 rounded-0">
-                            <table class="table table-hover align-middle cfm-table">
-                                <thead>
-                                    <tr>
-                                        <th>Category</th>
-                                        <th>Paper ID</th>
-                                        <th>Final ID</th>
-                                        <th>Message</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                {% for row in group.rows %}
-                                    <tr>
-                                        <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
-                                        <td>{{ row.paper_id|default:"--" }}</td>
-                                        <td>{{ row.final_submission_id|default:"--" }}</td>
-                                        <td>
-                                            {{ row.message }}
-                                            {% if row.duplicate_detail %}
-                                                <div class="mt-2">
-                                                    <a
-                                                        class="btn btn-sm btn-outline-secondary"
-                                                        href="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
-                                                        hx-get="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
-                                                        hx-target="#duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"
-                                                        hx-swap="innerHTML"
-                                                    >Show {{ row.duplicate_detail.other_count }} matching record{{ row.duplicate_detail.other_count|pluralize }}</a>
-                                                </div>
-                                                <div id="duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"></div>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                                </tbody>
-                            </table>
+    <form method="get"
+          class="cfm-error-category-filter"
+          aria-labelledby="error-category-filter-title"
+          hx-get="{% url 'submissions:error_report' %}"
+          hx-target="#error-report-worklist"
+          hx-select="#error-report-worklist"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          hx-trigger="change"
+          hx-sync="this:replace"
+          hx-indicator="#error-report-loading"
+          hx-disabled-elt="input">
+        <input type="hidden" name="severity" value="{{ current_severity }}">
+        {% if current_area %}<input type="hidden" name="area" value="{{ current_area }}">{% endif %}
+        <input type="hidden" name="page_size" value="{{ pagination.page_size }}">
+        <div class="cfm-error-category-header">
+            <div>
+                <div id="error-category-filter-title" class="cfm-error-category-title">Categories</div>
+                <div class="cfm-error-category-help">
+                    Select one or more categories. Multiple selections match any selected category; counts reflect the current severity before category filtering.
+                </div>
+            </div>
+            <div class="cfm-error-category-result" aria-live="polite">
+                {% if current_categories %}
+                    {{ category_result_count }} of {{ category_scope_count }} issues shown
+                {% else %}
+                    {{ category_scope_count }} issue{{ category_scope_count|pluralize }} in this severity
+                {% endif %}
+            </div>
+        </div>
+        {% if category_sections %}
+            <div class="cfm-error-category-grid">
+                {% for group in category_sections %}
+                    <div class="cfm-error-category-group"
+                         role="group"
+                         aria-labelledby="error-category-group-{{ forloop.counter }}">
+                        <div id="error-category-group-{{ forloop.counter }}"
+                             class="cfm-error-category-group-title">{{ group.group }}</div>
+                        <div class="cfm-error-category-choices">
+                            {% for option in group.options %}
+                                <label class="cfm-error-category-choice">
+                                    <input class="visually-hidden"
+                                           type="checkbox"
+                                           name="category"
+                                           value="{{ option.value }}"
+                                           {% if option.selected %}checked{% endif %}>
+                                    <span class="cfm-error-category-chip cfm-error-category-{{ option.severity }}">
+                                        <span class="cfm-error-category-check" aria-hidden="true">&#10003;</span>
+                                        <span>{{ option.label }}</span>
+                                        <span class="cfm-error-category-count">({{ option.count }})</span>
+                                    </span>
+                                </label>
+                            {% endfor %}
                         </div>
                     </div>
                 {% endfor %}
             </div>
+            {% if current_categories %}
+                <div class="cfm-error-category-actions">
+                    <a class="btn btn-outline-secondary"
+                       href="{{ clear_category_url }}"
+                       hx-get="{{ clear_category_url }}"
+                       hx-target="#error-report-worklist"
+                       hx-select="#error-report-worklist"
+                       hx-swap="outerHTML"
+                       hx-push-url="true"
+                       hx-indicator="#error-report-loading">Clear categories</a>
+                </div>
+            {% endif %}
+            <noscript>
+                <div class="cfm-error-category-actions">
+                    <button class="btn btn-outline-primary" type="submit">Update categories</button>
+                </div>
+            </noscript>
         {% else %}
-            <div class="alert alert-success border cfm-attention">
-                No {{ section.label }} issues in this workflow area.
-            </div>
+            <div class="text-muted">No issue categories are available for this severity.</div>
         {% endif %}
-    {% endfor %}
-    {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
+        {% include "submissions/partials/loading_indicator.html" with indicator_id="error-report-loading" message="Updating Error Report..." %}
+    </form>
+
+    {% if has_filtered_errors %}
+        {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
+        {% for section in severity_sections %}
+            {% if section.count %}
+                <div class="vstack gap-3">
+                    {% for group in section.groups %}
+                        <div class="card cfm-review-card">
+                            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge text-bg-{{ section.level }}">{{ section.label }}</span>
+                                    <span class="badge text-bg-{{ group.level }}">{{ group.group }}</span>
+                                </div>
+                                <span class="text-muted small">{{ group.count }} issue{{ group.count|pluralize }}</span>
+                            </div>
+                            <div class="table-responsive border-0 rounded-0">
+                                <table class="table table-hover align-middle cfm-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th>Paper ID</th>
+                                            <th>Final ID</th>
+                                            <th>Message</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for row in group.rows %}
+                                        <tr>
+                                            <td><span class="badge text-bg-light text-dark border">{{ row.category }}</span></td>
+                                            <td>{{ row.paper_id|default:"--" }}</td>
+                                            <td>{{ row.final_submission_id|default:"--" }}</td>
+                                            <td>
+                                                {{ row.message }}
+                                                {% if row.duplicate_detail %}
+                                                    <div class="mt-2">
+                                                        <a
+                                                            class="btn btn-sm btn-outline-secondary"
+                                                            href="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
+                                                            hx-get="{% url 'submissions:publication_duplicate_details' %}?kind={{ row.duplicate_detail.kind|urlencode }}&amp;key={{ row.duplicate_detail.key|urlencode }}&amp;submission_id={{ row.duplicate_detail.submission_id }}"
+                                                            hx-target="#duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"
+                                                            hx-swap="innerHTML"
+                                                        >Show {{ row.duplicate_detail.other_count }} matching record{{ row.duplicate_detail.other_count|pluralize }}</a>
+                                                    </div>
+                                                    <div id="duplicate-detail-{{ row.duplicate_detail.kind }}-{{ row.duplicate_detail.submission_id }}"></div>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endfor %}
+        {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
+    {% elif current_categories %}
+        <div class="cfm-empty">
+            <strong>No issues match the selected categories and severity.</strong>
+            <div class="mt-1">Clear one or more category filters, or choose another severity.</div>
+        </div>
+    {% else %}
+        <div class="alert alert-success border cfm-attention">
+            No {% if current_severity != "all" %}{{ current_severity|title }} {% endif %}issues in this workflow area.
+        </div>
+    {% endif %}
 {% else %}
     <div class="alert alert-success border cfm-attention">No errors found.</div>
 {% endif %}

@@ -142,6 +142,15 @@ Error Report severity tabs are server-side filters. Select `All`, `Critical`,
 result count and numbered pages. Workflow-area links and severity filters can
 be combined without hiding issues on a different mixed-severity page.
 
+The Categories panel is the second filter layer. Categories are arranged in
+workflow-area rows and show their issue count for the selected severity before
+category filtering. Select or clear a pill to update the report immediately;
+multiple categories use OR, while workflow area, severity, and the category
+selection combine with AND. Selected categories stay in the URL and remain
+active while paging or changing severity. Severity totals update to show the
+current category selection. Use `Clear categories` to return to every category
+without changing the workflow-area or severity selection.
+
 Duplicate-title, PDF, or source rows in Error Report show a compact group
 summary. Use `Show matching records` to load the complete list for that row.
 This is a read-only detail view; it does not change the duplicate blocker,

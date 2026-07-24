@@ -230,11 +230,14 @@ Error Report keeps duplicate categories and blocker messages unchanged in the
 readiness/report services. Its HTML worklist uses a compact duplicate-group
 summary and a read-only HTMX detail endpoint for the full matching-record list,
 preventing `page_size=all` from repeating an O(n) group description in every
-row. Workflow-area filtering runs first, severity filtering runs second, and
-sorting/pagination apply only to that selected result. Severity tab badges retain
-the complete area-scoped totals, while each server-side `All / Critical / Medium /
-Info` tab paginates its own rows. The detail endpoint has a complete non-HTMX
-fallback page.
+row. Workflow-area filtering runs first. Category selections are validated
+against that area, severity and category filtering are then applied on the
+server, and sorting/pagination operate only on the selected result. Multiple
+categories use OR; area, severity, and category dimensions use AND. Category
+pill counts use the current area/severity rows before category filtering, while
+severity tab counts reflect the current category selection. Repeated `category`
+query parameters remain shareable and survive pagination. The detail endpoint
+has a complete non-HTMX fallback page.
 
 All paginated worklists render one shared pagination component above and below
 their rows. The `WorklistPage.scroll_anchor` identifies the stable worklist

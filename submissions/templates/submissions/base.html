@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Conference Final Manager{% endblock %}</title>
+    <title>{% block title %}Conference Final Manager{% endblock %} · {{ current_conference_name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'submissions/brand/favicon-32.png' %}">
     <link rel="icon" type="image/png" sizes="16x16" href="{% static 'submissions/brand/favicon-16.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'submissions/brand/apple-touch-icon.png' %}">
@@ -979,6 +979,152 @@
             flex-wrap: wrap;
             gap: 0.35rem;
         }
+        .cfm-error-category-filter {
+            background: var(--cfm-surface-subtle);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 0.9rem;
+        }
+        .cfm-error-category-header {
+            align-items: flex-start;
+            display: flex;
+            gap: 1rem;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+        }
+        .cfm-error-category-title {
+            color: var(--cfm-heading);
+            font-size: var(--cfm-font-secondary);
+            font-weight: 700;
+        }
+        .cfm-error-category-help,
+        .cfm-error-category-result {
+            color: var(--cfm-muted);
+            font-size: var(--cfm-font-small);
+            line-height: 1.45;
+        }
+        .cfm-error-category-result {
+            flex: 0 0 auto;
+            font-weight: 600;
+            padding-top: 0.1rem;
+        }
+        .cfm-error-category-grid {
+            border-bottom: 1px solid var(--cfm-border);
+            border-top: 1px solid var(--cfm-border);
+        }
+        .cfm-error-category-group {
+            align-items: start;
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
+            margin: 0;
+            min-width: 0;
+            padding: 0.65rem 0;
+        }
+        .cfm-error-category-group + .cfm-error-category-group {
+            border-top: 1px solid var(--cfm-border);
+        }
+        .cfm-error-category-group-title {
+            color: var(--cfm-secondary-text);
+            font-size: var(--cfm-font-label);
+            font-weight: 700;
+            line-height: 1.35;
+            padding-top: 0.45rem;
+            text-transform: uppercase;
+        }
+        .cfm-error-category-choices {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .cfm-error-category-choice {
+            cursor: pointer;
+            margin: 0;
+            max-width: 100%;
+        }
+        .cfm-error-category-chip {
+            align-items: center;
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border-strong);
+            border-radius: 999px;
+            color: var(--cfm-secondary-text);
+            display: inline-flex;
+            font-size: var(--cfm-font-small);
+            gap: 0.3rem;
+            line-height: 1.25;
+            min-height: 34px;
+            padding: 0.35rem 0.65rem;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+        }
+        .cfm-error-category-choice:hover .cfm-error-category-chip {
+            background: var(--cfm-primary-soft);
+            border-color: var(--cfm-primary);
+            color: var(--cfm-info-text);
+        }
+        .cfm-error-category-choice input:focus-visible + .cfm-error-category-chip {
+            box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.2);
+            outline: 2px solid var(--cfm-primary);
+            outline-offset: 1px;
+        }
+        .cfm-error-category-choice input:checked + .cfm-error-category-chip {
+            background: var(--cfm-primary-soft);
+            border-color: var(--cfm-primary);
+            color: var(--cfm-info-text);
+            font-weight: 650;
+        }
+        .cfm-error-category-chip.cfm-error-category-critical {
+            background: var(--cfm-danger-bg);
+            border-color: var(--cfm-danger-border);
+            color: var(--cfm-danger-text);
+        }
+        .cfm-error-category-choice:hover .cfm-error-category-chip.cfm-error-category-critical,
+        .cfm-error-category-choice input:checked + .cfm-error-category-chip.cfm-error-category-critical {
+            background: var(--cfm-danger-fill);
+            border-color: var(--cfm-danger-border);
+            color: var(--cfm-danger-text);
+        }
+        .cfm-error-category-chip.cfm-error-category-medium {
+            background: var(--cfm-warning-bg);
+            border-color: var(--cfm-warning-border);
+            color: var(--cfm-warning-dark);
+        }
+        .cfm-error-category-choice:hover .cfm-error-category-chip.cfm-error-category-medium,
+        .cfm-error-category-choice input:checked + .cfm-error-category-chip.cfm-error-category-medium {
+            background: var(--cfm-warning-fill);
+            border-color: var(--cfm-warning-border);
+            color: var(--cfm-warning-dark);
+        }
+        .cfm-error-category-chip.cfm-error-category-info {
+            background: var(--cfm-info-bg);
+            border-color: var(--cfm-info-border);
+            color: var(--cfm-info-text);
+        }
+        .cfm-error-category-choice:hover .cfm-error-category-chip.cfm-error-category-info,
+        .cfm-error-category-choice input:checked + .cfm-error-category-chip.cfm-error-category-info {
+            background: var(--cfm-primary-soft);
+            border-color: var(--cfm-primary);
+            color: var(--cfm-info-text);
+        }
+        .cfm-error-category-check {
+            opacity: 0;
+            width: 0.75rem;
+        }
+        .cfm-error-category-choice input:checked + .cfm-error-category-chip .cfm-error-category-check {
+            opacity: 1;
+        }
+        .cfm-error-category-count {
+            color: inherit;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .cfm-error-category-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 0.75rem;
+        }
         .cfm-tab-count {
             font-size: var(--cfm-font-badge);
             line-height: 1;
@@ -1394,6 +1540,13 @@
                 border-top: 0;
                 padding-top: 0;
             }
+            .cfm-error-category-group {
+                gap: 0.4rem;
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .cfm-error-category-group-title {
+                padding-top: 0;
+            }
         }
         @media (max-width: 575.98px) {
             .cfm-toast-container {
@@ -1431,6 +1584,15 @@
             }
             .cfm-filter-panel .btn {
                 white-space: normal;
+            }
+            .cfm-error-category-header {
+                display: block;
+            }
+            .cfm-error-category-result {
+                margin-top: 0.45rem;
+            }
+            .cfm-error-category-actions .btn {
+                flex: 1 1 auto;
             }
             .cfm-upload-file-name {
                 max-width: 13rem;

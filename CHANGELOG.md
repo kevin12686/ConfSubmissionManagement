@@ -3,6 +3,27 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.24 - 2026-07-23
+
+### Error Report
+
+- Added workflow-grouped category filters with per-category counts and
+  multi-select support while retaining the existing Critical, Medium, and Info
+  severity model.
+- Applied area, severity, and category filters on the server before pagination;
+  repeated category parameters remain shareable and are preserved by paging.
+- Added scoped, severity-colored Error Report pills in a balanced workflow
+  matrix; selecting or clearing a category now updates the HTMX worklist
+  immediately without changing publication readiness categories, blocker
+  rules, or exports.
+
+## 1.10.23 - 2026-07-23
+
+### Navigation
+
+- Added the configured Conference Name to every browser page title so tabs and
+  saved bookmarks clearly identify the conference instance.
+
 ## 1.10.22 - 2026-07-23
 
 ### Organized List

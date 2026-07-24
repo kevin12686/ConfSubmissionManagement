@@ -295,6 +295,12 @@ Dashboard must consume `publication_readiness_rows()` through the application se
 
 When adding or renaming a publication readiness category, update the Dashboard workflow category grouping and add an acceptance test proving Dashboard and final package export still agree.
 
+Error Report category selection is presentation-only and must filter the
+already annotated rows in `checks.py`; it must never reimplement readiness
+conditions in the controller or template. Preserve repeated `category` query
+parameters, validate them against the current workflow-area rows, apply the
+selection before pagination, and keep multi-category matching as OR.
+
 ## File Handling Rules
 
 Use app-managed file helpers instead of ad hoc path logic.

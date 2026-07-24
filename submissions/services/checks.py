@@ -1,7 +1,7 @@
 import re
 import string
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 from django.db import transaction
@@ -471,6 +471,69 @@ def filter_error_report_rows(rows, area=""):
         area,
         ERROR_REPORT_AREA_LABELS[area],
     )
+
+
+def normalize_error_report_categories(rows, requested_categories):
+    available_categories = {row["category"] for row in rows}
+    selected = []
+    seen = set()
+    for category in requested_categories:
+        category = str(category or "").strip()
+        if (
+            not category
+            or category in seen
+            or category not in available_categories
+        ):
+            continue
+        selected.append(category)
+        seen.add(category)
+    return tuple(selected)
+
+
+def filter_error_report_categories(rows, selected_categories):
+    if not selected_categories:
+        return rows
+    selected = set(selected_categories)
+    return [row for row in rows if row["category"] in selected]
+
+
+def error_report_category_sections(
+    scope_rows,
+    count_rows,
+    selected_categories=(),
+):
+    selected = set(selected_categories)
+    counts = Counter(row["category"] for row in count_rows)
+    grouped_categories = defaultdict(set)
+    for row in scope_rows:
+        group = row.get("group") or _error_group_for_category(row["category"])
+        grouped_categories[group].add(row["category"])
+
+    sections = []
+    for group in ERROR_GROUP_ORDER:
+        options = []
+        for category in sorted(grouped_categories.get(group, set())):
+            count = counts.get(category, 0)
+            if not count and category not in selected:
+                continue
+            severity = _error_severity_for_category(category)
+            options.append(
+                {
+                    "value": category,
+                    "label": category,
+                    "count": count,
+                    "selected": category in selected,
+                    "severity": severity,
+                }
+            )
+        if options:
+            sections.append(
+                {
+                    "group": group,
+                    "options": options,
+                }
+            )
+    return sections
 
 
 def build_paper_id(initial_submission_id, track):

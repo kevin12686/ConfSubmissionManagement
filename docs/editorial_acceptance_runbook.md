@@ -163,6 +163,10 @@ Create Final Submission records and files:
   issues in one severity, select that severity and confirm its first page shows
   `1-25` of the severity total rather than an empty client-side tab. Combine a
   workflow-area link with a severity tab and confirm both filters remain active.
+- Select two Error Report category pills and confirm the result includes either
+  category, excludes unselected categories, and paginates the complete filtered
+  result. Change severity and confirm it combines with the category selection;
+  use `Clear categories` and confirm area/severity context remains intact.
 - Every paginated worklist shows the same page-size/page controls above and
   below its rows. Use the bottom control to change page and confirm the next
   view returns to the top of that worklist with search/filter/sort state intact.

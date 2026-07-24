@@ -4743,6 +4743,197 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
         self.assertIn("severity=info", info_option["url"])
         self.assertIn("page_size=25", info_option["url"])
 
+    def test_error_report_multi_category_filter_runs_before_pagination(self):
+        rows = [
+            {
+                "category": "Missing PDF",
+                "paper_id": f"P{index:03d}",
+                "final_submission_id": str(index),
+                "message": "Missing PDF issue.",
+            }
+            for index in range(30)
+        ]
+        rows.extend(
+            {
+                "category": "PDF Not Processed",
+                "paper_id": f"U{index:03d}",
+                "final_submission_id": str(index),
+                "message": "Unprocessed PDF issue.",
+            }
+            for index in range(30)
+        )
+        rows.extend(
+            {
+                "category": "Page Limit Exceeded",
+                "paper_id": f"L{index:03d}",
+                "final_submission_id": str(index),
+                "message": "Unselected page issue.",
+            }
+            for index in range(30)
+        )
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            response = self.client.get(
+                reverse("submissions:error_report"),
+                {
+                    "severity": "critical",
+                    "category": ["Missing PDF", "PDF Not Processed"],
+                    "page": 1,
+                    "page_size": 25,
+                },
+            )
+
+        self.assertEqual(
+            response.context["current_categories"],
+            ("Missing PDF", "PDF Not Processed"),
+        )
+        self.assertEqual(response.context["category_scope_count"], 90)
+        self.assertEqual(response.context["category_result_count"], 60)
+        self.assertEqual(response.context["pagination"].total_count, 60)
+        self.assertEqual(len(response.context["rows"]), 25)
+        self.assertTrue(
+            all(
+                row["category"] in {"Missing PDF", "PDF Not Processed"}
+                for row in response.context["rows"]
+            )
+        )
+        files_section = next(
+            section
+            for section in response.context["category_sections"]
+            if section["group"] == "Files / PDF Processing"
+        )
+        option_counts = {
+            option["value"]: option["count"]
+            for option in files_section["options"]
+        }
+        self.assertEqual(
+            option_counts,
+            {
+                "Missing PDF": 30,
+                "PDF Not Processed": 30,
+                "Page Limit Exceeded": 30,
+            },
+        )
+        self.assertIn("category=Missing+PDF", response.context["pagination"].next_url)
+        self.assertIn(
+            "category=PDF+Not+Processed",
+            response.context["pagination"].next_url,
+        )
+        self.assertNotContains(response, ">Apply categories<")
+        self.assertContains(response, 'hx-trigger="change"')
+        self.assertContains(response, 'hx-sync="this:replace"')
+        self.assertContains(response, "cfm-error-category-group-title")
+        self.assertContains(response, 'name="category"', count=3)
+        self.assertContains(response, 'hx-target="#error-report-worklist"')
+        self.assertContains(response, "cfm-error-category-critical")
+
+    def test_error_report_category_filter_composes_with_severity_and_area(self):
+        rows = [
+            {
+                "category": "Missing PDF",
+                "paper_id": "P001",
+                "final_submission_id": "1",
+                "message": "Critical file issue.",
+            },
+            {
+                "category": "Allowed Page Exception",
+                "paper_id": "P002",
+                "final_submission_id": "2",
+                "message": "Informational file issue.",
+            },
+            {
+                "category": "Formatting Not Review OK",
+                "paper_id": "P003",
+                "final_submission_id": "3",
+                "message": "Medium formatting issue.",
+            },
+        ]
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            response = self.client.get(
+                reverse("submissions:error_report"),
+                {
+                    "area": "files",
+                    "severity": "critical",
+                    "category": ["Missing PDF", "Allowed Page Exception"],
+                },
+            )
+
+        self.assertEqual(response.context["current_area"], "files")
+        self.assertEqual(response.context["current_severity"], "critical")
+        self.assertEqual(
+            response.context["current_categories"],
+            ("Missing PDF", "Allowed Page Exception"),
+        )
+        self.assertEqual(
+            [row["paper_id"] for row in response.context["rows"]],
+            ["P001"],
+        )
+        self.assertEqual(response.context["category_scope_count"], 1)
+        self.assertEqual(response.context["category_result_count"], 1)
+        files_section = next(
+            section
+            for section in response.context["category_sections"]
+            if section["group"] == "Files / PDF Processing"
+        )
+        options = {
+            option["value"]: option
+            for option in files_section["options"]
+        }
+        self.assertEqual(options["Missing PDF"]["count"], 1)
+        self.assertTrue(options["Missing PDF"]["selected"])
+        self.assertEqual(options["Missing PDF"]["severity"], "critical")
+        self.assertEqual(options["Allowed Page Exception"]["count"], 0)
+        self.assertTrue(options["Allowed Page Exception"]["selected"])
+        self.assertEqual(options["Allowed Page Exception"]["severity"], "info")
+        severity_counts = {
+            option["value"]: option["count"]
+            for option in response.context["severity_filter_options"]
+        }
+        self.assertEqual(
+            severity_counts,
+            {"all": 2, "critical": 1, "medium": 0, "info": 1},
+        )
+        self.assertNotContains(response, "Medium formatting issue.")
+
+    def test_error_report_ignores_unknown_category_filter(self):
+        rows = [
+            {
+                "category": "Missing PDF",
+                "paper_id": "P001",
+                "final_submission_id": "1",
+                "message": "Critical file issue.",
+            },
+            {
+                "category": "Formatting Not Review OK",
+                "paper_id": "P002",
+                "final_submission_id": "2",
+                "message": "Medium formatting issue.",
+            },
+        ]
+        _annotate_error_rows(rows)
+
+        with patch(
+            "submissions.controllers.exports.error_report_rows",
+            return_value=rows,
+        ):
+            response = self.client.get(
+                reverse("submissions:error_report"),
+                {"category": "Not A Real Category"},
+            )
+
+        self.assertEqual(response.context["current_categories"], ())
+        self.assertEqual(response.context["pagination"].total_count, 2)
+        self.assertTrue(response.context["has_filtered_errors"])
+
     def test_error_report_invalid_severity_falls_back_to_all(self):
         rows = [
             {
@@ -5223,6 +5414,16 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
 
 
 class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
+    def test_browser_title_includes_current_conference_name(self):
+        settings = AppSetting.read()
+        settings.conference_name = "CSEET 2026"
+        settings.save()
+
+        response = self.client.get(reverse("submissions:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<title>Dashboard · CSEET 2026</title>")
+
     def open_formatting_review(
         self,
         submission,

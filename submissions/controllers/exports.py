@@ -27,13 +27,17 @@ from submissions.forms import (
 )
 from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
 from submissions.services.checks import (
+    ERROR_SEVERITY_CONFIG,
     author_count_rows,
     dashboard_counts,
+    error_report_category_sections,
     error_report_rows,
     error_report_severity_sections,
     error_report_sections,
+    filter_error_report_categories,
     filter_error_report_rows,
     hydrate_author_count_rows,
+    normalize_error_report_categories,
     reset_author_number_exception,
     sort_error_report_rows,
 )
@@ -219,23 +223,42 @@ def error_report(request):
         rows, request.GET.get("area", "")
     )
     area_rows = sort_error_report_rows(rows)
-    summary_sections = error_report_severity_sections(area_rows)
-    rows_by_severity = {
-        section["severity"]: section["rows"]
-        for section in summary_sections
-    }
-    valid_severities = {"all", *rows_by_severity}
+    current_categories = normalize_error_report_categories(
+        area_rows,
+        request.GET.getlist("category"),
+    )
+    category_area_rows = filter_error_report_categories(
+        area_rows,
+        current_categories,
+    )
+    summary_sections = error_report_severity_sections(category_area_rows)
+    valid_severities = {"all", *ERROR_SEVERITY_CONFIG}
     current_severity = request.GET.get("severity", "all")
     if current_severity not in valid_severities:
         current_severity = "all"
-    filtered_rows = (
+    severity_rows = (
         area_rows
         if current_severity == "all"
-        else rows_by_severity[current_severity]
+        else [
+            row
+            for row in area_rows
+            if row.get("severity") == current_severity
+        ]
+    )
+    filtered_rows = filter_error_report_categories(
+        severity_rows,
+        current_categories,
+    )
+    category_sections = error_report_category_sections(
+        area_rows,
+        severity_rows,
+        current_categories,
     )
     page = paginate_worklist(
         request,
         filtered_rows,
+        hx_target="#error-report-worklist",
+        indicator_id="error-report-loading",
         scroll_anchor="error-report-worklist",
     )
     displayed_rows = list(page.items)
@@ -279,6 +302,12 @@ def error_report(request):
     clear_area_url = (
         f"{request.path}?{clear_area_query.urlencode()}#error-report-worklist"
     )
+    clear_category_query = request.GET.copy()
+    clear_category_query.pop("category", None)
+    clear_category_query["page"] = "1"
+    clear_category_url = (
+        f"{request.path}?{clear_category_query.urlencode()}#error-report-worklist"
+    )
     return render(
         request,
         "submissions/error_report.html",
@@ -289,10 +318,16 @@ def error_report(request):
             "severity_summary_sections": summary_sections,
             "severity_filter_options": severity_filter_options,
             "current_severity": current_severity,
+            "current_categories": current_categories,
+            "category_sections": category_sections,
+            "category_scope_count": len(severity_rows),
+            "category_result_count": len(filtered_rows),
+            "clear_category_url": clear_category_url,
             "current_area": current_area,
             "area_label": area_label,
             "clear_area_url": clear_area_url,
             "has_any_errors": bool(area_rows),
+            "has_filtered_errors": bool(filtered_rows),
             "pagination": page,
         },
     )

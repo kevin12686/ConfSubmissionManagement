@@ -366,9 +366,13 @@ Select the relevant `Critical`, `Medium`, or `Info` severity tab. Severity is a
 server-side filter and pagination applies to that filtered result, so the
 worklist should show `1-25 of N` for the selected severity. `All` intentionally
 sorts all issues by severity. Workflow-area links can be combined with severity
-tabs. If a selected severity reports a nonzero count but an empty first page,
-record the URL and app version; that indicates a pagination regression rather
-than missing readiness data.
+tabs. Category pills are also server-side filters: several selected categories
+match with OR, then combine with the current workflow area and severity using
+AND. Their counts reflect the current severity before category filtering. If
+the result is unexpectedly empty, inspect the selected category pills or use
+`Clear categories`. If the selected severity/category result reports a nonzero
+count but an empty first page, record the URL and app version; that indicates a
+pagination regression rather than missing readiness data.
 
 ### Need an intermediate package anyway
 

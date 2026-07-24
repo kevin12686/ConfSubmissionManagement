@@ -14,6 +14,10 @@ or review decisions.
 Every enhanced GET must remain a valid normal URL. Every state-changing action
 must remain a normal CSRF-protected, audited server POST.
 
+Browser titles use `<Page Name> · <Conference Name>` from the shared base
+template so tabs and bookmarks remain identifiable across conference
+instances. Individual pages provide only their page-name title block.
+
 ## Feedback And Alerts
 
 Use the feedback channel that matches the lifetime of the message:
@@ -228,7 +232,11 @@ Hint text comes from `data-cfm-image-magnifier-hint`, not the browser-native
   unrelated review state.
 - Organized List separates publication blockers from tracked information and
   owns both Checklist and Compact candidates views.
-- Error Report uses server-side area and severity filtering. Large duplicate
+- Error Report uses server-side area, severity, and multi-category filtering
+  before pagination. Category checkbox pills are arranged in workflow-area
+  matrix rows, apply immediately through the scoped HTMX worklist, and use
+  Error Report-scoped Critical/Medium/Info colors; do not change shared
+  badge/button styling to represent their selected state. Large duplicate
   groups load complete details through a read-only endpoint.
 - Final Submissions keeps Import/Re-upload collapsed by default.
 - Upload zones may summarize and remove browser-selected files, but server

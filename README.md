@@ -135,8 +135,8 @@ installation instead of preserving old machine-specific absolute paths.
 7. Complete Formatting Review and upload corrected files where necessary.
 8. Export CrossCheck PDFs, import plagiarism scores, and attach optional reports.
 9. Review author counts, duplicates, page limits, and approved exceptions.
-10. Use Dashboard, Organized List, and Error Report to clear publication
-    blockers.
+10. Use Dashboard, Organized List, and Error Report severity/category filters
+    to clear publication blockers.
 11. Export the final publication package.
 12. Review the Audit Log and download a System State ZIP before handoff.
 
