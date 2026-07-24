@@ -54,6 +54,35 @@ collapses.
 
 User search is fuzzy; system navigation is exact.
 
+### Page Header Actions
+
+The Navbar owns ordinary cross-page navigation. A page header is reserved for:
+
+- commands that act on the current page or its records;
+- switches between views of the same dataset;
+- local summaries such as Note Summary;
+- explicit Back actions in focused, confirmation, or detail views.
+
+Do not repeat a generic Navbar destination in the upper-right header merely as
+a shortcut. Put a cross-workflow link beside the condition or result that makes
+it relevant:
+
+- Dashboard readiness links to Error Report when blocked and to the anchored
+  Final Publication Package when clear;
+- Process PDFs links to the Organized List PDF-issue filter only when PDF
+  issues exist;
+- Plagiarism import/report results offer their review link only after data was
+  changed;
+- Export Reports places readiness review inside the Final Publication Package
+  section and blocked-export alert;
+- Author Count links to the author exception filter only when an over-limit
+  author exists.
+
+Operational controls such as extraction, import, upload, save, add, and
+Checklist/Compact view switches remain in their page headers. Moving a link
+must never change the server-side scope, readiness result, review state, or
+publication source.
+
 | Destination | Exact parameter |
 | --- | --- |
 | Final Submission workflow | `submission=<pk>` |

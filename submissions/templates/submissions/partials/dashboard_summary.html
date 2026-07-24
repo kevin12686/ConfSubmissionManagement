@@ -4,9 +4,6 @@
         <h1 class="h3 cfm-page-title">Dashboard</h1>
         <div class="cfm-page-subtitle">Publication readiness and the next editorial actions, using the same blockers as the final package export.</div>
     </div>
-    <div class="cfm-page-actions">
-        <a class="btn btn-primary" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
-    </div>
 </div>
 
 <section class="cfm-section cfm-dashboard-readiness {% if readiness.ready %}cfm-dashboard-ready{% else %}cfm-dashboard-blocked{% endif %}">
@@ -32,9 +29,13 @@
         </div>
     {% endif %}
     <div class="d-flex flex-wrap gap-2 mt-3">
-        <a class="btn btn-{% if readiness.ready %}outline-success{% else %}danger{% endif %}" href="{% url 'submissions:error_report' %}">Open Error Report</a>
-        <a class="btn btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
-        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
+        {% if readiness.ready %}
+            <a class="btn btn-success" href="{% url 'submissions:export_reports' %}#publication-package">Create Publication Package</a>
+            <a class="btn btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+        {% else %}
+            <a class="btn btn-danger" href="{% url 'submissions:error_report' %}">Open Error Report</a>
+            <a class="btn btn-outline-dark" href="{% url 'submissions:organized_list' %}">Open Organized List</a>
+        {% endif %}
     </div>
 </section>
 

@@ -7,8 +7,6 @@
         <div class="cfm-page-subtitle">Import, review, and edit author final-submission metadata and Original or Corrected files for this submission row. Use Organized List for current publication files.</div>
     </div>
     <div class="cfm-page-actions">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
-        <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify Paper IDs</a>
         <a class="btn btn-outline-primary" href="{% url 'submissions:editor_upload' %}">Upload Editor Version</a>
         <a class="btn btn-primary" href="{% url 'submissions:final_submission_add' %}">Add Final Submission</a>
         <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#import-reupload-panel" aria-expanded="false" aria-controls="import-reupload-panel">Import / Re-upload</button>
@@ -24,30 +22,33 @@
         <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_final_submissions' %}" class="card border-primary">
             {% csrf_token %}
             <div class="card-body">
-                <h2 class="h6">Import / Re-upload Final Submissions</h2>
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h2 class="h6 mb-0">Import / Re-upload Final Submissions</h2>
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:download_template' 'final' %}">Download Template</a>
+                </div>
                 <p class="small text-muted">Upload metadata and matching PDF/source files, preview every change, then apply only after confirmation.</p>
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-5">
+                <div class="row g-3 align-items-stretch">
+                    <div class="col-lg-6">
                         <label class="form-label" for="{{ import_form.file.id_for_label }}">Metadata CSV/XLSX</label>
-                        <div class="cfm-upload-zone" data-upload-zone>
+                        <div class="cfm-upload-zone cfm-import-upload-zone" data-upload-zone>
                             {{ import_form.file }}
                             <div class="cfm-upload-summary" data-upload-summary aria-live="polite">No metadata file selected.</div>
                             <div class="cfm-upload-file-list" data-upload-list></div>
                         </div>
                         <div class="form-text">Use the template. It contains Final ID, Author-entered ID, title, authors, optional upload date, and uploaded field names. Import first previews differences; nothing is applied until you confirm.</div>
                     </div>
-                    <div class="col-md-5">
+                    <div class="col-lg-6">
                         <label class="form-label" for="{{ import_form.submission_files.id_for_label }}">PDF and Source files</label>
-                        <div class="cfm-upload-zone" data-upload-zone>
+                        <div class="cfm-upload-zone cfm-import-upload-zone" data-upload-zone>
                             {{ import_form.submission_files }}
                             <div class="cfm-upload-summary" data-upload-summary aria-live="polite">0 selected: 0 PDF, 0 source/other.</div>
                             <div class="cfm-upload-file-list" data-upload-list></div>
                         </div>
                         <div class="form-text">Select all files named like 34_file_Submit_PDF.pdf and 34_file_Submit_Source.docx/zip/tex. Large batches are supported up to 5000 files per request; split larger uploads into batches. File extension decides the real type if authors uploaded to the wrong slot.</div>
                     </div>
-                    <div class="col-md-2">
-                        <button class="btn btn-outline-primary w-100">Preview</button>
-                    </div>
+                </div>
+                <div class="d-flex justify-content-end mt-3">
+                    <button class="btn btn-outline-primary">Preview Changes</button>
                 </div>
             </div>
 	        </form>

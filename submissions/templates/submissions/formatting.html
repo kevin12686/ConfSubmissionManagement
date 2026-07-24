@@ -6,14 +6,15 @@
         <h1 class="h3 cfm-page-title">Formatting Review</h1>
         <div class="cfm-page-subtitle">Review the first-page title/author area, open the publication PDF when needed, then mark the formatting workflow status.</div>
     </div>
-    <div class="cfm-page-actions">
+    {% if mode == "single" or mode == "focus" %}
+        <div class="cfm-page-actions">
         {% if mode == "single" %}
             <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{{ single_navigation.back_url }}">Back to list</a>
         {% elif mode == "focus" %}
             <a class="btn btn-outline-secondary" data-unsaved-check="true" href="{% url 'submissions:formatting' %}">Back to list</a>
         {% endif %}
-        <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
-    </div>
+        </div>
+    {% endif %}
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 

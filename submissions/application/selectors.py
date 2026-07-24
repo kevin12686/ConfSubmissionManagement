@@ -516,6 +516,11 @@ def processed_pdf_context(
         "settings_obj": settings_obj,
         "active_needs_processing_rows": active_needs_processing_rows,
         "active_missing_pdf_rows": active_missing_pdf_rows,
+        "has_pdf_issues": bool(
+            active_needs_processing_rows
+            or active_missing_pdf_rows
+            or counts["page_issues"]
+        ),
         "q": query,
         "current_filter": current_filter,
         "filter_options": [

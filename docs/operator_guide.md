@@ -26,6 +26,14 @@ contains Audit Log, System State backup/restore, and Settings. Each dropdown ite
 includes a short purpose statement, and the current page is marked by a blue
 underline and soft blue background.
 
+Ordinary navigation belongs in the Navbar rather than being repeated at the
+upper-right of every page. Page-header buttons are therefore limited to local
+commands such as Add, Import, extraction, view switching, Note Summary, or Back.
+Cross-workflow links appear beside the state that requires them: blocked
+Dashboard readiness opens Error Report, clear readiness opens the anchored
+publication-package section, Process PDFs exposes PDF Issues only when they
+exist, and plagiarism review appears after score/report data is updated.
+
 ## Page Map
 
 | Page | URL | Main use |
@@ -80,7 +88,7 @@ Uploading a corrected PDF intentionally sends the paper back through PDF process
 
 Final Submission Edit is intentionally limited to submission metadata, original files, and plagiarism score/report entry. Processing state, Title/Author Review, duplicate-author review, and Not Publishing decisions are shown there for context but must be changed from their dedicated pages.
 
-`Import / Re-upload` is collapsed on the Final Submissions page until selected so submission tabs and the version list remain the primary view. Expanding it exposes drag/drop file zones, selected-file counts, PDF/source summary, per-file removal, and the existing preview-before-apply workflow. Browser summaries are convenience only; server extension/hash checks decide actual file types. Final Submission Edit follows one sequence: Submission identity, Metadata, Current row files, Plagiarism data/report, read-only Workflow status summary, and Save. Destructive version actions are outside the normal edit form in the collapsed bottom `Version actions` danger zone and still require a reason. Not Publishing remains a separate workflow.
+`Import / Re-upload` is collapsed on the Final Submissions page until selected so submission tabs and the version list remain the primary view. Expanding it exposes aligned Metadata and PDF/Source upload zones on wide screens, stacks them on narrower screens, and places Preview Changes in a separate action row. Selected-file counts, PDF/source summary, per-file removal, and the existing preview-before-apply workflow remain available. Browser summaries are convenience only; server extension/hash checks decide actual file types. Final Submission Edit follows one sequence: Submission identity, Metadata, Current row files, Plagiarism data/report, read-only Workflow status summary, and Save. Destructive version actions are outside the normal edit form in the collapsed bottom `Version actions` danger zone and still require a reason. Not Publishing remains a separate workflow.
 
 When Edit is opened from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, or Exceptions, Save returns to the originating worklist with its view, filter, sort, search, tab, or single-paper selection. External return URLs are rejected. Worklist filters/search can update only that list area without a full refresh, but the same links/forms work as ordinary Django requests. No client-side code decides review state, exception validity, active versions, or publication files.
 
@@ -391,7 +399,7 @@ Exceptions are rare approvals for:
 
 Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. Plagiarism % and Single % are approved separately. If the underlying count or score changes, the exception becomes stale and must be re-approved.
 
-For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show a `Manage exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
+For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show an `Exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
 
 Saving or removing one Organized List exception refreshes that paper's complete
 row from the system without reloading the full page. Other reason fields that

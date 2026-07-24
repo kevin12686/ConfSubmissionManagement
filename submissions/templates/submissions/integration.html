@@ -6,9 +6,6 @@
         <h1 class="h3 cfm-page-title">Plagiarism / CrossCheck</h1>
         <div class="cfm-page-subtitle">Prepare current publication PDFs, import P/S scores, and attach optional CrossCheck reports.</div>
     </div>
-    <div class="cfm-page-actions">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review Plagiarism Issues</a>
-    </div>
 </div>
 
 <div class="row g-3">
@@ -106,4 +103,13 @@
         </div>
     </div>
 </div>
+{% if crosscheck_result or report_upload_result %}
+    <div class="alert alert-info border cfm-attention d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-0">
+        <div>
+            <div class="fw-semibold">Plagiarism data updated</div>
+            <div class="small">Review missing, over-threshold, or stale plagiarism checks in publication context.</div>
+        </div>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review Plagiarism Issues</a>
+    </div>
+{% endif %}
 {% endblock %}

@@ -14,10 +14,6 @@
         {% if note_count %}
             <button class="btn btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#paper-note-summary" aria-expanded="false" aria-controls="paper-note-summary">Note Summary ({{ note_count }})</button>
         {% endif %}
-        <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}">Verify IDs</a>
-        <a class="btn btn-outline-primary" href="{% url 'submissions:process' %}">Process PDFs</a>
-        <a class="btn btn-outline-primary" href="{% url 'submissions:title_author_extraction' %}">Title/Author Review</a>
-        <a class="btn btn-outline-primary" href="{% url 'submissions:export_reports' %}">Export Reports</a>
     </div>
 </div>
 {% include "submissions/includes/note_summary.html" %}
@@ -297,7 +293,7 @@
                 <td>
                     <div class="cfm-table-actions">
                         {% if row.exception_panel_sections %}
-                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#exceptions-{{ submission.pk }}" aria-expanded="{% if row.exception_panel_open %}true{% else %}false{% endif %}" aria-controls="exceptions-{{ submission.pk }}">Manage exceptions</button>
+                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#exceptions-{{ submission.pk }}" aria-expanded="{% if row.exception_panel_open %}true{% else %}false{% endif %}" aria-controls="exceptions-{{ submission.pk }}">Exceptions</button>
                         {% endif %}
                         <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}" aria-expanded="false" aria-controls="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">Details</button>
                         {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}

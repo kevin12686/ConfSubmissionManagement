@@ -6,11 +6,6 @@
         <h1 class="h3 cfm-page-title">Settings</h1>
         <div class="cfm-page-subtitle">Configure publication checks, folder locations, and workflow defaults.</div>
     </div>
-    <form method="post">
-        {% csrf_token %}
-        <input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
-        <button class="btn btn-outline-secondary" name="action" value="reset_folders">Reset folders to defaults</button>
-    </form>
 </div>
 
 {% if has_folder_warnings %}
@@ -209,7 +204,10 @@
 
         <div class="col-12">
             <div class="card">
-                <div class="card-header fw-semibold">Folders</div>
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <span class="fw-semibold">Folders</span>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit" form="reset-folder-settings" name="action" value="reset_folders">Reset folders to defaults</button>
+                </div>
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-lg-6">
@@ -237,6 +235,11 @@
     <div class="cfm-sticky-actions d-flex justify-content-end">
         <button class="btn btn-primary">Save Settings</button>
     </div>
+</form>
+
+<form id="reset-folder-settings" method="post">
+    {% csrf_token %}
+    <input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
 </form>
 
 {% if storage_repair_result %}

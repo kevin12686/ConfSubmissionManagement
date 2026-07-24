@@ -6,9 +6,11 @@
         <h1 class="h3 cfm-page-title">Author Count</h1>
         <div class="cfm-page-subtitle">Review publication author limits and manage exceptions for approved special cases.</div>
     </div>
-    <div class="cfm-page-actions">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:exceptions_center' %}">Exceptions</a>
-    </div>
+    {% if show_author_exception_link %}
+        <div class="cfm-page-actions">
+            <a class="btn btn-outline-primary" href="{% url 'submissions:exceptions_center' %}?filter=all&amp;type=author_limit">Manage Author Exceptions</a>
+        </div>
+    {% endif %}
 </div>
 <div id="author-count-worklist" class="cfm-worklist-anchor">
 <ul class="nav nav-tabs cfm-tabs">

@@ -402,6 +402,7 @@ def author_count(request):
                 {**option, "count": counts[option["value"]]}
                 for option in filter_options
             ],
+            "show_author_exception_link": counts["over_limit"] > 0,
             "pagination": page,
         },
     )

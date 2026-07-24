@@ -97,9 +97,11 @@
         <h1 class="h3 cfm-page-title">Process PDFs</h1>
         <div class="cfm-page-subtitle">Refresh page counts, hashes, thumbnails, and publication PDF debug copies after uploads or corrected PDFs.</div>
     </div>
-    <div class="cfm-page-actions">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">View PDF Issues</a>
-    </div>
+    {% if has_pdf_issues %}
+        <div class="cfm-page-actions">
+            <a class="btn btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=pdf_issues">Open PDF Issues</a>
+        </div>
+    {% endif %}
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 <div class="alert alert-light border cfm-attention small">

@@ -3,6 +3,35 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.22 - 2026-07-23
+
+### Organized List
+
+- Shortened the row-level `Manage exceptions` control to `Exceptions` so the
+  action column uses less horizontal space without changing exception behavior.
+
+## 1.10.21 - 2026-07-23
+
+### Final Submission Import
+
+- Realigned the Metadata and PDF/Source upload zones into equal-width desktop
+  columns with a stacked narrow-screen layout.
+- Moved Preview Changes into its own action row so unequal help text no longer
+  shifts the upload controls or compresses the action button.
+
+## 1.10.20 - 2026-07-23
+
+### Navigation
+
+- Simplified page headers so ordinary cross-page navigation remains in the
+  Navbar while local commands, view switches, summaries, and focused Back
+  actions stay next to each page title.
+- Moved readiness, PDF-issue, plagiarism-review, and author-exception links
+  beside the condition or result that makes each action relevant.
+- Linked Dashboard ready state directly to the Final Publication Package
+  section and clarified Checklist versus Compact publication-candidate
+  switching.
+
 ## 1.10.19 - 2026-07-23
 
 ### Exports

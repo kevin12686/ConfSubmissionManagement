@@ -2801,6 +2801,7 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         page = self.client.get(reverse("submissions:integration"))
         self.assertContains(page, "Prepare All Publication PDFs ZIP")
         self.assertContains(page, "Prepare Missing Results Only ZIP")
+        self.assertNotContains(page, "Review Plagiarism Issues")
 
         response = self.client.post(
             reverse("submissions:integration"),
@@ -2809,6 +2810,20 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Missing CrossCheck results only")
         self.assertContains(response, "Download Missing Results ZIP")
         self.assertContains(response, "1 exported")
+
+        imported = self.client.post(
+            reverse("submissions:integration"),
+            {
+                "action": "import_crosscheck",
+                "file": self.uploaded_csv(
+                    "results.csv",
+                    "filename,plagiarism_percent,single_percent\n"
+                    "P001_TOKEN.pdf,12,3\n",
+                ),
+            },
+        )
+        self.assertContains(imported, "Plagiarism data updated")
+        self.assertContains(imported, "Review Plagiarism Issues")
 
     def test_not_publishing_reactivated_replacement_requires_fresh_editor_verification(self):
         self.make_master_paper("P001", "Reactivated Paper", "Ada")
@@ -5616,6 +5631,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "cfm-process-issue-content")
         self.assertContains(response, "cfm-process-action-card")
         self.assertNotContains(response, 'class="col-md-6"')
+        self.assertContains(response, "Open PDF Issues")
+
+    def test_process_page_hides_pdf_issue_navigation_when_no_issue_exists(self):
+        response = self.client.get(reverse("submissions:process"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["has_pdf_issues"])
+        self.assertNotContains(response, "Open PDF Issues")
 
     def test_base_layout_exposes_brand_icon_and_favicons(self):
         response = self.client.get(reverse("submissions:dashboard"))
@@ -5666,6 +5689,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:export_reports"))
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="publication-package"')
+        self.assertContains(response, "Review Readiness Issues")
+        self.assertNotContains(response, "View Readiness Issues")
         self.assertContains(response, "Final Publication Package ZIP")
         self.assertContains(
             response,
@@ -6034,7 +6060,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
     def test_import_upload_zones_keep_preview_before_apply(self):
         final_page = self.client.get(reverse("submissions:final_submission_list"))
         self.assertContains(
-            final_page, '<div class="cfm-upload-zone" data-upload-zone>', count=2
+            final_page,
+            (
+                '<div class="cfm-upload-zone cfm-import-upload-zone" '
+                "data-upload-zone>"
+            ),
+            count=2,
         )
         self.assertContains(final_page, "0 selected: 0 PDF, 0 source/other.")
         self.assertContains(final_page, "preview every change")
@@ -6299,6 +6330,21 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Import / Re-upload")
         self.assertContains(response, 'id="import-reupload-panel"')
         self.assertContains(response, "preview every change")
+        self.assertContains(response, "Download Template")
+        self.assertContains(response, "Preview Changes")
+        self.assertContains(response, "row g-3 align-items-stretch")
+        self.assertContains(
+            response,
+            "cfm-upload-zone cfm-import-upload-zone",
+            count=2,
+        )
+        self.assertNotContains(response, 'class="col-md-5"')
+        self.assertNotContains(response, 'class="col-md-2"')
+        html = response.content.decode("utf-8")
+        self.assertLess(
+            html.index('id="import-reupload-panel"'),
+            html.index("Download Template"),
+        )
 
     def test_author_count_and_exception_center_support_focused_filters(self):
         settings_obj = AppSetting.load()
@@ -6322,6 +6368,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(authors, "Ada Lovelace")
         self.assertContains(authors, "Needs attention")
+        self.assertContains(
+            authors,
+            (
+                f'{reverse("submissions:exceptions_center")}?'
+                "filter=all&amp;type=author_limit"
+            ),
+            html=False,
+        )
 
         exceptions = self.client.get(
             reverse("submissions:exceptions_center"),
@@ -6669,6 +6723,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
     def test_settings_can_reset_temp_folder_paths(self):
         settings_obj = AppSetting.load()
         self.assertTrue(str(settings_obj.reports_folder).startswith(str(self.root)))
+        page = self.client.get(reverse("submissions:settings"))
+        self.assertContains(page, 'form="reset-folder-settings"')
+        self.assertContains(page, 'id="reset-folder-settings"')
         response = self.client.post(
             reverse("submissions:settings"),
             {
@@ -6770,7 +6827,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         response = self.client.get(reverse("submissions:organized_list"))
         self.assertContains(response, "P allowed")
-        self.assertContains(response, "Manage exceptions")
+        self.assertContains(response, ">Exceptions</button>", html=False)
 
         submission.similarity_score = 43
         submission.save(update_fields=["similarity_score", "updated_at"])
@@ -9629,7 +9686,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
-        self.assertContains(response, "Manage exceptions")
+        self.assertContains(response, ">Exceptions</button>", html=False)
         self.assertContains(response, "Page count exception")
         self.assertContains(response, "Authors in paper exception")
         self.assertContains(response, "Plagiarism % exception")
@@ -10854,6 +10911,99 @@ class PerformanceRegressionTests(EditorialAcceptanceTestCase):
         self.assertLessEqual(signer.call_count, 25)
 
 class ExactNavigationTests(EditorialAcceptanceTestCase):
+    def test_page_headers_do_not_duplicate_generic_navbar_destinations(self):
+        pages_and_removed_header_links = (
+            (
+                "organized_list",
+                (
+                    '<a class="btn btn-outline-secondary" href="/reviews/paper-ids/">Verify IDs</a>',
+                    '<a class="btn btn-outline-primary" href="/processing/pdfs/">Process PDFs</a>',
+                    '<a class="btn btn-outline-primary" href="/reviews/title-authors/">Title/Author Review</a>',
+                    '<a class="btn btn-outline-primary" href="/reports/">Export Reports</a>',
+                ),
+            ),
+            (
+                "not_publishing_list",
+                (
+                    '<a class="btn btn-outline-secondary" href="/reviews/paper-ids/">Verify Paper IDs</a>',
+                    '<a class="btn btn-outline-primary" href="/submissions/organized/">Organized List</a>',
+                ),
+            ),
+            (
+                "verify_paper_ids",
+                (
+                    '<a class="btn btn-outline-secondary" href="/submissions/">Final Submissions</a>',
+                ),
+            ),
+            (
+                "exceptions_center",
+                (
+                    '<a class="btn btn-outline-primary" href="/reports/">Export Reports</a>',
+                ),
+            ),
+            (
+                "error_report",
+                (
+                    '<a class="btn btn-outline-primary" href="/reports/">Export Reports</a>',
+                ),
+            ),
+        )
+
+        for route_name, removed_links in pages_and_removed_header_links:
+            with self.subTest(route_name=route_name):
+                response = self.client.get(
+                    reverse(f"submissions:{route_name}")
+                )
+                self.assertEqual(response.status_code, 200)
+                for link in removed_links:
+                    self.assertNotContains(response, link, html=False)
+
+    def test_dashboard_uses_readiness_specific_actions_instead_of_generic_export(self):
+        self.make_master_paper("MISSING", "Missing Final", "Ada")
+
+        blocked = self.client.get(reverse("submissions:dashboard_summary"))
+
+        self.assertContains(blocked, "Open Error Report")
+        self.assertContains(blocked, "Open Organized List")
+        self.assertNotContains(blocked, ">Export Reports</a>", html=False)
+        self.assertNotContains(blocked, "Create Publication Package")
+
+        InitialPaper.objects.all().delete()
+        self.make_master_paper("P001", "Ready Package", "Ada")
+        ready_submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Ready Package",
+            extracted_title="Ready Package",
+            extracted_authors="Ada",
+        )
+        self.mark_submission_publication_ready(
+            ready_submission,
+            title="Ready Package",
+            authors="Ada",
+        )
+
+        ready = self.client.get(reverse("submissions:dashboard_summary"))
+
+        self.assertTrue(ready.context["readiness"]["ready"])
+        self.assertContains(ready, "Create Publication Package")
+        self.assertContains(
+            ready,
+            f'{reverse("submissions:export_reports")}#publication-package',
+            html=False,
+        )
+        self.assertNotContains(ready, "Open Error Report")
+
+    def test_version_history_header_opens_exact_publication_candidate_view(self):
+        old_page = self.client.get(reverse("submissions:old_versions"))
+
+        self.assertContains(
+            old_page,
+            f'{reverse("submissions:organized_list")}?view=compact',
+            html=False,
+        )
+        self.assertContains(old_page, "Publication Candidates")
+
     def test_exact_submission_focus_does_not_collide_with_similar_ids(self):
         self.make_master_paper(paper_id="PT007", title="Exact Target")
         self.make_master_paper(paper_id="R058", title="Similar Paper ID")

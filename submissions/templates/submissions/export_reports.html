@@ -6,9 +6,6 @@
         <h1 class="h3 cfm-page-title">Export Reports</h1>
         <div class="cfm-page-subtitle">Choose the output by purpose: final delivery, editorial review, or technical data inspection.</div>
     </div>
-    <div class="cfm-page-actions">
-        <a class="btn btn-outline-primary" href="{% url 'submissions:error_report' %}">View Readiness Issues</a>
-    </div>
 </div>
 
 {% if export_error %}
@@ -70,7 +67,7 @@
 </div>
 {% endif %}
 
-<section class="cfm-section">
+<section class="cfm-section" id="publication-package">
     <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-3">
         <div>
             <h2 class="h5 mb-1">Final Deliverable</h2>
@@ -101,7 +98,10 @@
             </div>
         </div>
         <div class="card-footer d-flex flex-wrap gap-2 justify-content-between align-items-center">
-            <div class="small text-muted">If blocked, the page will show the issues and offer a clearly marked draft package for intermediate work.</div>
+            <div>
+                <div class="small text-muted">If blocked, the page will show the issues and offer a clearly marked draft package for intermediate work.</div>
+                <a class="small" href="{% url 'submissions:error_report' %}">Review Readiness Issues</a>
+            </div>
             <form method="post" data-cfm-download-form="true">
                 {% csrf_token %}
                 <button class="btn btn-success" name="action" value="publication_package">Download Final Publication Package ZIP</button>
