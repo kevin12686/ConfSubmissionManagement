@@ -3,6 +3,24 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.26 - 2026-07-23
+
+### Paper Selection
+
+- Added one shared searchable Paper picker to Editor Upload, Paper ID Review,
+  and Process PDFs.
+- Paper Master searches rank exact Paper ID matches first, search Master Title
+  and Master Authors, return at most 20 results, and never load the full list
+  before the editor types.
+- Each new query discards unselected results from the previous query so cached
+  items cannot appear ahead of a newly returned exact Paper ID match.
+- Paper ID Review and Editor Upload show Master Title in results; Process PDFs
+  keeps its compact Paper ID / Final ID display and opens the exact focused
+  publication candidate across pagination.
+- Kept all submitted selections under existing server-side Master Paper and
+  workflow validation. No active-version, review-state, publication-file, or
+  export rule changed.
+
 ## 1.10.25 - 2026-07-23
 
 ### Pagination

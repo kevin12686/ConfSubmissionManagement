@@ -261,8 +261,12 @@ that guide:
   filter, search, page size, page, and card context for audited POST redirects.
 - Final Submission return URLs are same-site only and validated with
   `url_has_allowed_host_and_scheme()`.
-- Tabler 1.4.0 and HTMX 2.0.10 remain pinned under
+- Tabler 1.4.0, HTMX 2.0.10, and Tom Select 2.6.2 remain pinned under
   `submissions/static/submissions/vendor/` with their licenses.
+- The shared Paper picker uses a read-only endpoint that returns no results for
+  an empty query and caps responses at 20. Keep Paper selection validation in
+  Django forms/services; picker values are presentation input, not workflow
+  authority.
 - Shared behavior belongs in the existing pagination, navigation, magnifier,
   focus, tabs, and alert components; do not create page-specific alternatives.
 - Normal links and forms remain the fallback, CSRF remains enabled, and UI

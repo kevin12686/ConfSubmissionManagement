@@ -90,6 +90,12 @@ Final Submission Edit is intentionally limited to submission metadata, original 
 
 `Import / Re-upload` is collapsed on the Final Submissions page until selected so submission tabs and the version list remain the primary view. Expanding it exposes aligned Metadata and PDF/Source upload zones on wide screens, stacks them on narrower screens, and places Preview Changes in a separate action row. Selected-file counts, PDF/source summary, per-file removal, and the existing preview-before-apply workflow remain available. Browser summaries are convenience only; server extension/hash checks decide actual file types. Final Submission Edit follows one sequence: Submission identity, Metadata, Current row files, Plagiarism data/report, read-only Workflow status summary, and Save. Destructive version actions are outside the normal edit form in the collapsed bottom `Version actions` danger zone and still require a reason. Not Publishing remains a separate workflow.
 
+Paper selectors do not preload the Paper Master List. Start typing a Paper ID,
+Master Title, or Master Author; the picker returns at most 20 matches with exact
+Paper IDs first. Editor Upload and Paper ID Review show Master Title beside each
+result. The control displays the selected Paper ID, and the submitted selection
+is validated against Paper Master by the server.
+
 When Edit is opened from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, or Exceptions, Save returns to the originating worklist with its view, filter, sort, search, tab, or single-paper selection. External return URLs are rejected. Worklist filters/search can update only that list area without a full refresh, but the same links/forms work as ordinary Django requests. No client-side code decides review state, exception validity, active versions, or publication files.
 
 The workflow links inside Final Submission Edit are exact links, not prefilled
@@ -238,7 +244,7 @@ Process PDFs does not scan folders and does not silently create submissions. It 
 
 Run Process PDFs whenever Dashboard or the global alert says it is needed. Corrected PDFs require Process PDFs again so page count, hash, thumbnails, and debug copies match the current publication PDF source.
 
-The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or search to narrow papers; use `Jump to paper` for long runs. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
+The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or search to narrow papers. `Find paper` searches current Paper Master publication candidates and opens the exact Final Submission in focused mode, even when it was on another page. Its results stay compact as Paper ID / Final ID. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
 
 Each preview card also shows the current Formatting status. If you notice a
 problem while scanning, use `Record formatting issue` on the card, or open a

@@ -244,16 +244,23 @@
     {% include "submissions/partials/loading_indicator.html" with indicator_id="process-preview-loading" message="Updating PDF previews..." %}
 </form>
 {% endif %}
-{% if processed_rows %}
+{% if not focused_context %}
 <div class="cfm-filter-panel d-flex flex-wrap gap-2 align-items-end">
     <div class="flex-grow-1">
-        <label class="form-label" for="paper-preview-jump">Jump to paper</label>
-        <select id="paper-preview-jump" class="form-select" onchange="if (this.value) window.location.hash = this.value;">
-            <option value="">Choose Paper ID / Final ID</option>
-            {% for row in processed_rows %}<option value="paper-preview-{{ row.submission.pk }}">{{ row.submission.paper_id_filled }} / Final {{ row.submission.final_submission_id }}</option>{% endfor %}
-        </select>
+        <label class="form-label" for="paper-preview-find">Find paper</label>
+        <input
+            id="paper-preview-find"
+            class="form-control"
+            autocomplete="off"
+            data-cfm-paper-picker="true"
+            data-picker-url="{% url 'submissions:paper_picker_search' %}"
+            data-picker-context="process"
+            data-picker-value-field="pk"
+            data-picker-display="process"
+            data-picker-placeholder="Type a Paper ID or Final ID"
+        >
     </div>
-    <div class="small text-muted pb-2">Paper headers stay visible while you scan each complete thumbnail strip.</div>
+    <div class="small text-muted pb-2">Selecting a result opens that exact current publication candidate.</div>
 </div>
 {% endif %}
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}

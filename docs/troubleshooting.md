@@ -113,7 +113,7 @@ Run Process PDFs again. Corrected PDFs are the first publication PDF priority, b
 
 Every page thumbnail for each paper on the current worklist page stays expanded
 so blank middle/end pages remain visible. Use the paper status filters, search,
-page-size control, and `Jump to paper`. Select `All` only when the complete
+page-size control, and `Find paper`. Select `All` only when the complete
 filtered set must be inspected together. Images use fixed-size lazy-loaded
 tiles, so rapid scrolling should not change the layout.
 

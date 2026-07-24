@@ -150,6 +150,23 @@ Workflow mutation, evidence checks, filtering, and publication decisions remain
 server-side. Lazy components listen for `cfm:worklist-expanded`, and HTMX
 initialization uses `htmx:load` with `event.detail.elt`.
 
+## Searchable Paper Pickers
+
+Large Paper ID selectors use the shared local Tom Select component rather than
+rendering the full Paper Master List into every form.
+
+- Do not preload results. An empty query shows no papers.
+- Master searches rank exact Paper ID first, then ID prefix/contains, Master
+  Title, and Master Authors; responses are capped at 20.
+- Paper ID Review and Editor Upload results show Paper ID plus Master Title.
+  Process PDFs results show only Paper ID and Final ID.
+- Do not auto-select the first result and do not allow arbitrary values.
+- Server-side form/service validation remains authoritative.
+- Initialize on `DOMContentLoaded` and `htmx:load`; destroy instances before
+  HTMX removes their elements.
+- Keep picker styling scoped under `.cfm-paper-picker` so ordinary selects and
+  other worklists retain the shared site styling.
+
 ## Expensive Evidence And Request Context
 
 Do not decode, hash, or render evidence for rows that will not be displayed.

@@ -140,6 +140,11 @@ installation instead of preserving old machine-specific absolute paths.
 11. Export the final publication package.
 12. Review the Audit Log and download a System State ZIP before handoff.
 
+Paper selection controls in Editor Upload, Paper ID Review, and Process PDFs
+search on demand instead of loading the complete Paper Master List. Type a
+Paper ID, Master Title, or Master Author; exact Paper ID matches are shown
+first.
+
 The [Operator Guide](docs/operator_guide.md) explains each stage. The
 [Publication Rules](docs/publication_rules.md) define which records and files
 may enter publication output.

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django import forms
 from django.conf import settings as django_settings
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import AppSetting, FinalSubmission, InitialPaper
@@ -120,6 +121,17 @@ class EditorUploadForm(BootstrapMixin, forms.Form):
         queryset=InitialPaper.objects.all(),
         label="Paper ID",
         help_text="Editor upload must be linked to a Paper Master List record.",
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "off",
+                "data-cfm-paper-picker": "true",
+                "data-picker-context": "master",
+                "data-picker-value-field": "pk",
+                "data-picker-display": "master",
+                "data-picker-placeholder": "Type a Paper ID, title, or author",
+                "data-picker-summary-target": "editor-upload-paper-summary",
+            }
+        ),
     )
     pdf_file = forms.FileField(label="Editor PDF")
     source_file = forms.FileField(required=False, label="Editor source file")
@@ -139,6 +151,9 @@ class EditorUploadForm(BootstrapMixin, forms.Form):
     def __init__(self, *args, initial_paper_id=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["paper"].queryset = InitialPaper.objects.all().order_by("paper_id")
+        self.fields["paper"].widget.attrs["data-picker-url"] = reverse(
+            "submissions:paper_picker_search"
+        )
         if initial_paper_id:
             self.fields["paper"].initial = InitialPaper.objects.filter(
                 paper_id=initial_paper_id

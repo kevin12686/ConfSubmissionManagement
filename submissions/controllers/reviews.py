@@ -709,7 +709,6 @@ def verify_paper_ids(request):
         "submissions/verify_paper_ids.html",
         {
             "rows": rows,
-            "papers": paper_candidates,
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,

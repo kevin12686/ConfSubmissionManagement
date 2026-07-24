@@ -154,16 +154,26 @@
                                 Paper ID is verified. No manual Verify click is needed.
                             </div>
                         {% else %}
-                            <form method="post" class="d-flex gap-2">
+                            <form method="post" class="d-flex flex-wrap gap-2 align-items-start">
                                 {% csrf_token %}
                                 <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
                                 <input type="hidden" name="evidence_token" value="{{ row.paper_id_evidence_token }}">
-                                <select class="form-select" name="corrected_paper_id">
-                                    <option value="{{ row.submission.paper_id_filled }}">{{ row.submission.paper_id_filled|default:"Choose Paper ID" }}</option>
-                                    {% for paper in papers %}
-                                        <option value="{{ paper.paper_id }}">{{ paper.paper_id }} - {{ paper.title|truncatechars:70 }}</option>
-                                    {% endfor %}
-                                </select>
+                                <div class="flex-grow-1">
+                                    <label class="visually-hidden" for="paper-picker-{{ row.submission.pk }}">Corrected Paper ID</label>
+                                    <input
+                                        id="paper-picker-{{ row.submission.pk }}"
+                                        class="form-control"
+                                        name="corrected_paper_id"
+                                        value="{{ row.submission.paper_id_filled }}"
+                                        autocomplete="off"
+                                        data-cfm-paper-picker="true"
+                                        data-picker-url="{% url 'submissions:paper_picker_search' %}"
+                                        data-picker-context="master"
+                                        data-picker-value-field="paper_id"
+                                        data-picker-display="master"
+                                        data-picker-placeholder="Type a Paper ID, title, or author"
+                                    >
+                                </div>
                                 <button class="btn btn-primary" name="action" value="verify" {% if row.submission.excluded_from_publication %}disabled{% endif %}>Verify</button>
                                 {% if row.suggested_paper and not row.submission.excluded_from_publication %}
                                     <button class="btn btn-outline-primary" name="action" value="use_suggestion">Use Suggestion</button>

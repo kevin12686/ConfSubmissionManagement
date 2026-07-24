@@ -1,0 +1,110 @@
+.cfm-paper-picker {
+    min-width: min(100%, 18rem);
+}
+
+.cfm-paper-picker .ts-control {
+    background: var(--cfm-surface);
+    border: 1px solid var(--cfm-border-strong);
+    border-radius: 0.3rem;
+    color: var(--cfm-text);
+    min-height: 2.45rem;
+    padding: 0.45rem 0.65rem;
+}
+
+.cfm-paper-picker.focus .ts-control {
+    border-color: var(--cfm-primary);
+    box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.18);
+}
+
+.cfm-paper-picker .ts-dropdown {
+    background: var(--cfm-surface);
+    border: 1px solid var(--cfm-border-strong);
+    border-radius: 0.3rem;
+    box-shadow: 0 0.45rem 1rem rgba(15, 23, 42, 0.18);
+    color: var(--cfm-text);
+    margin-top: 0.25rem;
+    overflow: hidden;
+}
+
+.cfm-paper-picker .ts-dropdown .option {
+    border-bottom: 1px solid var(--cfm-border);
+    padding: 0.55rem 0.7rem;
+}
+
+.cfm-paper-picker .ts-dropdown .option:last-child {
+    border-bottom: 0;
+}
+
+.cfm-paper-picker .ts-dropdown .active {
+    background: var(--cfm-primary-soft);
+    color: var(--cfm-text);
+}
+
+.cfm-paper-picker-option {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+.cfm-paper-picker-option-inline {
+    align-items: baseline;
+    display: flex;
+    gap: 0.65rem;
+}
+
+.cfm-paper-picker-id {
+    color: var(--cfm-heading);
+    font-size: var(--cfm-font-secondary);
+}
+
+.cfm-paper-picker-title,
+.cfm-paper-picker-meta {
+    color: var(--cfm-secondary-text);
+    font-size: var(--cfm-font-small);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.cfm-paper-picker-selected {
+    color: var(--cfm-text);
+    font-weight: 650;
+}
+
+.cfm-paper-picker .no-results {
+    color: var(--cfm-muted);
+    font-size: var(--cfm-font-small);
+    padding: 0.65rem 0.7rem;
+}
+
+.cfm-paper-picker-summary {
+    align-items: baseline;
+    background: var(--cfm-surface-subtle);
+    border-left: 3px solid var(--cfm-primary);
+    color: var(--cfm-secondary-text);
+    display: flex;
+    gap: 0.55rem;
+    margin-top: 0.45rem;
+    padding: 0.4rem 0.55rem;
+}
+
+.cfm-paper-picker-summary strong {
+    flex: 0 0 auto;
+}
+
+.cfm-paper-picker-summary span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 575.98px) {
+    .cfm-paper-picker {
+        min-width: 100%;
+    }
+
+    .cfm-paper-picker-option-inline,
+    .cfm-paper-picker-summary {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+}

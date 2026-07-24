@@ -66,7 +66,10 @@
             Editor uploads are prioritized over Start2 versions until one side is discarded. Add a clear note so the editorial record explains why this version exists.
         </div>
         <div class="row g-3">
-            <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.paper %}</div>
+            <div class="col-md-6">
+                {% include "submissions/includes/form_field.html" with field=form.paper %}
+                <div id="editor-upload-paper-summary" class="cfm-paper-picker-summary" hidden></div>
+            </div>
             <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.final_submission_title %}</div>
             <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.pdf_file %}</div>
             <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>

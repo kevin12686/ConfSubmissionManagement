@@ -53,3 +53,4 @@ from .controllers.settings import (
     storage_inventory_panel,
 )
 from .controllers.ui import publication_duplicate_details, workflow_alerts
+from .controllers.lookups import paper_picker_search

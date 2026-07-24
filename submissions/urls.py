@@ -6,6 +6,7 @@ from . import views
 app_name = "submissions"
 
 urlpatterns = [
+    path("ui/paper-picker/", views.paper_picker_search, name="paper_picker_search"),
     path("ui/workflow-alerts/", views.workflow_alerts, name="workflow_alerts"),
     path("ui/dashboard-summary/", views.dashboard_summary, name="dashboard_summary"),
     path(
