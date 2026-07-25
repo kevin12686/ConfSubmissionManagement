@@ -1487,6 +1487,44 @@
             font-weight: 700;
             margin-bottom: 0.2rem;
         }
+        .cfm-title-guard-pending {
+            background: var(--cfm-surface-subtle);
+            border-top: 1px solid var(--cfm-border);
+            padding: 1rem;
+        }
+        .cfm-title-guard-pending-heading {
+            color: var(--cfm-heading);
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.7rem;
+        }
+        .cfm-title-guard-pending-grid {
+            display: grid;
+            gap: 0.75rem;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            min-width: 0;
+        }
+        .cfm-title-guard-pending-item {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.35rem;
+            min-width: 0;
+            padding: 0.7rem 0.8rem;
+        }
+        .cfm-title-guard-pending-label {
+            color: var(--cfm-secondary-text);
+            font-size: var(--cfm-font-label);
+            font-weight: 700;
+            margin-bottom: 0.2rem;
+        }
+        .cfm-title-guard-pending-value {
+            color: var(--cfm-text);
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+        .cfm-title-guard-pending-notes {
+            grid-column: 1 / -1;
+        }
         .cfm-title-guard-actions {
             align-items: center;
             border-top: 1px solid var(--cfm-border);
@@ -1612,6 +1650,9 @@
             }
             .cfm-title-guard-confirm {
                 margin-left: 0;
+            }
+            .cfm-title-guard-pending-grid {
+                grid-template-columns: minmax(0, 1fr);
             }
         }
         .cfm-worklist-anchor {

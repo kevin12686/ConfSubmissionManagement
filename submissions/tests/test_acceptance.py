@@ -509,6 +509,7 @@ class EditorialAcceptanceTestCase(TestCase):
                     "Page Number",
                     "Similarity (P)",
                     "Similarity (S)",
+                    "Exceptions",
                 ],
             )
             self.assertEqual(len(rows), len(expected_rows))
@@ -519,6 +520,7 @@ class EditorialAcceptanceTestCase(TestCase):
                 self.assertEqual(row["Page Number"], str(expected["page_count"]))
                 self.assertEqual(row["Similarity (P)"], str(expected["similarity_score"]))
                 self.assertEqual(row["Similarity (S)"], str(expected["single_similarity_score"]))
+                self.assertEqual(row["Exceptions"], expected.get("exceptions", ""))
                 self.assertEqual(archive.read(expected["pdf_arcname"]), expected["pdf_bytes"])
                 self.assertEqual(archive.read(expected["source_arcname"]), expected["source_bytes"])
 
@@ -5125,7 +5127,11 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
             extracted_authors="Ada Lovelace; Alan Turing",
             current_file_path=str(first_pdf),
             source_current_file_path=str(first_source),
-            page_count=8,
+            page_count=13,
+            page_limit_exception_approved=True,
+            page_limit_exception_reason="Approved extended paper.",
+            page_limit_exception_page_count=13,
+            page_limit_exception_approved_at=timezone.now(),
             similarity_score=2,
             single_similarity_score=1,
         )
@@ -5152,9 +5158,14 @@ class PublicationPackageManifestTests(EditorialAcceptanceTestCase):
                     "paper_id": "P001",
                     "title": "First Camera Ready",
                     "author_count": 2,
-                    "page_count": 8,
+                    "page_count": 13,
                     "similarity_score": "2",
                     "single_similarity_score": "1",
+                    "exceptions": (
+                        "Page count: Allowed exception - current 13 - "
+                        "6-12 pages - approved 13\n"
+                        "Reason: Approved extended paper."
+                    ),
                     "pdf_arcname": "PDF/P001-First Camera Ready.pdf",
                     "source_arcname": "Source/P001-First Camera Ready.docx",
                     "pdf_bytes": b"first pdf",
@@ -7796,6 +7807,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                     format_status="pending",
                     format_notes="corrected pdf",
                     corrected_pdf=self.uploaded_file("wrong.pdf", b"%PDF wrong"),
+                    corrected_source=self.uploaded_file("wrong.zip", b"source"),
                 ),
             )
 
@@ -7805,6 +7817,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Compared with Final Submission Title")
         self.assertContains(response, "Show detailed character diff")
         self.assertContains(response, "Confirm save corrected files anyway")
+        self.assertContains(response, 'class="cfm-title-guard-pending"', html=False)
+        self.assertContains(response, "Pending changes")
+        self.assertContains(response, "wrong.pdf")
+        self.assertContains(response, "wrong.zip")
+        self.assertContains(response, "Formatting workflow")
+        self.assertContains(response, "corrected pdf")
+        self.assertNotContains(response, "<strong>Pending save</strong>", html=False)
         submission.refresh_from_db()
         self.assertFalse(submission.formatted_pdf_file)
         self.assertEqual(submission.extracted_title, "Existing Extracted Title")

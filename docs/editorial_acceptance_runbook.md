@@ -217,7 +217,10 @@ Create Final Submission records and files:
   exports stop with `Mixed Not Publishing Decision`.
 - Duplicate CJK, Greek, and canonically equivalent accented publication titles
   must appear as duplicate-title blockers.
-- Final publication manifest contains publication fields only; editorial notes are not included.
+- Final publication manifest contains the publication fields plus the same
+  per-paper Exceptions summary used by the Editorial Publication Workbook.
+  Confirm allowed exception type, values, and reason are present, while Paper
+  Master editorial notes remain excluded.
 
 ### Backup And Audit
 

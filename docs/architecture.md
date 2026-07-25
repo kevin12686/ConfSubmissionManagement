@@ -386,7 +386,12 @@ HTML, text, JSON, JavaScript, and XML MIME types. ZIP, PDF, image, Office, and
 unknown binary responses bypass dynamic gzip; this avoids recompressing archive
 downloads and preserves their `Content-Length` for proxies and tunnels.
 
-Plagiarism exceptions are per FinalSubmission publication-version decisions. `Plagiarism %` and `Single %` exceptions are approved separately, require a reason, and are valid only while the current score still matches the approved score. They affect readiness/export blocking but do not change the score itself or the final package manifest.
+Plagiarism exceptions are per FinalSubmission publication-version decisions.
+`Plagiarism %` and `Single %` exceptions are approved separately, require a
+reason, and are valid only while the current score still matches the approved
+score. They affect readiness/export blocking but do not change the score
+itself. Their current status, values, limits, and reason appear in the
+Publication Package manifest's shared `Exceptions` summary.
 
 Organized List exposes row-level exception panels for page count, authors-in-paper, plagiarism scores, and duplicate-author review. Those panels reuse the same exception service rows and approve/remove commands as Exceptions Center. Author paper-count exceptions remain author-level records and are not attached to a single Organized List row.
 

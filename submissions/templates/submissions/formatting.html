@@ -85,6 +85,32 @@
 
         {% include "submissions/includes/title_guard_comparison.html" with guard=formatting_confirmation.title_guard %}
 
+        <section class="cfm-title-guard-pending" aria-labelledby="formatting-pending-save-heading">
+            <div class="cfm-title-guard-pending-heading" id="formatting-pending-save-heading">Pending changes</div>
+            <div class="cfm-title-guard-pending-grid">
+                <div class="cfm-title-guard-pending-item">
+                    <div class="cfm-title-guard-pending-label">PDF</div>
+                    <div class="cfm-title-guard-pending-value">{{ formatting_confirmation.corrected_pdf_name }}</div>
+                </div>
+                {% if formatting_confirmation.corrected_source_name %}
+                    <div class="cfm-title-guard-pending-item">
+                        <div class="cfm-title-guard-pending-label">Source</div>
+                        <div class="cfm-title-guard-pending-value">{{ formatting_confirmation.corrected_source_name }}</div>
+                    </div>
+                {% endif %}
+                <div class="cfm-title-guard-pending-item">
+                    <div class="cfm-title-guard-pending-label">Formatting workflow</div>
+                    <div class="cfm-title-guard-pending-value">{{ formatting_confirmation.format_status_label }}</div>
+                </div>
+                {% if formatting_confirmation.format_notes %}
+                    <div class="cfm-title-guard-pending-item cfm-title-guard-pending-notes">
+                        <div class="cfm-title-guard-pending-label">Notes</div>
+                        <div class="cfm-title-guard-pending-value">{{ formatting_confirmation.format_notes|linebreaksbr }}</div>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
         <div class="cfm-title-guard-actions">
             <form method="post">
                 {% csrf_token %}
@@ -110,13 +136,6 @@
                 <input type="hidden" name="return_to" value="{{ formatting_confirmation.return_to }}">
                 <button class="btn btn-outline-secondary">Cancel upload</button>
             </form>
-        </div>
-        <div class="cfm-title-guard-footnote mt-3">
-            <strong>Pending save</strong>
-            <span>PDF: {{ formatting_confirmation.corrected_pdf_name }}</span>
-            {% if formatting_confirmation.corrected_source_name %}<span>Source: {{ formatting_confirmation.corrected_source_name }}</span>{% endif %}
-            <span>Workflow: {{ formatting_confirmation.format_status_label }}</span>
-            {% if formatting_confirmation.format_notes %}<span>Notes: {{ formatting_confirmation.format_notes }}</span>{% endif %}
         </div>
     </div>
 {% endif %}

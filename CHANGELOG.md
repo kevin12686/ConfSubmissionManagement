@@ -3,6 +3,25 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.29 - 2026-07-25
+
+### Formatting Review
+
+- Reworked the Corrected PDF Title Safety Check pending-save details into a
+  responsive summary for PDF, source, workflow status, and formatting notes.
+- Kept title comparison, upload confirmation, and publication-file behavior
+  unchanged.
+
+## 1.10.28 - 2026-07-25
+
+### Publication Package
+
+- Added an `Exceptions` column to Final and Draft Publication Package manifests.
+- Reused the Editorial Publication Workbook's per-paper exception summary,
+  including status, current and approved values, limits, and recorded reasons.
+- Kept publication scope, readiness checks, file selection, and packaged
+  PDF/source bytes unchanged.
+
 ## 1.10.27 - 2026-07-25
 
 ### Paper Selection

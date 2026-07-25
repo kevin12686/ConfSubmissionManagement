@@ -438,7 +438,11 @@ Use `/reports/` for exports.
 
 - Final Publication Package ZIP is strict and should be used only when readiness is clean.
 - Draft Publication Package ZIP can be downloaded after warnings. It may skip missing files and includes a warnings CSV.
-- Final package manifest contains ID, extracted title, extracted authors, author number, page number, Plagiarism %, and Single %. It does not include editorial notes.
+- Final and draft package manifests contain ID, extracted title, extracted
+  authors, author number, page number, Plagiarism %, Single %, and the same
+  per-paper Exceptions summary shown in the Editorial Publication Workbook.
+  Exception summaries include their recorded reasons. The manifest does not
+  include Paper Master editorial notes.
 - Editorial Publication Workbook is the primary internal Excel output. Its
   Publication Detail sheet uses Extracted Title as the primary publication
   title, keeps Master and Final titles as references, and lists each paper's

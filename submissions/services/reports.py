@@ -693,6 +693,19 @@ def export_publication_package(force=False):
             audit_blocked("publication_package_export", str(exc), result_counts={"force": force})
             raise exc
 
+        all_exception_rows, _status_filter = exception_rows(
+            "all",
+            context=publication_context,
+            hydrate=False,
+        )
+        exceptions_by_paper = defaultdict(list)
+        for row in all_exception_rows:
+            for paper_id in _exception_paper_ids(
+                row,
+                publication_context.valid_paper_ids,
+            ):
+                exceptions_by_paper[paper_id].append(row)
+
         timestamp = _timestamp()
         reports_folder = _reports_folder()
         zip_prefix = "publication_package_draft" if force else "publication_package"
@@ -718,6 +731,13 @@ def export_publication_package(force=False):
                     "Page Number": submission.page_count,
                     "Similarity (P)": _whole_percent(submission.similarity_score),
                     "Similarity (S)": _whole_percent(submission.single_similarity_score),
+                    "Exceptions": "\n\n".join(
+                        _exception_summary(row)
+                        for row in exceptions_by_paper.get(
+                            submission.paper_id_filled,
+                            [],
+                        )
+                    ),
                 }
             )
 
@@ -729,6 +749,7 @@ def export_publication_package(force=False):
             "Page Number",
             "Similarity (P)",
             "Similarity (S)",
+            "Exceptions",
         ]
         manifest_bytes = _csv_bytes(manifest_fieldnames, manifest_rows)
         manifest_path.write_bytes(manifest_bytes)

@@ -211,6 +211,11 @@ were swapped. It rejects two PDFs, two recognized source files, and unknown
 files in the PDF field. Bound status, notes, and errors remain visible; browser
 file inputs must be selected again after failure.
 
+Corrected-PDF title confirmation presents pending PDF, source, workflow, and
+notes as a structured summary between the title comparison and confirmation
+actions. File metadata must not be compressed into an unstructured inline
+sentence; notes occupy a full row and the summary stacks at narrow widths.
+
 ## Title/Author Evidence
 
 Built-in, GROBID, and Manual Override use the shared renderer in
