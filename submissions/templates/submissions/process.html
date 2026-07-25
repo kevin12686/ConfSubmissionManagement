@@ -238,30 +238,11 @@
 </ul>
 <form method="get" class="cfm-filter-panel d-flex flex-wrap gap-2" hx-get="{% url 'submissions:process' %}" hx-target="#process-preview-worklist" hx-select="#process-preview-worklist" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#process-preview-loading" hx-disabled-elt="button, input">
     <input type="hidden" name="filter" value="{{ current_filter }}">
-    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Search Paper ID, Final ID, or title">
+    <input class="form-control" type="search" name="q" value="{{ q }}" aria-label="Search papers" placeholder="Search papers by Paper ID, Final ID, or title">
     <button class="btn btn-outline-secondary">Search</button>
     {% if q or current_filter != "all" %}<a class="btn btn-outline-secondary" href="{% url 'submissions:process' %}">Reset</a>{% endif %}
     {% include "submissions/partials/loading_indicator.html" with indicator_id="process-preview-loading" message="Updating PDF previews..." %}
 </form>
-{% endif %}
-{% if not focused_context %}
-<div class="cfm-filter-panel d-flex flex-wrap gap-2 align-items-end">
-    <div class="flex-grow-1">
-        <label class="form-label" for="paper-preview-find">Find paper</label>
-        <input
-            id="paper-preview-find"
-            class="form-control"
-            autocomplete="off"
-            data-cfm-paper-picker="true"
-            data-picker-url="{% url 'submissions:paper_picker_search' %}"
-            data-picker-context="process"
-            data-picker-value-field="pk"
-            data-picker-display="process"
-            data-picker-placeholder="Type a Paper ID or Final ID"
-        >
-    </div>
-    <div class="small text-muted pb-2">Selecting a result opens that exact current publication candidate.</div>
-</div>
 {% endif %}
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="vstack gap-3">

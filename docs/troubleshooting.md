@@ -112,10 +112,12 @@ Run Process PDFs again. Corrected PDFs are the first publication PDF priority, b
 ### Process PDFs page is long
 
 Every page thumbnail for each paper on the current worklist page stays expanded
-so blank middle/end pages remain visible. Use the paper status filters, search,
-page-size control, and `Find paper`. Select `All` only when the complete
-filtered set must be inspected together. Images use fixed-size lazy-loaded
-tiles, so rapid scrolling should not change the layout.
+so blank middle/end pages remain visible. Use the paper status filters, the
+Paper ID / Final ID / title search, and page-size control. Filtering occurs
+before pagination, so an exact ID search can locate a paper that was previously
+on another page. Select `All` only when the complete filtered set must be
+inspected together. Images use fixed-size lazy-loaded tiles, so rapid scrolling
+should not change the layout.
 
 ### I found a formatting problem while scanning Process PDFs
 

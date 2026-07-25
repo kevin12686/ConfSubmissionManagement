@@ -6382,7 +6382,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         all_rows = self.client.get(reverse("submissions:process"))
         self.assertContains(all_rows, "Every matching paper remains fully expanded")
-        self.assertContains(all_rows, "Find paper")
+        self.assertContains(
+            all_rows,
+            "Search papers by Paper ID, Final ID, or title",
+        )
+        self.assertNotContains(all_rows, "Find paper")
         self.assertContains(all_rows, "thumbnail-preview-modal")
         self.assertContains(all_rows, "P001")
         self.assertContains(all_rows, "P002")

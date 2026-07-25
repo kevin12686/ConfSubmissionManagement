@@ -1,9 +1,4 @@
-from urllib.parse import urlencode
-
-from django.urls import reverse
-
 from submissions.models import InitialPaper
-from submissions.services.publication_read import PublicationReadContext
 
 
 PAPER_PICKER_RESULT_LIMIT = 20
@@ -62,56 +57,4 @@ def search_master_papers(query="", *, selected="", selected_field=""):
             queryset.order_by("paper_id")[:PAPER_PICKER_RESULT_LIMIT],
         ):
             break
-    return results
-
-
-def search_process_papers(query):
-    query = (query or "").strip()
-    if not query:
-        return []
-
-    lowered = query.casefold()
-
-    def priority(submission):
-        paper_id = (submission.paper_id_filled or "").casefold()
-        final_id = (submission.final_submission_id or "").casefold()
-        title = (submission.final_submission_title or "").casefold()
-        if lowered in {paper_id, final_id}:
-            rank = 0
-        elif paper_id.startswith(lowered) or final_id.startswith(lowered):
-            rank = 1
-        elif lowered in paper_id or lowered in final_id:
-            rank = 2
-        elif lowered in title:
-            rank = 3
-        else:
-            rank = 4
-        return rank, paper_id, final_id
-
-    candidates = []
-    for submission in PublicationReadContext.load().master_submissions:
-        searchable = " ".join(
-            (
-                submission.paper_id_filled or "",
-                submission.final_submission_id or "",
-                submission.final_submission_title or "",
-            )
-        ).casefold()
-        if lowered in searchable:
-            candidates.append(submission)
-
-    results = []
-    for submission in sorted(candidates, key=priority)[:PAPER_PICKER_RESULT_LIMIT]:
-        results.append(
-            {
-                "pk": submission.pk,
-                "paper_id": submission.paper_id_filled or "",
-                "final_id": submission.final_submission_id or "",
-                "url": (
-                    reverse("submissions:process")
-                    + "?"
-                    + urlencode({"submission": submission.pk})
-                ),
-            }
-        )
     return results

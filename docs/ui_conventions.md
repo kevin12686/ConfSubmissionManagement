@@ -158,8 +158,14 @@ rendering the full Paper Master List into every form.
 - Do not preload results. An empty query shows no papers.
 - Master searches rank exact Paper ID first, then ID prefix/contains, Master
   Title, and Master Authors; responses are capped at 20.
-- Paper ID Review and Editor Upload results show Paper ID plus Master Title.
-  Process PDFs results show only Paper ID and Final ID.
+- Editor Upload and Paper ID Review options use the same three-line layout:
+  Master Paper ID, Master Title, and Master Authors. The selected input remains
+  compact as Paper ID; a separate summary may show the full Master metadata.
+  Distinguish Title and Authors through typography, spacing, and the shared
+  Users icon rather than adding verbose labels or badge-like metadata.
+- Let the open result list use available viewport height while retaining a
+  bounded mobile height. Do not add a second picker where an existing worklist
+  search already finds the same records.
 - Do not auto-select the first result and do not allow arbitrary values.
 - Server-side form/service validation remains authoritative.
 - Initialize on `DOMContentLoaded` and `htmx:load`; destroy instances before

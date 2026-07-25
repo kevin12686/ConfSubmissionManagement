@@ -263,9 +263,10 @@ that guide:
   `url_has_allowed_host_and_scheme()`.
 - Tabler 1.4.0, HTMX 2.0.10, and Tom Select 2.6.2 remain pinned under
   `submissions/static/submissions/vendor/` with their licenses.
-- The shared Paper picker uses a read-only endpoint that returns no results for
-  an empty query and caps responses at 20. Keep Paper selection validation in
-  Django forms/services; picker values are presentation input, not workflow
+- The shared Paper picker is limited to Paper Master selection workflows. Its
+  read-only endpoint returns no results for an empty query, caps responses at
+  20, and returns Master ID, Title, and Authors. Keep Paper selection validation
+  in Django forms/services; picker values are presentation input, not workflow
   authority.
 - Shared behavior belongs in the existing pagination, navigation, magnifier,
   focus, tabs, and alert components; do not create page-specific alternatives.

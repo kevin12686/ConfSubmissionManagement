@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.27 - 2026-07-25
+
+### Paper Selection
+
+- Unified Editor Upload and Paper ID Review search results as Master Paper ID,
+  Master Title, and Master Authors while keeping the selected control compact.
+- Distinguished Title and Authors with a consistent typographic hierarchy,
+  spacing, and Authors icon without adding longer field labels.
+- Increased the open Paper picker height so editors can scan more matching
+  records without making the closed form taller.
+- Removed the redundant Process PDFs `Find paper` picker. Its existing Paper
+  ID / Final ID / title worklist search filters before pagination and remains
+  the single search control on that page.
+- Kept exact focused Process PDF links and all publication, active-version,
+  review-state, and export behavior unchanged.
+
 ## 1.10.26 - 2026-07-23
 
 ### Paper Selection

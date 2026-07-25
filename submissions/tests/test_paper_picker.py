@@ -46,7 +46,7 @@ class PaperPickerSearchTests(TestCase):
         self.assertEqual(results[0]["paper_id"], "P100")
         self.assertEqual(len(results), PAPER_PICKER_RESULT_LIMIT)
 
-    def test_master_search_uses_title_and_authors_without_rendering_authors(self):
+    def test_master_search_returns_title_and_authors(self):
         paper = InitialPaper.objects.create(
             paper_id="R084",
             title="Reliable Publication Workflows",
@@ -64,6 +64,14 @@ class PaperPickerSearchTests(TestCase):
 
         self.assertEqual(title_response.json()["results"][0]["pk"], paper.pk)
         self.assertEqual(author_response.json()["results"][0]["pk"], paper.pk)
+        self.assertEqual(
+            author_response.json()["results"][0]["title"],
+            "Reliable Publication Workflows",
+        )
+        self.assertEqual(
+            author_response.json()["results"][0]["authors"],
+            "Chih-Wei Hsu; Ada Lovelace",
+        )
 
     def test_selected_master_record_can_be_hydrated_by_pk_or_paper_id(self):
         paper = InitialPaper.objects.create(
@@ -87,53 +95,14 @@ class PaperPickerSearchTests(TestCase):
         self.assertEqual(by_pk.json()["results"][0]["paper_id"], "R084")
         self.assertEqual(by_id.json()["results"][0]["pk"], paper.pk)
 
-    def test_process_search_returns_exact_focused_submission_url(self):
-        InitialPaper.objects.create(
-            paper_id="P001",
-            title="Current Publication Paper",
-        )
-        submission = FinalSubmission.objects.create(
-            final_submission_id="101",
-            paper_id_filled="P001",
-            final_submission_title="Current Publication Paper",
-            active_version=True,
-        )
-        FinalSubmission.objects.create(
-            final_submission_id="100",
-            paper_id_filled="P001",
-            final_submission_title="Inactive historical version",
-            active_version=False,
-        )
-        FinalSubmission.objects.create(
-            final_submission_id="102",
-            paper_id_filled="P001",
-            final_submission_title="Discarded version",
-            active_version=True,
-            discarded=True,
-        )
-        FinalSubmission.objects.create(
-            final_submission_id="103",
-            paper_id_filled="P001",
-            final_submission_title="Not Publishing version",
-            active_version=True,
-            excluded_from_publication=True,
-        )
-
+    def test_non_master_picker_context_is_rejected(self):
         response = self.client.get(
             self.search_url,
             {"context": "process", "q": "P001"},
         )
 
-        results = response.json()["results"]
-        self.assertEqual(len(results), 1)
-        result = results[0]
-        self.assertEqual(result["paper_id"], "P001")
-        self.assertEqual(result["final_id"], "101")
-        self.assertNotIn("title", result)
-        self.assertEqual(
-            result["url"],
-            f"{reverse('submissions:process')}?submission={submission.pk}",
-        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["results"], [])
 
 
 class PaperPickerPageTests(TestCase):
@@ -148,7 +117,12 @@ class PaperPickerPageTests(TestCase):
 
         self.assertIn("function removeUnselectedOptions(picker)", asset)
         self.assertIn("onType: function ()", asset)
+        self.assertIn("delete this.loadedSearches[query]", asset)
         self.assertGreaterEqual(asset.count("removeUnselectedOptions(this)"), 2)
+        self.assertIn("cfm-paper-picker-authors", asset)
+        self.assertIn("cfm-paper-picker-authors-icon", asset)
+        self.assertIn("function usersIconMarkup()", asset)
+        self.assertIn("No Master Authors", asset)
 
     def test_editor_upload_uses_remote_picker_and_retains_model_validation(self):
         selected = InitialPaper.objects.create(
@@ -202,9 +176,13 @@ class PaperPickerPageTests(TestCase):
             "This title must not be repeated in every verification row",
         )
 
-    def test_process_page_uses_find_paper_picker(self):
+    def test_process_page_uses_one_search_control_without_paper_picker(self):
         response = self.client.get(reverse("submissions:process"))
 
-        self.assertContains(response, "Find paper")
-        self.assertContains(response, 'data-picker-context="process"')
+        self.assertContains(
+            response,
+            "Search papers by Paper ID, Final ID, or title",
+        )
+        self.assertNotContains(response, "Find paper")
+        self.assertNotContains(response, 'data-cfm-paper-picker="true"')
         self.assertNotContains(response, "paper-preview-jump")

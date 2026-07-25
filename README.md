@@ -140,10 +140,11 @@ installation instead of preserving old machine-specific absolute paths.
 11. Export the final publication package.
 12. Review the Audit Log and download a System State ZIP before handoff.
 
-Paper selection controls in Editor Upload, Paper ID Review, and Process PDFs
-search on demand instead of loading the complete Paper Master List. Type a
-Paper ID, Master Title, or Master Author; exact Paper ID matches are shown
-first.
+Paper selection controls in Editor Upload and Paper ID Review search on demand
+instead of loading the complete Paper Master List. Type a Paper ID, Master
+Title, or Master Author; exact Paper ID matches are shown first, and every
+result shows its Master ID, Title, and Authors. Process PDFs uses its regular
+Paper ID / Final ID / title worklist search so the page has one search control.
 
 The [Operator Guide](docs/operator_guide.md) explains each stage. The
 [Publication Rules](docs/publication_rules.md) define which records and files

@@ -127,7 +127,6 @@ class EditorUploadForm(BootstrapMixin, forms.Form):
                 "data-cfm-paper-picker": "true",
                 "data-picker-context": "master",
                 "data-picker-value-field": "pk",
-                "data-picker-display": "master",
                 "data-picker-placeholder": "Type a Paper ID, title, or author",
                 "data-picker-summary-target": "editor-upload-paper-summary",
             }

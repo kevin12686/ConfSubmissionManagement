@@ -9,23 +9,36 @@
         return element.innerHTML;
     }
 
-    function masterOption(data) {
-        const title = data.title
-            ? `<div class="cfm-paper-picker-title">${escapeHtml(data.title)}</div>`
-            : "";
+    function usersIconMarkup() {
         return (
-            `<div class="cfm-paper-picker-option">` +
-            `<strong class="cfm-paper-picker-id">${escapeHtml(data.paper_id)}</strong>` +
-            title +
-            `</div>`
+            `<svg class="cfm-paper-picker-authors-icon" viewBox="0 0 24 24" ` +
+            `fill="none" stroke="currentColor" stroke-width="2" ` +
+            `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+            `<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>` +
+            `<circle cx="9" cy="7" r="4"></circle>` +
+            `<path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>` +
+            `<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>` +
+            `</svg>`
         );
     }
 
-    function processOption(data) {
+    function createUsersIcon() {
+        const wrapper = document.createElement("span");
+        wrapper.innerHTML = usersIconMarkup();
+        return wrapper.firstElementChild;
+    }
+
+    function masterOption(data) {
+        const title = data.title || "No Master Title";
+        const authors = data.authors || "No Master Authors";
         return (
-            `<div class="cfm-paper-picker-option cfm-paper-picker-option-inline">` +
+            `<div class="cfm-paper-picker-option">` +
             `<strong class="cfm-paper-picker-id">${escapeHtml(data.paper_id)}</strong>` +
-            `<span class="cfm-paper-picker-meta">Final ${escapeHtml(data.final_id)}</span>` +
+            `<div class="cfm-paper-picker-title${data.title ? "" : " cfm-paper-picker-empty"}">${escapeHtml(title)}</div>` +
+            `<div class="cfm-paper-picker-authors${data.authors ? "" : " cfm-paper-picker-empty"}">` +
+            usersIconMarkup() +
+            `<span>${escapeHtml(authors)}</span>` +
+            `</div>` +
             `</div>`
         );
     }
@@ -43,8 +56,15 @@
         const paperId = document.createElement("strong");
         paperId.textContent = option.paper_id;
         const title = document.createElement("span");
+        title.className = "cfm-paper-picker-summary-title";
         title.textContent = option.title || "No Master Title";
-        target.replaceChildren(paperId, title);
+        const authors = document.createElement("span");
+        authors.className = "cfm-paper-picker-summary-authors";
+        authors.append(
+            createUsersIcon(),
+            document.createTextNode(option.authors || "No Master Authors")
+        );
+        target.replaceChildren(paperId, title, authors);
         target.hidden = false;
     }
 
@@ -77,7 +97,6 @@
 
         const initialValue = String(element.value || "").trim();
         const valueField = element.dataset.pickerValueField || "paper_id";
-        const display = element.dataset.pickerDisplay || "master";
         const summaryTarget = element.dataset.pickerSummaryTarget;
         let requestController = null;
         element.value = "";
@@ -95,7 +114,9 @@
             loadThrottle: 200,
             placeholder: element.dataset.pickerPlaceholder || "Type to search",
             shouldLoad: function (query) {
-                return query.trim().length > 0;
+                if (!query.trim()) return false;
+                delete this.loadedSearches[query];
+                return true;
             },
             load: function (query, callback) {
                 removeUnselectedOptions(this);
@@ -120,24 +141,20 @@
                 removeUnselectedOptions(this);
             },
             render: {
-                option: display === "process" ? processOption : masterOption,
+                option: masterOption,
                 item: function (data) {
-                    if (display === "process") return processOption(data);
                     return `<div class="cfm-paper-picker-selected">${escapeHtml(data.paper_id)}</div>`;
                 },
                 no_results: function () {
                     return `<div class="no-results">No matching papers</div>`;
                 },
                 not_loading: function () {
-                    return `<div class="no-results">Type to search by Paper ID${display === "master" ? ", title, or author" : " or Final ID"}</div>`;
+                    return `<div class="no-results">Type to search by Paper ID, title, or author</div>`;
                 },
             },
             onChange: function (value) {
                 const option = value ? this.options[value] : null;
                 if (summaryTarget) updateSummary(element, option);
-                if (display === "process" && option && option.url) {
-                    window.location.assign(option.url);
-                }
             },
         });
 
