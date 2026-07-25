@@ -546,8 +546,12 @@ def _make_payload(kind, rows, token=None, blocking_errors=None):
     }
     payload["stats"] = _stats(rows)
     payload = _write_payload(payload)
+    action = {
+        "initial": "paper_master_import_preview",
+        "final": "final_submission_import_preview",
+    }.get(kind, "import_preview")
     audit_preview(
-        f"{kind}_import_preview",
+        action,
         f"{kind.title()} import preview created.",
         result_counts={**payload["stats"], "blocking_errors": len(payload["blocking_errors"])},
         extra={"token": payload["token"]},
@@ -806,16 +810,25 @@ def apply_import_preview(token, **options):
         else:
             raise ValueError("Unknown preview type.")
         shutil.rmtree(preview_root() / payload["token"], ignore_errors=True)
+        action = {
+            "initial": "paper_master_import_apply",
+            "final": "final_submission_import_apply",
+        }.get(payload["kind"], "import_apply")
         audit_success(
-            f"{payload['kind']}_import_apply",
+            action,
             f"{payload['kind'].title()} import preview applied.",
             result_counts=result,
             extra={"token": payload["token"], "options": options},
         )
         return result
     except Exception as exc:
+        kind = payload.get("kind") if payload else ""
+        action = {
+            "initial": "paper_master_import_apply",
+            "final": "final_submission_import_apply",
+        }.get(kind, "import_apply")
         audit_failure(
-            "import_apply",
+            action,
             exc,
             "Import preview apply failed.",
             result_counts=payload.get("stats", {}) if payload else {},

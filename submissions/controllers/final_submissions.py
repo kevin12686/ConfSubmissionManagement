@@ -267,8 +267,12 @@ def final_submission_list(request):
             else:
                 messages.error(request, "Unknown final submission action.")
         except Exception as exc:
+            audit_action = {
+                "discard_submission": "final_submission_discard",
+                "undo_discard_submission": "final_submission_discard_undo",
+            }.get(action, "final_submission_version_action")
             audit_failure(
-                "final_submission_list_action",
+                audit_action,
                 exc,
                 "Final submission list action failed.",
                 request=request,
@@ -322,8 +326,15 @@ def final_submission_form(request, pk=None):
                 )
                 messages.success(request, f"Final submission {submission.final_submission_id} restored.")
         except Exception as exc:
+            audit_action = {
+                "discard_submission": "final_submission_discard",
+                "undo_discard_submission": "final_submission_discard_undo",
+            }.get(
+                request.POST.get("action"),
+                "final_submission_version_action",
+            )
             audit_failure(
-                "final_submission_discard_action",
+                audit_action,
                 exc,
                 "Final submission discard action failed.",
                 request=request,
@@ -422,7 +433,7 @@ def editor_upload_form(request):
             )
         except Exception as exc:
             audit_failure(
-                "editor_upload_preview_cancel",
+                "editor_upload_cancel",
                 exc,
                 "Editor upload preview could not be canceled.",
                 request=request,
@@ -460,7 +471,7 @@ def editor_upload_form(request):
             )
             return redirect("submissions:final_submission_list")
         except Exception as exc:
-            audit_failure("editor_upload_confirm", exc, "Editor upload confirmation failed.", request=request)
+            audit_failure("editor_upload_apply", exc, "Editor upload confirmation failed.", request=request)
             messages.error(request, str(exc))
             return render(
                 request,
@@ -515,7 +526,7 @@ def final_submission_delete(request, pk):
     submission = get_object_or_404(FinalSubmission, pk=pk)
     if request.method == "POST":
         audit_failure(
-            "final_submission_delete_blocked",
+            "final_submission_delete",
             "Hard delete is disabled.",
             "Final Submission was preserved for version traceability.",
             request=request,

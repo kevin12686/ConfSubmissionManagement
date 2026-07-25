@@ -396,7 +396,13 @@ If the error mentions dates, inspect uploaded `upload_date` values and re-import
 
 Open `/reports/audit-log/`. Search by Paper ID, Final ID, action, status, or message. The raw file is `data/logs/audit.log`, and the page can download it.
 
-Useful actions to search for include `import_apply`, `final_submission_manual_edit`, `process_pdfs`, `formatting_update`, `editor_upload_create`, `discard_submission`, `verify_paper_id`, `crosscheck_result_import`, `publication_package_export`, `system_state_export`, `system_state_restore_apply`, `storage_cleanup_apply`, and `clear_database_applied`.
+Useful actions to filter or search for include `paper_master_import_apply`,
+`final_submission_import_apply`, `final_submission_edit`, `pdf_process`,
+`formatting_review_update`, `editor_upload_apply`,
+`final_submission_discard`, `paper_id_verify`, `crosscheck_result_import`,
+`publication_package_export`, `system_state_export`,
+`system_state_restore_apply`, `storage_cleanup_apply`, and
+`database_clear_complete`.
 
 ### Audit log is missing or empty
 

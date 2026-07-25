@@ -440,7 +440,7 @@ def export_active_versions():
     )
     _write_single_sheet(path, "Active Raw Data", frame)
     audit_success(
-        "export_active_versions",
+        "report_active_versions_export",
         "Active publishable versions exported.",
         result_counts={"rows": len(frame)},
         file_changes={"path": str(path)},
@@ -453,7 +453,7 @@ def export_old_versions():
     frame = old_versions_frame()
     _write_single_sheet(path, "Old Versions", frame)
     audit_success(
-        "export_old_versions",
+        "report_old_versions_export",
         "Old versions exported.",
         result_counts={"rows": len(frame)},
         file_changes={"path": str(path)},
@@ -491,7 +491,7 @@ def export_error_report():
     frame = error_report_frame()
     _write_single_sheet(path, "Readiness Issues", frame)
     audit_success(
-        "export_error_report",
+        "report_error_export",
         "Readiness issues exported.",
         result_counts={"rows": len(frame)},
         file_changes={"path": str(path)},
@@ -505,7 +505,7 @@ def export_author_count():
     frame = author_count_frame()
     _write_single_sheet(path, "Author Count", frame)
     audit_success(
-        "export_author_count",
+        "report_author_count_export",
         "Author count exported.",
         result_counts={"rows": len(frame)},
         file_changes={"path": str(path)},
@@ -921,7 +921,7 @@ def export_all_reports(*, supporting_sheets=None):
         ],
     )
     audit_success(
-        "export_editorial_review_workbook",
+        "report_editorial_workbook_export",
         "Editorial publication workbook exported.",
         result_counts={
             "publication_rows": len(sheets[0][1]),

@@ -321,7 +321,7 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
 
             rebuild_paper_authors()
         audit_success(
-            "title_author_extract",
+            "title_author_extract_builtin",
             "Title/author extraction completed.",
             submission=submission,
             reset_flags={
@@ -340,7 +340,7 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
         return True
     except ExtractionStateChanged as exc:
         audit_failure(
-            "title_author_extract",
+            "title_author_extract_builtin",
             exc,
             "Title/author extraction result was rejected because the record changed.",
             submission=submission,
@@ -355,7 +355,7 @@ def extract_title_author_for_submission(submission, refresh_author_cache=True):
         except ExtractionStateChanged as stale_exc:
             exc = stale_exc
         audit_failure(
-            "title_author_extract",
+            "title_author_extract_builtin",
             exc,
             "Title/author extraction failed.",
             submission=submission,
@@ -377,7 +377,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
             submission._last_grobid_error = str(error)
             submission._last_grobid_service_unavailable = True
             audit_failure(
-                "grobid_title_author_extract",
+                "title_author_extract_grobid",
                 error,
                 "GROBID title/author extraction skipped because the API is unavailable.",
                 submission=submission,
@@ -391,7 +391,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         submission._last_grobid_error = str(error)
         submission._last_grobid_service_unavailable = False
         audit_failure(
-            "grobid_title_author_extract",
+            "title_author_extract_grobid",
             error,
             "GROBID title/author extraction skipped.",
             submission=submission,
@@ -406,7 +406,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
         caller_submission._last_grobid_error = str(error)
         caller_submission._last_grobid_service_unavailable = False
         audit_failure(
-            "grobid_title_author_extract",
+            "title_author_extract_grobid",
             error,
             "GROBID title/author extraction failed.",
             submission=submission,
@@ -477,7 +477,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
 
             rebuild_paper_authors()
         audit_success(
-            "grobid_title_author_extract",
+            "title_author_extract_grobid",
             "GROBID title/author extraction completed.",
             submission=submission,
             reset_flags={
@@ -501,7 +501,7 @@ def extract_title_author_with_grobid(submission, refresh_author_cache=True, skip
             is_grobid_service_unavailable_error(exc)
         )
         audit_failure(
-            "grobid_title_author_extract",
+            "title_author_extract_grobid",
             exc,
             "GROBID title/author extraction failed without changing existing extraction.",
             submission=submission,
@@ -761,7 +761,7 @@ def extract_grobid_for_suspicious_rows():
             "message": grobid_unavailable_message(health_status),
         }
         audit_failure(
-            "grobid_title_author_extract_batch",
+            "title_author_extract_grobid_batch",
             GrobidExtractionError(result["message"]),
             "GROBID suspicious-row extraction was not started because the API is unavailable.",
             result_counts=result,
@@ -802,14 +802,14 @@ def extract_grobid_for_suspicious_rows():
     }
     if stopped:
         audit_failure(
-            "grobid_title_author_extract_batch",
+            "title_author_extract_grobid_batch",
             GrobidExtractionError(stop_message),
             "GROBID suspicious-row extraction stopped because the API became unavailable.",
             result_counts=result,
         )
     else:
         audit_success(
-            "grobid_title_author_extract_batch",
+            "title_author_extract_grobid_batch",
             "GROBID extraction completed for suspicious rows.",
             result_counts=result,
         )
@@ -884,7 +884,7 @@ def set_title_author_review_status(
         ]
     )
     audit_success(
-        "title_author_review_status",
+        "title_author_review_update",
         f"Title/author review status changed to {status}.",
         submission=submission,
         after={"title_author_review_status": status},
@@ -998,7 +998,7 @@ def verify_extracted_title(submission):
         ]
     )
     audit_success(
-        "verify_extracted_title_match",
+        "title_match_verify",
         "Extracted title match verified.",
         submission=submission,
         after={
@@ -1025,7 +1025,7 @@ def unverify_extracted_title(submission):
         ]
     )
     audit_success(
-        "unverify_extracted_title_match",
+        "title_match_unverify",
         "Extracted title match moved back to unverified.",
         submission=submission,
         reset_flags={"extracted_title_match": True},

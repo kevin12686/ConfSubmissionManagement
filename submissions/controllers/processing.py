@@ -186,7 +186,7 @@ def process_pdfs_view(request):
                 )
             except FormattingWorkflowError as exc:
                 audit_failure(
-                    "formatting_issue_recorded_from_pdf_preview",
+                    "formatting_issue_record",
                     exc,
                     "Formatting issue was not recorded.",
                     request=request,

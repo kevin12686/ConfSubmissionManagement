@@ -218,7 +218,7 @@ def prepare_crosscheck_upload(token, scope=CROSSCHECK_EXPORT_ALL):
             "skipped": skipped,
         }
         audit_success(
-            "crosscheck_export",
+            "crosscheck_pdf_export",
             "CrossCheck upload ZIP prepared.",
             result_counts={
                 "exported_count": len(exported),
@@ -235,7 +235,7 @@ def prepare_crosscheck_upload(token, scope=CROSSCHECK_EXPORT_ALL):
             except OSError:
                 pass
         audit_failure(
-            "crosscheck_export",
+            "crosscheck_pdf_export",
             exc,
             "CrossCheck upload ZIP preparation failed.",
             extra={"token": token, "scope": scope},

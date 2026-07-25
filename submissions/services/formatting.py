@@ -132,7 +132,7 @@ def record_formatting_issue_from_pdf_preview(
         ]
     )
     audit_success(
-        "formatting_issue_recorded_from_pdf_preview",
+        "formatting_issue_record",
         "Formatting issue recorded from Process PDFs.",
         request=request,
         submission=submission,
@@ -410,7 +410,7 @@ def cancel_formatting_upload_preview(token):
     submission = FinalSubmission.objects.filter(pk=payload.get("submission_id")).first()
     shutil.rmtree(token_root, ignore_errors=True)
     audit_success(
-        "formatting_upload_preview_canceled",
+        "formatting_upload_cancel",
         "Corrected PDF title-guard preview canceled.",
         submission=submission,
         result_counts={"removed_preview": 1},
@@ -983,9 +983,18 @@ def update_formatting_submission(submission, cleaned_data):
         submission.source_hash = ""
 
     submission.save()
+    audit_action = (
+        "formatting_upload_apply"
+        if has_new_corrected_file
+        else "formatting_review_update"
+    )
     audit_success(
-        "formatting_update",
-        "Formatting review updated.",
+        audit_action,
+        (
+            "Formatting corrected file upload applied."
+            if has_new_corrected_file
+            else "Formatting review updated."
+        ),
         submission=submission,
         changed_fields=["format_status", "format_notes"],
         reset_flags={

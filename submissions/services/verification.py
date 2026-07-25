@@ -530,7 +530,7 @@ def verify_submission(
     submission.refresh_from_db()
     _copy_submission_state(submission, caller_submission)
     audit_success(
-        "verify_paper_id",
+        "paper_id_verify",
         "Paper ID verified.",
         submission=submission,
         after={
@@ -595,7 +595,7 @@ def mark_not_publishing(
     submission.refresh_from_db()
     _copy_submission_state(submission, caller_submission)
     audit_success(
-        "mark_not_publishing",
+        "publication_exclusion_apply",
         "Final submission marked Not Publishing.",
         submission=submission,
         after={
@@ -652,7 +652,7 @@ def undo_not_publishing(submission, *, expected_evidence_token=None):
     submission.refresh_from_db()
     _copy_submission_state(submission, caller_submission)
     audit_success(
-        "undo_not_publishing",
+        "publication_exclusion_undo",
         "Final submission moved back to publication review.",
         submission=submission,
         after={
@@ -763,7 +763,7 @@ def unverify_submission(submission, *, expected_evidence_token=None):
     submission.refresh_from_db()
     _copy_submission_state(submission, caller_submission)
     audit_success(
-        "unverify_paper_id",
+        "paper_id_unverify",
         "Paper ID moved back to unverified.",
         submission=submission,
         reset_flags={"paper_id_review": True},

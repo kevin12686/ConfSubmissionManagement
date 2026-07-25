@@ -346,6 +346,14 @@ publication candidates and must write an audit event.
 
 Any new workflow that changes records, files, review status, publication readiness, settings, exports, cleanup, or backup/restore must write an audit event through `submissions/services/audit.py`.
 
+Register every production action in
+`submissions/services/audit_actions.py` and use its canonical
+`<domain>_<operation>[_<phase>]` code at the call site. Keep workflow phases
+such as `preview`, `apply`, `cancel`, and `undo` in the action only when they
+represent distinct operations. Keep outcomes such as `success`, `failed`, and
+`blocked` in the event status. Aliases are only for reading historical logs;
+new code must not introduce another spelling for an existing action.
+
 Use the helper that matches the result:
 
 - `audit_preview()` for preview-before-apply steps.
@@ -359,8 +367,11 @@ Audit events should include the relevant Paper ID, Final Submission ID, changed 
 Clear Database must preserve `data/logs/audit.log` unless the user explicitly checks the audit-clear checkbox. System State backup must include the active audit log and archived logs.
 
 The default Audit Log request must use the bounded tail reader. Full-file scans
-are reserved for explicit search. Django admin remains read-only for
-publication-critical models; new writes belong in audited services.
+are reserved for explicit search or structured category/action/status filters.
+Legacy aliases may be normalized for display and filtering, but stored JSONL
+events remain append-only and must never be rewritten. Django admin remains
+read-only for publication-critical models; new writes belong in audited
+services.
 
 ## Tests
 

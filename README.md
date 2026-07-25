@@ -183,6 +183,7 @@ The complete rules and implementation map are in
 | Formatting Review | `/reviews/formatting/` |
 | Exceptions | `/reviews/exceptions/` |
 | Error Report | `/reports/errors/` |
+| Audit Log | `/reports/audit-log/` |
 | Export Reports | `/reports/` |
 | CrossCheck | `/integrations/crosscheck/` |
 | System State | `/integrations/system-state/` |

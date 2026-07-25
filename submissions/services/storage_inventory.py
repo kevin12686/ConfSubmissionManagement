@@ -1297,7 +1297,7 @@ def sync_publication_pdf_debug_folder():
             "skipped_count": len(skipped),
         }
         audit_success(
-            "sync_publication_pdf_debug",
+            "publication_pdf_debug_sync",
             "Publication PDF debug folder synced.",
             result_counts={
                 "synced_count": len(synced),
@@ -1308,7 +1308,7 @@ def sync_publication_pdf_debug_folder():
         )
         return result
     except Exception as exc:
-        audit_failure("sync_publication_pdf_debug", exc, "Publication PDF debug sync failed.")
+        audit_failure("publication_pdf_debug_sync", exc, "Publication PDF debug sync failed.")
         raise
 
 

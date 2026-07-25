@@ -326,7 +326,7 @@ def cancel_editor_upload_preview(token, *, reason="canceled"):
     payload, token_root = load_editor_upload_preview(token)
     shutil.rmtree(token_root, ignore_errors=True)
     audit_success(
-        "editor_upload_preview_canceled",
+        "editor_upload_cancel",
         "Editor upload title-guard preview canceled.",
         object_type="InitialPaper",
         paper_id=payload.get("paper_id", ""),
@@ -409,7 +409,7 @@ def create_editor_submission(
     recompute_active_and_duplicate_state()
     submission.refresh_from_db()
     audit_success(
-        "editor_upload_create",
+        "editor_upload_apply",
         "Editor upload final submission created.",
         submission=submission,
         file_changes={
@@ -507,7 +507,7 @@ def discard_submission(submission, notes, *, expected_evidence_token=None):
     recompute_active_and_duplicate_state()
     submission.refresh_from_db()
     audit_success(
-        "discard_submission",
+        "final_submission_discard",
         "Final submission version discarded.",
         submission=submission,
         after={"discarded": True, "discard_notes": notes},
@@ -536,7 +536,7 @@ def undo_discard_submission(submission, *, expected_evidence_token=None):
     recompute_active_and_duplicate_state()
     submission.refresh_from_db()
     audit_success(
-        "undo_discard_submission",
+        "final_submission_discard_undo",
         "Final submission discard undone.",
         submission=submission,
         after={"discarded": False},

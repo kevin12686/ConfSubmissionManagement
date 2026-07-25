@@ -600,7 +600,7 @@ def verify_paper_ids(request):
                 )
                 messages.success(request, f"Final submission {submission.final_submission_id} verified.")
         except ValueError as exc:
-            audit_failure("verify_paper_id", exc, "Paper ID verification failed.", request=request, submission=submission)
+            audit_failure("paper_id_verify", exc, "Paper ID verification failed.", request=request, submission=submission)
             messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "verify_paper_ids"))
 
@@ -769,7 +769,7 @@ def title_author_extraction(request):
         if action == "extract_needs_review":
             result = extract_active_title_authors(mode="needs_review")
             audit_success(
-                "title_author_extract_needs_review",
+                "title_author_extract_builtin_batch",
                 "Title/author extraction completed for needs-review papers.",
                 request=request,
                 result_counts=result,
@@ -806,7 +806,7 @@ def title_author_extraction(request):
         elif action == "confirm_reextract_all":
             result = extract_active_title_authors(mode="all")
             audit_success(
-                "title_author_reextract_all",
+                "title_author_extract_builtin_all",
                 "All active PDFs re-extracted.",
                 request=request,
                 result_counts=result,
@@ -1089,7 +1089,7 @@ def formatting(request):
                     queue_token=queue_token,
                 )
             except Exception as exc:
-                audit_failure("formatting_upload_confirm", exc, "Formatting upload confirmation failed.", request=request)
+                audit_failure("formatting_upload_apply", exc, "Formatting upload confirmation failed.", request=request)
                 messages.error(request, str(exc))
         elif action == "cancel_formatting_upload":
             try:
@@ -1191,7 +1191,7 @@ def formatting(request):
                             queue_token=queue_token,
                         )
                 except Exception as exc:
-                    audit_failure("formatting_update", exc, "Formatting update failed.", request=request, submission=submission)
+                    audit_failure("formatting_review_update", exc, "Formatting update failed.", request=request, submission=submission)
                     messages.error(request, f"Formatting update failed: {exc}")
             else:
                 messages.error(

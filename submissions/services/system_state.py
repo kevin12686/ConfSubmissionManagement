@@ -389,7 +389,7 @@ def export_system_state(reason="manual"):
     pending_target = None
     try:
         audit_requested(
-            "system_state_export_requested",
+            "system_state_export_request",
             "System state ZIP export requested.",
             extra={"reason": reason},
         )
@@ -626,7 +626,7 @@ def apply_system_state_restore(token, confirmation):
         if retained_recovery_paths:
             try:
                 audit_success(
-                    "system_state_restore_cleanup_warning",
+                    "system_state_restore_cleanup",
                     "System State restore succeeded but recovery directories "
                     "could not be removed.",
                     file_changes={

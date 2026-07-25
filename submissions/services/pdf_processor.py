@@ -489,7 +489,7 @@ def process_all_pdfs(force=False):
             "debug_manifest": debug_result["manifest_path"],
         }
         audit_success(
-            "process_pdfs",
+            "pdf_process",
             "PDF processing completed.",
             result_counts={
                 "processed": processed,
@@ -506,7 +506,7 @@ def process_all_pdfs(force=False):
         )
         return result
     except Exception as exc:
-        audit_failure("process_pdfs", exc, "PDF processing failed.", result_counts={"force": force})
+        audit_failure("pdf_process", exc, "PDF processing failed.", result_counts={"force": force})
         raise
 
 

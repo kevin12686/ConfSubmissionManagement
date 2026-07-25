@@ -179,7 +179,7 @@ def app_settings(request):
             messages.error(request, str(exc))
             return redirect("submissions:settings")
         audit_success(
-            "settings_reset_folders",
+            "settings_folder_reset",
             "Folder paths reset to defaults.",
             request=request,
             changed_fields=list(DEFAULT_FOLDER_SETTINGS),
@@ -417,7 +417,7 @@ def app_settings(request):
             messages.error(request, str(exc))
             return redirect("submissions:settings")
         audit_success(
-            "settings_save",
+            "settings_update",
             "Settings saved.",
             request=request,
             changed_fields=form.changed_data,
@@ -634,14 +634,14 @@ def clear_database(request):
     confirmation = request.POST.get("confirmation", "").strip()
     clear_audit_log = request.POST.get("clear_audit_log") == "on"
     audit_requested(
-        "clear_database_requested",
+        "database_clear_request",
         "Clear Database requested.",
         request=request,
         result_counts={"clear_audit_log": clear_audit_log},
     )
     if confirmation != "CLEAR DATABASE":
         audit_failure(
-            "clear_database_requested",
+            "database_clear_request",
             "Confirmation text did not match.",
             "Clear Database was not applied.",
             request=request,
@@ -681,7 +681,7 @@ def clear_database(request):
             AppSetting.objects.all().delete()
             AppSetting.load()
             audit_requested(
-                "clear_database_apply",
+                "database_clear_apply",
                 "Clear Database changes validated; database commit pending.",
                 request=request,
                 result_counts=counts,
@@ -714,7 +714,7 @@ def clear_database(request):
             else []
         )
         audit_failure(
-            "clear_database_apply",
+            "database_clear_apply",
             exc,
             (
                 "Clear Database failed; database changes were rolled back "
@@ -800,7 +800,7 @@ def clear_database(request):
         )
     try:
         audit_success(
-            "clear_database_applied",
+            "database_clear_complete",
             "System wiped clean.",
             request=request,
             result_counts={**counts, "removed_file_items": removed_items},

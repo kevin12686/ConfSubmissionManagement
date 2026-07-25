@@ -9,6 +9,11 @@ from pathlib import Path
 from django.conf import settings as django_settings
 from django.utils import timezone
 
+from submissions.services.audit_actions import (
+    audit_action_metadata,
+    canonical_audit_action,
+)
+
 
 AUDIT_FILENAME = "audit.log"
 AUDIT_ARCHIVE_DIRNAME = "archive"
@@ -113,6 +118,7 @@ def write_audit_event(
         paper_id = paper_id or getattr(submission, "paper_id_filled", "")
         final_submission_id = final_submission_id or getattr(submission, "final_submission_id", "")
         object_type = object_type or submission.__class__.__name__
+    action = canonical_audit_action(action)
     event = {
         "timestamp": timezone.localtime(timezone.now()).isoformat(),
         "event_id": str(uuid.uuid4()),
@@ -170,25 +176,43 @@ def audit_requested(action, message="", **kwargs):
     return write_audit_event(action=action, status="requested", message=message, **kwargs)
 
 
-def read_audit_log(query="", limit=300):
+def read_audit_log(
+    query="",
+    limit=300,
+    *,
+    category="",
+    action="",
+    status="",
+):
     path = audit_log_path()
     if not path.exists():
         return []
     query = (query or "").strip().lower()
     limit = max(1, int(limit))
-    if query:
+    category = (category or "").strip()
+    action = canonical_audit_action(action)
+    status = (status or "").strip()
+    has_filters = bool(query or category or action or status)
+    if has_filters:
         with path.open("r", encoding="utf-8") as handle:
-            lines = deque(
-                (
-                    line.strip()
-                    for line in handle
-                    if line.strip() and query in line.lower()
-                ),
-                maxlen=limit,
-            )
+            rows = deque(maxlen=limit)
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                event = _parse_audit_line(line)
+                if _audit_event_matches(
+                    event,
+                    query=query,
+                    category=category,
+                    action=action,
+                    status=status,
+                ):
+                    rows.append(event)
     else:
         lines = _tail_utf8_lines(path, limit)
-    rows = [_parse_audit_line(line) for line in lines]
+        rows = deque((_parse_audit_line(line) for line in lines), maxlen=limit)
+    rows = list(rows)
     rows.reverse()
     return rows
 
@@ -223,13 +247,50 @@ def _parse_audit_line(line):
             "message": line[:500],
             "raw": line,
         }
+    raw_event = dict(event)
+    metadata = audit_action_metadata(event.get("action", ""))
+    event.update(metadata)
+    event["timestamp_display"] = (
+        str(event.get("timestamp", "")).replace("T", " ")[:19]
+    )
     event["raw_json"] = json.dumps(
-        event,
+        raw_event,
         ensure_ascii=False,
         sort_keys=True,
         indent=2,
     )
     return event
+
+
+def _audit_event_matches(
+    event,
+    *,
+    query="",
+    category="",
+    action="",
+    status="",
+):
+    if category and event.get("category") != category:
+        return False
+    if action and event.get("action") != action:
+        return False
+    if status and event.get("status") != status:
+        return False
+    if not query:
+        return True
+    search_values = [
+        event.get("raw_json", ""),
+        event.get("action", ""),
+        event.get("raw_action", ""),
+        event.get("action_label", ""),
+        event.get("category", ""),
+        event.get("category_label", ""),
+    ]
+    search_text = " ".join(str(value) for value in search_values).lower()
+    canonical_query = canonical_audit_action(query).lower()
+    return query in search_text or (
+        canonical_query != query and canonical_query in search_text
+    )
 
 
 def audit_log_info():
@@ -254,7 +315,7 @@ def archive_and_clear_audit_log(reason="clear_database"):
         )
         shutil.move(str(path), archived_path)
     write_audit_event(
-        action="audit_log_archived_and_cleared",
+        action="audit_log_archive_clear",
         status="success",
         message="Audit log archived and cleared.",
         file_changes={

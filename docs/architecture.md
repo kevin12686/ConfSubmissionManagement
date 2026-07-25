@@ -408,17 +408,28 @@ calculates exception validity or merges persisted workflow state.
 
 Audit logging is file-based, not database-backed. The active log is `data/logs/audit.log`, written as JSON Lines. Keeping it outside the database lets Clear Database preserve the trail by default.
 
-Each event includes timestamp, event ID, app version, state archive version, actor (`local_user`), action, status, request path, Paper ID, Final Submission ID, changed fields, before/after snapshots, reset flags, file changes, hashes, result counts, and error text when applicable.
+Each event includes timestamp, event ID, app version, state archive version,
+actor (`local_user`), action, status, request path, Paper ID, Final Submission
+ID, changed fields, before/after snapshots, reset flags, file changes, hashes,
+result counts, and error text when applicable. Canonical actions are registered
+in `submissions/services/audit_actions.py` and use
+`<domain>_<operation>[_<phase>]`. Result words such as success, failed, and
+blocked belong in `status`, not the action name.
 
 Use `submissions/services/audit.py` for all audit writes. Do not open-write the log directly from controllers or other services. File paths in events must be portable: use project/media-relative paths, hashes, sizes, and filenames instead of machine-specific temp paths or binary content.
 
-The default Audit Log view reads a bounded UTF-8 tail. A non-empty search may
-scan the complete append-only file. Archive filenames include microseconds and
-a random identity so repeated operations cannot replace an earlier log.
+The default Audit Log view reads a bounded UTF-8 tail. A non-empty search or
+structured category/action/status filter may scan the complete append-only
+file. Legacy action aliases are resolved only while reading; the original JSON
+is never rewritten. Archive filenames include microseconds and a random
+identity so repeated operations cannot replace an earlier log.
 
 System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens are still excluded.
 
-Clear Database writes `clear_database_requested` first. If the audit-clear checkbox is selected, it archives the current log, creates a new log with `audit_log_archived_and_cleared`, and then writes `clear_database_applied` after the wipe succeeds.
+Clear Database writes `database_clear_request` first. If the audit-clear
+checkbox is selected, it archives the current log, creates a new log with
+`audit_log_archive_clear`, and then writes `database_clear_complete` after the
+wipe succeeds.
 
 Django admin registrations for Paper Master, Final Submission, Settings,
 author waivers, and `PaperAuthor` are read-only. Admin must not become an

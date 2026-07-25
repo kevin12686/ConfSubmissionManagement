@@ -186,7 +186,7 @@ Paper Master notes are internal editorial notes. They appear in review workbooks
 Final Submissions can be Start2 imports or Editor Uploads.
 
 - Start2 imports are the normal author-uploaded records.
-- `Add Final Submission` creates a normal Start2-origin record through a dedicated create workflow. It evaluates the entered Paper ID against Paper Master, initializes PDF/title-author/format checks as Pending, stores uploaded PDF/source paths, recalculates active and replaced versions, and writes a `final_submission_manual_create` audit event.
+- `Add Final Submission` creates a normal Start2-origin record through a dedicated create workflow. It evaluates the entered Paper ID against Paper Master, initializes PDF/title-author/format checks as Pending, stores uploaded PDF/source paths, recalculates active and replaced versions, and writes a `final_submission_create` audit event.
 - Editor Uploads are email-provided replacement versions created by the editorial team.
 - Before an Editor Upload is created, the PDF title is extracted in dry-run mode.
   The title safety check shows the uploaded title first and each applicable reference
@@ -536,9 +536,19 @@ Clear Database preserves the current audit log by default. Check `Also archive a
 
 ## Audit Log
 
-Use `/reports/audit-log/` when you need to trace a mistake or confirm what the system did. Search by Paper ID, Final ID, action name, status, or message.
+Use `/reports/audit-log/` when you need to trace a mistake or confirm what the
+system did. Filter by workflow category, canonical action, or status, and
+search Paper ID, Final ID, action name, or message. Action names consistently
+use `<domain>_<operation>[_<phase>]`; preview, apply, cancel, and undo remain in
+the action name when they represent distinct workflow stages.
 
 The log is append-only JSON Lines stored at `data/logs/audit.log`. It records key actions such as import previews/applies, manual edits, uploads, Editor Uploads, discard/undo, Not Publishing, verification, title/author review, formatting, Process PDFs, CrossCheck export/import/report uploads, exception approvals/removals, settings changes, publication export, System State backup/restore, storage cleanup, and Clear Database.
+
+Historical logs are not rewritten. The Audit Log page maps legacy action names
+to their canonical action for filtering and display, while expanded JSON keeps
+the original stored event. Expanded events provide a syntax-highlighted
+Formatted view, a Plain view, and a Copy JSON action; these presentation tools
+do not modify the append-only log.
 
 The log records metadata, reset flags, counts, file names, hashes, and portable paths. It does not store PDF/source/report binary content.
 

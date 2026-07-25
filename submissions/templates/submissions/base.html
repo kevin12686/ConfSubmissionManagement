@@ -1271,6 +1271,76 @@
             top: 0;
             z-index: 3;
         }
+        .cfm-audit-message {
+            display: -webkit-box;
+            line-height: 1.45;
+            max-width: 32rem;
+            min-width: 14rem;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3;
+        }
+        .cfm-json-viewer {
+            background: var(--cfm-surface-subtle);
+            border: 1px solid var(--cfm-border);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .cfm-json-viewer-header {
+            align-items: center;
+            background: var(--cfm-surface-strong);
+            border-bottom: 1px solid var(--cfm-border);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: space-between;
+            padding: 0.65rem 0.75rem;
+        }
+        .cfm-json-viewer-description {
+            color: var(--cfm-secondary-text);
+            font-size: var(--cfm-font-label);
+        }
+        .cfm-json-viewer-actions {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .cfm-json-viewer-content {
+            max-height: min(34rem, 70vh);
+            overflow: auto;
+        }
+        .cfm-json-viewer .cfm-code-block {
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            margin: 0;
+            min-width: max-content;
+            padding: 0.9rem 1rem;
+        }
+        .cfm-json-key {
+            color: #1746a2;
+            font-weight: 650;
+        }
+        .cfm-json-string {
+            color: #17603a;
+        }
+        .cfm-json-number {
+            color: #8a3d0a;
+        }
+        .cfm-json-boolean {
+            color: #6b2fa0;
+            font-weight: 650;
+        }
+        .cfm-json-null {
+            color: var(--cfm-muted);
+            font-style: italic;
+        }
+        .cfm-json-error {
+            color: var(--cfm-danger-dark);
+            padding: 0.75rem 1rem 0;
+        }
         .cfm-empty {
             background: var(--cfm-surface);
             border: 1px dashed var(--cfm-border);

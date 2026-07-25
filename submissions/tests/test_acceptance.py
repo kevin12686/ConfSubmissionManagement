@@ -554,11 +554,115 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:audit_log"), {"q": "P001"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "unit_test_event")
-        self.assertContains(response, 'class="cfm-code-block small mb-0"')
+        self.assertContains(response, "data-json-viewer")
+        self.assertContains(response, "data-json-formatted")
+        self.assertContains(response, "data-json-plain")
+        self.assertContains(response, "Copy JSON")
         self.assertNotContains(response, 'class="small bg-light border p-2 mb-0"')
         response = self.client.get(reverse("submissions:download_audit_log"))
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"unit_test_event", b"".join(response.streaming_content))
+
+    def test_audit_actions_are_canonicalized_and_filterable(self):
+        write_audit_event(
+            action="editor_upload_create",
+            status="success",
+            message="Legacy action name written through the current service.",
+            paper_id="P001",
+            final_submission_id="EDITOR-P001-001",
+        )
+        with audit_log_path().open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "action": "editor_upload_preview_canceled",
+                        "status": "success",
+                        "message": "Historical action name.",
+                        "paper_id": "P002",
+                    }
+                )
+                + "\n"
+            )
+
+        written_event = json.loads(
+            audit_log_path().read_text(encoding="utf-8").splitlines()[0]
+        )
+        self.assertEqual(written_event["action"], "editor_upload_apply")
+
+        apply_event = read_audit_log(
+            category="submissions",
+            action="editor_upload_apply",
+            status="success",
+            limit=10,
+        )[0]
+        self.assertEqual(apply_event["action_label"], "Apply Editor Upload")
+        self.assertEqual(apply_event["category_label"], "Submissions & Versions")
+        self.assertEqual(apply_event["raw_action"], "editor_upload_apply")
+
+        legacy_event = read_audit_log(
+            action="editor_upload_cancel",
+            limit=10,
+        )[0]
+        self.assertEqual(legacy_event["action"], "editor_upload_cancel")
+        self.assertEqual(
+            legacy_event["raw_action"],
+            "editor_upload_preview_canceled",
+        )
+        self.assertIn(
+            '"action": "editor_upload_preview_canceled"',
+            legacy_event["raw_json"],
+        )
+
+        response = self.client.get(
+            reverse("submissions:audit_log"),
+            {
+                "category": "submissions",
+                "action": "editor_upload_apply",
+                "status": "success",
+                "limit": "50",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Apply Editor Upload")
+        self.assertContains(response, "Submissions &amp; Versions")
+        self.assertNotContains(response, "Historical action name.")
+
+    def test_formatting_upload_and_review_use_distinct_audit_actions(self):
+        submission = self.make_final_submission(
+            final_submission_id="F001",
+            paper_id_filled="P001",
+            format_status="pending",
+        )
+        update_formatting_submission(
+            submission,
+            {
+                "format_status": "needs_edit",
+                "format_notes": "Review note.",
+                "corrected_pdf": None,
+                "corrected_source": None,
+            },
+        )
+        self.assertEqual(
+            read_audit_log(limit=1)[0]["action"],
+            "formatting_review_update",
+        )
+
+        update_formatting_submission(
+            submission,
+            {
+                "format_status": "pending",
+                "format_notes": "Corrected source uploaded.",
+                "corrected_pdf": None,
+                "corrected_source": SimpleUploadedFile(
+                    "corrected.docx",
+                    b"corrected source",
+                ),
+            },
+        )
+        self.assertEqual(
+            read_audit_log(limit=1)[0]["action"],
+            "formatting_upload_apply",
+        )
 
     def test_audit_log_sanitizes_paths_and_survives_unparseable_lines(self):
         project_file = self.root / "reports" / "publication.zip"
@@ -766,7 +870,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
             response,
             "Database changes were rolled back",
         )
-        event = self.latest_audit_event("clear_database_apply")
+        event = self.latest_audit_event("database_clear_apply")
         self.assertEqual(event["status"], "failed")
 
     def test_clear_database_preserves_audit_log_by_default(self):
@@ -785,8 +889,8 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertEqual(response.status_code, 302)
         text = audit_log_path().read_text(encoding="utf-8")
         self.assertIn("before_clear_marker", text)
-        self.assertIn("clear_database_requested", text)
-        self.assertIn("clear_database_applied", text)
+        self.assertIn("database_clear_request", text)
+        self.assertIn("database_clear_complete", text)
         self.assertFalse((self.audit_root / "archive").exists())
 
     def test_clear_database_completion_audit_failure_does_not_hide_committed_wipe(self):
@@ -811,7 +915,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         events = read_audit_log()
         self.assertTrue(
             any(
-                event["action"] == "clear_database_apply"
+                event["action"] == "database_clear_apply"
                 and event["status"] == "requested"
                 for event in events
             )
@@ -894,8 +998,8 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         self.assertIn("before_archive_marker", archived[0].read_text(encoding="utf-8"))
         new_log = audit_log_path().read_text(encoding="utf-8")
         self.assertNotIn("before_archive_marker", new_log)
-        self.assertIn("audit_log_archived_and_cleared", new_log)
-        self.assertIn("clear_database_applied", new_log)
+        self.assertIn("audit_log_archive_clear", new_log)
+        self.assertIn("database_clear_complete", new_log)
 
     def test_process_pdfs_writes_audit_event(self):
         self.make_master_paper(paper_id="LOG1")
@@ -904,7 +1008,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         process_all_pdfs()
 
         text = audit_log_path().read_text(encoding="utf-8")
-        self.assertIn("process_pdfs", text)
+        self.assertIn("pdf_process", text)
 
     def test_storage_inventory_detects_missing_current_path_and_orphan_cache(self):
         submission = self.make_final_submission(final_submission_id="8101", paper_id_filled="S001")
@@ -6468,7 +6572,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             submission.format_notes,
         )
         event = self.latest_audit_event(
-            "formatting_issue_recorded_from_pdf_preview"
+            "formatting_issue_record"
         )
         self.assertEqual(event["paper_id"], "P001")
         self.assertEqual(event["extra"]["page_number"], 3)
@@ -8177,7 +8281,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(submission.extracted_title, "Original Accepted Title")
         self.assertFalse(submission.extracted_title_verified)
         self.assertEqual(submission.extracted_title_match_status, "title_mismatch")
-        event = self.latest_audit_event("final_submission_manual_edit")
+        event = self.latest_audit_event("final_submission_edit")
         self.assertEqual(event["status"], "success")
         self.assertIn("final_submission_title", event["changed_fields"])
         self.assertEqual(event["before"]["final_submission_title"], "Original Accepted Title")
@@ -8231,7 +8335,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(submission.processing_status, "pending")
         self.assertEqual(submission.title_author_review_status, "pending")
         self.assertEqual(submission.format_status, "pending")
-        event = self.latest_audit_event("final_submission_manual_create")
+        event = self.latest_audit_event("final_submission_create")
         self.assertEqual(event["status"], "success")
         self.assertEqual(event["paper_id"], "P001")
         self.assertEqual(event["final_submission_id"], "101")
@@ -8310,7 +8414,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "This field is required.")
         self.assertFalse(FinalSubmission.objects.exists())
-        self.assertEqual(read_audit_log(query="final_submission_manual_create", limit=10), [])
+        self.assertEqual(read_audit_log(query="final_submission_create", limit=10), [])
 
     def test_manual_edit_final_id_recalculates_active_version_and_duplicates(self):
         self.make_master_paper("P001", title="Ready Paper")
@@ -8390,7 +8494,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIsNone(submission.single_similarity_score)
         self.assertEqual(submission.plagiarism_report_path, "")
         self.assertIn("replacement", submission.current_file_path)
-        event = self.latest_audit_event("final_submission_manual_edit")
+        event = self.latest_audit_event("final_submission_edit")
         self.assertEqual(event["status"], "success")
         self.assertEqual(event["paper_id"], "P001")
         self.assertEqual(event["final_submission_id"], "20")

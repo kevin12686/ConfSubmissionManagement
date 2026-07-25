@@ -485,7 +485,7 @@ def create_final_submission_manual(form, report_file=None):
         }
     )
     audit_success(
-        "final_submission_manual_create",
+        "final_submission_create",
         "Final submission manually created.",
         submission=obj,
         changed_fields=sorted(changed_fields),
@@ -634,7 +634,7 @@ def apply_final_submission_manual_edit(
 
     audit_after = _audit_snapshot(obj, audit_fields)
     audit_success(
-        "final_submission_manual_edit",
+        "final_submission_edit",
         "Final submission manually edited.",
         submission=obj,
         changed_fields=sorted(changed_fields),

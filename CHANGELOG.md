@@ -3,6 +3,27 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.31 - 2026-07-25
+
+### Audit Log
+
+- Added a syntax-highlighted, safely rendered JSON viewer with Formatted and
+  Plain modes plus Copy JSON.
+- Kept JSON parsing lazy so large Audit Log result sets remain responsive, and
+  retained the original text when a historical line cannot be parsed.
+
+## 1.10.30 - 2026-07-25
+
+### Audit Log
+
+- Centralized production audit action names under the
+  `<domain>_<operation>[_<phase>]` convention without changing workflow or
+  publication logic.
+- Kept historical JSONL events append-only while mapping legacy action names
+  to canonical categories and labels for display and filtering.
+- Reworked the Audit Log into a structured review page with category, action,
+  status, search, and row-limit controls plus clearer record and JSON details.
+
 ## 1.10.29 - 2026-07-25
 
 ### Formatting Review

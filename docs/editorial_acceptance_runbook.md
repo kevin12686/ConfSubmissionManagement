@@ -47,7 +47,7 @@ Create Final Submission records and files:
 1. Configure Settings, including conference name, page limits, author limits, plagiarism thresholds, timezone, folders, and active-version rule. Confirm the editable form appears without waiting for Storage Management or GROBID, then confirm the storage panel and health status fill in separately. Refresh Storage Management and verify its counts remain stable without changing any records. Create a cleanup preview, replace one candidate at the same path, and confirm Apply skips it as changed; an overlapping Reports folder must not select System State or import/restore preview files.
 2. Import the Paper Master List and verify preview sorting places changed/new rows above unchanged rows.
 3. Import Final Submission metadata and upload matching PDF/source files. Confirm preview sorting places mapping/file/reset issues above unchanged rows.
-4. Use `Add Final Submission` to create one record manually. Confirm matching Paper Master title evaluation, uploaded PDF/source paths, Pending processing/review state, active/replaced version recalculation, and a `final_submission_manual_create` audit event. Submit an invalid form and confirm no record is created.
+4. Use `Add Final Submission` to create one record manually. Confirm matching Paper Master title evaluation, uploaded PDF/source paths, Pending processing/review state, active/replaced version recalculation, and a `final_submission_create` audit event. Submit an invalid form and confirm no record is created.
 
 ### Stage 2: Scope And Version Decisions
 
@@ -226,6 +226,10 @@ Create Final Submission records and files:
 
 - System State ZIP restore remaps managed files into local `data/` folders and does not leave old absolute paths.
 - Audit Log records critical user/system actions as JSON Lines in `data/logs/audit.log`.
+- Audit Log canonical action names use
+  `<domain>_<operation>[_<phase>]`; category, action, status, and text filters
+  return the same events, and legacy action names remain visible in expanded
+  raw JSON.
 - Clear Database preserves Audit Log by default, and the optional audit-clear checkbox archives the old log before starting a new one.
 - System State ZIP includes active and archived audit logs.
 
