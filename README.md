@@ -94,6 +94,9 @@ conference `sms_data` volume; all other requests go to Django. Keep
 diagnostics only and no longer controls whether static or media files load.
 The proxy preserves the configured public host and port so Django's normal
 same-origin CSRF protection works when `SMS_PORT` is not port 80.
+For dynamic downloads, Nginx buffers the upstream response in bounded memory
+and temporary files while serving a slow client. This is response buffering,
+not download caching; temporary data is request-scoped and is not reused.
 It also remains available while `web` restarts and serves a themed fallback
 page for backup, migration, update, restart, and unexpected upstream outages.
 The fallback checks readiness without automatically resubmitting interrupted

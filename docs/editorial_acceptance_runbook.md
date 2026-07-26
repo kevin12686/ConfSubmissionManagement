@@ -151,6 +151,14 @@ Create Final Submission records and files:
     CSRF POST smoke check. Confirm web/proxy resolve `/app/data` to the same
     host folder in bind mode. Run raw backup and verify `sms_data` is mirrored
     while rebuildable `sms_static` and `sms_gateway_state` are excluded.
+27. Through the Nginx endpoint, download a large generated ZIP with a
+    deliberately slow client. Confirm another browser can still load the
+    Dashboard, the completed ZIP opens and matches the expected manifest/files,
+    and no `proxy_cache` is configured. During transfer, confirm Nginx may use
+    request-scoped proxy temporary storage and releases it afterward. Stop web
+    before starting a request and confirm the gateway fallback still appears;
+    do not expect fallback to replace a download after response bytes have
+    already started.
 
 ## Acceptance Checks
 

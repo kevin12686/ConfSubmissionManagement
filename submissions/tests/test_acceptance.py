@@ -5927,6 +5927,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("set $sms_web_upstream web:8000;", proxy_config)
         self.assertIn("proxy_pass http://$sms_web_upstream", proxy_config)
         self.assertIn("proxy_request_buffering off", proxy_config)
+        self.assertIn("proxy_buffering on", proxy_config)
+        self.assertNotIn("proxy_buffering off", proxy_config)
+        self.assertIn("proxy_buffer_size 64k;", proxy_config)
+        self.assertIn("proxy_buffers 8 64k;", proxy_config)
+        self.assertIn("proxy_temp_file_write_size 1m;", proxy_config)
+        self.assertIn("proxy_max_temp_file_size 10240m;", proxy_config)
+        self.assertNotIn("proxy_cache ", proxy_config)
         self.assertIn("proxy_intercept_errors on", proxy_config)
         self.assertIn(
             "error_page 502 503 504 =503 /__sms_gateway/fallback.html;",

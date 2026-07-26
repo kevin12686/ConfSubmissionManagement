@@ -16,6 +16,9 @@ available in Git.
 - Changed multi-instance rebuilds to build first, replace only `web`, validate
   readiness, reload or upgrade the proxy, and retain the existing Nginx,
   static, and same-origin CSRF smoke checks.
+- Enabled finite Nginx response buffering for large Django-generated downloads
+  so a slow browser does not hold a Gunicorn thread for the entire transfer;
+  no response cache or alternate publication download path was introduced.
 - Added a database-backed readiness endpoint and serialized rebuild, migration,
   and backup operations with the existing Docker operation lock.
 

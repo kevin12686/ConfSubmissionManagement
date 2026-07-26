@@ -494,6 +494,11 @@ Nginx remains on the public port while Gunicorn is unavailable and shows the
 current backup, migration, update, or restart phase. If no fresh planned
 operation exists, it reports a generic outage instead of guessing the cause.
 Interrupted changes and uploads are not submitted again automatically.
+Large generated downloads are response-buffered through Nginx. A slow browser
+may cause Nginx to use temporary disk space while the request is active, but
+the response is not cached or reused and the temporary file is removed when
+the request ends. Publication selection and ZIP contents remain controlled by
+Django's publication services.
 
 After updating the application checkout, run
 `python3 scripts/rebuild_docker_instances.py --dry-run` to review every detected

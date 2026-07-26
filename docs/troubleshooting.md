@@ -165,6 +165,23 @@ does not recompress ZIP, PDF, image, Office, or unknown binary responses. If the
 headers still show gzip, rebuild/restart the deployment from the current code
 and confirm the proxy or tunnel is not independently compressing the response.
 
+Current Docker Nginx uses response buffering for dynamic downloads. Large
+responses may temporarily consume proxy-container disk space, up to `10240m`
+(10 GiB) per
+request, while a slow browser receives the file. This is not a download cache:
+the temporary response is not shared or reused and is removed when the request
+finishes or is abandoned. Check Docker host free space if several large
+downloads run concurrently.
+Responses larger than `10240m` still download, but once the finite buffer is
+full Gunicorn may again wait for the client to consume data.
+
+Buffering lets Gunicorn finish its local handoff sooner, but it cannot repair a
+failed export or a connection interrupted after ZIP bytes have already reached
+the browser. Retry the export from the application and verify the downloaded
+archive normally. The gateway fallback may replace an upstream `502`, `503`,
+or `504` only before response delivery has begun; it never automatically
+replays the export POST.
+
 ### Upload drop zone summary looks wrong
 
 The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.

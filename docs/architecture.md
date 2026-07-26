@@ -327,6 +327,17 @@ outage instead of guessing a cause. Failed operation status expires separately.
 The page polls the database-backed readiness endpoint but never replays the
 request that encountered the outage.
 
+For proxied dynamic responses, Nginx uses response buffering with bounded
+memory buffers and request-scoped proxy temporary files up to `10240m` (10 GiB) per
+response. Large generated ZIPs therefore transfer from Django/Gunicorn to
+Nginx as quickly as local storage permits, while Nginx handles a slower browser
+connection. This is transport behavior only: no proxy cache is configured,
+temporary response files are not reusable application artifacts, and Nginx
+does not select or modify publication files. Upload request buffering remains
+disabled. The gateway fallback still handles upstream `502`, `503`, and `504`
+responses before output has started; it cannot replace a partially delivered
+download.
+
 The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
 mirror maintained by the Docker backup script. Migration and backup use
 verified two-phase synchronization: an online pre-copy followed by a brief

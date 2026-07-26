@@ -85,7 +85,12 @@ server {
         proxy_pass http://$sms_web_upstream;
         proxy_http_version 1.1;
         proxy_request_buffering off;
-        proxy_buffering off;
+        proxy_buffering on;
+        proxy_buffer_size 64k;
+        proxy_buffers 8 64k;
+        proxy_temp_file_write_size 1m;
+        # This directive accepts k/m size suffixes, not g.
+        proxy_max_temp_file_size 10240m;
         proxy_intercept_errors on;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;

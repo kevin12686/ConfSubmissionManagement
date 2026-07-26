@@ -88,6 +88,20 @@ selection rules. Dynamic response gzip uses
 allowlist is compressed. Binary and unknown MIME types must bypass gzip so
 download responses such as publication ZIPs retain their `Content-Length`.
 
+Nginx response buffering is enabled for proxied Django responses. It uses
+small memory buffers, spills larger responses to Nginx's request-scoped proxy
+temporary files, and permits up to `10240m` (10 GiB) of temporary response data per
+request. This lets Gunicorn finish handing off a generated ZIP without staying
+coupled to a slow browser for the full download when the response fits within
+that buffer. The directive uses `m` because its size parser does not accept a
+`g` suffix. Larger responses continue streaming after the finite buffer fills.
+This is not `proxy_cache`:
+Nginx does not reuse one editor's response for another request, and temporary
+files are removed after the request. Keep `proxy_request_buffering off` so this
+response policy does not change upload handling. Keep
+`proxy_intercept_errors on` so upstream `502`, `503`, and `504` responses still
+use the service fallback before response delivery begins.
+
 POST attachment responses must use the shared download lifecycle rather than
 the ordinary full-page submit lock:
 
