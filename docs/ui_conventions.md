@@ -98,6 +98,11 @@ Reserve `q` for user-entered search. An exact target outside the workflow scope
 renders the shared focused-worklist explanation; it never substitutes a nearby
 record or widens the service queryset.
 
+Dashboard tracked-information links must open the exact subset represented by
+their count. Verified Paper Master title differences, reviewed extracted-title
+differences, and combined Plagiarism/Single exceptions use dedicated filters
+instead of opening a broader workflow tab.
+
 Contextual links to Final Submission Edit pass a same-site `next` URL. The
 controller validates it with `url_has_allowed_host_and_scheme()`. Save returns
 to the originating worklist with its view, filter, search, sort, tab, page, and

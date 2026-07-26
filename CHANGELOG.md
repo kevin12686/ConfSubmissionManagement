@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.39 - 2026-07-26
+
+### Dashboard Navigation
+
+- Made tracked-information links open the exact worklist represented by their
+  count: verified Paper Master title differences, reviewed extracted-title
+  differences, and allowed Plagiarism/Single exceptions.
+- Added dedicated Organized List and Exceptions Center filters for those
+  focused destinations without changing readiness or publication behavior.
+
 ## 1.10.38 - 2026-07-26
 
 ### Documentation Redesign

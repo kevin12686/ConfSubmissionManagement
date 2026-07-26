@@ -35,6 +35,10 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "paper_id_review", "label": "Paper ID needs review"},
     {"value": "version_conflicts", "label": "Start2/Editor conflicts"},
     {"value": "title_issues", "label": "Title issues"},
+    {
+        "value": "verified_title_differences",
+        "label": "Verified title differences",
+    },
     {"value": "no_authors", "label": "No authors"},
     {"value": "author_over_limit", "label": "Author over limit"},
     {"value": "page_issues", "label": "Page issues"},
@@ -681,6 +685,9 @@ def _filter_rows(rows, current_filter):
             row.get("version_conflict") or row.get("multiple_active_final_ids")
         ),
         "title_issues": _has_title_issue,
+        "verified_title_differences": lambda row: bool(
+            row.get("verified_title_difference")
+        ),
         "no_authors": lambda row: row["author_count"] is None,
         "author_over_limit": lambda row: row["over_author_limit"] and not row.get("author_number_exception_valid"),
         "page_issues": _has_page_issue,
@@ -883,7 +890,7 @@ def organized_list_rows(
                 ),
                 "verified_title_difference": bool(
                     submission
-                    and submission.paper_id_verified
+                    and paper_id_effectively_verified(submission, paper)
                     and not paper_title_matches_master(submission, paper)
                 ),
                 "plagiarism_label": plagiarism_label,

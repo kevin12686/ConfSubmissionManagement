@@ -315,20 +315,22 @@ def _dashboard_context(counts, readiness_rows):
                 "label": "Verified title differences",
                 "value": counts["verified_title_differences"],
                 "help": "Paper IDs are verified; title differences remain visible for editorial awareness.",
-                "url": reverse("submissions:organized_list") + "?filter=title_issues",
+                "url": reverse("submissions:organized_list")
+                + "?filter=verified_title_differences",
             },
             {
                 "label": "Reviewed extracted-title differences",
                 "value": counts["reviewed_extracted_title_differences"],
                 "help": "Title/Author Review is complete; Final and extracted title wording still differs for reference.",
                 "url": reverse("submissions:title_author_extraction")
-                + "?filter=review_ok",
+                + "?filter=reviewed_differences",
             },
             {
                 "label": "Allowed P/S exceptions",
                 "value": counts["allowed_plagiarism_exceptions"],
                 "help": "Approved plagiarism-score exceptions currently in effect.",
-                "url": reverse("submissions:exceptions_center") + "?filter=allowed",
+                "url": reverse("submissions:exceptions_center")
+                + "?filter=allowed&type=plagiarism",
             },
         ],
     }

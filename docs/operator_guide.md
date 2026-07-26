@@ -91,6 +91,10 @@ Title/Author Review. `Review OK` is the single Title/Author completion
 decision; a reviewed title wording difference remains tracked information
 instead of becoming a second blocker.
 
+Tracked-information links open the matching subset rather than the broader
+workflow tab: verified Paper Master title differences, reviewed extracted-title
+differences, and allowed Plagiarism/Single exceptions each have a focused list.
+
 ### Worklists And Navigation
 
 Large worklists default to 25 rows and support `25 / 50 / 100 / 200 / All`.

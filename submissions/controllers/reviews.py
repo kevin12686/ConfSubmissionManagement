@@ -1559,6 +1559,7 @@ def exceptions_center(request):
         {"value": "page", "label": "Page count"},
         {"value": "author_number", "label": "Authors in paper"},
         {"value": "author_limit", "label": "Author paper count"},
+        {"value": "plagiarism", "label": "Plagiarism / Single %"},
         {"value": "plagiarism_percent", "label": "Plagiarism %"},
         {"value": "single_percent", "label": "Single %"},
     ]
@@ -1566,7 +1567,13 @@ def exceptions_center(request):
     if current_type not in valid_types:
         current_type = "all"
     rows = status_rows
-    if current_type != "all":
+    if current_type == "plagiarism":
+        rows = [
+            row
+            for row in rows
+            if row["type"] in {"plagiarism_percent", "single_percent"}
+        ]
+    elif current_type != "all":
         rows = [row for row in rows if row["type"] == current_type]
     if focused_key:
         rows = [row for row in all_rows if row["key"] == focused_key]

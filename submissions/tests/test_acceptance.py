@@ -10095,6 +10095,108 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Reviewed extracted-title differences")
         self.assertNotContains(response, "Extracted title match review")
 
+    def test_dashboard_tracking_links_open_exact_worklist_subsets(self):
+        self.make_master_paper("P001", "Paper Master Title", "Ada")
+        tracked = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Different Final Title",
+            extracted_title="Different Extracted Title",
+            extracted_authors="Ada",
+            paper_id_verified=True,
+            verification_status="verified",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            similarity_score=42,
+            single_similarity_score=12,
+            plagiarism_percent_exception_approved=True,
+            plagiarism_percent_exception_reason="Editorial review complete.",
+            plagiarism_percent_exception_approved_score=42,
+            single_percent_exception_approved=True,
+            single_percent_exception_reason="Editorial review complete.",
+            single_percent_exception_approved_score=12,
+        )
+        self.make_master_paper("P002", "Other Title Issue", "Grace")
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="Other Title Issue",
+            extracted_title="",
+            paper_id_verified=False,
+            title_author_review_status="pending",
+        )
+        self.make_master_paper("P003", "Allowed Page Exception", "Linus")
+        self.make_final_submission(
+            final_submission_id="30",
+            paper_id_filled="P003",
+            final_submission_title="Allowed Page Exception",
+            extracted_title="Allowed Page Exception",
+            page_count=20,
+            page_limit_exception_approved=True,
+            page_limit_exception_reason="Approved page exception.",
+            page_limit_exception_page_count=20,
+        )
+
+        dashboard = self.client.get(reverse("submissions:dashboard_summary"))
+        self.assertContains(
+            dashboard,
+            (
+                f'{reverse("submissions:organized_list")}'
+                "?filter=verified_title_differences"
+            ),
+            html=False,
+        )
+        self.assertContains(
+            dashboard,
+            (
+                f'{reverse("submissions:title_author_extraction")}'
+                "?filter=reviewed_differences"
+            ),
+            html=False,
+        )
+        self.assertContains(
+            dashboard,
+            (
+                f'{reverse("submissions:exceptions_center")}'
+                "?filter=allowed&amp;type=plagiarism"
+            ),
+            html=False,
+        )
+
+        verified_differences = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "verified_title_differences"},
+        )
+        self.assertEqual(
+            [row["submission"].pk for row in verified_differences.context["rows"]],
+            [tracked.pk],
+        )
+
+        reviewed_differences = self.client.get(
+            reverse("submissions:title_author_extraction"),
+            {"filter": "reviewed_differences"},
+        )
+        self.assertEqual(
+            [
+                row["submission"].pk
+                for row in reviewed_differences.context["rows"]
+            ],
+            [tracked.pk],
+        )
+
+        plagiarism_exceptions = self.client.get(
+            reverse("submissions:exceptions_center"),
+            {"filter": "allowed", "type": "plagiarism"},
+        )
+        self.assertEqual(
+            {row["type"] for row in plagiarism_exceptions.context["rows"]},
+            {"plagiarism_percent", "single_percent"},
+        )
+        self.assertNotContains(
+            plagiarism_exceptions,
+            "Allowed Page Exception",
+        )
+
     def test_organized_list_exception_panel_sections_are_relevant_and_actionable(self):
         self.make_master_paper("P001", "Clean", "Ada")
         clean = self.make_final_submission(
