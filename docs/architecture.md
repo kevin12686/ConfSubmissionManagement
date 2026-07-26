@@ -307,14 +307,26 @@ Legacy `current_file_path`, `source_current_file_path`, `active_final_folder`, a
 
 Managed files live under the project `data/` tree by default. Database fields may store file paths, but System State export/restore must remap managed paths into the receiving project folder. The snapshot includes referenced review artifacts such as title/author verification images, PDF thumbnails, and format previews because they preserve manual review context.
 
-Docker deployments mount a Compose project-scoped named volume at `/app/data`.
+Docker deployments use a `web` Gunicorn/Django service behind an Nginx `proxy`
+service. Nginx is the only published endpoint: it serves all `/static/`
+requests from a rebuildable `sms_static` volume, serves `/media/` from a
+read-only mount of the project-scoped `sms_data` volume, and proxies all other
+requests to `web:8000`. `SMS_DEBUG` controls Django diagnostics, not file
+availability. The proxy never participates in publication file selection and
+cannot write conference data.
+
 The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
 mirror maintained by the Docker backup script. Migration and backup use
 verified two-phase synchronization: an online pre-copy followed by a brief
-graceful stop for the final database/file-consistent sync. Mirror promotion
-occurs only after SHA256 comparison and SQLite integrity validation, and the
-previous complete mirror is retained. This operational mirror does not change
-System State archive structure or publication-facing file resolution.
+graceful stop of the proxy/web instance for the final database/file-consistent
+sync. Mirror promotion occurs only after SHA256 comparison and SQLite integrity
+validation, and the previous complete mirror is retained. Instance discovery
+joins `web` data ownership with the `proxy` public endpoint and falls back to
+the legacy published web port during the first upgrade. Bind rollback mounts
+the same host mirror into both services. The `sms_static` volume is excluded
+from data migration and backup because `collectstatic` recreates it. This
+operational architecture does not change System State archive structure or
+publication-facing file resolution.
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the

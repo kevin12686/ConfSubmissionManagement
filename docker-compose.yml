@@ -6,15 +6,16 @@ services:
     restart: unless-stopped
     labels:
       com.conferencefinalmanager.host-data-dir: "${SMS_DATA_DIR:-./data}"
-    ports:
-      - "${SMS_BIND_HOST:-127.0.0.1}:${SMS_PORT:-8000}:8000"
+    expose:
+      - "8000"
     environment:
       DJANGO_HOST: 0.0.0.0
       DJANGO_PORT: 8000
       SMS_DATABASE_PATH: /app/data/db.sqlite3
       SMS_MEDIA_ROOT: /app/data/media
+      SMS_STATIC_ROOT: /app/staticfiles
       SMS_SECRET_KEY: ${SMS_SECRET_KEY:-local-dev-only-change-if-exposed}
-      SMS_DEBUG: ${SMS_DEBUG:-1}
+      SMS_DEBUG: ${SMS_DEBUG:-0}
       SMS_ALLOWED_HOSTS: ${SMS_ALLOWED_HOSTS:-127.0.0.1,localhost,testserver}
       SMS_RUN_MIGRATIONS: ${SMS_RUN_MIGRATIONS:-1}
       SMS_WEB_WORKERS: ${SMS_WEB_WORKERS:-1}
@@ -23,6 +24,34 @@ services:
     volumes:
       - .:/app
       - sms_data:/app/data
+      - sms_static:/app/staticfiles
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; connection = socket.create_connection(('127.0.0.1', 8000), timeout=5); connection.close()"
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+
+  proxy:
+    image: nginx:1.30.4-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "${SMS_BIND_HOST:-127.0.0.1}:${SMS_PORT:-8000}:80"
+    environment:
+      NGINX_ENVSUBST_FILTER: "^SMS_"
+      SMS_PROXY_MAX_BODY_SIZE: ${SMS_PROXY_MAX_BODY_SIZE:-10g}
+    volumes:
+      - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - sms_data:/app/data:ro
+      - sms_static:/app/staticfiles:ro
 
 volumes:
   sms_data:
+  sms_static:

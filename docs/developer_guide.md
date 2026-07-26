@@ -47,20 +47,30 @@ Important settings:
   access.
 - `SMS_ALLOWED_HOSTS`: add the LAN hostname or IP when exposing beyond
   localhost.
+- `SMS_DEBUG`: use `0` for normal Docker operation. Nginx serves static/media
+  in either mode; this setting controls only Django diagnostics.
+- `SMS_PROXY_MAX_BODY_SIZE`: finite Nginx request-body limit for large
+  PDF/source batches. The default is `10g`.
 
 The image installs dependencies from `requirements.txt`, but compose also
 bind-mounts the working tree into `/app`. After `git pull`, restart or run
 `up -d --build`; prefer rebuilding when dependencies or Docker files may have
 changed.
 
-The Docker entrypoint creates the standard `data/...` folders, runs migrations
-unless `SMS_RUN_MIGRATIONS=0`, and starts Gunicorn on `0.0.0.0:8000` inside the
-container. Before Gunicorn starts, `collectstatic` copies the pinned local UI
-assets into `STATIC_ROOT`; WhiteNoise serves that directory without requiring a
-separate proxy. It defaults to one worker and four threads to avoid
-multi-process SQLite write contention. `SMS_WEB_WORKERS`, `SMS_WEB_THREADS`,
-and `SMS_WEB_TIMEOUT` are runtime overrides; keep one worker with SQLite. This
-does not change publication file selection rules. Dynamic response gzip uses
+Docker runs two services. `web` creates the standard `data/...` folders, runs
+migrations unless `SMS_RUN_MIGRATIONS=0`, collects static assets into the
+rebuildable `sms_static` volume, and starts Gunicorn on the internal
+`0.0.0.0:8000` endpoint. `proxy` publishes `SMS_PORT`, serves `/static/` from
+`sms_static`, serves `/media/` from a read-only `sms_data` mount, and forwards
+all other requests to `web`. The proxy waits for the web health check, which
+cannot pass until migrations and `collectstatic` have completed.
+
+WhiteNoise remains configured only as a non-Docker Gunicorn fallback; Docker
+requests for `/static/` never reach it. The web service defaults to one worker
+and four threads to avoid multi-process SQLite write contention.
+`SMS_WEB_WORKERS`, `SMS_WEB_THREADS`, and `SMS_WEB_TIMEOUT` are runtime
+overrides; keep one worker with SQLite. This does not change publication file
+selection rules. Dynamic response gzip uses
 `SelectiveGZipMiddleware`: only the explicit HTML/text/JSON/JavaScript/XML MIME
 allowlist is compressed. Binary and unknown MIME types must bypass gzip so
 download responses such as publication ZIPs retain their `Content-Length`.
@@ -78,28 +88,30 @@ service has produced the file and must not alter export selection, readiness,
 or file contents.
 
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
-existing Compose `web` container created from this checkout. It reads Docker
-labels, the published host port, the `/app/data` bind or named-volume mount, and
-SMS environment variables from the existing container, then runs
-`docker compose up -d --build` with the same project name. Use `--dry-run` to
-inspect the inferred settings.
+existing Compose instance created from this checkout. It reads the data
+mount/image/Django environment from `web` and the public port/proxy environment
+from `proxy`, then runs `docker compose up -d --build` with the same project
+name. For the first upgrade from the old single-service layout, it falls back
+to the published `web:8000` port; subsequent runs use `proxy:80`. Use
+`--dry-run` to inspect the inferred settings.
 
 Existing bind-mounted instances must be migrated with
 `scripts/migrate_docker_data_volumes.py`. The migration builds the current
 image, resolves the Compose project volume name, performs an online verified
-pre-copy, gracefully stops one instance, performs the final verified sync,
-checks SQLite integrity, and recreates the instance. On failure it starts the
-old container or recreates it with `docker-compose.bind.yml`. It never deletes
-the original host data folder.
+pre-copy, gracefully stops the proxy/web instance, performs the final verified
+sync, checks SQLite integrity, and recreates the instance. On failure it starts
+the old service pair or recreates it with `docker-compose.bind.yml`. It never
+deletes the original host data folder.
 
 `scripts/backup_docker_instances.py` discovers every named-volume instance for
 the current checkout. It pre-syncs raw data to a sibling staging folder while
-the app remains available, then briefly stops a running container for the final
-consistent sync. A baseline hash manifest lets the final phase avoid rereading
-unchanged host files. The script validates SQLite before promoting the mirror,
-retains the previous complete mirror, always attempts to restore the original
-running state, logs results beside the host mirrors, and returns nonzero if any
-project fails. Bind-mounted instances are reported as already host-backed.
+the app remains available, then briefly stops a running proxy/web pair for the
+final consistent sync. A baseline hash manifest lets the final phase avoid
+rereading unchanged host files. The script validates SQLite before promoting
+the mirror, retains the previous complete mirror, always attempts to restore
+the original running state, logs results beside the host mirrors, and returns
+nonzero if any project fails. Bind-mounted instances are reported as already
+host-backed.
 
 Both data scripts use `runtime/.docker-data-operation.lock` to prevent migration
 and scheduled backup overlap. Locks older than 12 hours are treated as stale.
@@ -110,7 +122,10 @@ through per-file temporary paths, verifies SHA256 content, and runs SQLite
 
 The raw host mirror is an operational rollback copy, separate from portable
 System State ZIPs. `docker-compose.bind.yml` mounts that mirror at `/app/data`
-for rollback. Never use `docker compose down -v` during normal operation.
+for both `web` and the read-only `proxy` view during rollback. The
+`sms_static` volume is regenerated by `collectstatic` and is intentionally not
+part of raw-data backup or System State. Never use `docker compose down -v`
+during normal operation.
 
 ## Regression Commands
 

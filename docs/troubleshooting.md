@@ -139,8 +139,9 @@ alert and no workflow state is changed. Retry or refresh. Worklists remain
 normal Django GET URLs. If assets are missing after deployment, confirm
 `htmx-2.0.10.min.js`, `tabler-1.4.0.min.css`, and
 `tabler-1.4.0.min.js` exist under static files. For Docker/Gunicorn, also check
-that startup completed `collectstatic`; WhiteNoise serves the resulting
-`STATIC_ROOT`.
+that `web` completed `collectstatic`, became healthy, and `proxy` mounts the
+same `sms_static` volume read-only. Nginx serves the resulting `STATIC_ROOT` in
+Docker; WhiteNoise is only the non-Docker Gunicorn fallback.
 
 ### First readiness load after restart is slower
 
@@ -449,10 +450,22 @@ System State restore should remap managed files into this project's `data/` tree
 ### Docker raw-data migration or backup cannot find instances
 
 Run the script from the same repository checkout that created the containers.
-The scanner matches the Compose project working-directory label and `web`
-service label. Docker Desktop must be running, and a Windows scheduled task
+The scanner matches the Compose project working-directory label, reads data and
+application state from `web`, and reads the public endpoint from `proxy`. It
+also recognizes the old single-service layout by falling back to the published
+`web:8000` port. Docker Desktop must be running, and a Windows scheduled task
 must run under an account with Docker access. Use `--dry-run` before migration
 or after changing a schedule.
+
+### Docker works with debug on but images disappear with debug off
+
+Rebuild the deployment from a version that includes the Nginx `proxy` service.
+In the current layout, `SMS_DEBUG=0` is normal: Nginx serves `/static/` and
+`/media/` independently of Django debug mode. Check `docker compose ps`; both
+`web` and `proxy` should be running, and `web` should be healthy. Confirm the
+proxy mounts the same `sms_data` volume as web, read-only, and that
+`docker compose config` shows `/app/data` for both services. Do not re-enable
+debug as a media-serving workaround.
 
 ### Docker backup reports a lock or interrupted swap
 
@@ -480,8 +493,9 @@ docker compose -f docker-compose.yml -f docker-compose.bind.yml \
 ```
 
 The override mounts `SMS_DATA_DIR` directly at `/app/data`. Return to the named
-volume with the normal Compose command after resolving the problem. Do not add
-`-v` to `docker compose down`.
+volume with the normal Compose command after resolving the problem. Both web
+and proxy must show the same host source for `/app/data`; proxy's mount is
+read-only. Do not add `-v` to `docker compose down`.
 
 ### Need a completely clean conference
 

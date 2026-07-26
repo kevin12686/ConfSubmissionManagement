@@ -17,15 +17,16 @@ from docker_instance_tools import (  # noqa: E402
     compose_env,
     ensure_compose_volume,
     exclusive_lock,
-    inspect_compose_web_containers,
+    inspect_compose_containers,
     matching_instances,
     planned_volume_name,
     run,
-    start_container,
-    stop_container,
+    start_instance,
+    stop_instance,
     temporary_env_file,
     transfer_data,
     verify_data,
+    wait_until_ready,
     wait_until_running,
 )
 
@@ -80,7 +81,7 @@ def run_migrations(
     dry_run: bool,
     stop_timeout: int,
 ) -> int:
-    containers = inspect_compose_web_containers()
+    containers = inspect_compose_containers()
     instances = matching_instances(containers, root, selected_projects)
     if not instances:
         print(
@@ -165,7 +166,7 @@ def migrate_instance(
         cutover_attempted = False
         try:
             if instance["running"]:
-                stop_container(instance, stop_timeout)
+                stop_instance(instance, stop_timeout)
             transfer_data(
                 root=root,
                 image=instance["image"],
@@ -186,7 +187,6 @@ def migrate_instance(
             action = ("up", "-d", "--no-build") if instance["running"] else (
                 "create",
                 "--no-build",
-                "web",
             )
             run(
                 compose_command(
@@ -207,7 +207,9 @@ def migrate_instance(
                     f"{migrated['volume_name']}"
                 )
             if instance["running"]:
-                wait_until_running(migrated["id"])
+                wait_until_ready(migrated["id"])
+                if migrated.get("proxy_id"):
+                    wait_until_running(migrated["proxy_id"])
             print(
                 f"  completed: {verification['file_count']} files, "
                 f"{verification['total_bytes']} bytes, SQLite integrity ok"
@@ -238,13 +240,11 @@ def rollback_to_bind_mount(
     )
     if not cutover_attempted:
         if instance["running"]:
-            start_container(instance)
-            wait_until_running(instance["id"])
+            start_instance(instance)
         return
     action = ("up", "-d", "--no-build") if instance["running"] else (
         "create",
         "--no-build",
-        "web",
     )
     run(
         compose_command(
@@ -261,7 +261,7 @@ def rollback_to_bind_mount(
 
 def current_project_instance(root: Path, project: str) -> dict | None:
     instances = matching_instances(
-        inspect_compose_web_containers(),
+        inspect_compose_containers(),
         root,
         {project},
     )

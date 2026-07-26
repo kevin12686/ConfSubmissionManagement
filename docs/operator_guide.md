@@ -484,11 +484,18 @@ bind-mounted installation, run
 command without `--dry-run`. The migration handles every conference from the
 current checkout one at a time and preserves the old host folder.
 
+The Docker endpoint is Nginx. It serves system CSS/JavaScript from a
+rebuildable `sms_static` volume and uploaded/generated `/media/` files from a
+read-only view of the conference `sms_data` volume. Keep `SMS_DEBUG=0` for
+normal operation; changing it does not control whether images or PDFs load.
+Only `sms_data` and its verified `SMS_DATA_DIR` mirror contain conference
+state. The static volume is recreated automatically and is not a backup target.
+
 Run `python scripts/backup_docker_instances.py` manually or schedule it from the
 host. The command discovers all current conference instances, prepares most of
-the mirror while each app remains available, briefly stops and restarts one
-running instance for a consistent final copy, validates SQLite, and preserves
-the prior mirror with a `.backup-previous` suffix. In Windows Task Scheduler,
+the mirror while each app remains available, briefly stops and restarts the
+Nginx/web pair for a consistent final copy, validates SQLite, and preserves the
+prior mirror with a `.backup-previous` suffix. In Windows Task Scheduler,
 set the project folder as `Start in`, use the installed Python launcher or
 Python executable as the program, and use
 `scripts\backup_docker_instances.py` as the argument. Docker Desktop must be

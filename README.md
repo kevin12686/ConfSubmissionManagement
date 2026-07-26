@@ -87,6 +87,12 @@ The default example opens the app at <http://127.0.0.1:8000/>. Change
 `SMS_PORT` in the environment file when several conferences run on the same
 machine.
 
+Docker places Nginx in front of Gunicorn. Nginx serves `/static/` from the
+rebuildable `sms_static` volume and `/media/` from a read-only mount of the
+conference `sms_data` volume; all other requests go to Django. Keep
+`SMS_DEBUG=0` for normal Docker operation. Debug mode controls Django
+diagnostics only and no longer controls whether static or media files load.
+
 Runtime data lives in a Compose project-scoped named volume.
 `SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current
 instance mirror with:

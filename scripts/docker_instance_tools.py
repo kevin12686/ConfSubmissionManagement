@@ -13,9 +13,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SERVICE_NAME = "web"
+APP_SERVICE_NAME = "web"
+PROXY_SERVICE_NAME = "proxy"
 APP_DATA_DESTINATION = "/app/data"
 APP_PORT = "8000/tcp"
+PROXY_PORT = "80/tcp"
 BACKUP_DIR_LABEL = "com.conferencefinalmanager.host-data-dir"
 VOLUME_KEY = "sms_data"
 ENV_KEYS = (
@@ -26,6 +28,7 @@ ENV_KEYS = (
     "SMS_WEB_WORKERS",
     "SMS_WEB_THREADS",
     "SMS_WEB_TIMEOUT",
+    "SMS_PROXY_MAX_BODY_SIZE",
 )
 
 
@@ -61,21 +64,25 @@ def run(
     return result
 
 
-def inspect_compose_web_containers() -> list[dict]:
-    ids = run(
-        [
-            "docker",
-            "ps",
-            "-a",
-            "--filter",
-            "label=com.docker.compose.project",
-            "--filter",
-            f"label=com.docker.compose.service={SERVICE_NAME}",
-            "--format",
-            "{{.ID}}",
-        ],
-        capture=True,
-    ).stdout.splitlines()
+def inspect_compose_containers() -> list[dict]:
+    ids = []
+    for service_name in (APP_SERVICE_NAME, PROXY_SERVICE_NAME):
+        result = run(
+            [
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                "label=com.docker.compose.project",
+                "--filter",
+                f"label=com.docker.compose.service={service_name}",
+                "--format",
+                "{{.ID}}",
+            ],
+            capture=True,
+        )
+        ids.extend(result.stdout.splitlines())
+    ids = list(dict.fromkeys(container_id for container_id in ids if container_id))
     if not ids:
         return []
     return json.loads(run(["docker", "inspect", *ids], capture=True).stdout)
@@ -86,39 +93,65 @@ def matching_instances(
     root: Path,
     selected_projects: set[str],
 ) -> list[dict]:
-    by_project = {}
+    project_services: dict[str, dict[str, dict]] = {}
     for container in containers:
         labels = container.get("Config", {}).get("Labels", {}) or {}
         project = labels.get("com.docker.compose.project", "")
         working_dir = labels.get("com.docker.compose.project.working_dir", "")
+        service = labels.get("com.docker.compose.service", "")
         if not project or not same_path(working_dir, root):
             continue
         if selected_projects and project not in selected_projects:
             continue
-        instance = instance_from_container(container, project, root)
-        if not instance:
+        if service not in {APP_SERVICE_NAME, PROXY_SERVICE_NAME}:
             continue
-        existing = by_project.get(project)
+        services = project_services.setdefault(project, {})
+        existing = services.get(service)
         if existing is None or (
-            not existing["running"] and instance["running"]
+            not existing.get("State", {}).get("Running")
+            and container.get("State", {}).get("Running")
         ):
-            by_project[project] = instance
-    return [by_project[name] for name in sorted(by_project)]
+            services[service] = container
+
+    instances = []
+    for project in sorted(project_services):
+        services = project_services[project]
+        web_container = services.get(APP_SERVICE_NAME)
+        if not web_container:
+            continue
+        instance = instance_from_containers(
+            web_container,
+            services.get(PROXY_SERVICE_NAME),
+            project,
+            root,
+        )
+        if instance:
+            instances.append(instance)
+    return instances
 
 
-def instance_from_container(
-    container: dict,
+def instance_from_containers(
+    web_container: dict,
+    proxy_container: dict | None,
     project: str,
     root: Path,
 ) -> dict | None:
-    mount = data_mount(container)
-    port_binding = first_port_binding(container)
+    mount = data_mount(web_container)
+    port_binding = (
+        first_port_binding(proxy_container, PROXY_PORT)
+        if proxy_container
+        else {}
+    )
+    public_service = PROXY_SERVICE_NAME
+    if not port_binding:
+        port_binding = first_port_binding(web_container, APP_PORT)
+        public_service = APP_SERVICE_NAME
     if not mount or not port_binding:
         return None
     mount_type = mount.get("Type") or (
         "volume" if mount.get("Name") else "bind"
     )
-    labels = container.get("Config", {}).get("Labels", {}) or {}
+    labels = web_container.get("Config", {}).get("Labels", {}) or {}
     if mount_type == "bind":
         host_data_dir = mount.get("Source", "")
         volume_name = ""
@@ -128,13 +161,23 @@ def instance_from_container(
     if not host_data_dir:
         return None
     host_data_path = resolve_host_path(host_data_dir, root)
-    env = container_env(container)
+    env = container_env(web_container)
+    if proxy_container:
+        env.update(container_env(proxy_container))
     return {
-        "id": container.get("Id", ""),
+        "id": web_container.get("Id", ""),
         "project": project,
-        "name": container.get("Name", "").lstrip("/"),
-        "image": container.get("Config", {}).get("Image", ""),
-        "running": bool(container.get("State", {}).get("Running")),
+        "name": web_container.get("Name", "").lstrip("/"),
+        "image": web_container.get("Config", {}).get("Image", ""),
+        "running": bool(web_container.get("State", {}).get("Running")),
+        "proxy_id": proxy_container.get("Id", "") if proxy_container else "",
+        "proxy_name": (
+            proxy_container.get("Name", "").lstrip("/") if proxy_container else ""
+        ),
+        "proxy_running": bool(
+            proxy_container and proxy_container.get("State", {}).get("Running")
+        ),
+        "public_service": public_service,
         "mount_type": mount_type,
         "volume_name": volume_name,
         "sms_bind_host": port_binding.get("HostIp") or "0.0.0.0",
@@ -144,6 +187,15 @@ def instance_from_container(
     }
 
 
+def instance_from_container(
+    container: dict,
+    project: str,
+    root: Path,
+) -> dict | None:
+    """Build an instance from a legacy single-service container."""
+    return instance_from_containers(container, None, project, root)
+
+
 def data_mount(container: dict) -> dict:
     for mount in container.get("Mounts", []):
         if mount.get("Destination") == APP_DATA_DESTINATION:
@@ -151,11 +203,13 @@ def data_mount(container: dict) -> dict:
     return {}
 
 
-def first_port_binding(container: dict) -> dict:
+def first_port_binding(container: dict | None, port: str = APP_PORT) -> dict:
+    if not container:
+        return {}
     bindings = (
         container.get("HostConfig", {})
         .get("PortBindings", {})
-        .get(APP_PORT, [])
+        .get(port, [])
     )
     return bindings[0] if bindings else {}
 
@@ -451,6 +505,51 @@ def stop_container(instance: dict, timeout: int) -> None:
 
 def start_container(instance: dict) -> None:
     run(["docker", "start", instance["id"]], capture=True)
+
+
+def stop_instance(instance: dict, timeout: int) -> None:
+    if instance.get("proxy_id") and instance.get("proxy_running"):
+        run(
+            ["docker", "stop", "--time", str(timeout), instance["proxy_id"]],
+            capture=True,
+        )
+    if instance.get("running"):
+        stop_container(instance, timeout)
+
+
+def start_instance(instance: dict) -> None:
+    if instance.get("running"):
+        start_container(instance)
+        wait_until_ready(instance["id"])
+    if instance.get("proxy_id") and instance.get("proxy_running"):
+        run(["docker", "start", instance["proxy_id"]], capture=True)
+        wait_until_running(instance["proxy_id"])
+
+
+def wait_until_ready(container_id: str, timeout: int = 90) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                (
+                    "{{if .State.Health}}{{.State.Health.Status}}"
+                    "{{else}}{{.State.Running}}{{end}}"
+                ),
+                container_id,
+            ],
+            capture=True,
+            check=False,
+        )
+        state = result.stdout.strip().lower()
+        if result.returncode == 0 and state in {"healthy", "true"}:
+            return
+        if state == "unhealthy":
+            raise RuntimeError(f"Container became unhealthy: {container_id}")
+        time.sleep(1)
+    raise RuntimeError(f"Container did not become ready within {timeout} seconds.")
 
 
 def wait_until_running(container_id: str, timeout: int = 60) -> None:

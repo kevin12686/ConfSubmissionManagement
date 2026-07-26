@@ -5883,7 +5883,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             fetch_redirect_response=False,
         )
 
-    def test_gunicorn_deployment_collects_and_serves_local_static_assets(self):
+    def test_docker_proxy_serves_collected_static_and_media_assets(self):
         self.assertIn(
             "whitenoise.middleware.WhiteNoiseMiddleware",
             django_settings.MIDDLEWARE,
@@ -5908,6 +5908,15 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             entrypoint.index("python manage.py collectstatic --noinput"),
             entrypoint.index("exec gunicorn"),
         )
+        proxy_config = (
+            django_settings.BASE_DIR / "docker" / "nginx" / "default.conf.template"
+        ).read_text(encoding="utf-8")
+        self.assertIn("location ^~ /static/", proxy_config)
+        self.assertIn("alias /app/staticfiles/", proxy_config)
+        self.assertIn("location ^~ /media/", proxy_config)
+        self.assertIn("alias /app/data/media/", proxy_config)
+        self.assertIn("proxy_pass http://web:8000", proxy_config)
+        self.assertIn("proxy_request_buffering off", proxy_config)
 
     def test_alert_layout_defaults_to_stacked_content_and_keeps_flex_opt_in(self):
         response = self.client.get(reverse("submissions:dashboard"))
@@ -6205,6 +6214,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(instances[0]["sms_port"], "9000")
         self.assertEqual(instances[0]["sms_data_dir"], "/srv/sms/conf-a")
         self.assertEqual(instances[0]["env"]["SMS_ALLOWED_HOSTS"], "127.0.0.1,localhost")
+        self.assertEqual(instances[0]["public_service"], "web")
 
     def test_docker_rebuild_script_closes_and_removes_generated_env_file(self):
         script_path = (
@@ -6220,11 +6230,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "sms_bind_host": "127.0.0.1",
             "sms_port": "9000",
             "sms_data_dir": "/srv/sms/conf-a",
+            "public_service": "web",
+            "mount_type": "bind",
             "env": {"SMS_SECRET_KEY": "secret"},
         }
         generated_path = None
 
-        def inspect_generated_env(command, *, cwd, capture):
+        def inspect_generated_env(command, *, cwd, capture, check=True):
             nonlocal generated_path
             generated_path = Path(command[command.index("--env-file") + 1])
             with generated_path.open(encoding="utf-8") as handle:

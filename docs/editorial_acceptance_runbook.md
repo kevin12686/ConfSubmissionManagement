@@ -126,6 +126,21 @@ Create Final Submission records and files:
 
 24. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.
 
+### Stage 8: Docker Proxy And Recovery
+
+25. In a disposable Compose project with `SMS_DEBUG=0`, confirm Dashboard CSS,
+    local icons, one title/author verification image, one PDF thumbnail, one
+    formatting preview, and one publication PDF all load through the published
+    Nginx endpoint. Confirm `web` has no published host port, `proxy` owns the
+    configured port, and proxy mounts `sms_data` and `sms_static` read-only.
+    Repeat with `SMS_DEBUG=1`; file availability must be unchanged.
+26. Run Docker rebuild `--dry-run` against one legacy single-service fixture
+    and one current web/proxy project. Confirm the legacy project reads its
+    public port from web and the current project reads it from proxy. Apply the
+    bind rollback Compose in a disposable project and confirm web/proxy resolve
+    `/app/data` to the same host folder. Run raw backup and verify `sms_data` is
+    mirrored while rebuildable `sms_static` is excluded.
+
 ## Acceptance Checks
 
 ### Data And State Safety

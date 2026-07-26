@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from django.conf import settings as django_settings
 
@@ -136,6 +136,57 @@ class DockerInstanceDiscoveryTests(TestCase):
         self.assertEqual(instance["mount_type"], "bind")
         self.assertEqual(instance["sms_data_dir"], str(source.resolve()))
 
+    def test_proxy_port_is_public_endpoint_for_two_service_instance(self):
+        web = make_container(
+            self.root,
+            project="sms-conf-a",
+            mount={
+                "Type": "volume",
+                "Name": "sms-conf-a_sms_data",
+                "Source": "/volumes/a",
+                "Destination": "/app/data",
+            },
+            backup_dir="./runtime/conference-a",
+            published_port=False,
+        )
+        proxy = make_proxy_container(
+            self.root,
+            project="sms-conf-a",
+            host_port="9100",
+        )
+
+        instance = docker_instance_tools.matching_instances(
+            [proxy, web],
+            self.root,
+            set(),
+        )[0]
+
+        self.assertEqual(instance["public_service"], "proxy")
+        self.assertEqual(instance["sms_port"], "9100")
+        self.assertEqual(instance["proxy_id"], "sms-conf-a-proxy-container-id")
+        self.assertEqual(instance["env"]["SMS_PROXY_MAX_BODY_SIZE"], "12g")
+
+    def test_legacy_web_port_remains_discoverable_before_proxy_upgrade(self):
+        web = make_container(
+            self.root,
+            project="sms-conf-legacy",
+            mount={
+                "Type": "bind",
+                "Source": str(self.root / "runtime" / "legacy"),
+                "Destination": "/app/data",
+            },
+        )
+
+        instance = docker_instance_tools.matching_instances(
+            [web],
+            self.root,
+            set(),
+        )[0]
+
+        self.assertEqual(instance["public_service"], "web")
+        self.assertEqual(instance["sms_port"], "9000")
+        self.assertEqual(instance["proxy_id"], "")
+
     def test_migration_refuses_named_volume_owned_by_another_project(self):
         inspection = subprocess.CompletedProcess(
             ["docker", "volume", "inspect"],
@@ -153,6 +204,44 @@ class DockerInstanceDiscoveryTests(TestCase):
                     "sms-conf-a",
                     "sms-conf-a_sms_data",
                 )
+
+    def test_instance_lifecycle_stops_proxy_first_and_restarts_web_first(self):
+        instance = {
+            "id": "web-id",
+            "running": True,
+            "proxy_id": "proxy-id",
+            "proxy_running": True,
+        }
+
+        with patch.object(docker_instance_tools, "run") as run:
+            docker_instance_tools.stop_instance(instance, 30)
+
+        self.assertEqual(
+            run.call_args_list,
+            [
+                call(
+                    ["docker", "stop", "--time", "30", "proxy-id"],
+                    capture=True,
+                ),
+                call(
+                    ["docker", "stop", "--time", "30", "web-id"],
+                    capture=True,
+                ),
+            ],
+        )
+
+        with (
+            patch.object(docker_instance_tools, "start_container") as start_web,
+            patch.object(docker_instance_tools, "wait_until_ready") as wait_web,
+            patch.object(docker_instance_tools, "run") as run,
+            patch.object(docker_instance_tools, "wait_until_running") as wait_proxy,
+        ):
+            docker_instance_tools.start_instance(instance)
+
+        start_web.assert_called_once_with(instance)
+        wait_web.assert_called_once_with("web-id")
+        run.assert_called_once_with(["docker", "start", "proxy-id"], capture=True)
+        wait_proxy.assert_called_once_with("proxy-id")
 
 
 class DockerBackupOrchestrationTests(TestCase):
@@ -182,9 +271,8 @@ class DockerBackupOrchestrationTests(TestCase):
                     RuntimeError("final sync failed"),
                 ],
             ),
-            patch.object(backup_docker_instances, "stop_container") as stop,
-            patch.object(backup_docker_instances, "start_container") as start,
-            patch.object(backup_docker_instances, "wait_until_running") as wait,
+            patch.object(backup_docker_instances, "stop_instance") as stop,
+            patch.object(backup_docker_instances, "start_instance") as start,
             patch.object(backup_docker_instances, "append_history"),
         ):
             with self.assertRaisesRegex(RuntimeError, "final sync failed"):
@@ -197,7 +285,6 @@ class DockerBackupOrchestrationTests(TestCase):
 
         stop.assert_called_once_with(instance, 30)
         start.assert_called_once_with(instance)
-        wait.assert_called_once_with("container-id")
 
     def test_backup_scans_all_projects_and_processes_each_named_volume(self):
         volume_a = make_container(
@@ -235,7 +322,7 @@ class DockerBackupOrchestrationTests(TestCase):
         with (
             patch.object(
                 backup_docker_instances,
-                "inspect_compose_web_containers",
+                "inspect_compose_containers",
                 return_value=[volume_a, bind_instance, volume_b],
             ),
             patch.object(backup_docker_instances, "backup_instance") as backup,
@@ -300,7 +387,11 @@ class DockerRebuildCompatibilityTests(TestCase):
 
         self.assertEqual(instance["mount_type"], "volume")
         self.assertEqual(instance["volume_name"], "sms-conf-a_sms_data")
-        self.assertEqual(instance["sms_data_dir"], "./runtime/conference-a")
+        self.assertEqual(
+            instance["sms_data_dir"],
+            str((root / "runtime" / "conference-a").resolve()),
+        )
+        self.assertEqual(instance["public_service"], "web")
 
 
 class DockerMigrationOrchestrationTests(TestCase):
@@ -343,7 +434,7 @@ class DockerMigrationOrchestrationTests(TestCase):
         with (
             patch.object(
                 migrate_docker_data_volumes,
-                "inspect_compose_web_containers",
+                "inspect_compose_containers",
                 return_value=[bind_b, volume, bind_a],
             ),
             patch.object(migrate_docker_data_volumes, "migrate_instance") as migrate,
@@ -368,6 +459,7 @@ def make_container(
     project: str,
     mount: dict,
     backup_dir: str = "",
+    published_port: bool = True,
 ) -> dict:
     labels = {
         "com.docker.compose.project": project,
@@ -389,13 +481,65 @@ def make_container(
             ],
         },
         "HostConfig": {
-            "PortBindings": {
-                "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "9000"}]
-            }
+            "PortBindings": (
+                {
+                    "8000/tcp": [
+                        {"HostIp": "127.0.0.1", "HostPort": "9000"}
+                    ]
+                }
+                if published_port
+                else {}
+            )
         },
         "Mounts": [
             mount,
             {"Type": "bind", "Destination": "/app", "Source": str(root)},
+        ],
+        "State": {"Running": True},
+    }
+
+
+def make_proxy_container(
+    root: Path,
+    *,
+    project: str,
+    host_port: str = "9000",
+) -> dict:
+    return {
+        "Id": f"{project}-proxy-container-id",
+        "Name": f"/{project}-proxy-1",
+        "Config": {
+            "Image": "nginx:1.30.4-alpine",
+            "Labels": {
+                "com.docker.compose.project": project,
+                "com.docker.compose.project.working_dir": str(root),
+                "com.docker.compose.service": "proxy",
+            },
+            "Env": [
+                "SMS_PROXY_MAX_BODY_SIZE=12g",
+                "NGINX_ENVSUBST_FILTER=^SMS_",
+            ],
+        },
+        "HostConfig": {
+            "PortBindings": {
+                "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": host_port}]
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": f"{project}_sms_data",
+                "Source": f"/volumes/{project}/data",
+                "Destination": "/app/data",
+                "RW": False,
+            },
+            {
+                "Type": "volume",
+                "Name": f"{project}_sms_static",
+                "Source": f"/volumes/{project}/static",
+                "Destination": "/app/staticfiles",
+                "RW": False,
+            },
         ],
         "State": {"Running": True},
     }

@@ -3,6 +3,20 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.32 - 2026-07-25
+
+### Docker Deployment
+
+- Added an Nginx proxy that serves all Docker static and media requests while
+  Gunicorn remains responsible for Django pages and controlled downloads.
+- Made `SMS_DEBUG=0` the normal Docker default without hiding uploaded PDFs,
+  verification images, thumbnails, or formatting previews.
+- Added a rebuildable static volume and kept the conference data volume
+  read-only from Nginx.
+- Updated named-volume backup, bind-to-volume migration, bind rollback, and
+  multi-instance rebuild tools to understand both `web` and `proxy` services
+  while remaining compatible with older single-service instances.
+
 ## 1.10.31 - 2026-07-25
 
 ### Audit Log

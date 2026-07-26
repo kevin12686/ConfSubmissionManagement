@@ -17,13 +17,12 @@ if str(SCRIPT_DIR) not in sys.path:
 from docker_instance_tools import (  # noqa: E402
     DockerCommandError,
     exclusive_lock,
-    inspect_compose_web_containers,
+    inspect_compose_containers,
     matching_instances,
-    start_container,
-    stop_container,
+    start_instance,
+    stop_instance,
     transfer_data,
     verify_data,
-    wait_until_running,
 )
 
 
@@ -77,7 +76,7 @@ def run_backups(
     dry_run: bool,
     stop_timeout: int,
 ) -> int:
-    containers = inspect_compose_web_containers()
+    containers = inspect_compose_containers()
     instances = matching_instances(containers, root, selected_projects)
     if not instances:
         print(
@@ -153,7 +152,7 @@ def backup_instance(
             tolerate_source_changes=True,
         )
         if instance["running"]:
-            stop_container(instance, stop_timeout)
+            stop_instance(instance, stop_timeout)
         transfer_result = transfer_data(
             root=root,
             image=instance["image"],
@@ -199,8 +198,7 @@ def backup_instance(
     finally:
         if instance["running"]:
             try:
-                start_container(instance)
-                wait_until_running(instance["id"])
+                start_instance(instance)
             except Exception:
                 if success:
                     raise
