@@ -5908,6 +5908,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             entrypoint.index("python manage.py collectstatic --noinput"),
             entrypoint.index("exec gunicorn"),
         )
+        compose_config = (
+            django_settings.BASE_DIR / "docker-compose.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "http://127.0.0.1:8000/health/ready/",
+            compose_config,
+        )
         proxy_config = (
             django_settings.BASE_DIR / "docker" / "nginx" / "default.conf.template"
         ).read_text(encoding="utf-8")
@@ -5915,10 +5922,39 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("alias /app/staticfiles/", proxy_config)
         self.assertIn("location ^~ /media/", proxy_config)
         self.assertIn("alias /app/data/media/", proxy_config)
-        self.assertIn("proxy_pass http://web:8000", proxy_config)
+        self.assertIn("resolver 127.0.0.11", proxy_config)
+        self.assertIn("resolver_timeout 2s;", proxy_config)
+        self.assertIn("set $sms_web_upstream web:8000;", proxy_config)
+        self.assertIn("proxy_pass http://$sms_web_upstream", proxy_config)
         self.assertIn("proxy_request_buffering off", proxy_config)
+        self.assertIn("proxy_intercept_errors on", proxy_config)
+        self.assertIn(
+            "error_page 502 503 504 =503 /__sms_gateway/fallback.html;",
+            proxy_config,
+        )
+        self.assertIn("Content-Security-Policy", proxy_config)
         self.assertIn("proxy_set_header Host $http_host;", proxy_config)
         self.assertNotIn("proxy_set_header Host $host;", proxy_config)
+        fallback_page = (
+            django_settings.BASE_DIR / "docker" / "nginx" / "fallback.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Conference Final Manager · Service gateway", fallback_page)
+        self.assertIn("/__sms_gateway/status.json", fallback_page)
+        self.assertIn("/__sms_gateway/ready", fallback_page)
+        self.assertIn("never submitted again automatically", fallback_page)
+        self.assertIn("sms_gateway_state:/srv/fallback-state", compose_config)
+        self.assertIn(
+            "com.conferencefinalmanager.gateway-version",
+            compose_config,
+        )
+        self.assertNotIn("condition: service_healthy", compose_config)
+
+    def test_readiness_endpoint_checks_database_without_caching(self):
+        response = self.client.get(reverse("submissions:readiness"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+        self.assertEqual(response["Cache-Control"], "no-store")
 
     def test_alert_layout_defaults_to_stacked_content_and_keeps_flex_opt_in(self):
         response = self.client.get(reverse("submissions:dashboard"))
@@ -6234,6 +6270,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "sms_data_dir": "/srv/sms/conf-a",
             "public_service": "web",
             "mount_type": "bind",
+            "gateway_version": "1",
+            "id": "web-id",
+            "proxy_id": "proxy-id",
+            "proxy_running": True,
             "env": {"SMS_SECRET_KEY": "secret"},
         }
         generated_path = None
@@ -6256,6 +6296,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         with (
             patch.object(docker_rebuild, "run", side_effect=inspect_generated_env),
             patch.object(docker_rebuild, "smoke_test_public_endpoint") as smoke,
+            patch.object(
+                docker_rebuild,
+                "current_project_instance",
+                return_value=instance,
+            ),
+            patch.object(docker_rebuild, "wait_until_ready"),
+            patch.object(docker_rebuild, "GatewayOperationStatus"),
         ):
             docker_rebuild.rebuild_instance(
                 instance, Path(django_settings.BASE_DIR), dry_run=False
@@ -6266,8 +6313,18 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertTrue(
             any(command[-2:] == ["config", "--quiet"] for command in commands)
         )
+        build_command = next(command for command in commands if "build" in command)
+        self.assertEqual(build_command[-2:], ["build", "web"])
         update_command = next(command for command in commands if "up" in command)
+        self.assertEqual(update_command[-1], "web")
+        self.assertIn("--no-deps", update_command)
         self.assertIn("--force-recreate", update_command)
+        proxy_command = next(
+            command
+            for command in commands
+            if "exec" in command and "/srv/fallback/reload.sh" in command
+        )
+        self.assertIn("proxy", proxy_command)
         self.assertIn("docker-compose.bind.yml", " ".join(update_command))
         smoke.assert_called_once_with(instance)
 

@@ -94,6 +94,10 @@ conference `sms_data` volume; all other requests go to Django. Keep
 diagnostics only and no longer controls whether static or media files load.
 The proxy preserves the configured public host and port so Django's normal
 same-origin CSRF protection works when `SMS_PORT` is not port 80.
+It also remains available while `web` restarts and serves a themed fallback
+page for backup, migration, update, restart, and unexpected upstream outages.
+The fallback checks readiness without automatically resubmitting interrupted
+editorial actions.
 
 After updating this checkout, preview and rebuild all Docker conference
 instances without locating each original env file:
@@ -104,10 +108,12 @@ python3 scripts/rebuild_docker_instances.py
 ```
 
 The script recovers the effective environment from each existing web/proxy
-pair, retains its data mount and public port, force-recreates both services,
-then verifies proxy configuration, static delivery, and a non-mutating CSRF
+pair, retains its data mount and public port, builds before cutover, replaces
+only `web`, waits for readiness, then reloads or upgrades the stable proxy. It
+still verifies proxy configuration, static delivery, and a non-mutating CSRF
 POST. Generated env files are temporary; the script does not rewrite the
-operator's original `.env.*` files.
+operator's original `.env.*` files. A direct Compose rebuild still receives a
+generic fallback, but only this script publishes accurate update phases.
 
 Runtime data lives in a Compose project-scoped named volume.
 `SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current

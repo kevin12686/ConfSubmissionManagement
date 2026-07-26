@@ -62,8 +62,16 @@ migrations unless `SMS_RUN_MIGRATIONS=0`, collects static assets into the
 rebuildable `sms_static` volume, and starts Gunicorn on the internal
 `0.0.0.0:8000` endpoint. `proxy` publishes `SMS_PORT`, serves `/static/` from
 `sms_static`, serves `/media/` from a read-only `sms_data` mount, and forwards
-all other requests to `web`. The proxy waits for the web health check, which
-cannot pass until migrations and `collectstatic` have completed.
+all other requests to `web`. The proxy starts independently, resolves changing
+web container addresses through Docker DNS, and serves
+`docker/nginx/fallback.html` when the upstream returns `502`, `503`, or `504`.
+The project-scoped `sms_gateway_state` volume contains only short-lived
+operation status; it is not conference data and is not backed up.
+
+`/health/ready/` opens the Django database and returns non-cached JSON. Nginx
+exposes it internally to the fallback page as `/__sms_gateway/ready`. The page
+checks readiness but returns to `/` with a new GET; it never replays an
+interrupted POST, upload, import, or export request.
 
 The proxy must forward the original HTTP `Host` header including its port.
 Use Nginx `$http_host`, not `$host`: `$host` drops a non-default public
@@ -100,28 +108,33 @@ same Compose project name. It does not depend on locating or rewriting the
 original `.env.*` file. Recovered values are written to a temporary env file,
 with secrets masked in console output.
 
-Before changing containers, the script validates `docker compose config`. It
-then runs `up -d --build --force-recreate`, retaining a named volume as a named
-volume and applying `docker-compose.bind.yml` when the existing instance uses a
-host bind. After recreation it verifies the loaded Nginx Host directive, a
-known collected static asset, and a non-mutating same-origin CSRF POST through
-the public port. Any failed validation returns a nonzero status and identifies
-the affected project. For the first upgrade from the old single-service
-layout, discovery falls back to the published `web:8000` port; subsequent runs
-use `proxy:80`. Use `--dry-run` to inspect every inferred setting and exact
-Compose command.
+Before changing containers, the script validates `docker compose config`, then
+builds `web` while the current service remains available. It publishes an
+`update` status, force-recreates only `web`, waits for its health check, and
+either performs a validated in-place Nginx configuration reload or does the
+one-time proxy recreation required by an older gateway layout. It retains a
+named volume as a named volume and applies `docker-compose.bind.yml` when the
+existing instance uses a host bind. It then verifies the loaded Nginx Host
+directive, a known collected static asset, and a non-mutating same-origin CSRF
+POST through the public port. Any failed validation returns a nonzero status
+and identifies the affected project. For the first upgrade from the old
+single-service layout, discovery falls back to the published `web:8000` port;
+subsequent runs use `proxy:80`. Use `--dry-run` to inspect every inferred
+setting and command.
 
 Existing bind-mounted instances must be migrated with
 `scripts/migrate_docker_data_volumes.py`. The migration builds the current
 image, resolves the Compose project volume name, performs an online verified
-pre-copy, gracefully stops the proxy/web instance, performs the final verified
-sync, checks SQLite integrity, and recreates the instance. On failure it starts
-the old service pair or recreates it with `docker-compose.bind.yml`. It never
-deletes the original host data folder.
+pre-copy, gracefully stops `web` while the proxy remains available, performs
+the final verified sync, checks SQLite integrity, and starts the new web
+container. After web is healthy, it briefly recreates proxy because its
+read-only data mount must also move from the host bind to the named volume. On
+failure it starts the old web container or recreates the bind deployment with
+`docker-compose.bind.yml`. It never deletes the original host data folder.
 
 `scripts/backup_docker_instances.py` discovers every named-volume instance for
 the current checkout. It pre-syncs raw data to a sibling staging folder while
-the app remains available, then briefly stops a running proxy/web pair for the
+the app remains available, then briefly stops a running web container for the
 final consistent sync. A baseline hash manifest lets the final phase avoid
 rereading unchanged host files. The script validates SQLite before promoting
 the mirror, retains the previous complete mirror, always attempts to restore
@@ -129,9 +142,14 @@ the original running state, logs results beside the host mirrors, and returns
 nonzero if any project fails. Bind-mounted instances are reported as already
 host-backed.
 
-Both data scripts use `runtime/.docker-data-operation.lock` to prevent migration
-and scheduled backup overlap. Locks older than 12 hours are treated as stale.
-They support repeatable `--project`, `--dry-run`, and `--stop-timeout` options.
+Backup now stops only `web`; Nginx remains on the public port and renders the
+current backup phase until Gunicorn is healthy again.
+
+Backup, migration, and rebuild use
+`runtime/.docker-data-operation.lock` to prevent disruptive Docker operations
+from overlapping. Locks older than 12 hours are treated as stale. The data
+scripts support repeatable `--project`, `--dry-run`, and `--stop-timeout`
+options.
 The transfer helper rejects symlinks, removes stale destination entries, copies
 through per-file temporary paths, verifies SHA256 content, and runs SQLite
 `PRAGMA integrity_check`.

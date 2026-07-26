@@ -1,4 +1,5 @@
 from .controllers.dashboard import dashboard, dashboard_summary
+from .controllers.health import readiness
 from .controllers.papers import (
     import_initial_papers_view,
     initial_paper_delete,

@@ -6,10 +6,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -19,6 +22,10 @@ APP_DATA_DESTINATION = "/app/data"
 APP_PORT = "8000/tcp"
 PROXY_PORT = "80/tcp"
 BACKUP_DIR_LABEL = "com.conferencefinalmanager.host-data-dir"
+GATEWAY_VERSION_LABEL = "com.conferencefinalmanager.gateway-version"
+GATEWAY_VERSION = "1"
+GATEWAY_STATE_DESTINATION = "/srv/fallback-state"
+GATEWAY_STATUS_PATH = f"{GATEWAY_STATE_DESTINATION}/status.json"
 VOLUME_KEY = "sms_data"
 ENV_KEYS = (
     "SMS_SECRET_KEY",
@@ -164,6 +171,11 @@ def instance_from_containers(
     env = container_env(web_container)
     if proxy_container:
         env.update(container_env(proxy_container))
+    proxy_labels = (
+        proxy_container.get("Config", {}).get("Labels", {}) or {}
+        if proxy_container
+        else {}
+    )
     return {
         "id": web_container.get("Id", ""),
         "project": project,
@@ -177,6 +189,7 @@ def instance_from_containers(
         "proxy_running": bool(
             proxy_container and proxy_container.get("State", {}).get("Running")
         ),
+        "gateway_version": proxy_labels.get(GATEWAY_VERSION_LABEL, ""),
         "public_service": public_service,
         "mount_type": mount_type,
         "volume_name": volume_name,
@@ -260,6 +273,154 @@ def format_env_line(key: str, value: str) -> str:
         return f"{key}={value}\n"
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'{key}="{escaped}"\n'
+
+
+class GatewayOperationStatus:
+    def __init__(
+        self,
+        instance: dict,
+        operation: str,
+        *,
+        heartbeat_seconds: int = 15,
+    ):
+        self.instance = instance
+        self.operation = operation
+        self.heartbeat_seconds = heartbeat_seconds
+        self.phase = "starting"
+        self.outcome = "active"
+        self.started_at = _utc_timestamp()
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._warned = False
+        self._lock = threading.Lock()
+
+    def start(self, phase: str) -> None:
+        self.phase = phase
+        self._write()
+        if self._thread is None and self._can_publish():
+            self._thread = threading.Thread(
+                target=self._heartbeat,
+                name=f"sms-gateway-status-{self.instance.get('project', 'instance')}",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def update(self, phase: str) -> None:
+        self.phase = phase
+        self._write()
+
+    def fail(self, phase: str = "failed") -> None:
+        self.phase = phase
+        self.outcome = "failed"
+        self._write()
+
+    def bind_instance(self, instance: dict) -> None:
+        self.instance = instance
+        self._write()
+
+    def close(self, *, clear: bool) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(1, self.heartbeat_seconds + 1))
+        if clear:
+            try:
+                clear_gateway_status(self.instance)
+            except DockerCommandError as exc:
+                self._warn(exc)
+
+    def _heartbeat(self) -> None:
+        while not self._stop_event.wait(self.heartbeat_seconds):
+            self._write()
+
+    def _can_publish(self) -> bool:
+        return bool(
+            self.instance.get("proxy_id")
+            and self.instance.get("proxy_running")
+        )
+
+    def _write(self) -> None:
+        if not self._can_publish():
+            return
+        with self._lock:
+            payload = {
+                "schema": 1,
+                "project": self.instance.get("project", ""),
+                "operation": self.operation,
+                "phase": self.phase,
+                "outcome": self.outcome,
+                "started_at": self.started_at,
+                "updated_at": _utc_timestamp(),
+            }
+            try:
+                write_gateway_status(self.instance, payload)
+            except (DockerCommandError, OSError) as exc:
+                self._warn(exc)
+
+    def _warn(self, exc: Exception) -> None:
+        if self._warned:
+            return
+        self._warned = True
+        print(
+            f"Warning: could not publish service status for "
+            f"{self.instance.get('project', 'instance')}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def write_gateway_status(instance: dict, payload: dict) -> None:
+    proxy_id = instance.get("proxy_id", "")
+    if not proxy_id or not instance.get("proxy_running"):
+        return
+    temporary_container_path = (
+        f"{GATEWAY_STATE_DESTINATION}/.status-{uuid.uuid4().hex}.json"
+    )
+    host_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            delete=False,
+        ) as handle:
+            host_path = Path(handle.name)
+            json.dump(payload, handle, sort_keys=True)
+            handle.write("\n")
+        run(
+            [
+                "docker",
+                "cp",
+                str(host_path),
+                f"{proxy_id}:{temporary_container_path}",
+            ],
+            capture=True,
+        )
+        run(
+            [
+                "docker",
+                "exec",
+                proxy_id,
+                "mv",
+                temporary_container_path,
+                GATEWAY_STATUS_PATH,
+            ],
+            capture=True,
+        )
+    finally:
+        if host_path is not None:
+            host_path.unlink(missing_ok=True)
+
+
+def clear_gateway_status(instance: dict) -> None:
+    proxy_id = instance.get("proxy_id", "")
+    if not proxy_id or not instance.get("proxy_running"):
+        return
+    run(
+        ["docker", "exec", proxy_id, "rm", "-f", GATEWAY_STATUS_PATH],
+        capture=True,
+    )
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @contextmanager
@@ -508,11 +669,6 @@ def start_container(instance: dict) -> None:
 
 
 def stop_instance(instance: dict, timeout: int) -> None:
-    if instance.get("proxy_id") and instance.get("proxy_running"):
-        run(
-            ["docker", "stop", "--time", str(timeout), instance["proxy_id"]],
-            capture=True,
-        )
     if instance.get("running"):
         stop_container(instance, timeout)
 
@@ -521,9 +677,6 @@ def start_instance(instance: dict) -> None:
     if instance.get("running"):
         start_container(instance)
         wait_until_ready(instance["id"])
-    if instance.get("proxy_id") and instance.get("proxy_running"):
-        run(["docker", "start", instance["proxy_id"]], capture=True)
-        wait_until_running(instance["proxy_id"])
 
 
 def wait_until_ready(container_id: str, timeout: int = 90) -> None:

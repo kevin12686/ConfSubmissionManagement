@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.35 - 2026-07-25
+
+### Docker Service Recovery
+
+- Added a theme-matched Nginx fallback gateway for planned backup, storage
+  migration, application update, restart, unexpected outage, and
+  operator-attention states.
+- Kept Nginx available while backup and update operations restart Gunicorn,
+  added project-scoped operation status with heartbeat and expiry handling, and
+  prevented interrupted requests from being submitted again automatically.
+- Changed multi-instance rebuilds to build first, replace only `web`, validate
+  readiness, reload or upgrade the proxy, and retain the existing Nginx,
+  static, and same-origin CSRF smoke checks.
+- Added a database-backed readiness endpoint and serialized rebuild, migration,
+  and backup operations with the existing Docker operation lock.
+
 ## 1.10.34 - 2026-07-25
 
 ### Docker Deployment

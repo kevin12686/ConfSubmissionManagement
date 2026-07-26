@@ -13,6 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from docker_instance_tools import (  # noqa: E402
     DockerCommandError,
+    GatewayOperationStatus,
     compose_command,
     compose_env,
     ensure_compose_volume,
@@ -27,7 +28,6 @@ from docker_instance_tools import (  # noqa: E402
     transfer_data,
     verify_data,
     wait_until_ready,
-    wait_until_running,
 )
 
 
@@ -140,33 +140,39 @@ def migrate_instance(
         if dry_run:
             return
 
-        run(
-            compose_command(
-                root,
-                env_file,
-                instance["project"],
-                "build",
-                "web",
-            ),
-            cwd=root,
-            capture=False,
-        )
-        ensure_compose_volume(instance["project"], volume_name)
-        pre_sync = transfer_data(
-            root=root,
-            image=instance["image"],
-            source_type="bind",
-            source=instance["sms_data_dir"],
-            destination_type="volume",
-            destination=volume_name,
-            verify_content=True,
-            tolerate_source_changes=True,
-        )
-
+        status = GatewayOperationStatus(instance, "migration")
+        status.start("build")
         cutover_attempted = False
+        web_stopped = False
         try:
+            run(
+                compose_command(
+                    root,
+                    env_file,
+                    instance["project"],
+                    "build",
+                    "web",
+                ),
+                cwd=root,
+                capture=False,
+            )
+            ensure_compose_volume(instance["project"], volume_name)
+            status.update("pre_sync")
+            pre_sync = transfer_data(
+                root=root,
+                image=instance["image"],
+                source_type="bind",
+                source=instance["sms_data_dir"],
+                destination_type="volume",
+                destination=volume_name,
+                verify_content=True,
+                tolerate_source_changes=True,
+            )
             if instance["running"]:
+                status.update("stopping")
                 stop_instance(instance, stop_timeout)
+                web_stopped = True
+            status.update("final_sync")
             transfer_data(
                 root=root,
                 image=instance["image"],
@@ -177,6 +183,7 @@ def migrate_instance(
                 verify_content=True,
                 baseline_manifest=pre_sync["manifest"],
             )
+            status.update("verify")
             verification = verify_data(
                 root=root,
                 image=instance["image"],
@@ -184,16 +191,24 @@ def migrate_instance(
                 data_source=volume_name,
             )
             cutover_attempted = True
-            action = ("up", "-d", "--no-build") if instance["running"] else (
+            status.update("web_cutover")
+            web_action = (
+                "up",
+                "-d",
+                "--no-build",
+                "--no-deps",
+                "web",
+            ) if instance["running"] else (
                 "create",
                 "--no-build",
+                "web",
             )
             run(
                 compose_command(
                     root,
                     env_file,
                     instance["project"],
-                    *action,
+                    *web_action,
                 ),
                 cwd=root,
                 capture=False,
@@ -208,8 +223,38 @@ def migrate_instance(
                 )
             if instance["running"]:
                 wait_until_ready(migrated["id"])
-                if migrated.get("proxy_id"):
-                    wait_until_running(migrated["proxy_id"])
+            status.bind_instance(migrated)
+            status.update("proxy_cutover")
+            proxy_action = (
+                "up",
+                "-d",
+                "--no-build",
+                "--no-deps",
+                "--force-recreate",
+                "proxy",
+            ) if instance.get("proxy_running") else (
+                "create",
+                "--no-build",
+                "--force-recreate",
+                "proxy",
+            )
+            run(
+                compose_command(
+                    root,
+                    env_file,
+                    instance["project"],
+                    *proxy_action,
+                ),
+                cwd=root,
+                capture=False,
+            )
+            migrated = current_project_instance(root, instance["project"])
+            if not migrated:
+                raise RuntimeError("Recreated Docker instance was not found.")
+            status.bind_instance(migrated)
+            if instance.get("proxy_running"):
+                wait_until_ready(migrated["proxy_id"])
+            status.update("health")
             print(
                 f"  completed: {verification['file_count']} files, "
                 f"{verification['total_bytes']} bytes, SQLite integrity ok"
@@ -218,13 +263,24 @@ def migrate_instance(
                 f"  rollback copy remains at: {instance['sms_data_dir']}"
             )
         except Exception:
-            rollback_to_bind_mount(
-                instance,
-                root,
-                env_file,
-                cutover_attempted=cutover_attempted,
-            )
+            status.fail()
+            try:
+                rollback_to_bind_mount(
+                    instance,
+                    root,
+                    env_file,
+                    cutover_attempted=cutover_attempted,
+                    web_stopped=web_stopped,
+                )
+            except Exception:
+                status.close(clear=False)
+                raise
+            restored = current_project_instance(root, instance["project"]) or instance
+            status.bind_instance(restored)
+            status.close(clear=True)
             raise
+        else:
+            status.close(clear=True)
 
 
 def rollback_to_bind_mount(
@@ -233,13 +289,14 @@ def rollback_to_bind_mount(
     env_file: Path,
     *,
     cutover_attempted: bool,
+    web_stopped: bool,
 ) -> None:
     print(
         f"  restoring bind-mounted container for {instance['project']}...",
         file=sys.stderr,
     )
     if not cutover_attempted:
-        if instance["running"]:
+        if instance["running"] and web_stopped:
             start_instance(instance)
         return
     action = ("up", "-d", "--no-build") if instance["running"] else (

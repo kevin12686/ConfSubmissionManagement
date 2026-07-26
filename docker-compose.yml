@@ -30,7 +30,7 @@ services:
         - CMD
         - python
         - -c
-        - "import socket; connection = socket.create_connection(('127.0.0.1', 8000), timeout=5); connection.close()"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready/', timeout=5).read()"
       interval: 10s
       timeout: 6s
       retries: 12
@@ -39,9 +39,8 @@ services:
   proxy:
     image: nginx:1.30.4-alpine
     restart: unless-stopped
-    depends_on:
-      web:
-        condition: service_healthy
+    labels:
+      com.conferencefinalmanager.gateway-version: "1"
     ports:
       - "${SMS_BIND_HOST:-127.0.0.1}:${SMS_PORT:-8000}:80"
     environment:
@@ -49,9 +48,26 @@ services:
       SMS_PROXY_MAX_BODY_SIZE: ${SMS_PROXY_MAX_BODY_SIZE:-10g}
     volumes:
       - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/nginx/fallback.html:/srv/fallback/fallback.html:ro
+      - ./docker/nginx/reload.sh:/srv/fallback/reload.sh:ro
+      - ./submissions/static/submissions/brand/app-icon-512.png:/srv/fallback/app-icon.png:ro
       - sms_data:/app/data:ro
       - sms_static:/app/staticfiles:ro
+      - sms_gateway_state:/srv/fallback-state
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1/__sms_gateway/ping
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
 
 volumes:
   sms_data:
   sms_static:
+  sms_gateway_state:

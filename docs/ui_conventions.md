@@ -259,6 +259,24 @@ Touch/coarse-pointer layouts retain the static image and normal full-file link.
 Hint text comes from `data-cfm-image-magnifier-hint`, not the browser-native
 `title` tooltip.
 
+## Docker Service Fallback
+
+The Nginx fallback uses one responsive shell for planned and unplanned service
+outages. It retains the application header, cool gray surfaces, compact
+typography, restrained borders, and blue primary action used by the Django UI.
+Operation state changes content rather than selecting a separate page:
+
+- blue represents backup, migration, and update;
+- teal represents an ordinary restart;
+- amber represents an unexplained outage;
+- red is reserved for failed automatic recovery that needs operator attention.
+
+Show only known phases from the host operation status. Missing or stale status
+must use generic unavailable language and must not guess that a backup or
+update is running. The page may poll readiness, but it must never replay a
+POST, upload, import, or export. Returning to the workspace always starts a new
+GET.
+
 ## Workflow-Specific Conventions
 
 - Process PDFs keeps complete page-thumbnail strips expanded. Filters narrow

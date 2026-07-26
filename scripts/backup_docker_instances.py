@@ -16,6 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from docker_instance_tools import (  # noqa: E402
     DockerCommandError,
+    GatewayOperationStatus,
     exclusive_lock,
     inspect_compose_containers,
     matching_instances,
@@ -139,6 +140,8 @@ def backup_instance(
 
     started_at = datetime.now(timezone.utc)
     success = False
+    status = GatewayOperationStatus(instance, "backup")
+    status.start("pre_sync")
     try:
         recover_interrupted_promotion(target)
         pre_sync = transfer_data(
@@ -152,7 +155,9 @@ def backup_instance(
             tolerate_source_changes=True,
         )
         if instance["running"]:
+            status.update("stopping")
             stop_instance(instance, stop_timeout)
+        status.update("final_sync")
         transfer_result = transfer_data(
             root=root,
             image=instance["image"],
@@ -164,6 +169,7 @@ def backup_instance(
             baseline_manifest=pre_sync["manifest"],
         )
         transfer_result.pop("manifest", None)
+        status.update("verify")
         verification = verify_data(
             root=root,
             image=instance["image"],
@@ -187,6 +193,7 @@ def backup_instance(
             },
         )
     except Exception as exc:
+        status.fail()
         append_history(
             target,
             instance,
@@ -196,16 +203,25 @@ def backup_instance(
         )
         raise
     finally:
+        restart_error = None
+        restarted = not instance["running"]
         if instance["running"]:
+            if success:
+                status.update("restart")
             try:
                 start_instance(instance)
-            except Exception:
-                if success:
-                    raise
-                print(
-                    f"Project {instance['project']} could not be restarted automatically.",
-                    file=sys.stderr,
-                )
+                restarted = True
+            except Exception as exc:
+                restart_error = exc
+                status.fail()
+                if not success:
+                    print(
+                        f"Project {instance['project']} could not be restarted automatically.",
+                        file=sys.stderr,
+                    )
+        status.close(clear=restarted)
+        if restart_error is not None and success:
+            raise restart_error
 
 
 def select_staging_path(target: Path) -> Path:

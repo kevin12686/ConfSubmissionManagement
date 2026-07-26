@@ -317,10 +317,20 @@ cannot write conference data. It preserves the browser-visible `Host` header,
 including a non-default public port, so Django performs its normal same-origin
 CSRF validation against the endpoint the editor actually opened.
 
+Nginx is also the stable service gateway. It starts independently from web,
+uses Docker's DNS resolver so a recreated web container can receive traffic
+without restarting Nginx, and intercepts only upstream `502`, `503`, and `504`
+responses. Its self-contained fallback shell renders planned backup,
+migration, update, and restart phases from the project-scoped
+`sms_gateway_state` volume; missing or stale status renders a generic service
+outage instead of guessing a cause. Failed operation status expires separately.
+The page polls the database-backed readiness endpoint but never replays the
+request that encountered the outage.
+
 The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
 mirror maintained by the Docker backup script. Migration and backup use
 verified two-phase synchronization: an online pre-copy followed by a brief
-graceful stop of the proxy/web instance for the final database/file-consistent
+graceful stop of web for the final database/file-consistent
 sync. Mirror promotion occurs only after SHA256 comparison and SQLite integrity
 validation, and the previous complete mirror is retained. Instance discovery
 joins `web` data ownership with the `proxy` public endpoint and falls back to
@@ -333,9 +343,11 @@ publication-facing file resolution.
 The Docker rebuild tool treats the currently running containers as the source
 for effective deployment inputs, rather than guessing an original env filename.
 It retains project name, public port, deployment environment, and data mount
-type, then force-recreates web/proxy and verifies the public HTTP/CSRF path.
-Its generated env file is temporary and is not a replacement for the
-operator-maintained `.env.*` file.
+type. It validates Compose and builds first, publishes update status, replaces
+only web, waits for readiness, reloads or upgrades the proxy, and then verifies
+the public HTTP/CSRF path. Rebuild shares the Docker operation lock with
+migration and backup. Its generated env file is temporary and is not a
+replacement for the operator-maintained `.env.*` file.
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the

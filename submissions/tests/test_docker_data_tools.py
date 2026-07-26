@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import sqlite3
 import subprocess
@@ -205,7 +206,7 @@ class DockerInstanceDiscoveryTests(TestCase):
                     "sms-conf-a_sms_data",
                 )
 
-    def test_instance_lifecycle_stops_proxy_first_and_restarts_web_first(self):
+    def test_instance_lifecycle_keeps_proxy_running_while_web_restarts(self):
         instance = {
             "id": "web-id",
             "running": True,
@@ -220,10 +221,6 @@ class DockerInstanceDiscoveryTests(TestCase):
             run.call_args_list,
             [
                 call(
-                    ["docker", "stop", "--time", "30", "proxy-id"],
-                    capture=True,
-                ),
-                call(
                     ["docker", "stop", "--time", "30", "web-id"],
                     capture=True,
                 ),
@@ -234,14 +231,52 @@ class DockerInstanceDiscoveryTests(TestCase):
             patch.object(docker_instance_tools, "start_container") as start_web,
             patch.object(docker_instance_tools, "wait_until_ready") as wait_web,
             patch.object(docker_instance_tools, "run") as run,
-            patch.object(docker_instance_tools, "wait_until_running") as wait_proxy,
         ):
             docker_instance_tools.start_instance(instance)
 
         start_web.assert_called_once_with(instance)
         wait_web.assert_called_once_with("web-id")
-        run.assert_called_once_with(["docker", "start", "proxy-id"], capture=True)
-        wait_proxy.assert_called_once_with("proxy-id")
+        run.assert_not_called()
+
+    def test_gateway_status_is_copied_then_promoted_atomically(self):
+        instance = {
+            "project": "sms-conf-a",
+            "proxy_id": "proxy-id",
+            "proxy_running": True,
+        }
+        payload = {
+            "schema": 1,
+            "operation": "backup",
+            "phase": "verify",
+            "outcome": "active",
+        }
+
+        copied_payload = {}
+
+        def inspect_status_copy(command, *, capture):
+            if command[:2] == ["docker", "cp"]:
+                copied_payload.update(
+                    json.loads(Path(command[2]).read_text(encoding="utf-8"))
+                )
+
+        with patch.object(
+            docker_instance_tools,
+            "run",
+            side_effect=inspect_status_copy,
+        ) as run:
+            docker_instance_tools.write_gateway_status(instance, payload)
+
+        copy_command = run.call_args_list[0].args[0]
+        move_command = run.call_args_list[1].args[0]
+        self.assertEqual(copy_command[:2], ["docker", "cp"])
+        self.assertIn("proxy-id:/srv/fallback-state/.status-", copy_command[-1])
+        self.assertEqual(move_command[:3], ["docker", "exec", "proxy-id"])
+        self.assertTrue(
+            move_command[-2].startswith("/srv/fallback-state/.status-")
+        )
+        self.assertEqual(move_command[-1], "/srv/fallback-state/status.json")
+        self.assertFalse(Path(copy_command[2]).exists())
+        self.assertEqual(copied_payload, payload)
 
 
 class DockerBackupOrchestrationTests(TestCase):
@@ -274,6 +309,10 @@ class DockerBackupOrchestrationTests(TestCase):
             patch.object(backup_docker_instances, "stop_instance") as stop,
             patch.object(backup_docker_instances, "start_instance") as start,
             patch.object(backup_docker_instances, "append_history"),
+            patch.object(
+                backup_docker_instances,
+                "GatewayOperationStatus",
+            ) as status_class,
         ):
             with self.assertRaisesRegex(RuntimeError, "final sync failed"):
                 backup_docker_instances.backup_instance(
@@ -285,6 +324,11 @@ class DockerBackupOrchestrationTests(TestCase):
 
         stop.assert_called_once_with(instance, 30)
         start.assert_called_once_with(instance)
+        status = status_class.return_value
+        status.start.assert_called_once_with("pre_sync")
+        self.assertIn(call("final_sync"), status.update.call_args_list)
+        status.fail.assert_called_once_with()
+        status.close.assert_called_once_with(clear=True)
 
     def test_backup_scans_all_projects_and_processes_each_named_volume(self):
         volume_a = make_container(
@@ -451,6 +495,89 @@ class DockerMigrationOrchestrationTests(TestCase):
             [call.args[0]["project"] for call in migrate.call_args_list],
             ["sms-conf-a", "sms-conf-b"],
         )
+
+    def test_migration_switches_web_before_recreating_proxy_mount(self):
+        instance = {
+            "id": "old-web-id",
+            "project": "sms-conf-a",
+            "name": "sms-conf-a-web-1",
+            "image": "conference-final-manager:local",
+            "running": True,
+            "proxy_id": "old-proxy-id",
+            "proxy_running": True,
+            "public_service": "proxy",
+            "mount_type": "bind",
+            "volume_name": "",
+            "sms_bind_host": "127.0.0.1",
+            "sms_port": "9000",
+            "sms_data_dir": str(self.root / "conference-a"),
+            "env": {"SMS_SECRET_KEY": "secret"},
+        }
+        migrated = {
+            **instance,
+            "id": "new-web-id",
+            "proxy_id": "new-proxy-id",
+            "mount_type": "volume",
+            "volume_name": "sms-conf-a_sms_data",
+            "gateway_version": "1",
+        }
+        commands = []
+
+        def record_run(command, *, cwd, capture, check=True):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        with (
+            patch.object(
+                migrate_docker_data_volumes,
+                "planned_volume_name",
+                return_value="sms-conf-a_sms_data",
+            ),
+            patch.object(migrate_docker_data_volumes, "run", side_effect=record_run),
+            patch.object(migrate_docker_data_volumes, "ensure_compose_volume"),
+            patch.object(
+                migrate_docker_data_volumes,
+                "transfer_data",
+                side_effect=[{"manifest": {}}, {}],
+            ),
+            patch.object(
+                migrate_docker_data_volumes,
+                "verify_data",
+                return_value={"file_count": 2, "total_bytes": 100},
+            ),
+            patch.object(migrate_docker_data_volumes, "stop_instance"),
+            patch.object(migrate_docker_data_volumes, "wait_until_ready"),
+            patch.object(
+                migrate_docker_data_volumes,
+                "current_project_instance",
+                return_value=migrated,
+            ),
+            patch.object(
+                migrate_docker_data_volumes,
+                "GatewayOperationStatus",
+            ) as status_class,
+        ):
+            migrate_docker_data_volumes.migrate_instance(
+                instance,
+                self.root,
+                dry_run=False,
+                stop_timeout=30,
+            )
+
+        web_cutover = next(
+            index
+            for index, command in enumerate(commands)
+            if "up" in command and command[-1] == "web"
+        )
+        proxy_cutover = next(
+            index
+            for index, command in enumerate(commands)
+            if "up" in command and command[-1] == "proxy"
+        )
+        self.assertLess(web_cutover, proxy_cutover)
+        self.assertIn("--no-deps", commands[web_cutover])
+        self.assertIn("--force-recreate", commands[proxy_cutover])
+        status_class.return_value.close.assert_called_once_with(clear=True)
 
 
 def make_container(

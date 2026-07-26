@@ -490,20 +490,27 @@ read-only view of the conference `sms_data` volume. Keep `SMS_DEBUG=0` for
 normal operation; changing it does not control whether images or PDFs load.
 Only `sms_data` and its verified `SMS_DATA_DIR` mirror contain conference
 state. The static volume is recreated automatically and is not a backup target.
+Nginx remains on the public port while Gunicorn is unavailable and shows the
+current backup, migration, update, or restart phase. If no fresh planned
+operation exists, it reports a generic outage instead of guessing the cause.
+Interrupted changes and uploads are not submitted again automatically.
 
 After updating the application checkout, run
 `python3 scripts/rebuild_docker_instances.py --dry-run` to review every detected
 conference's recovered port, environment, and data mount. Run the same command
-without `--dry-run` to force-recreate web/proxy while retaining those settings.
-The update is complete only after the script reports that proxy configuration,
+without `--dry-run` to build and replace web while retaining the stable proxy
+and those settings. Older gateway layouts receive a one-time proxy recreation;
+current gateways reload their validated configuration in place. The update is
+complete only after the script reports that readiness, proxy configuration,
 static delivery, and the same-origin CSRF POST all passed. The temporary
 recovered env does not overwrite the original conference `.env.*` file.
 
 Run `python scripts/backup_docker_instances.py` manually or schedule it from the
 host. The command discovers all current conference instances, prepares most of
-the mirror while each app remains available, briefly stops and restarts the
-Nginx/web pair for a consistent final copy, validates SQLite, and preserves the
-prior mirror with a `.backup-previous` suffix. In Windows Task Scheduler,
+the mirror while each app remains available, briefly stops and restarts only
+web for a consistent final copy, keeps the Nginx fallback available, validates
+SQLite, and preserves the prior mirror with a `.backup-previous` suffix. In
+Windows Task Scheduler,
 set the project folder as `Start in`, use the installed Python launcher or
 Python executable as the program, and use
 `scripts\backup_docker_instances.py` as the argument. Docker Desktop must be

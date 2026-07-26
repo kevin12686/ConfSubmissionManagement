@@ -20,12 +20,16 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from docker_instance_tools import (  # noqa: E402
     DockerCommandError,
+    GATEWAY_VERSION,
+    GatewayOperationStatus,
     compose_command,
     compose_env,
+    exclusive_lock,
     inspect_compose_containers,
     matching_instances,
     run,
     temporary_env_file,
+    wait_until_ready,
 )
 
 PROXY_HOST_DIRECTIVE = "proxy_set_header Host $http_host;"
@@ -66,28 +70,30 @@ def main() -> int:
     args = parser.parse_args()
 
     root = SCRIPT_DIR.parent
+    lock_path = root / "runtime" / ".docker-data-operation.lock"
     try:
-        instances = matching_instances(
-            inspect_compose_containers(),
-            root,
-            set(args.project),
-        )
-        if not instances:
-            print(
-                "No matching Docker Compose application instances were found "
-                "for this checkout.",
-                file=sys.stderr,
+        with exclusive_lock(lock_path):
+            instances = matching_instances(
+                inspect_compose_containers(),
+                root,
+                set(args.project),
             )
-            print(
-                "Start an instance first, for example: "
-                "docker compose --env-file .env.conference-a "
-                "-p sms-conf-a up -d --build",
-                file=sys.stderr,
-            )
-            return 1
+            if not instances:
+                print(
+                    "No matching Docker Compose application instances were found "
+                    "for this checkout.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Start an instance first, for example: "
+                    "docker compose --env-file .env.conference-a "
+                    "-p sms-conf-a up -d --build",
+                    file=sys.stderr,
+                )
+                return 1
 
-        for instance in instances:
-            rebuild_instance(instance, root, dry_run=args.dry_run)
+            for instance in instances:
+                rebuild_instance(instance, root, dry_run=args.dry_run)
     except (DockerCommandError, RuntimeError, ValueError) as exc:
         print(f"Rebuild failed: {exc}", file=sys.stderr)
         return 1
@@ -97,12 +103,23 @@ def main() -> int:
 def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
     env_values = compose_env(instance)
     bind_override = instance.get("mount_type") == "bind"
-    update_arguments = ("up", "-d", "--build", "--force-recreate")
-    display_command = compose_command(
+    build_command = compose_command(
         root,
         Path("<generated>"),
         instance["project"],
-        *update_arguments,
+        "build",
+        "web",
+        bind_override=bind_override,
+    )
+    web_command = compose_command(
+        root,
+        Path("<generated>"),
+        instance["project"],
+        "up",
+        "-d",
+        "--no-deps",
+        "--force-recreate",
+        "web",
         bind_override=bind_override,
     )
     print(f"Project: {instance['project']} ({instance['name']})")
@@ -116,41 +133,148 @@ def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
     for key in sorted(env_values):
         display_value = "***" if key == "SMS_SECRET_KEY" else env_values[key]
         print(f"  {key}={display_value}")
-    print(f"  command: {shlex.join(display_command)}")
+    print(f"  build:   {shlex.join(build_command)}")
+    print(f"  cutover: {shlex.join(web_command)}")
+    print(
+        "  proxy:   "
+        + (
+            "validated in-place configuration reload"
+            if instance.get("gateway_version") == GATEWAY_VERSION
+            else "one-time gateway recreation"
+        )
+    )
     if dry_run:
         return
 
+    status = GatewayOperationStatus(instance, "update")
+    status.start("build")
+    cutover_started = False
     with temporary_env_file(env_values) as env_file:
-        run(
-            compose_command(
+        try:
+            run(
+                compose_command(
+                    root,
+                    env_file,
+                    instance["project"],
+                    "config",
+                    "--quiet",
+                    bind_override=bind_override,
+                ),
+                cwd=root,
+                capture=True,
+            )
+            run(
+                compose_command(
+                    root,
+                    env_file,
+                    instance["project"],
+                    "build",
+                    "web",
+                    bind_override=bind_override,
+                ),
+                cwd=root,
+                capture=False,
+            )
+            status.update("apply")
+            cutover_started = True
+            run(
+                compose_command(
+                    root,
+                    env_file,
+                    instance["project"],
+                    "up",
+                    "-d",
+                    "--no-deps",
+                    "--force-recreate",
+                    "web",
+                    bind_override=bind_override,
+                ),
+                cwd=root,
+                capture=False,
+            )
+            rebuilt = current_project_instance(root, instance["project"])
+            if not rebuilt:
+                raise RuntimeError(
+                    f"{instance['project']}: rebuilt web container was not found."
+                )
+            status.bind_instance(rebuilt)
+            status.update("health")
+            wait_until_ready(rebuilt["id"])
+            status.update("proxy")
+            refresh_proxy(
+                rebuilt,
                 root,
                 env_file,
-                instance["project"],
-                "config",
-                "--quiet",
                 bind_override=bind_override,
-            ),
-            cwd=root,
-            capture=True,
-        )
+            )
+            rebuilt = current_project_instance(root, instance["project"])
+            if not rebuilt or not rebuilt.get("proxy_id"):
+                raise RuntimeError(
+                    f"{instance['project']}: proxy container was not found."
+                )
+            status.bind_instance(rebuilt)
+            wait_until_ready(rebuilt["proxy_id"])
+            status.update("smoke")
+            verify_rebuilt_instance(
+                rebuilt,
+                root,
+                env_file,
+                bind_override=bind_override,
+            )
+        except Exception:
+            if cutover_started:
+                status.fail()
+                status.close(clear=False)
+            else:
+                status.close(clear=True)
+            raise
+        else:
+            status.close(clear=True)
+    print(f"  verified: proxy config, static asset, and same-origin CSRF POST")
+
+
+def refresh_proxy(
+    instance: dict,
+    root: Path,
+    env_file: Path,
+    *,
+    bind_override: bool,
+) -> None:
+    if (
+        instance.get("gateway_version") != GATEWAY_VERSION
+        or not instance.get("proxy_running")
+    ):
         run(
             compose_command(
                 root,
                 env_file,
                 instance["project"],
-                *update_arguments,
+                "up",
+                "-d",
+                "--no-deps",
+                "--force-recreate",
+                "proxy",
                 bind_override=bind_override,
             ),
             cwd=root,
             capture=False,
         )
-        verify_rebuilt_instance(
-            instance,
+        return
+    run(
+        compose_command(
             root,
             env_file,
+            instance["project"],
+            "exec",
+            "-T",
+            "proxy",
+            "/bin/sh",
+            "/srv/fallback/reload.sh",
             bind_override=bind_override,
-        )
-    print(f"  verified: proxy config, static asset, and same-origin CSRF POST")
+        ),
+        cwd=root,
+        capture=True,
+    )
 
 
 def verify_rebuilt_instance(
@@ -309,6 +433,15 @@ def host_port(host: str, port: str) -> str:
     if ":" in normalized_host:
         normalized_host = f"[{normalized_host}]"
     return normalized_host if port == "80" else f"{normalized_host}:{port}"
+
+
+def current_project_instance(root: Path, project: str) -> dict | None:
+    instances = matching_instances(
+        inspect_compose_containers(),
+        root,
+        {project},
+    )
+    return instances[0] if instances else None
 
 
 if __name__ == "__main__":

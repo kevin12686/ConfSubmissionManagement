@@ -4,6 +4,59 @@ server {
 
     client_max_body_size ${SMS_PROXY_MAX_BODY_SIZE};
     sendfile on;
+    resolver 127.0.0.11 valid=5s ipv6=off;
+    resolver_timeout 2s;
+    set $sms_web_upstream web:8000;
+
+    error_page 502 503 504 =503 /__sms_gateway/fallback.html;
+
+    location = /__sms_gateway/ping {
+        access_log off;
+        add_header Cache-Control "no-store";
+        return 204;
+    }
+
+    location = /__sms_gateway/fallback.html {
+        internal;
+        alias /srv/fallback/fallback.html;
+        add_header Cache-Control "no-store" always;
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" always;
+        add_header Retry-After "5" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location = /__sms_gateway/app-icon.png {
+        alias /srv/fallback/app-icon.png;
+        access_log off;
+        add_header Cache-Control "public, max-age=3600";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    location = /__sms_gateway/status.json {
+        alias /srv/fallback-state/status.json;
+        access_log off;
+        default_type application/json;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+
+        limit_except GET {
+            deny all;
+        }
+    }
+
+    location = /__sms_gateway/ready {
+        proxy_pass http://$sms_web_upstream/health/ready/;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+        proxy_send_timeout 5s;
+        proxy_intercept_errors off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location ^~ /static/ {
         alias /app/staticfiles/;
@@ -29,10 +82,11 @@ server {
     }
 
     location / {
-        proxy_pass http://web:8000;
+        proxy_pass http://$sms_web_upstream;
         proxy_http_version 1.1;
         proxy_request_buffering off;
         proxy_buffering off;
+        proxy_intercept_errors on;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
 

@@ -488,17 +488,38 @@ python3 scripts/rebuild_docker_instances.py
 ```
 
 The first command shows the environment, data mount type, public port, and
-Compose command inferred from each existing instance. The second force-recreates
-web/proxy and fails if the loaded Nginx configuration, static asset, or
-same-origin CSRF POST check does not pass. It uses a temporary recovered env
-file and does not edit the original `.env.*` file.
+phased commands inferred from each existing instance. The second builds before
+cutover, replaces only web, waits for readiness, reloads or upgrades proxy, and
+fails if the loaded Nginx configuration, static asset, or same-origin CSRF POST
+check does not pass. It uses a temporary recovered env file and does not edit
+the original `.env.*` file.
+
+### Docker shows the service fallback page
+
+For `Backing up`, `Moving conference data`, `Applying the latest version`, or
+`Restarting`, allow the named host script to finish. The page checks readiness
+without resubmitting the interrupted request. Return to the workspace and
+verify any change, upload, import, or export that was in progress before
+repeating it.
+
+`Application unavailable` means Nginx is reachable but no fresh planned
+operation explains why web is unavailable. Check `docker compose ps`; an
+exited web process is normally restarted by Docker, while an unhealthy process
+that remains running needs inspection. `Attention required` means a host
+operation failed and could not restore a healthy service automatically.
+
+The fallback cannot be served when proxy, Docker Desktop, the host, LAN, or
+WARP itself is unavailable. A direct `docker compose up -d --build` receives
+only generic outage handling; use `scripts/rebuild_docker_instances.py` for
+accurate update phases and post-update validation.
 
 ### Docker backup reports a lock or interrupted swap
 
-Migration and raw-data backup share
-`runtime/.docker-data-operation.lock`. Do not remove it while either script is
-running. If the process was terminated, locks older than 12 hours are cleared
-automatically. A `.backup-swap` directory means promotion was interrupted. The
+Rebuild, migration, and raw-data backup share
+`runtime/.docker-data-operation.lock`. Do not remove it while any of these
+scripts is running. If the process was terminated, locks older than 12 hours
+are cleared automatically. A `.backup-swap` directory means promotion was
+interrupted. The
 script restores it automatically only when the main host mirror is absent; if
 both exist, preserve both and inspect them before retrying.
 

@@ -133,6 +133,10 @@ Create Final Submission records and files:
     formatting preview, and one publication PDF all load through the published
     Nginx endpoint. Confirm `web` has no published host port, `proxy` owns the
     configured port, and proxy mounts `sms_data` and `sms_static` read-only.
+    Stop only web and confirm Nginx displays the themed generic fallback, then
+    start web and confirm readiness returns. Publish fresh backup/update status
+    and confirm the same shell changes its operation label and phase. Confirm
+    the page never automatically resubmits a POST.
     On a non-default published port, submit a normal CSRF-protected POST such
     as a blocked Final Publication Package request and confirm it reaches the
     application instead of returning 403. Repeat with `SMS_DEBUG=1`; file
@@ -140,12 +144,13 @@ Create Final Submission records and files:
 26. Run Docker rebuild `--dry-run` against one legacy single-service fixture
     and one current web/proxy project. Confirm the legacy project reads its
     public port from web and the current project reads it from proxy. Apply the
-    rebuild in disposable bind and named-volume projects; confirm it uses
-    `--force-recreate`, retains each data mount type, verifies the loaded Nginx
-    Host directive, loads a collected static asset, and completes the
-    non-mutating CSRF POST smoke check. Confirm web/proxy resolve `/app/data` to
-    the same host folder in bind mode. Run raw backup and verify `sms_data` is
-    mirrored while rebuildable `sms_static` is excluded.
+    rebuild in disposable bind and named-volume projects; confirm it builds
+    first, force-recreates only web, retains each data mount type, waits for
+    readiness, reloads or upgrades proxy, verifies the loaded Nginx Host
+    directive, loads a collected static asset, and completes the non-mutating
+    CSRF POST smoke check. Confirm web/proxy resolve `/app/data` to the same
+    host folder in bind mode. Run raw backup and verify `sms_data` is mirrored
+    while rebuildable `sms_static` and `sms_gateway_state` are excluded.
 
 ## Acceptance Checks
 

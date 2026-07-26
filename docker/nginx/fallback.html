@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Service temporarily unavailable · Conference Final Manager</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --cfm-bg: #dfe5eb;
+            --cfm-surface: #eef2f5;
+            --cfm-surface-subtle: #e5ebf0;
+            --cfm-surface-strong: #d4dde6;
+            --cfm-border: #8898a9;
+            --cfm-border-strong: #46566a;
+            --cfm-text: #141d2b;
+            --cfm-heading: #0d1522;
+            --cfm-muted: #31475e;
+            --cfm-primary: #2563eb;
+            --cfm-primary-hover: #1d4ed8;
+            --state: #a16207;
+            --state-soft: #fef3c7;
+            --state-border: #d5ad54;
+            --state-text: #854d0e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            min-height: 100%;
+        }
+
+        body {
+            background: var(--cfm-bg);
+            color: var(--cfm-text);
+            display: flex;
+            flex-direction: column;
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                "Segoe UI", sans-serif;
+            font-size: 15px;
+            letter-spacing: 0;
+            line-height: 1.5;
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        button {
+            font: inherit;
+            letter-spacing: 0;
+        }
+
+        button:focus-visible {
+            outline: 3px solid var(--cfm-primary);
+            outline-offset: 2px;
+        }
+
+        .app-header {
+            background: var(--cfm-surface);
+            border-bottom: 2px solid var(--cfm-border-strong);
+            box-shadow: 0 3px 11px rgba(15, 23, 42, 0.1);
+        }
+
+        .header-identity {
+            align-items: center;
+            display: flex;
+            gap: 24px;
+            justify-content: space-between;
+            min-height: 60px;
+            padding: 8px 24px;
+        }
+
+        .brand {
+            align-items: center;
+            display: inline-flex;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .brand img {
+            height: 34px;
+            width: 34px;
+        }
+
+        .brand-copy,
+        .conference-context {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .brand-title {
+            color: var(--cfm-heading);
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.15;
+        }
+
+        .brand-subtitle {
+            color: var(--cfm-muted);
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        .conference-context {
+            align-items: flex-end;
+            margin-left: auto;
+        }
+
+        .conference-label {
+            color: var(--cfm-muted);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+
+        .conference-name {
+            color: var(--cfm-heading);
+            font-size: 15px;
+            font-weight: 700;
+            margin-top: 3px;
+        }
+
+        .status-strip {
+            align-items: center;
+            background: #dfe6ed;
+            border-top: 1px solid var(--cfm-border);
+            color: var(--state-text);
+            display: flex;
+            font-size: 13px;
+            font-weight: 700;
+            min-height: 42px;
+            padding: 0 24px;
+        }
+
+        .status-dot {
+            background: var(--state);
+            border-radius: 50%;
+            box-shadow: 0 0 0 4px rgba(161, 98, 7, 0.14);
+            height: 8px;
+            margin-right: 10px;
+            width: 8px;
+        }
+
+        main {
+            align-items: center;
+            display: flex;
+            flex: 1 0 auto;
+            justify-content: center;
+            padding: 42px 24px;
+        }
+
+        .fallback-panel {
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border-strong);
+            border-radius: 6px;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+            max-width: 800px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .panel-main {
+            display: grid;
+            gap: 24px;
+            grid-template-columns: 76px minmax(0, 1fr);
+            padding: 30px 34px 26px;
+        }
+
+        .state-mark {
+            align-items: center;
+            align-self: start;
+            background: var(--state-soft);
+            border: 1px solid var(--state-border);
+            border-radius: 6px;
+            color: var(--state-text);
+            display: flex;
+            height: 70px;
+            justify-content: center;
+            width: 70px;
+        }
+
+        .state-mark svg {
+            height: 34px;
+            stroke-width: 1.8;
+            width: 34px;
+        }
+
+        .eyebrow {
+            color: var(--state-text);
+            font-size: 12px;
+            font-weight: 750;
+            margin: 0 0 6px;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            color: var(--cfm-heading);
+            font-size: 27px;
+            line-height: 1.25;
+            margin: 0;
+        }
+
+        .lead {
+            color: var(--cfm-muted);
+            font-size: 15px;
+            margin: 9px 0 0;
+            max-width: 610px;
+        }
+
+        .progress-block {
+            grid-column: 1 / -1;
+        }
+
+        .progress-meta {
+            align-items: center;
+            display: flex;
+            font-size: 13px;
+            font-weight: 650;
+            gap: 20px;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .progress-detail {
+            color: var(--cfm-muted);
+            font-weight: 550;
+            text-align: right;
+        }
+
+        .progress-track {
+            background: var(--cfm-surface-strong);
+            border: 1px solid var(--cfm-border);
+            border-radius: 4px;
+            height: 9px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-track::after {
+            animation: moving-progress 1.8s ease-in-out infinite;
+            background: var(--state);
+            border-radius: 3px;
+            content: "";
+            height: 100%;
+            left: -34%;
+            position: absolute;
+            top: 0;
+            width: 34%;
+        }
+
+        .fallback-panel[data-motion="paused"] .progress-track::after {
+            animation: none;
+            left: 0;
+            opacity: 0.78;
+            width: 100%;
+        }
+
+        .notice {
+            align-items: flex-start;
+            background: #fff7ed;
+            border: 1px solid #d8a96f;
+            border-radius: 5px;
+            color: #713f12;
+            display: flex;
+            font-size: 13px;
+            gap: 10px;
+            grid-column: 1 / -1;
+            padding: 11px 13px;
+        }
+
+        .notice[hidden] {
+            display: none;
+        }
+
+        .notice svg {
+            flex: 0 0 auto;
+            height: 18px;
+            margin-top: 1px;
+            width: 18px;
+        }
+
+        .steps {
+            background: var(--cfm-surface-subtle);
+            border-top: 1px solid var(--cfm-border);
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            padding: 0 28px;
+        }
+
+        .step {
+            align-items: flex-start;
+            display: grid;
+            gap: 10px;
+            grid-template-columns: 26px minmax(0, 1fr);
+            min-width: 0;
+            padding: 18px 16px;
+        }
+
+        .step + .step {
+            border-left: 1px solid var(--cfm-border);
+        }
+
+        .step-number {
+            align-items: center;
+            background: var(--cfm-surface);
+            border: 1px solid var(--cfm-border);
+            border-radius: 50%;
+            color: var(--cfm-muted);
+            display: inline-flex;
+            font-size: 12px;
+            font-weight: 750;
+            height: 26px;
+            justify-content: center;
+            width: 26px;
+        }
+
+        .step.done .step-number {
+            background: #dcfce7;
+            border-color: #6caf82;
+            color: #166534;
+        }
+
+        .step.current {
+            background: var(--state-soft);
+        }
+
+        .step.current .step-number {
+            background: var(--state);
+            border-color: var(--state);
+            color: #ffffff;
+        }
+
+        .step-title {
+            color: var(--cfm-heading);
+            display: block;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .step-detail {
+            color: var(--cfm-muted);
+            display: block;
+            font-size: 12px;
+            line-height: 1.4;
+            margin-top: 2px;
+        }
+
+        .panel-actions {
+            align-items: center;
+            border-top: 1px solid var(--cfm-border);
+            display: flex;
+            gap: 16px;
+            justify-content: space-between;
+            padding: 17px 34px;
+        }
+
+        .retry-status {
+            color: var(--cfm-muted);
+            font-size: 13px;
+        }
+
+        .retry-button {
+            align-items: center;
+            background: var(--cfm-primary);
+            border: 1px solid var(--cfm-primary);
+            border-radius: 5px;
+            color: #ffffff;
+            cursor: pointer;
+            display: inline-flex;
+            font-weight: 700;
+            gap: 8px;
+            min-height: 40px;
+            padding: 8px 15px;
+        }
+
+        .retry-button:hover {
+            background: var(--cfm-primary-hover);
+            border-color: var(--cfm-primary-hover);
+        }
+
+        .retry-button:disabled {
+            cursor: wait;
+            opacity: 0.7;
+        }
+
+        .retry-button svg {
+            height: 17px;
+            stroke-width: 2;
+            width: 17px;
+        }
+
+        footer {
+            background: var(--cfm-surface-strong);
+            border-top: 1px solid var(--cfm-border-strong);
+            color: var(--cfm-muted);
+            flex-shrink: 0;
+            font-size: 13px;
+            padding: 12px 24px;
+        }
+
+        .footer-inner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 24px;
+            justify-content: space-between;
+        }
+
+        body[data-tone="blue"] {
+            --state: #2563eb;
+            --state-soft: #dbeafe;
+            --state-border: #93b4f3;
+            --state-text: #1e40af;
+        }
+
+        body[data-tone="teal"] {
+            --state: #0f766e;
+            --state-soft: #ccfbf1;
+            --state-border: #78bcb3;
+            --state-text: #115e59;
+        }
+
+        body[data-tone="amber"] {
+            --state: #a16207;
+            --state-soft: #fef3c7;
+            --state-border: #d5ad54;
+            --state-text: #854d0e;
+        }
+
+        body[data-tone="red"] {
+            --state: #b42318;
+            --state-soft: #fee2e2;
+            --state-border: #dc8e89;
+            --state-text: #991b1b;
+        }
+
+        @keyframes moving-progress {
+            0% {
+                left: -34%;
+            }
+            50% {
+                left: 48%;
+            }
+            100% {
+                left: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .progress-track::after {
+                animation: none;
+                left: 33%;
+            }
+        }
+
+        @media (max-width: 680px) {
+            .header-identity {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .conference-label {
+                display: none;
+            }
+
+            .conference-name {
+                font-size: 13px;
+                max-width: 120px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .status-strip {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            main {
+                align-items: flex-start;
+                padding: 24px 14px;
+            }
+
+            .panel-main {
+                gap: 17px;
+                grid-template-columns: 56px minmax(0, 1fr);
+                padding: 24px 21px 22px;
+            }
+
+            .state-mark {
+                height: 52px;
+                width: 52px;
+            }
+
+            .state-mark svg {
+                height: 27px;
+                width: 27px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+
+            .lead {
+                font-size: 14px;
+            }
+
+            .progress-meta {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .progress-detail {
+                text-align: left;
+            }
+
+            .steps {
+                grid-template-columns: minmax(0, 1fr);
+                padding: 0 21px;
+            }
+
+            .step {
+                padding: 14px 0;
+            }
+
+            .step + .step {
+                border-left: 0;
+                border-top: 1px solid var(--cfm-border);
+            }
+
+            .step.current {
+                margin: 0 -21px;
+                padding-left: 21px;
+                padding-right: 21px;
+            }
+
+            .panel-actions {
+                align-items: stretch;
+                flex-direction: column;
+                padding: 17px 21px 21px;
+            }
+
+            .retry-button {
+                justify-content: center;
+                width: 100%;
+            }
+
+            footer {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .brand-title {
+                font-size: 14px;
+            }
+
+            .brand-subtitle,
+            .conference-context {
+                display: none;
+            }
+
+            .panel-main {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+    </style>
+</head>
+<body data-tone="amber">
+    <header class="app-header">
+        <div class="header-identity">
+            <div class="brand" aria-label="Conference Final Manager">
+                <img src="/__sms_gateway/app-icon.png" alt="">
+                <div class="brand-copy">
+                    <span class="brand-title">Conference Final Manager</span>
+                    <span class="brand-subtitle">Editorial publication workspace</span>
+                </div>
+            </div>
+            <div class="conference-context">
+                <span class="conference-label">Workspace status</span>
+                <span class="conference-name">Service gateway online</span>
+            </div>
+        </div>
+        <div class="status-strip">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="strip-label">Service recovery · Application unavailable</span>
+        </div>
+    </header>
+
+    <main>
+        <section class="fallback-panel" id="fallback-panel" data-motion="active"
+                 aria-labelledby="fallback-title">
+            <div class="panel-main">
+                <div class="state-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <use id="state-icon" href="#icon-server-off"></use>
+                    </svg>
+                </div>
+                <div>
+                    <p class="eyebrow" id="eyebrow">Automatic recovery</p>
+                    <h1 id="fallback-title">The workspace is temporarily unavailable</h1>
+                    <p class="lead" id="lead">
+                        The service gateway is online, but the application is not
+                        responding. Recovery checks are continuing automatically.
+                    </p>
+                </div>
+
+                <div class="notice" id="notice">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <use href="#icon-triangle-alert"></use>
+                    </svg>
+                    <span id="notice-text">
+                        Interrupted changes and uploads are never submitted again
+                        automatically. Verify the result after the workspace returns.
+                    </span>
+                </div>
+
+                <div class="progress-block" aria-live="polite">
+                    <div class="progress-meta">
+                        <span id="progress-label">Waiting for the application service</span>
+                        <span class="progress-detail" id="progress-detail">
+                            The cause has not been identified
+                        </span>
+                    </div>
+                    <div class="progress-track" aria-hidden="true"></div>
+                </div>
+            </div>
+
+            <div class="steps" id="steps" aria-label="Current recovery process"></div>
+
+            <div class="panel-actions">
+                <span class="retry-status" id="retry-status" aria-live="polite">
+                    Checking service availability every 5 seconds
+                </span>
+                <button class="retry-button" id="retry-button" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <use href="#icon-refresh"></use>
+                    </svg>
+                    <span id="button-label">Check service</span>
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-inner">
+            <span>Conference Final Manager · Service gateway</span>
+            <span>&copy; 2026 Kevin Hsu</span>
+        </div>
+    </footer>
+
+    <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+        <symbol id="icon-database-backup" viewBox="0 0 24 24">
+            <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+            <path d="M5 5v6c0 1.7 3.1 3 7 3"></path>
+            <path d="M5 11v6c0 1.7 3.1 3 7 3"></path>
+            <path d="M19 5v5"></path>
+            <path d="m16 16 2 2 4-4"></path>
+        </symbol>
+        <symbol id="icon-download" viewBox="0 0 24 24">
+            <path d="M12 3v12"></path>
+            <path d="m7 10 5 5 5-5"></path>
+            <path d="M5 21h14"></path>
+        </symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24">
+            <path d="M21 12a9 9 0 0 1-15.2 6.5L3 16"></path>
+            <path d="M3 21v-5h5"></path>
+            <path d="M3 12A9 9 0 0 1 18.2 5.5L21 8"></path>
+            <path d="M21 3v5h-5"></path>
+        </symbol>
+        <symbol id="icon-server-off" viewBox="0 0 24 24">
+            <path d="M5 5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h6"></path>
+            <path d="M19 11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H9"></path>
+            <path d="M3 15v2a2 2 0 0 0 2 2h14"></path>
+            <path d="M3 3l18 18"></path>
+            <path d="M7 8h.01"></path>
+            <path d="M7 16h.01"></path>
+        </symbol>
+        <symbol id="icon-triangle-alert" viewBox="0 0 24 24">
+            <path d="M10.3 3.6 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.6a2 2 0 0 0-3.4 0Z"></path>
+            <path d="M12 9v4"></path>
+            <path d="M12 17h.01"></path>
+        </symbol>
+    </svg>
+
+    <script>
+        (() => {
+            const staleAfterMs = 90 * 1000;
+            const states = {
+                unavailable: {
+                    tone: "amber",
+                    motion: "active",
+                    icon: "server-off",
+                    strip: "Service recovery · Application unavailable",
+                    eyebrow: "Automatic recovery",
+                    title: "The workspace is temporarily unavailable",
+                    lead: "The service gateway is online, but the application is not responding. Recovery checks are continuing automatically.",
+                    progress: "Waiting for the application service",
+                    detail: "The cause has not been identified",
+                    notice: "Interrupted changes and uploads are never submitted again automatically. Verify the result after the workspace returns.",
+                    current: 1,
+                    steps: [
+                        ["Gateway", "Requests are reaching this server"],
+                        ["Application", "The workspace is not responding"],
+                        ["Recovery", "Readiness checks continue automatically"]
+                    ]
+                },
+                backup: {
+                    tone: "blue",
+                    motion: "active",
+                    icon: "database-backup",
+                    strip: "Planned maintenance · Data backup",
+                    eyebrow: "Data protection in progress",
+                    title: "Backing up conference data",
+                    lead: "The editorial workspace is temporarily unavailable while the latest database and managed files are synchronized and verified.",
+                    progress: "Backup operation in progress",
+                    detail: "No editorial changes are being accepted",
+                    current: 0,
+                    steps: [
+                        ["Final sync", "Copy changed conference files"],
+                        ["Verify", "Check files and SQLite integrity"],
+                        ["Resume", "Restart the editorial workspace"]
+                    ]
+                },
+                migration: {
+                    tone: "blue",
+                    motion: "active",
+                    icon: "database-backup",
+                    strip: "Planned maintenance · Data migration",
+                    eyebrow: "Storage migration in progress",
+                    title: "Moving conference data to managed storage",
+                    lead: "The verified conference data is being moved into its Docker volume before the workspace reopens.",
+                    progress: "Storage migration in progress",
+                    detail: "The original host copy is retained",
+                    current: 0,
+                    steps: [
+                        ["Synchronize", "Copy the current conference data"],
+                        ["Verify", "Check files and SQLite integrity"],
+                        ["Cut over", "Start services on the managed volume"]
+                    ]
+                },
+                update: {
+                    tone: "blue",
+                    motion: "active",
+                    icon: "download",
+                    strip: "Planned maintenance · System update",
+                    eyebrow: "System update in progress",
+                    title: "Applying the latest version",
+                    lead: "The updated application is completing migrations and health checks before the editorial workspace reopens.",
+                    progress: "System update in progress",
+                    detail: "Conference data remains protected",
+                    current: 1,
+                    steps: [
+                        ["Build", "Prepare the updated application"],
+                        ["Apply", "Run migrations and collect static files"],
+                        ["Health check", "Open only after validation passes"]
+                    ]
+                },
+                restart: {
+                    tone: "teal",
+                    motion: "active",
+                    icon: "refresh",
+                    strip: "Planned maintenance · Service restart",
+                    eyebrow: "Workspace restart in progress",
+                    title: "Restarting the editorial workspace",
+                    lead: "The service is restarting cleanly and will reopen after its application health check passes.",
+                    progress: "Waiting for the application to become ready",
+                    detail: "The service gateway remains online",
+                    current: 1,
+                    steps: [
+                        ["Stop", "Finish active requests cleanly"],
+                        ["Start", "Launch the application service"],
+                        ["Ready", "Confirm the workspace is responding"]
+                    ]
+                },
+                attention: {
+                    tone: "red",
+                    motion: "paused",
+                    icon: "triangle-alert",
+                    strip: "Service unavailable · Attention required",
+                    eyebrow: "Automatic recovery paused",
+                    title: "The workspace needs operator attention",
+                    lead: "The application could not be restored automatically. Conference data has not been replaced or rolled back.",
+                    progress: "Recovery attempts are paused",
+                    detail: "An operator should inspect the instance",
+                    notice: "Do not restore or replace conference data until the failure has been identified.",
+                    current: 2,
+                    steps: [
+                        ["Protected", "The service gateway remains available"],
+                        ["Paused", "Repeated recovery attempts have stopped"],
+                        ["Review", "Inspect logs, storage, and service health"]
+                    ]
+                }
+            };
+
+            const phaseSteps = {
+                backup: {
+                    stopping: 0,
+                    final_sync: 0,
+                    verify: 1,
+                    restart: 2
+                },
+                migration: {
+                    stopping: 0,
+                    final_sync: 0,
+                    verify: 1,
+                    web_cutover: 2,
+                    proxy_cutover: 2,
+                    health: 2
+                },
+                update: {
+                    build: 0,
+                    apply: 1,
+                    health: 2,
+                    proxy: 2,
+                    smoke: 2
+                },
+                restart: {
+                    stop: 0,
+                    start: 1,
+                    health: 2
+                }
+            };
+
+            const panel = document.getElementById("fallback-panel");
+            const strip = document.getElementById("strip-label");
+            const eyebrow = document.getElementById("eyebrow");
+            const title = document.getElementById("fallback-title");
+            const lead = document.getElementById("lead");
+            const progressLabel = document.getElementById("progress-label");
+            const progressDetail = document.getElementById("progress-detail");
+            const notice = document.getElementById("notice");
+            const noticeText = document.getElementById("notice-text");
+            const steps = document.getElementById("steps");
+            const retryStatus = document.getElementById("retry-status");
+            const button = document.getElementById("retry-button");
+            const buttonLabel = document.getElementById("button-label");
+            const stateIcon = document.getElementById("state-icon");
+            let serviceReady = false;
+
+            function renderSteps(state) {
+                steps.replaceChildren();
+                state.steps.forEach((step, index) => {
+                    const item = document.createElement("div");
+                    item.className = "step";
+                    if (index < state.current) {
+                        item.classList.add("done");
+                    } else if (index === state.current) {
+                        item.classList.add("current");
+                    }
+
+                    const marker = document.createElement("span");
+                    marker.className = "step-number";
+                    marker.innerHTML = index < state.current ? "&#10003;" : String(index + 1);
+
+                    const copy = document.createElement("span");
+                    const stepTitle = document.createElement("span");
+                    stepTitle.className = "step-title";
+                    stepTitle.textContent = step[0];
+                    const stepDetail = document.createElement("span");
+                    stepDetail.className = "step-detail";
+                    stepDetail.textContent = step[1];
+                    copy.append(stepTitle, stepDetail);
+                    item.append(marker, copy);
+                    steps.append(item);
+                });
+            }
+
+            function resolvedState(payload) {
+                if (!payload || payload.schema !== 1) {
+                    return {...states.unavailable};
+                }
+                const updatedAt = Date.parse(payload.updated_at || "");
+                const allowedAge = payload.outcome === "failed"
+                    ? 24 * 60 * 60 * 1000
+                    : staleAfterMs;
+                if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > allowedAge) {
+                    return {...states.unavailable};
+                }
+                if (payload.outcome === "failed") {
+                    return {...states.attention};
+                }
+                const name = Object.hasOwn(states, payload.operation)
+                    ? payload.operation
+                    : "unavailable";
+                const state = {...states[name]};
+                const operationPhases = phaseSteps[name] || {};
+                if (Object.hasOwn(operationPhases, payload.phase)) {
+                    state.current = operationPhases[payload.phase];
+                }
+                return state;
+            }
+
+            function render(state) {
+                document.body.dataset.tone = state.tone;
+                panel.dataset.motion = state.motion;
+                strip.textContent = state.strip;
+                eyebrow.textContent = state.eyebrow;
+                title.textContent = state.title;
+                lead.textContent = state.lead;
+                progressLabel.textContent = state.progress;
+                progressDetail.textContent = state.detail;
+                stateIcon.setAttribute("href", `#icon-${state.icon}`);
+                notice.hidden = !state.notice;
+                noticeText.textContent = state.notice || "";
+                renderSteps(state);
+                document.title = `${state.title} · Conference Final Manager`;
+            }
+
+            async function refreshStatus() {
+                try {
+                    const response = await fetch("/__sms_gateway/status.json", {
+                        cache: "no-store",
+                        headers: {"Accept": "application/json"}
+                    });
+                    render(resolvedState(response.ok ? await response.json() : null));
+                } catch (error) {
+                    render({...states.unavailable});
+                }
+            }
+
+            async function checkReady(background = false) {
+                if (serviceReady) {
+                    if (!background) {
+                        window.location.assign("/");
+                    }
+                    return;
+                }
+                if (!background) {
+                    button.disabled = true;
+                    buttonLabel.textContent = "Checking...";
+                }
+                try {
+                    const response = await fetch("/__sms_gateway/ready", {
+                        cache: "no-store",
+                        headers: {"Accept": "application/json"}
+                    });
+                    if (response.ok) {
+                        serviceReady = true;
+                        retryStatus.textContent = "The editorial workspace is available";
+                        buttonLabel.textContent = "Return to workspace";
+                        button.disabled = false;
+                        return;
+                    }
+                } catch (error) {
+                    // The gateway remains responsible for the visible status.
+                }
+                retryStatus.textContent = "Service is still unavailable; checking every 5 seconds";
+                if (!background) {
+                    buttonLabel.textContent = "Check service";
+                    button.disabled = false;
+                }
+            }
+
+            button.addEventListener("click", () => checkReady(false));
+            refreshStatus();
+            checkReady(true);
+            window.setInterval(refreshStatus, 5000);
+            window.setInterval(() => checkReady(true), 5000);
+        })();
+    </script>
+</body>
+</html>
