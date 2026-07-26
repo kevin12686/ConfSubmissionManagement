@@ -21,6 +21,10 @@ from submissions.services.file_manager import (
     publication_pdf_info,
     publication_source_info,
 )
+from submissions.services.exception_keys import (
+    author_limit_exception_key,
+    submission_exception_key,
+)
 from submissions.services.publication_read import PublicationReadContext
 
 
@@ -220,6 +224,13 @@ def _whole_percent_label(value):
     if value is None:
         return ""
     return str(int(round(float(value))))
+
+
+def _submission_exception_finding(exception_type, submission):
+    return {
+        "exception_key": submission_exception_key(exception_type, submission),
+        "exception_submission_id": submission.pk,
+    }
 
 
 def _normalize_title_for_verification(value):
@@ -474,7 +485,10 @@ def filter_error_report_rows(rows, area=""):
 
 
 def normalize_error_report_categories(rows, requested_categories):
-    available_categories = {row["category"] for row in rows}
+    available_categories = {
+        row["category"]
+        for row in rows
+    } | set(ERROR_CATEGORY_SEVERITY)
     selected = []
     seen = set()
     for category in requested_categories:
@@ -508,6 +522,9 @@ def error_report_category_sections(
     for row in scope_rows:
         group = row.get("group") or _error_group_for_category(row["category"])
         grouped_categories[group].add(row["category"])
+    for category in selected:
+        if category in ERROR_CATEGORY_SEVERITY:
+            grouped_categories[_error_group_for_category(category)].add(category)
 
     sections = []
     for group in ERROR_GROUP_ORDER:
@@ -1050,6 +1067,7 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Page Exception",
+                            **_submission_exception_finding("page", submission),
                             "paper_id": submission.paper_id_filled,
                             "final_submission_id": submission.final_submission_id,
                             "message": (
@@ -1062,6 +1080,7 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Page Limit Exceeded",
+                        **_submission_exception_finding("page", submission),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": f"{submission.page_count} pages exceeds the limit of {setting.page_limit}.",
@@ -1073,6 +1092,7 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Page Exception",
+                            **_submission_exception_finding("page", submission),
                             "paper_id": submission.paper_id_filled,
                             "final_submission_id": submission.final_submission_id,
                             "message": (
@@ -1085,6 +1105,7 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Below Page Minimum",
+                        **_submission_exception_finding("page", submission),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": f"{submission.page_count} pages is below the minimum of {setting.page_minimum}.",
@@ -1124,6 +1145,10 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Author Number Exception",
+                            **_submission_exception_finding(
+                                "author_number",
+                                submission,
+                            ),
                             "paper_id": submission.paper_id_filled,
                             "final_submission_id": submission.final_submission_id,
                             "message": (
@@ -1137,6 +1162,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Author Over Limit",
+                        **_submission_exception_finding(
+                            "author_number",
+                            submission,
+                        ),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
@@ -1216,6 +1245,10 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Plagiarism % Exception",
+                            **_submission_exception_finding(
+                                "plagiarism_percent",
+                                submission,
+                            ),
                             "paper_id": submission.paper_id_filled,
                             "final_submission_id": submission.final_submission_id,
                             "message": (
@@ -1229,6 +1262,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Stale Plagiarism % Exception",
+                        **_submission_exception_finding(
+                            "plagiarism_percent",
+                            submission,
+                        ),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
@@ -1242,6 +1279,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Plagiarism % Over Threshold",
+                        **_submission_exception_finding(
+                            "plagiarism_percent",
+                            submission,
+                        ),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
@@ -1258,6 +1299,10 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Single % Exception",
+                            **_submission_exception_finding(
+                                "single_percent",
+                                submission,
+                            ),
                             "paper_id": submission.paper_id_filled,
                             "final_submission_id": submission.final_submission_id,
                             "message": (
@@ -1271,6 +1316,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Stale Single % Exception",
+                        **_submission_exception_finding(
+                            "single_percent",
+                            submission,
+                        ),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
@@ -1284,6 +1333,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Single % Over Threshold",
+                        **_submission_exception_finding(
+                            "single_percent",
+                            submission,
+                        ),
                         "paper_id": submission.paper_id_filled,
                         "final_submission_id": submission.final_submission_id,
                         "message": (
@@ -1313,6 +1366,10 @@ def publication_readiness_rows(
                     rows.append(
                         {
                             "category": "Allowed Author Paper Count Exception",
+                            "exception_key": author_limit_exception_key(
+                                row["normalized_author_name"]
+                            ),
+                            "exception_submission_id": None,
                             "paper_id": row["paper_ids"],
                             "final_submission_id": "",
                             "message": (
@@ -1326,6 +1383,10 @@ def publication_readiness_rows(
                 rows.append(
                     {
                         "category": "Author Over Limit",
+                        "exception_key": author_limit_exception_key(
+                            row["normalized_author_name"]
+                        ),
+                        "exception_submission_id": None,
                         "paper_id": row["paper_ids"],
                         "final_submission_id": "",
                         "message": (
@@ -1566,7 +1627,7 @@ def author_count_rows(*, context=None, include_file_links=True):
                 "over_limit": over_limit,
                 "waiver": waiver,
                 "waiver_valid": waiver_valid,
-                "exception_key": f"author_limit:{normalized_name}",
+                "exception_key": author_limit_exception_key(normalized_name),
                 "waiver_reason": waiver.reason if waiver else "",
                 "waiver_approved_count": waiver.approved_publication_paper_count if waiver else None,
             }

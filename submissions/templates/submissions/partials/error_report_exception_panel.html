@@ -1,0 +1,128 @@
+<tr class="collapse{% if row.exception_panel_open %} show{% endif %}"
+    id="{{ row.exception_panel_id }}">
+    <td colspan="4">
+        <div class="cfm-exception-panel">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                <div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <strong>{{ row.exception.type_label }} exception</strong>
+                        <span class="badge text-bg-{{ row.exception.status_level }}">
+                            {{ row.exception.status_label }}
+                        </span>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        {% if row.exception.submission %}
+                            {{ row.exception.paper_id }} / Final {{ row.exception.final_submission_id }}
+                        {% else %}
+                            {{ row.exception.subject }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    {% if row.exception.publication_pdf.exists %}
+                        <a class="btn btn-sm btn-outline-dark"
+                           href="{{ row.exception.publication_pdf.url }}"
+                           target="_blank"
+                           rel="noopener">Open publication PDF</a>
+                    {% endif %}
+                    {% if row.exception.submission.plagiarism_report_path %}
+                        <a class="btn btn-sm btn-outline-dark"
+                           href="{% url 'submissions:plagiarism_report' row.exception.submission.pk %}"
+                           target="_blank"
+                           rel="noopener">Open report</a>
+                    {% endif %}
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{% url 'submissions:exceptions_center' %}?exception_key={{ row.exception.key|urlencode }}">Open in Exceptions Center</a>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6 col-lg-3">
+                    <div class="small text-muted">Current value</div>
+                    <div class="cfm-data-value">{{ row.exception.current_value|default:"--" }}</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="small text-muted">Limit</div>
+                    <div>{{ row.exception.limit_label }}</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="small text-muted">Approved value</div>
+                    <div>{{ row.exception.approved_value|default:"--" }}</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="small text-muted">Approved time</div>
+                    <div>{{ row.exception.approved_at|default:"--" }}</div>
+                </div>
+                {% if row.exception.type == "author_number" %}
+                    <div class="col-12">
+                        <div class="small text-muted">Extracted authors</div>
+                        <div class="text-break">{{ row.exception.submission.extracted_authors|default:"--" }}</div>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="small text-muted">Recorded reason</div>
+            {% if row.exception.reason %}
+                <div class="border rounded bg-light p-2 mb-3 text-break">
+                    {{ row.exception.reason|linebreaksbr }}
+                </div>
+            {% else %}
+                <div class="text-muted mb-3">No exception reason recorded.</div>
+            {% endif %}
+
+            {% if row.exception.status == "allowed" %}
+                <form method="post"
+                      class="d-flex justify-content-end"
+                      hx-post="{{ request.get_full_path }}"
+                      hx-target="#error-report-worklist"
+                      hx-select="#error-report-worklist"
+                      hx-swap="outerHTML"
+                      hx-disabled-elt="button">
+                    {% csrf_token %}
+                    <input type="hidden" name="exception_key" value="{{ row.exception.key }}">
+                    <input type="hidden" name="exception_submission_id" value="{% if row.exception.submission %}{{ row.exception.submission.pk }}{% endif %}">
+                    <input type="hidden" name="evidence_token" value="{{ row.exception.evidence_token }}">
+                    <button class="btn btn-outline-danger btn-sm"
+                            name="action"
+                            value="remove_exception">Remove exception</button>
+                </form>
+            {% else %}
+                <form method="post"
+                      class="row g-2 align-items-end"
+                      hx-post="{{ request.get_full_path }}"
+                      hx-target="#error-report-worklist"
+                      hx-select="#error-report-worklist"
+                      hx-swap="outerHTML"
+                      hx-disabled-elt="button">
+                    {% csrf_token %}
+                    <input type="hidden" name="exception_key" value="{{ row.exception.key }}">
+                    <input type="hidden" name="exception_submission_id" value="{% if row.exception.submission %}{{ row.exception.submission.pk }}{% endif %}">
+                    <input type="hidden" name="evidence_token" value="{{ row.exception.evidence_token }}">
+                    <div class="col-lg-9">
+                        <label class="form-label small"
+                               for="error-exception-reason-{{ row.exception_panel_id }}">Required reason</label>
+                        <textarea id="error-exception-reason-{{ row.exception_panel_id }}"
+                                  class="form-control{% if row.exception_inline_error %} is-invalid{% endif %}"
+                                  name="reason"
+                                  rows="3">{{ row.exception_draft_reason|default:row.exception.reason }}</textarea>
+                        {% if row.exception_inline_error %}
+                            <div class="invalid-feedback">{{ row.exception_inline_error }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-lg-3 d-grid gap-2">
+                        <button class="btn btn-success btn-sm"
+                                name="action"
+                                value="{% if row.exception.status == 'stale' %}reapprove_exception{% else %}approve_exception{% endif %}">
+                            {% if row.exception.status == "stale" %}Re-approve{% else %}Allow exception{% endif %}
+                        </button>
+                        {% if row.exception.status == "stale" %}
+                            <button class="btn btn-outline-danger btn-sm"
+                                    name="action"
+                                    value="remove_exception">Remove exception</button>
+                        {% endif %}
+                    </div>
+                </form>
+            {% endif %}
+        </div>
+    </td>
+</tr>

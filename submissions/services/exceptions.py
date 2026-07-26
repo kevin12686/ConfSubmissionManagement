@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -18,6 +20,10 @@ from submissions.services.checks import (
     single_percent_over_threshold,
 )
 from submissions.services.file_manager import publication_pdf_info
+from submissions.services.exception_keys import (
+    author_limit_exception_key,
+    submission_exception_key,
+)
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.workflow_evidence import (
     attach_exception_evidence_token,
@@ -128,7 +134,7 @@ def _append_submission_exception_rows(
     if page_status:
         rows.append(
             {
-                "key": f"page:{submission.pk}",
+                "key": submission_exception_key("page", submission),
                 "type": "page",
                 "type_label": "Page count",
                 "status": page_status,
@@ -152,7 +158,7 @@ def _append_submission_exception_rows(
         count = author_number_count(submission)
         rows.append(
             {
-                "key": f"author_number:{submission.pk}",
+                "key": submission_exception_key("author_number", submission),
                 "type": "author_number",
                 "type_label": "Authors in paper",
                 "status": author_status,
@@ -175,7 +181,7 @@ def _append_submission_exception_rows(
     if plagiarism_status:
         rows.append(
             {
-                "key": f"plagiarism_percent:{submission.pk}",
+                "key": submission_exception_key("plagiarism_percent", submission),
                 "type": "plagiarism_percent",
                 "type_label": "Plagiarism %",
                 "status": plagiarism_status,
@@ -198,7 +204,7 @@ def _append_submission_exception_rows(
     if single_status:
         rows.append(
             {
-                "key": f"single_percent:{submission.pk}",
+                "key": submission_exception_key("single_percent", submission),
                 "type": "single_percent",
                 "type_label": "Single %",
                 "status": single_status,
@@ -271,7 +277,9 @@ def exception_rows(
             status = "not_allowed"
         rows.append(
             {
-                "key": f"author_limit:{author_row['normalized_author_name']}",
+                "key": author_limit_exception_key(
+                    author_row["normalized_author_name"]
+                ),
                 "type": "author_limit",
                 "type_label": "Author paper count",
                 "status": status,
@@ -326,6 +334,90 @@ def hydrate_exception_rows(rows, *, context):
         else:
             hydrated.append(row)
     return hydrated
+
+
+@dataclass(frozen=True)
+class ExceptionActionResult:
+    exception_key: str
+    exception_type: str
+    action: str
+    message: str
+    level: str
+
+
+def execute_exception_action(
+    *,
+    exception_key,
+    action,
+    reason="",
+    evidence_token="",
+    expected_submission_id=None,
+    context=None,
+):
+    if action not in {
+        "approve_exception",
+        "reapprove_exception",
+        "remove_exception",
+    }:
+        raise ValueError("Unsupported exception action.")
+
+    rows, _ = exception_rows(
+        "all",
+        context=context,
+        hydrate=False,
+    )
+    row = next((item for item in rows if item["key"] == exception_key), None)
+    if not row:
+        raise ValueError(
+            "This exception is no longer applicable. Reload the current workflow."
+        )
+
+    submission = row.get("submission")
+    actual_submission_id = submission.pk if submission else None
+    if expected_submission_id not in {None, ""}:
+        try:
+            expected_submission_id = int(expected_submission_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid exception submission scope.") from exc
+        if actual_submission_id != expected_submission_id:
+            raise ValueError(
+                "This exception does not belong to the expected Final Submission."
+            )
+    elif submission:
+        raise ValueError("Missing exception submission scope.")
+
+    if action == "approve_exception" and row["status"] != "not_allowed":
+        raise ValueError("This exception is not awaiting initial approval.")
+    if action == "reapprove_exception" and row["status"] != "stale":
+        raise ValueError("This exception is not stale.")
+    if action == "remove_exception" and row["status"] not in {"allowed", "stale"}:
+        raise ValueError("This exception has no approval to remove.")
+
+    if action in {"approve_exception", "reapprove_exception"}:
+        approve_exception(
+            row,
+            reason,
+            expected_evidence_token=evidence_token,
+        )
+        return ExceptionActionResult(
+            exception_key=row["key"],
+            exception_type=row["type"],
+            action=action,
+            message=f"{row['type_label']} exception allowed; this issue moved to Info.",
+            level="success",
+        )
+
+    remove_exception(
+        row,
+        expected_evidence_token=evidence_token,
+    )
+    return ExceptionActionResult(
+        exception_key=row["key"],
+        exception_type=row["type"],
+        action=action,
+        message=f"{row['type_label']} exception removed; the issue is blocking again.",
+        level="warning",
+    )
 
 
 @transaction.atomic

@@ -122,6 +122,13 @@ or historical. Color is never the only status signal.
 Error Report filters severity, workflow area, and categories on the server
 before pagination. Multiple categories use OR; area, severity, and category
 dimensions combine with AND. Duplicate groups use a read-only detail view.
+Exception-capable findings show `Manage exception` directly below the finding.
+The full-width panel shows the current value, configured limit, recorded
+approval, publication PDF/report links, and the same allow, re-approve, or
+remove actions as Exceptions Center. After an action, the complete filtered
+worklist refreshes: a valid approval moves the item to Info, while removing an
+approval restores the blocker. Author paper-count findings can also be handled
+there even though they are author-level rather than tied to one Final ID.
 
 Implementation and presentation contracts for partial navigation, exact
 targets, pagination, accessibility, and shared components live in
@@ -376,7 +383,14 @@ Exceptions are rare approvals for:
 
 Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. Plagiarism % and Single % are approved separately. If the underlying count or score changes, the exception becomes stale and must be re-approved.
 
-For paper-level exceptions, start from Organized List. Rows with page, per-paper author-count, plagiarism score, or duplicate-author review items show an `Exceptions` panel. The panel only shows relevant sections for that paper and includes publication PDF/report links where useful. Use Exceptions for centralized review and for author paper-count exceptions, which are author-level decisions across multiple papers.
+For paper-level exceptions, start from Organized List when reviewing one paper
+as a whole. Rows with page, per-paper author-count, plagiarism score, or
+duplicate-author review items show an `Exceptions` panel. Use Error Report when
+working from a blocker or tracked Info finding; its `Manage exception` panel
+opens the exact exception represented by that finding. Use Exceptions Center
+for centralized review. Author paper-count exceptions remain author-level
+decisions across multiple papers, but their Error Report finding also opens the
+correct author-level exception rather than guessing from a Paper ID.
 
 Saving or removing one Organized List exception refreshes that paper's complete
 row from the system without reloading the full page. Other reason fields that

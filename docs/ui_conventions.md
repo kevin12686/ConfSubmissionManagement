@@ -298,7 +298,11 @@ GET.
   matrix rows, apply immediately through the scoped HTMX worklist, and use
   Error Report-scoped Critical/Medium/Info colors; do not change shared
   badge/button styling to represent their selected state. Large duplicate
-  groups load complete details through a read-only endpoint.
+  groups load complete details through a read-only endpoint. Exception-capable
+  findings use a full-width collapse row, not a reason field inside the Message
+  cell. The panel renders the shared exception row state and replaces the
+  complete Error Report worklist after an action because the finding may move
+  between Critical and Info or disappear from the selected category.
 - Final Submissions keeps Import/Re-upload collapsed by default.
 - Upload zones may summarize and remove browser-selected files, but server
   extension/hash validation and preview-before-apply remain authoritative.

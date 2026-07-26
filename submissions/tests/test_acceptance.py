@@ -5095,6 +5095,238 @@ class DuplicatePublicationTests(EditorialAcceptanceTestCase):
             ["critical", "medium"],
         )
 
+    def test_error_report_exception_action_updates_readiness_and_filtered_worklist(self):
+        self.make_master_paper("P001", "Page Exception", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Page Exception",
+            extracted_title="Page Exception",
+            page_count=13,
+        )
+        critical_url = (
+            f"{reverse('submissions:error_report')}"
+            "?severity=critical&category=Page%20Limit%20Exceeded&page_size=25"
+        )
+        page = self.client.get(critical_url)
+        finding = page.context["rows"][0]
+
+        self.assertEqual(finding["exception"]["key"], f"page:{submission.pk}")
+        self.assertContains(page, "Manage exception")
+        self.assertContains(page, "Open in Exceptions Center")
+
+        response = self.client.post(
+            critical_url,
+            {
+                "exception_key": finding["exception"]["key"],
+                "exception_submission_id": submission.pk,
+                "action": "approve_exception",
+                "reason": "Chair approved the final page count.",
+                "evidence_token": finding["exception"]["evidence_token"],
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertTrue(submission.has_valid_page_limit_exception)
+        self.assertEqual(response.context["current_severity"], "critical")
+        self.assertEqual(
+            response.context["current_categories"],
+            ("Page Limit Exceeded",),
+        )
+        self.assertContains(response, "this issue moved to Info")
+        self.assertNotIn(
+            "Page Limit Exceeded",
+            {row["category"] for row in publication_readiness_rows()},
+        )
+
+        info_page = self.client.get(
+            reverse("submissions:error_report"),
+            {
+                "severity": "info",
+                "category": "Allowed Page Exception",
+            },
+        )
+        allowed_finding = info_page.context["rows"][0]
+        remove_response = self.client.post(
+            (
+                f"{reverse('submissions:error_report')}"
+                "?severity=info&category=Allowed%20Page%20Exception"
+            ),
+            {
+                "exception_key": allowed_finding["exception"]["key"],
+                "exception_submission_id": submission.pk,
+                "action": "remove_exception",
+                "evidence_token": allowed_finding["exception"]["evidence_token"],
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(remove_response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertFalse(submission.page_limit_exception_approved)
+        self.assertContains(remove_response, "the issue is blocking again")
+        self.assertIn(
+            "Page Limit Exceeded",
+            {row["category"] for row in publication_readiness_rows()},
+        )
+
+    def test_error_report_exception_action_rejects_stale_evidence_and_wrong_scope(self):
+        self.make_master_paper("P001", "Concurrent Exception", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Concurrent Exception",
+            extracted_title="Concurrent Exception",
+            similarity_score=42,
+            single_similarity_score=4,
+        )
+        url = (
+            f"{reverse('submissions:error_report')}"
+            "?severity=critical&category=Plagiarism%20%25%20Over%20Threshold"
+        )
+        page = self.client.get(url)
+        finding = page.context["rows"][0]
+        stale_token = finding["exception"]["evidence_token"]
+        submission.similarity_score = 47
+        submission.save(update_fields=["similarity_score", "updated_at"])
+
+        stale_response = self.client.post(
+            url,
+            {
+                "exception_key": finding["exception"]["key"],
+                "exception_submission_id": submission.pk,
+                "action": "approve_exception",
+                "reason": "Keep this reason visible.",
+                "evidence_token": stale_token,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(stale_response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertContains(stale_response, "record changed")
+        self.assertContains(stale_response, "Keep this reason visible.")
+        self.assertContains(stale_response, "collapse show")
+
+        current_finding = stale_response.context["rows"][0]
+        wrong_scope_response = self.client.post(
+            url,
+            {
+                "exception_key": current_finding["exception"]["key"],
+                "exception_submission_id": submission.pk + 100,
+                "action": "approve_exception",
+                "reason": "Wrong submission.",
+                "evidence_token": current_finding["exception"]["evidence_token"],
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        submission.refresh_from_db()
+        self.assertFalse(submission.plagiarism_percent_exception_approved)
+        self.assertContains(
+            wrong_scope_response,
+            "does not belong to the expected Final Submission",
+        )
+
+    def test_error_report_exception_action_keeps_non_htmx_redirect_fallback(self):
+        self.make_master_paper("P001", "Fallback Exception", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Fallback Exception",
+            extracted_title="Fallback Exception",
+            page_count=13,
+        )
+        url = (
+            f"{reverse('submissions:error_report')}"
+            "?severity=critical&category=Page%20Limit%20Exceeded&page_size=50"
+        )
+        page = self.client.get(url)
+        finding = page.context["rows"][0]
+
+        response = self.client.post(
+            url,
+            {
+                "exception_key": finding["exception"]["key"],
+                "exception_submission_id": submission.pk,
+                "action": "approve_exception",
+                "reason": "Approved without partial navigation.",
+                "evidence_token": finding["exception"]["evidence_token"],
+            },
+        )
+
+        self.assertRedirects(response, url, fetch_redirect_response=False)
+        submission.refresh_from_db()
+        self.assertTrue(submission.has_valid_page_limit_exception)
+
+    def test_error_report_supports_author_level_exception_without_submission_scope(self):
+        for index in range(1, 5):
+            paper_id = f"P{index:03}"
+            self.make_master_paper(paper_id, f"Author Paper {index}", "Ada")
+            self.make_final_submission(
+                final_submission_id=str(index),
+                paper_id_filled=paper_id,
+                final_submission_title=f"Author Paper {index}",
+                extracted_title=f"Author Paper {index}",
+                extracted_authors="Ada Lovelace",
+            )
+
+        page = self.client.get(
+            reverse("submissions:error_report"),
+            {
+                "severity": "critical",
+                "category": "Author Over Limit",
+            },
+        )
+        author_finding = next(
+            row
+            for row in page.context["rows"]
+            if not row["final_submission_id"]
+        )
+        response = self.client.post(
+            (
+                f"{reverse('submissions:error_report')}"
+                "?severity=critical&category=Author%20Over%20Limit"
+            ),
+            {
+                "exception_key": author_finding["exception"]["key"],
+                "exception_submission_id": "",
+                "action": "approve_exception",
+                "reason": "Chair approved this author workload.",
+                "evidence_token": author_finding["exception"]["evidence_token"],
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        waiver = AuthorLimitWaiver.objects.get(
+            normalized_author_name="ada lovelace"
+        )
+        self.assertTrue(waiver.is_valid_for_count(4))
+        self.assertContains(response, "this issue moved to Info")
+
+    def test_error_report_does_not_offer_exception_for_unrelated_issue(self):
+        self.make_master_paper("P001", "Missing Extraction", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Missing Extraction",
+            extracted_title="",
+        )
+
+        response = self.client.get(
+            reverse("submissions:error_report"),
+            {
+                "severity": "medium",
+                "category": "Missing Extracted Title",
+            },
+        )
+
+        self.assertContains(response, "Missing Extracted Title")
+        self.assertNotContains(response, "Manage exception")
+
     def test_replaced_old_duplicate_file_does_not_create_publication_duplicate(self):
         self.make_master_paper("P001", "Current One", "Ada")
         self.make_master_paper("P002", "Current Two", "Alan")

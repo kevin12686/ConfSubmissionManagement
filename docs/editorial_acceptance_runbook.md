@@ -227,6 +227,16 @@ Create Final Submission records and files:
   category, excludes unselected categories, and paginates the complete filtered
   result. Change severity and confirm it combines with the category selection;
   use `Clear categories` and confirm area/severity context remains intact.
+- Open an exception-capable Critical finding from Error Report and expand
+  `Manage exception`. Confirm the panel uses the full table width, shows the
+  current value/limit and relevant PDF/report links, and does not appear on an
+  unrelated finding. Approve with a reason and confirm the complete worklist
+  refreshes, the blocker is gone, and the record appears as an Info allowed
+  exception. Remove it from Info and confirm the blocker returns. Repeat with
+  JavaScript disabled to confirm the POST/redirect fallback works. Change the
+  underlying value before submitting an old panel and confirm signed evidence
+  rejects the stale action; also confirm a Final Submission-scoped key cannot
+  be applied to another Final Submission.
 - Every paginated worklist shows the same page-size/page controls above and
   below its rows. Use the bottom control to change page and confirm the next
   view returns to the top of that worklist with search/filter/sort state intact.

@@ -3,6 +3,19 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.40 - 2026-07-26
+
+### Error Report Exception Actions
+
+- Added integrated exception panels to exception-capable Error Report findings
+  so editors can inspect evidence and approve, re-approve, or remove an
+  exception without searching for the same item on another page.
+- Kept exception validity, stale-evidence protection, audit events, readiness,
+  and final publication blocking on the existing shared exception services.
+- Made each action rebuild the complete filtered Error Report worklist so an
+  approved blocker moves to Info immediately without stale severity/category
+  results.
+
 ## 1.10.39 - 2026-07-26
 
 ### Dashboard Navigation

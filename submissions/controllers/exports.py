@@ -50,11 +50,9 @@ from submissions.services.crosscheck import (
     validate_token,
 )
 from submissions.services.exceptions import (
-    EXCEPTION_FILTER_OPTIONS,
-    approve_exception,
-    exception_counts,
+    execute_exception_action,
     exception_rows,
-    remove_exception,
+    hydrate_exception_rows,
 )
 from submissions.services.import_export import (
     EXTERNAL_RESULTS_TEMPLATE_COLUMNS,
@@ -209,7 +207,50 @@ def old_versions(request):
 
 
 def error_report(request):
+    exception_feedback = None
+    active_exception_key = ""
+    exception_draft_reason = ""
+    exception_inline_error = ""
     publication_context = PublicationReadContext.load()
+    if request.method == "POST":
+        active_exception_key = request.POST.get("exception_key", "").strip()
+        exception_draft_reason = request.POST.get("reason", "")
+        try:
+            action_result = execute_exception_action(
+                exception_key=active_exception_key,
+                action=request.POST.get("action", ""),
+                reason=exception_draft_reason,
+                evidence_token=request.POST.get("evidence_token", ""),
+                expected_submission_id=request.POST.get(
+                    "exception_submission_id",
+                    "",
+                ),
+                context=publication_context,
+            )
+            exception_feedback = {
+                "level": action_result.level,
+                "message": action_result.message,
+            }
+            active_exception_key = ""
+            exception_draft_reason = ""
+        except ValueError as exc:
+            exception_inline_error = str(exc)
+            exception_feedback = {
+                "level": "danger",
+                "message": exception_inline_error,
+            }
+
+        if request.headers.get("HX-Request", "").lower() != "true":
+            if exception_inline_error:
+                messages.error(request, exception_inline_error)
+            elif exception_feedback["level"] == "warning":
+                messages.warning(request, exception_feedback["message"])
+            else:
+                messages.success(request, exception_feedback["message"])
+            return redirect(request.get_full_path())
+
+        publication_context = PublicationReadContext.load()
+
     author_rows = author_count_rows(
         context=publication_context,
         include_file_links=False,
@@ -262,6 +303,47 @@ def error_report(request):
         scroll_anchor="error-report-worklist",
     )
     displayed_rows = list(page.items)
+    current_exception_rows, _ = exception_rows(
+        "all",
+        context=publication_context,
+        hydrate=False,
+    )
+    exception_rows_by_key = {
+        row["key"]: row
+        for row in current_exception_rows
+    }
+    displayed_exception_rows = []
+    displayed_exception_keys = set()
+    for row in displayed_rows:
+        exception_key = row.get("exception_key", "")
+        exception_row = exception_rows_by_key.get(exception_key)
+        if exception_row and exception_key not in displayed_exception_keys:
+            displayed_exception_rows.append(exception_row)
+            displayed_exception_keys.add(exception_key)
+    hydrated_exceptions = {
+        row["key"]: row
+        for row in hydrate_exception_rows(
+            displayed_exception_rows,
+            context=publication_context,
+        )
+    }
+    for row_index, row in enumerate(displayed_rows, start=1):
+        exception_key = row.get("exception_key", "")
+        row["exception"] = hydrated_exceptions.get(exception_key)
+        row["exception_panel_id"] = f"error-exception-{row_index}"
+        row["exception_panel_open"] = bool(
+            exception_key and exception_key == active_exception_key
+        )
+        row["exception_draft_reason"] = (
+            exception_draft_reason
+            if row["exception_panel_open"]
+            else ""
+        )
+        row["exception_inline_error"] = (
+            exception_inline_error
+            if row["exception_panel_open"]
+            else ""
+        )
     page_sections = error_report_severity_sections(displayed_rows)
     severity_sections = (
         [section for section in page_sections if section["count"]]
@@ -328,6 +410,7 @@ def error_report(request):
             "clear_area_url": clear_area_url,
             "has_any_errors": bool(area_rows),
             "has_filtered_errors": bool(filtered_rows),
+            "exception_feedback": exception_feedback,
             "pagination": page,
         },
     )

@@ -21,6 +21,11 @@
 {% endif %}
 
 <div id="error-report-worklist" class="cfm-worklist-anchor">
+{% if exception_feedback %}
+    <div class="alert alert-{{ exception_feedback.level }} border cfm-attention" role="status">
+        {{ exception_feedback.message }}
+    </div>
+{% endif %}
 {% if has_any_errors %}
     <div class="row g-2 cfm-metric-strip">
         {% for section in severity_summary_sections %}
@@ -163,6 +168,16 @@
                                             <td>{{ row.final_submission_id|default:"--" }}</td>
                                             <td>
                                                 {{ row.message }}
+                                                {% if row.exception %}
+                                                    <div class="mt-2">
+                                                        <button class="btn btn-sm btn-outline-warning"
+                                                                type="button"
+                                                                data-bs-toggle="collapse"
+                                                                data-bs-target="#{{ row.exception_panel_id }}"
+                                                                aria-expanded="{% if row.exception_panel_open %}true{% else %}false{% endif %}"
+                                                                aria-controls="{{ row.exception_panel_id }}">Manage exception</button>
+                                                    </div>
+                                                {% endif %}
                                                 {% if row.duplicate_detail %}
                                                     <div class="mt-2">
                                                         <a
@@ -177,6 +192,9 @@
                                                 {% endif %}
                                             </td>
                                         </tr>
+                                        {% if row.exception %}
+                                            {% include "submissions/partials/error_report_exception_panel.html" %}
+                                        {% endif %}
                                     {% endfor %}
                                     </tbody>
                                 </table>

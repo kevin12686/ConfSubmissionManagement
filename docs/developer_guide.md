@@ -179,6 +179,17 @@ inline error. Drafts are presentation state only and must never be passed to
 another exception service or stored implicitly. Keep ordinary POST/redirect as
 the no-HTMX fallback.
 
+Error Report exception actions use the same exception-row keys, signed
+evidence tokens, approve/remove services, and audit path. Readiness findings
+may carry an additive `exception_key` plus the expected Final Submission scope;
+that metadata must never replace or weaken the readiness condition. Rebuild the
+complete Error Report worklist from a fresh `PublicationReadContext` after an
+HTMX action because severity, category counts, pagination, and the finding
+itself can all change. Preserve the active known category when its count drops
+to zero so the editor can see that the selected blocker was resolved. Unknown
+category query values remain invalid. Keep normal POST/redirect as the
+non-HTMX fallback.
+
 Organized List `Details` is the publication-record view for the active row. Its
 authors must come from that submission's `extracted_authors`, and its files must
 come from the publication-facing helpers. Do not substitute Paper Master authors,

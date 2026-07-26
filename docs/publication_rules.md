@@ -136,6 +136,11 @@ export would be blocked.
 
 Exceptions are narrow, evidence-bound decisions:
 
+- Exception-capable Error Report findings, Organized List panels, Author Count,
+  and Exceptions Center are alternate entry points to the same exception
+  records and service commands. Entry-point UI must not duplicate or relax the
+  readiness rules.
+
 - page, author-limit, Plagiarism %, and Single % exceptions require a reason;
 - an exception is valid only while the approved value still matches current
   evidence;
