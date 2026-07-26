@@ -140,8 +140,11 @@ Create Final Submission records and files:
 26. Run Docker rebuild `--dry-run` against one legacy single-service fixture
     and one current web/proxy project. Confirm the legacy project reads its
     public port from web and the current project reads it from proxy. Apply the
-    bind rollback Compose in a disposable project and confirm web/proxy resolve
-    `/app/data` to the same host folder. Run raw backup and verify `sms_data` is
+    rebuild in disposable bind and named-volume projects; confirm it uses
+    `--force-recreate`, retains each data mount type, verifies the loaded Nginx
+    Host directive, loads a collected static asset, and completes the
+    non-mutating CSRF POST smoke check. Confirm web/proxy resolve `/app/data` to
+    the same host folder in bind mode. Run raw backup and verify `sms_data` is
     mirrored while rebuildable `sms_static` is excluded.
 
 ## Acceptance Checks

@@ -3,6 +3,19 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.34 - 2026-07-25
+
+### Docker Deployment
+
+- Strengthened the multi-instance rebuild tool to recover each existing
+  deployment's effective environment, public port, project name, and data mount
+  before updating it.
+- Added Compose validation, forced web/proxy recreation, bind-versus-volume
+  preservation, loaded Nginx configuration verification, static asset checks,
+  and a non-mutating same-origin CSRF POST smoke test.
+- Kept generated environment files temporary and continued masking secrets in
+  console output.
+
 ## 1.10.33 - 2026-07-25
 
 ### Docker Deployment

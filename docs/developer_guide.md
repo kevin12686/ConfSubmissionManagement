@@ -93,12 +93,23 @@ service has produced the file and must not alter export selection, readiness,
 or file contents.
 
 After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
-existing Compose instance created from this checkout. It reads the data
-mount/image/Django environment from `web` and the public port/proxy environment
-from `proxy`, then runs `docker compose up -d --build` with the same project
-name. For the first upgrade from the old single-service layout, it falls back
-to the published `web:8000` port; subsequent runs use `proxy:80`. Use
-`--dry-run` to inspect the inferred settings.
+existing Compose instance created from this checkout. It reads the effective
+Django environment and data mount from `web`, merges the proxy environment,
+derives the public bind address/port from the published service, and uses the
+same Compose project name. It does not depend on locating or rewriting the
+original `.env.*` file. Recovered values are written to a temporary env file,
+with secrets masked in console output.
+
+Before changing containers, the script validates `docker compose config`. It
+then runs `up -d --build --force-recreate`, retaining a named volume as a named
+volume and applying `docker-compose.bind.yml` when the existing instance uses a
+host bind. After recreation it verifies the loaded Nginx Host directive, a
+known collected static asset, and a non-mutating same-origin CSRF POST through
+the public port. Any failed validation returns a nonzero status and identifies
+the affected project. For the first upgrade from the old single-service
+layout, discovery falls back to the published `web:8000` port; subsequent runs
+use `proxy:80`. Use `--dry-run` to inspect every inferred setting and exact
+Compose command.
 
 Existing bind-mounted instances must be migrated with
 `scripts/migrate_docker_data_volumes.py`. The migration builds the current

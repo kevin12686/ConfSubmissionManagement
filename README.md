@@ -95,6 +95,20 @@ diagnostics only and no longer controls whether static or media files load.
 The proxy preserves the configured public host and port so Django's normal
 same-origin CSRF protection works when `SMS_PORT` is not port 80.
 
+After updating this checkout, preview and rebuild all Docker conference
+instances without locating each original env file:
+
+```bash
+python3 scripts/rebuild_docker_instances.py --dry-run
+python3 scripts/rebuild_docker_instances.py
+```
+
+The script recovers the effective environment from each existing web/proxy
+pair, retains its data mount and public port, force-recreates both services,
+then verifies proxy configuration, static delivery, and a non-mutating CSRF
+POST. Generated env files are temporary; the script does not rewrite the
+operator's original `.env.*` files.
+
 Runtime data lives in a Compose project-scoped named volume.
 `SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current
 instance mirror with:

@@ -480,6 +480,19 @@ mark views `csrf_exempt`, or trust arbitrary origins. `SMS_ALLOWED_HOSTS` must
 still include the LAN hostname or IP, without using it as a substitute for
 correct proxy headers.
 
+For instances already created from this checkout, run:
+
+```bash
+python3 scripts/rebuild_docker_instances.py --dry-run
+python3 scripts/rebuild_docker_instances.py
+```
+
+The first command shows the environment, data mount type, public port, and
+Compose command inferred from each existing instance. The second force-recreates
+web/proxy and fails if the loaded Nginx configuration, static asset, or
+same-origin CSRF POST check does not pass. It uses a temporary recovered env
+file and does not edit the original `.env.*` file.
+
 ### Docker backup reports a lock or interrupted swap
 
 Migration and raw-data backup share

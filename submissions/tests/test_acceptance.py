@@ -6237,22 +6237,59 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "env": {"SMS_SECRET_KEY": "secret"},
         }
         generated_path = None
+        commands = []
 
         def inspect_generated_env(command, *, cwd, capture, check=True):
             nonlocal generated_path
+            commands.append(command)
             generated_path = Path(command[command.index("--env-file") + 1])
             with generated_path.open(encoding="utf-8") as handle:
                 contents = handle.read()
             self.assertIn("SMS_PORT=9000", contents)
             self.assertIn("SMS_SECRET_KEY=secret", contents)
+            return type(
+                "CommandResult",
+                (),
+                {"stdout": "proxy_set_header Host $http_host;"},
+            )()
 
-        with patch.object(docker_rebuild, "run", side_effect=inspect_generated_env):
+        with (
+            patch.object(docker_rebuild, "run", side_effect=inspect_generated_env),
+            patch.object(docker_rebuild, "smoke_test_public_endpoint") as smoke,
+        ):
             docker_rebuild.rebuild_instance(
                 instance, Path(django_settings.BASE_DIR), dry_run=False
             )
 
         self.assertIsNotNone(generated_path)
         self.assertFalse(generated_path.exists())
+        self.assertTrue(
+            any(command[-2:] == ["config", "--quiet"] for command in commands)
+        )
+        update_command = next(command for command in commands if "up" in command)
+        self.assertIn("--force-recreate", update_command)
+        self.assertIn("docker-compose.bind.yml", " ".join(update_command))
+        smoke.assert_called_once_with(instance)
+
+    def test_docker_rebuild_probe_uses_allowed_host_with_wildcard_bind(self):
+        script_path = (
+            Path(django_settings.BASE_DIR) / "scripts" / "rebuild_docker_instances.py"
+        )
+        spec = importlib.util.spec_from_file_location("docker_rebuild_probe", script_path)
+        docker_rebuild = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker_rebuild)
+
+        connect_url, origin, host_header = docker_rebuild.probe_endpoint(
+            {
+                "sms_bind_host": "0.0.0.0",
+                "sms_port": "9000",
+                "env": {"SMS_ALLOWED_HOSTS": "192.168.111.10"},
+            }
+        )
+
+        self.assertEqual(connect_url, "http://127.0.0.1:9000")
+        self.assertEqual(origin, "http://192.168.111.10:9000")
+        self.assertEqual(host_header, "192.168.111.10:9000")
 
     def test_final_submission_batch_upload_limit_is_documented(self):
         self.assertEqual(django_settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5000)

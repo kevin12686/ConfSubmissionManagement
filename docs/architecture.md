@@ -330,6 +330,13 @@ from data migration and backup because `collectstatic` recreates it. This
 operational architecture does not change System State archive structure or
 publication-facing file resolution.
 
+The Docker rebuild tool treats the currently running containers as the source
+for effective deployment inputs, rather than guessing an original env filename.
+It retains project name, public port, deployment environment, and data mount
+type, then force-recreates web/proxy and verifies the public HTTP/CSRF path.
+Its generated env file is temporary and is not a replacement for the
+operator-maintained `.env.*` file.
+
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the
 database transaction begins. Live files move to quarantine only after model
