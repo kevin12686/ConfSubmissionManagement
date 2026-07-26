@@ -524,9 +524,10 @@ environment and therefore will not apply an env-file edit.
 
 For `Backing up`, `Moving conference data`, `Applying the latest version`, or
 `Restarting`, allow the named host script to finish. The page checks readiness
-without resubmitting the interrupted request. Return to the workspace and
-verify any change, upload, import, or export that was in progress before
-repeating it.
+without resubmitting the interrupted request. After two successful readiness
+checks it returns to the Dashboard, not the failed request URL. The Return to
+workspace button can be used immediately once readiness succeeds. Verify any
+change, upload, import, or export that was in progress before repeating it.
 
 `Application unavailable` means Nginx is reachable but no fresh planned
 operation explains why web is unavailable. Check `docker compose ps`; an

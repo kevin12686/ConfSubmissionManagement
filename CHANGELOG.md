@@ -3,6 +3,17 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.37 - 2026-07-26
+
+### Docker Service Recovery
+
+- Made the Nginx fallback return automatically to the Dashboard after two
+  successful readiness checks.
+- Kept recovery safe for interrupted POST requests by replacing the fallback
+  document with `/` instead of reloading or resubmitting the original URL.
+- Retained the immediate Return to workspace action and resumed polling if the
+  second readiness check fails.
+
 ## 1.10.36 - 2026-07-26
 
 ### Docker Instance Updates

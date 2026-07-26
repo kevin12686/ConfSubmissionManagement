@@ -5949,6 +5949,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("/__sms_gateway/status.json", fallback_page)
         self.assertIn("/__sms_gateway/ready", fallback_page)
         self.assertIn("never submitted again automatically", fallback_page)
+        self.assertIn(
+            "Workspace restored. Returning in 2 seconds...",
+            fallback_page,
+        )
+        self.assertIn('window.location.replace("/")', fallback_page)
+        self.assertNotIn("window.location.reload", fallback_page)
+        self.assertNotIn("window.location.assign", fallback_page)
         self.assertIn("sms_gateway_state:/srv/fallback-state", compose_config)
         self.assertIn(
             "com.conferencefinalmanager.gateway-version",

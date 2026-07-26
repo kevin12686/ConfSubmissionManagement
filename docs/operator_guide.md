@@ -493,7 +493,9 @@ state. The static volume is recreated automatically and is not a backup target.
 Nginx remains on the public port while Gunicorn is unavailable and shows the
 current backup, migration, update, or restart phase. If no fresh planned
 operation exists, it reports a generic outage instead of guessing the cause.
-Interrupted changes and uploads are not submitted again automatically.
+Interrupted changes and uploads are not submitted again automatically. After
+the application passes two readiness checks, the fallback safely returns to
+the Dashboard; it never reloads or resubmits the failed request URL.
 Large generated downloads are response-buffered through Nginx. A slow browser
 may cause Nginx to use temporary disk space while the request is active, but
 the response is not cached or reused and the temporary file is removed when

@@ -845,6 +845,8 @@
             const buttonLabel = document.getElementById("button-label");
             const stateIcon = document.getElementById("state-icon");
             let serviceReady = false;
+            let returnTimer = null;
+            const returnDelayMs = 2000;
 
             function renderSteps(state) {
                 steps.replaceChildren();
@@ -927,10 +929,48 @@
                 }
             }
 
+            async function readinessAvailable() {
+                try {
+                    const response = await fetch("/__sms_gateway/ready", {
+                        cache: "no-store",
+                        headers: {"Accept": "application/json"}
+                    });
+                    return response.ok;
+                } catch (error) {
+                    return false;
+                }
+            }
+
+            function returnToWorkspace() {
+                if (returnTimer !== null) {
+                    window.clearTimeout(returnTimer);
+                    returnTimer = null;
+                }
+                window.location.replace("/");
+            }
+
+            function scheduleAutomaticReturn() {
+                if (returnTimer !== null) {
+                    return;
+                }
+                retryStatus.textContent = "Workspace restored. Returning in 2 seconds...";
+                returnTimer = window.setTimeout(async () => {
+                    returnTimer = null;
+                    if (await readinessAvailable()) {
+                        returnToWorkspace();
+                        return;
+                    }
+                    serviceReady = false;
+                    retryStatus.textContent = "Service became unavailable; checking every 5 seconds";
+                    buttonLabel.textContent = "Check service";
+                    button.disabled = false;
+                }, returnDelayMs);
+            }
+
             async function checkReady(background = false) {
                 if (serviceReady) {
                     if (!background) {
-                        window.location.assign("/");
+                        returnToWorkspace();
                     }
                     return;
                 }
@@ -938,20 +978,12 @@
                     button.disabled = true;
                     buttonLabel.textContent = "Checking...";
                 }
-                try {
-                    const response = await fetch("/__sms_gateway/ready", {
-                        cache: "no-store",
-                        headers: {"Accept": "application/json"}
-                    });
-                    if (response.ok) {
-                        serviceReady = true;
-                        retryStatus.textContent = "The editorial workspace is available";
-                        buttonLabel.textContent = "Return to workspace";
-                        button.disabled = false;
-                        return;
-                    }
-                } catch (error) {
-                    // The gateway remains responsible for the visible status.
+                if (await readinessAvailable()) {
+                    serviceReady = true;
+                    buttonLabel.textContent = "Return to workspace";
+                    button.disabled = false;
+                    scheduleAutomaticReturn();
+                    return;
                 }
                 retryStatus.textContent = "Service is still unavailable; checking every 5 seconds";
                 if (!background) {

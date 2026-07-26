@@ -134,9 +134,10 @@ Create Final Submission records and files:
     Nginx endpoint. Confirm `web` has no published host port, `proxy` owns the
     configured port, and proxy mounts `sms_data` and `sms_static` read-only.
     Stop only web and confirm Nginx displays the themed generic fallback, then
-    start web and confirm readiness returns. Publish fresh backup/update status
-    and confirm the same shell changes its operation label and phase. Confirm
-    the page never automatically resubmits a POST.
+    start web and confirm two successful readiness checks automatically replace
+    the fallback with the Dashboard. Confirm this navigation does not reload
+    the failed URL or resubmit a POST. Publish fresh backup/update status and
+    confirm the same shell changes its operation label and phase.
     On a non-default published port, submit a normal CSRF-protected POST such
     as a blocked Final Publication Package request and confirm it reaches the
     application instead of returning 403. Repeat with `SMS_DEBUG=1`; file
