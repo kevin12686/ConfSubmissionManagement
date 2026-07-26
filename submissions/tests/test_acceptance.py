@@ -5917,6 +5917,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("alias /app/data/media/", proxy_config)
         self.assertIn("proxy_pass http://web:8000", proxy_config)
         self.assertIn("proxy_request_buffering off", proxy_config)
+        self.assertIn("proxy_set_header Host $http_host;", proxy_config)
+        self.assertNotIn("proxy_set_header Host $host;", proxy_config)
 
     def test_alert_layout_defaults_to_stacked_content_and_keeps_flex_opt_in(self):
         response = self.client.get(reverse("submissions:dashboard"))

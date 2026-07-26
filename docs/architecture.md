@@ -313,7 +313,9 @@ requests from a rebuildable `sms_static` volume, serves `/media/` from a
 read-only mount of the project-scoped `sms_data` volume, and proxies all other
 requests to `web:8000`. `SMS_DEBUG` controls Django diagnostics, not file
 availability. The proxy never participates in publication file selection and
-cannot write conference data.
+cannot write conference data. It preserves the browser-visible `Host` header,
+including a non-default public port, so Django performs its normal same-origin
+CSRF validation against the endpoint the editor actually opened.
 
 The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
 mirror maintained by the Docker backup script. Migration and backup use

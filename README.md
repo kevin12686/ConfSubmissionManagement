@@ -92,6 +92,8 @@ rebuildable `sms_static` volume and `/media/` from a read-only mount of the
 conference `sms_data` volume; all other requests go to Django. Keep
 `SMS_DEBUG=0` for normal Docker operation. Debug mode controls Django
 diagnostics only and no longer controls whether static or media files load.
+The proxy preserves the configured public host and port so Django's normal
+same-origin CSRF protection works when `SMS_PORT` is not port 80.
 
 Runtime data lives in a Compose project-scoped named volume.
 `SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current

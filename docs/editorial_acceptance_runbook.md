@@ -133,7 +133,10 @@ Create Final Submission records and files:
     formatting preview, and one publication PDF all load through the published
     Nginx endpoint. Confirm `web` has no published host port, `proxy` owns the
     configured port, and proxy mounts `sms_data` and `sms_static` read-only.
-    Repeat with `SMS_DEBUG=1`; file availability must be unchanged.
+    On a non-default published port, submit a normal CSRF-protected POST such
+    as a blocked Final Publication Package request and confirm it reaches the
+    application instead of returning 403. Repeat with `SMS_DEBUG=1`; file
+    availability and CSRF behavior must be unchanged.
 26. Run Docker rebuild `--dry-run` against one legacy single-service fixture
     and one current web/proxy project. Confirm the legacy project reads its
     public port from web and the current project reads it from proxy. Apply the

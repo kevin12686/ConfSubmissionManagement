@@ -467,6 +467,19 @@ proxy mounts the same `sms_data` volume as web, read-only, and that
 `docker compose config` shows `/app/data` for both services. Do not re-enable
 debug as a media-serving workaround.
 
+### Docker POST actions fail with CSRF verification failed
+
+This can affect exports, imports, reviews, settings, or other POST actions while
+ordinary pages still load. Confirm the deployment is using an Nginx template
+that forwards `Host $http_host`, including the browser-visible `SMS_PORT`.
+Forwarding `$host` drops non-default ports such as `:9000`; the browser Origin
+then no longer matches the Host Django receives.
+
+Rebuild or recreate the proxy after updating the template. Do not disable CSRF,
+mark views `csrf_exempt`, or trust arbitrary origins. `SMS_ALLOWED_HOSTS` must
+still include the LAN hostname or IP, without using it as a substitute for
+correct proxy headers.
+
 ### Docker backup reports a lock or interrupted swap
 
 Migration and raw-data backup share

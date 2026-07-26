@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.33 - 2026-07-25
+
+### Docker Deployment
+
+- Preserved the browser-visible host port when Nginx proxies requests to
+  Django, so same-origin CSRF validation continues to work on non-default
+  conference ports such as `:9000`.
+- Kept CSRF token and origin validation fully enabled; no publication,
+  workflow, database, or System State behavior changed.
+
 ## 1.10.32 - 2026-07-25
 
 ### Docker Deployment

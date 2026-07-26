@@ -65,6 +65,11 @@ rebuildable `sms_static` volume, and starts Gunicorn on the internal
 all other requests to `web`. The proxy waits for the web health check, which
 cannot pass until migrations and `collectstatic` have completed.
 
+The proxy must forward the original HTTP `Host` header including its port.
+Use Nginx `$http_host`, not `$host`: `$host` drops a non-default public
+`SMS_PORT`, causing Django to reject otherwise valid same-origin POST requests.
+Do not compensate with `csrf_exempt` or broad `CSRF_TRUSTED_ORIGINS`.
+
 WhiteNoise remains configured only as a non-Docker Gunicorn fallback; Docker
 requests for `/static/` never reach it. The web service defaults to one worker
 and four threads to avoid multi-process SQLite write contention.
