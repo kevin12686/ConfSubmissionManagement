@@ -500,15 +500,22 @@ the response is not cached or reused and the temporary file is removed when
 the request ends. Publication selection and ZIP contents remain controlled by
 Django's publication services.
 
-After updating the application checkout, run
-`python3 scripts/rebuild_docker_instances.py --dry-run` to review every detected
-conference's recovered port, environment, and data mount. Run the same command
-without `--dry-run` to build and replace web while retaining the stable proxy
-and those settings. Older gateway layouts receive a one-time proxy recreation;
-current gateways reload their validated configuration in place. The update is
-complete only after the script reports that readiness, proxy configuration,
-static delivery, and the same-origin CSRF POST all passed. The temporary
-recovered env does not overwrite the original conference `.env.*` file.
+After changing the application checkout or any conference `.env.*` file, run
+`python3 scripts/update_docker_instances.py --dry-run`. Confirm every listed
+project, public endpoint, data folder, and masked environment change. Then run
+the command without `--dry-run` to build, synchronize, and verify each existing
+instance. The updater refuses data-folder changes and checks for port/data
+conflicts before modifying any instance.
+
+Every env file must declare its exact `COMPOSE_PROJECT_NAME`. A newly added env
+file is reported but not started; use
+`python3 scripts/update_docker_instances.py --create-missing` only after
+reviewing the plan. The update is complete only after readiness, proxy
+configuration, static delivery, and the same-origin CSRF POST all pass.
+
+Use `scripts/rebuild_docker_instances.py` only as a recovery path for a legacy
+instance whose env file is unavailable. That command preserves values from the
+running containers and does not load later env-file edits.
 
 Run `python scripts/backup_docker_instances.py` manually or schedule it from the
 host. The command discovers all current conference instances, prepares most of

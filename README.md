@@ -80,12 +80,13 @@ each conference:
 
 ```bash
 cp .env.example .env.conference-a
-docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
+docker compose --env-file .env.conference-a up -d --build
 ```
 
 The default example opens the app at <http://127.0.0.1:8000/>. Change
 `SMS_PORT` in the environment file when several conferences run on the same
-machine.
+machine. Every conference env file must have a unique, stable
+`COMPOSE_PROJECT_NAME`.
 
 Docker places Nginx in front of Gunicorn. Nginx serves `/static/` from the
 rebuildable `sms_static` volume and `/media/` from a read-only mount of the
@@ -102,21 +103,34 @@ page for backup, migration, update, restart, and unexpected upstream outages.
 The fallback checks readiness without automatically resubmitting interrupted
 editorial actions.
 
-After updating this checkout, preview and rebuild all Docker conference
-instances without locating each original env file:
+After changing code or any `.env.*` setting, use the unified updater. It scans
+the conference env files, validates all project names, ports, and data folders
+before changing anything, builds the current code, applies env changes, and
+verifies each instance:
 
 ```bash
-python3 scripts/rebuild_docker_instances.py --dry-run
-python3 scripts/rebuild_docker_instances.py
+python3 scripts/update_docker_instances.py --dry-run
+python3 scripts/update_docker_instances.py
 ```
 
-The script recovers the effective environment from each existing web/proxy
-pair, retains its data mount and public port, builds before cutover, replaces
-only `web`, waits for readiness, then reloads or upgrades the stable proxy. It
-still verifies proxy configuration, static delivery, and a non-mutating CSRF
-POST. Generated env files are temporary; the script does not rewrite the
-operator's original `.env.*` files. A direct Compose rebuild still receives a
-generic fallback, but only this script publishes accurate update phases.
+New env files are reported but not started automatically. Create them only
+after reviewing the dry run:
+
+```bash
+python3 scripts/update_docker_instances.py --create-missing
+```
+
+For existing instances, the updater refuses to redirect `SMS_DATA_DIR`, detects
+overlapping host ports and shared data folders, builds before cutover, replaces
+only `web`, and recreates `proxy` only when proxy settings require it. It then
+checks readiness, proxy configuration, static delivery, and a non-mutating
+same-origin CSRF POST. Secrets are masked in the plan and env files are never
+rewritten.
+
+`scripts/rebuild_docker_instances.py` remains a recovery tool for legacy
+instances that do not have a maintained `.env.*` file. It preserves the
+effective settings recovered from the running containers; it does not apply
+edits made to an env file.
 
 Runtime data lives in a Compose project-scoped named volume.
 `SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current

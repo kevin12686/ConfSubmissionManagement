@@ -20,6 +20,8 @@ import backup_docker_instances
 import docker_data_transfer
 import docker_instance_tools
 import migrate_docker_data_volumes
+import rebuild_docker_instances
+import update_docker_instances
 
 
 class DockerDataTransferTests(TestCase):
@@ -436,6 +438,196 @@ class DockerRebuildCompatibilityTests(TestCase):
             str((root / "runtime" / "conference-a").resolve()),
         )
         self.assertEqual(instance["public_service"], "web")
+
+
+class DockerUnifiedUpdateTests(TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def write_env(self, name: str, contents: str) -> Path:
+        path = self.root / name
+        path.write_text(contents, encoding="utf-8")
+        return path
+
+    def test_env_discovery_requires_stable_project_names(self):
+        self.write_env(
+            ".env.conference-a",
+            "COMPOSE_PROJECT_NAME=sms-conf-a\nSMS_PORT=9000\n",
+        )
+        self.write_env(".env.example", "COMPOSE_PROJECT_NAME=ignored\n")
+
+        specs = update_docker_instances.discover_env_specs(self.root)
+
+        self.assertEqual(
+            specs,
+            [
+                {
+                    "path": self.root / ".env.conference-a",
+                    "project": "sms-conf-a",
+                }
+            ],
+        )
+
+        missing = self.write_env(".env.missing", "SMS_PORT=9001\n")
+        with self.assertRaisesRegex(ValueError, "missing COMPOSE_PROJECT_NAME"):
+            update_docker_instances.read_env_project_name(missing)
+
+    def test_equivalent_relative_data_path_is_not_reported_as_changed(self):
+        data_dir = self.root / "runtime" / "conference-a"
+        existing = {
+            "sms_bind_host": "127.0.0.1",
+            "sms_port": "9000",
+            "sms_data_dir": str(data_dir),
+            "env": {"SMS_DEBUG": "0"},
+        }
+        desired = {
+            "env_values": {
+                "SMS_BIND_HOST": "127.0.0.1",
+                "SMS_PORT": "9000",
+                "SMS_DATA_DIR": "./runtime/conference-a",
+                "SMS_DEBUG": "0",
+            }
+        }
+
+        changes = update_docker_instances.environment_changes(
+            existing,
+            desired,
+            self.root,
+        )
+
+        self.assertEqual(changes, {})
+
+    def test_existing_instance_data_path_change_is_blocked(self):
+        existing = {
+            "project": "sms-conf-a",
+            "sms_data_dir": str(self.root / "runtime" / "conference-a"),
+        }
+        desired = {
+            "sms_data_dir": str(self.root / "runtime" / "conference-b"),
+        }
+
+        with self.assertRaisesRegex(ValueError, "will not redirect conference data"):
+            update_docker_instances.validate_existing_data_mount(
+                existing,
+                desired,
+            )
+
+    def test_data_directory_conflict_includes_unselected_instances(self):
+        shared = self.root / "runtime" / "shared"
+        plans = [
+            {
+                "project": "sms-conf-new",
+                "desired": {"sms_data_dir": str(shared)},
+            }
+        ]
+        instances = [
+            {
+                "project": "sms-conf-existing",
+                "sms_data_dir": str(shared),
+            }
+        ]
+
+        with self.assertRaisesRegex(ValueError, "SMS_DATA_DIR is shared"):
+            update_docker_instances.validate_desired_data_directories(
+                plans,
+                instances,
+            )
+
+    def test_wildcard_bind_conflicts_with_specific_address_on_same_port(self):
+        self.assertTrue(
+            update_docker_instances.endpoint_conflicts(
+                ("0.0.0.0", "9000"),
+                ("192.168.1.10", "9000"),
+            )
+        )
+        self.assertFalse(
+            update_docker_instances.endpoint_conflicts(
+                ("127.0.0.1", "9000"),
+                ("127.0.0.1", "9001"),
+            )
+        )
+
+    def test_apply_existing_plan_passes_env_and_proxy_recreate_requirement(self):
+        instance = {"project": "sms-conf-a"}
+        desired_env = {
+            "SMS_BIND_HOST": "127.0.0.1",
+            "SMS_PORT": "9000",
+            "SMS_DATA_DIR": "./runtime/conference-a",
+        }
+        plans = [
+            {
+                "action": "update",
+                "project": "sms-conf-a",
+                "existing": instance,
+                "desired": {"env_values": desired_env},
+                "force_proxy_recreate": True,
+            }
+        ]
+
+        with patch.object(
+            update_docker_instances,
+            "rebuild_instance",
+        ) as rebuild:
+            update_docker_instances.apply_update_plans(
+                plans,
+                self.root,
+                create_missing=False,
+            )
+
+        rebuild.assert_called_once_with(
+            instance,
+            self.root,
+            dry_run=False,
+            env_values=desired_env,
+            force_proxy_recreate=True,
+        )
+
+    def test_missing_project_is_only_created_when_explicitly_enabled(self):
+        plan = {
+            "action": "create",
+            "project": "sms-conf-new",
+            "existing": None,
+            "desired": {},
+            "force_proxy_recreate": True,
+        }
+
+        with patch.object(update_docker_instances, "create_instance") as create:
+            update_docker_instances.apply_update_plans(
+                [plan],
+                self.root,
+                create_missing=False,
+            )
+            create.assert_not_called()
+
+            update_docker_instances.apply_update_plans(
+                [plan],
+                self.root,
+                create_missing=True,
+            )
+            create.assert_called_once_with(plan, self.root)
+
+    def test_forced_proxy_refresh_recreates_instead_of_reloading(self):
+        instance = {
+            "project": "sms-conf-a",
+            "gateway_version": docker_instance_tools.GATEWAY_VERSION,
+            "proxy_running": True,
+        }
+
+        with patch.object(rebuild_docker_instances, "run") as run:
+            rebuild_docker_instances.refresh_proxy(
+                instance,
+                self.root,
+                self.root / ".env.conference-a",
+                bind_override=False,
+                force_recreate=True,
+            )
+
+        command = run.call_args.args[0]
+        self.assertIn("up", command)
+        self.assertIn("--force-recreate", command)
+        self.assertEqual(command[-1], "proxy")
 
 
 class DockerMigrationOrchestrationTests(TestCase):

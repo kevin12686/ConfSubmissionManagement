@@ -100,8 +100,15 @@ def main() -> int:
     return 0
 
 
-def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
-    env_values = compose_env(instance)
+def rebuild_instance(
+    instance: dict,
+    root: Path,
+    *,
+    dry_run: bool,
+    env_values: dict[str, str] | None = None,
+    force_proxy_recreate: bool = False,
+) -> None:
+    env_values = env_values or compose_env(instance)
     bind_override = instance.get("mount_type") == "bind"
     build_command = compose_command(
         root,
@@ -139,8 +146,11 @@ def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
         "  proxy:   "
         + (
             "validated in-place configuration reload"
-            if instance.get("gateway_version") == GATEWAY_VERSION
-            else "one-time gateway recreation"
+            if (
+                instance.get("gateway_version") == GATEWAY_VERSION
+                and not force_proxy_recreate
+            )
+            else "gateway recreation required"
         )
     )
     if dry_run:
@@ -206,6 +216,7 @@ def rebuild_instance(instance: dict, root: Path, *, dry_run: bool) -> None:
                 root,
                 env_file,
                 bind_override=bind_override,
+                force_recreate=force_proxy_recreate,
             )
             rebuilt = current_project_instance(root, instance["project"])
             if not rebuilt or not rebuilt.get("proxy_id"):
@@ -239,9 +250,11 @@ def refresh_proxy(
     env_file: Path,
     *,
     bind_override: bool,
+    force_recreate: bool = False,
 ) -> None:
     if (
-        instance.get("gateway_version") != GATEWAY_VERSION
+        force_recreate
+        or instance.get("gateway_version") != GATEWAY_VERSION
         or not instance.get("proxy_running")
     ):
         run(

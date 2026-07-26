@@ -3,6 +3,19 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.36 - 2026-07-26
+
+### Docker Instance Updates
+
+- Added one unified updater that discovers `.env` and `.env.*`, applies
+  environment changes, rebuilds the current code, and verifies every matching
+  Docker conference instance.
+- Added stable `COMPOSE_PROJECT_NAME` ownership, plan-first validation for host
+  ports and data directories, masked secret reporting, and explicit
+  `--create-missing` protection for new instances.
+- Kept the legacy rebuild command as a recovery path that preserves settings
+  recovered from running containers when no maintained env file exists.
+
 ## 1.10.35 - 2026-07-25
 
 ### Docker Service Recovery

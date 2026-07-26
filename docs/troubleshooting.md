@@ -497,19 +497,28 @@ mark views `csrf_exempt`, or trust arbitrary origins. `SMS_ALLOWED_HOSTS` must
 still include the LAN hostname or IP, without using it as a substitute for
 correct proxy headers.
 
-For instances already created from this checkout, run:
+For instances managed by `.env.*`, run:
 
 ```bash
-python3 scripts/rebuild_docker_instances.py --dry-run
-python3 scripts/rebuild_docker_instances.py
+python3 scripts/update_docker_instances.py --dry-run
+python3 scripts/update_docker_instances.py
 ```
 
-The first command shows the environment, data mount type, public port, and
-phased commands inferred from each existing instance. The second builds before
-cutover, replaces only web, waits for readiness, reloads or upgrades proxy, and
-fails if the loaded Nginx configuration, static asset, or same-origin CSRF POST
-check does not pass. It uses a temporary recovered env file and does not edit
-the original `.env.*` file.
+The first command shows env-file changes, data folder, public endpoint, and
+whether proxy recreation is required. The second applies those settings,
+builds before cutover, replaces web, reloads or recreates proxy, and fails if
+the Nginx configuration, static asset, or same-origin CSRF check does not pass.
+It does not edit the env files.
+
+If an env file is reported as new, no instance is created unless you explicitly
+run `python3 scripts/update_docker_instances.py --create-missing`. If the
+updater reports a duplicate project, endpoint conflict, shared data folder, or
+changed `SMS_DATA_DIR`, correct the env files and rerun the dry run. Do not
+bypass these checks.
+
+For a legacy instance with no maintained env file, use
+`scripts/rebuild_docker_instances.py`. It preserves the live container
+environment and therefore will not apply an env-file edit.
 
 ### Docker shows the service fallback page
 
@@ -527,8 +536,9 @@ operation failed and could not restore a healthy service automatically.
 
 The fallback cannot be served when proxy, Docker Desktop, the host, LAN, or
 WARP itself is unavailable. A direct `docker compose up -d --build` receives
-only generic outage handling; use `scripts/rebuild_docker_instances.py` for
-accurate update phases and post-update validation.
+only generic outage handling; use `scripts/update_docker_instances.py` for
+env-managed instances or `scripts/rebuild_docker_instances.py` for legacy
+recovery so update phases and post-update validation are available.
 
 ### Docker backup reports a lock or interrupted swap
 

@@ -351,14 +351,23 @@ from data migration and backup because `collectstatic` recreates it. This
 operational architecture does not change System State archive structure or
 publication-facing file resolution.
 
-The Docker rebuild tool treats the currently running containers as the source
-for effective deployment inputs, rather than guessing an original env filename.
-It retains project name, public port, deployment environment, and data mount
-type. It validates Compose and builds first, publishes update status, replaces
-only web, waits for readiness, reloads or upgrades the proxy, and then verifies
-the public HTTP/CSRF path. Rebuild shares the Docker operation lock with
-migration and backup. Its generated env file is temporary and is not a
-replacement for the operator-maintained `.env.*` file.
+Docker instance updates have two explicit sources of deployment state:
+
+- `scripts/update_docker_instances.py` is the normal update path. Operator
+  `.env` and `.env.*` files are authoritative, and each declares a stable
+  `COMPOSE_PROJECT_NAME`. The script renders Compose configuration before
+  applying anything and rejects project, endpoint, and data-directory
+  conflicts. Existing `SMS_DATA_DIR` ownership is immutable through this
+  command.
+- `scripts/rebuild_docker_instances.py` is the legacy recovery path. It treats
+  running containers as the source of effective deployment inputs when a
+  maintained env file is unavailable. It does not apply env-file edits.
+
+Both paths retain the deployment's data mount type, validate Compose and build
+first, publish update status, replace only web, wait for readiness, reload or
+recreate proxy as required, and verify the public HTTP/CSRF path. They share
+the Docker operation lock with migration and backup. Generated env files are
+temporary and never replace operator-maintained `.env.*` files.
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the

@@ -141,15 +141,19 @@ Create Final Submission records and files:
     as a blocked Final Publication Package request and confirm it reaches the
     application instead of returning 403. Repeat with `SMS_DEBUG=1`; file
     availability and CSRF behavior must be unchanged.
-26. Run Docker rebuild `--dry-run` against one legacy single-service fixture
-    and one current web/proxy project. Confirm the legacy project reads its
-    public port from web and the current project reads it from proxy. Apply the
-    rebuild in disposable bind and named-volume projects; confirm it builds
-    first, force-recreates only web, retains each data mount type, waits for
-    readiness, reloads or upgrades proxy, verifies the loaded Nginx Host
+26. Create two disposable conference env files with unique
+    `COMPOSE_PROJECT_NAME`, port, and data folder values. Run the unified updater
+    with `--dry-run`; confirm it reports env changes and does not create the
+    missing project. Confirm duplicate project names, overlapping ports, shared
+    data folders, and an existing project's changed `SMS_DATA_DIR` are rejected
+    before any update. Use `--create-missing`, then change one web setting and
+    one proxy setting and apply another update. Confirm it builds first,
+    force-recreates web, recreates proxy only for the proxy change, retains the
+    data mount type, waits for readiness, verifies the loaded Nginx Host
     directive, loads a collected static asset, and completes the non-mutating
-    CSRF POST smoke check. Confirm web/proxy resolve `/app/data` to the same
-    host folder in bind mode. Run raw backup and verify `sms_data` is mirrored
+    CSRF POST smoke check. Also run the legacy rebuild `--dry-run` against a
+    single-service fixture and confirm it recovers the live port/settings rather
+    than applying an env file. Run raw backup and verify `sms_data` is mirrored
     while rebuildable `sms_static` and `sms_gateway_state` are excluded.
 27. Through the Nginx endpoint, download a large generated ZIP with a
     deliberately slow client. Confirm another browser can still load the

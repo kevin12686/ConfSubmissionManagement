@@ -35,8 +35,12 @@ Use one env file and one compose project name per conference:
 
 ```bash
 cp .env.example .env.conference-a
-docker compose --env-file .env.conference-a -p sms-conf-a up -d --build
+docker compose --env-file .env.conference-a up -d --build
 ```
+
+Set a unique `COMPOSE_PROJECT_NAME` in every conference env file. This is the
+stable identity used by Compose and the unified updater; do not derive project
+ownership from the env filename.
 
 Important settings:
 
@@ -114,27 +118,33 @@ The completion cookie is a UI signal only. It must be added after the export
 service has produced the file and must not alter export selection, readiness,
 or file contents.
 
-After a checkout update, `scripts/rebuild_docker_instances.py` can rebuild every
-existing Compose instance created from this checkout. It reads the effective
-Django environment and data mount from `web`, merges the proxy environment,
-derives the public bind address/port from the published service, and uses the
-same Compose project name. It does not depend on locating or rewriting the
-original `.env.*` file. Recovered values are written to a temporary env file,
-with secrets masked in console output.
+Use `scripts/update_docker_instances.py` after either code or `.env.*` changes.
+It discovers `.env` and `.env.*` files, requires one unique
+`COMPOSE_PROJECT_NAME` per file, renders the desired Compose configuration, and
+validates the complete plan before changing a container. It rejects duplicate
+project names, overlapping bind address/port combinations, shared data
+directories, project names owned by another checkout, and any attempt to move
+an existing instance to a different `SMS_DATA_DIR`.
 
-Before changing containers, the script validates `docker compose config`, then
-builds `web` while the current service remains available. It publishes an
-`update` status, force-recreates only `web`, waits for its health check, and
-either performs a validated in-place Nginx configuration reload or does the
-one-time proxy recreation required by an older gateway layout. It retains a
-named volume as a named volume and applies `docker-compose.bind.yml` when the
-existing instance uses a host bind. It then verifies the loaded Nginx Host
-directive, a known collected static asset, and a non-mutating same-origin CSRF
-POST through the public port. Any failed validation returns a nonzero status
-and identifies the affected project. For the first upgrade from the old
-single-service layout, discovery falls back to the published `web:8000` port;
-subsequent runs use `proxy:80`. Use `--dry-run` to inspect every inferred
-setting and command.
+Run `python3 scripts/update_docker_instances.py --dry-run` first, then the same
+command without `--dry-run`. Existing projects are synchronized and verified;
+env files for projects that do not exist are only reported. Use
+`--create-missing` after reviewing the plan to create those projects. Use
+repeatable `--project NAME` options to limit a run. Secret values are masked,
+and the updater never rewrites operator env files.
+
+The updater builds `web` while the current service remains available,
+publishes an `update` status, force-recreates only `web`, waits for health, and
+recreates `proxy` only when its bind address, port, or body-size configuration
+changed or its gateway layout is outdated. Otherwise it performs a validated
+in-place Nginx reload. It retains the current named-volume or bind-mount
+deployment type, then verifies the loaded Nginx Host directive, a collected
+static asset, and a non-mutating same-origin CSRF POST.
+
+`scripts/rebuild_docker_instances.py` is the lower-level recovery command for
+legacy instances without a maintained env file. It recovers the effective
+settings from running containers and intentionally does not apply `.env.*`
+edits. Its generated env file is temporary.
 
 Existing bind-mounted instances must be migrated with
 `scripts/migrate_docker_data_volumes.py`. The migration builds the current
