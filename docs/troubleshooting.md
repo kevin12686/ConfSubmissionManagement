@@ -5,7 +5,9 @@ Use this guide when the local app behaves unexpectedly.
 For normal task order, use the [Operator Guide](operator_guide.md). For the
 rules behind publication blockers and selected files, use
 [Publication Rules](publication_rules.md). This guide focuses on symptoms,
-diagnosis, and recovery.
+diagnosis, and recovery. Docker procedures are centralized in the
+[Docker Guide](docker_guide.md); the complete guide map is on the
+[Documentation Home](README.md).
 
 ## Startup
 
@@ -464,113 +466,55 @@ The ZIP was created by a different state archive version. Use the matching app v
 
 System State restore should remap managed files into this project's `data/` tree. If a path still points to another machine or a temp folder, do not continue publishing from that state. Export a fresh System State ZIP from the original machine and restore again.
 
-### Docker raw-data migration or backup cannot find instances
+### Docker instance problem
 
-Run the script from the same repository checkout that created the containers.
-The scanner matches the Compose project working-directory label, reads data and
-application state from `web`, and reads the public endpoint from `proxy`. It
-also recognizes the old single-service layout by falling back to the published
-`web:8000` port. Docker Desktop must be running, and a Windows scheduled task
-must run under an account with Docker access. Use `--dry-run` before migration
-or after changing a schedule.
-
-### Docker works with debug on but images disappear with debug off
-
-Rebuild the deployment from a version that includes the Nginx `proxy` service.
-In the current layout, `SMS_DEBUG=0` is normal: Nginx serves `/static/` and
-`/media/` independently of Django debug mode. Check `docker compose ps`; both
-`web` and `proxy` should be running, and `web` should be healthy. Confirm the
-proxy mounts the same `sms_data` volume as web, read-only, and that
-`docker compose config` shows `/app/data` for both services. Do not re-enable
-debug as a media-serving workaround.
-
-### Docker POST actions fail with CSRF verification failed
-
-This can affect exports, imports, reviews, settings, or other POST actions while
-ordinary pages still load. Confirm the deployment is using an Nginx template
-that forwards `Host $http_host`, including the browser-visible `SMS_PORT`.
-Forwarding `$host` drops non-default ports such as `:9000`; the browser Origin
-then no longer matches the Host Django receives.
-
-Rebuild or recreate the proxy after updating the template. Do not disable CSRF,
-mark views `csrf_exempt`, or trust arbitrary origins. `SMS_ALLOWED_HOSTS` must
-still include the LAN hostname or IP, without using it as a substitute for
-correct proxy headers.
-
-For instances managed by `.env.*`, run:
+Use the [Docker Guide](docker_guide.md) for the current commands and ownership
+model. Start with these checks:
 
 ```bash
+docker compose ps
 python3 scripts/update_docker_instances.py --dry-run
-python3 scripts/update_docker_instances.py
 ```
 
-The first command shows env-file changes, data folder, public endpoint, and
-whether proxy recreation is required. The second applies those settings,
-builds before cutover, replaces web, reloads or recreates proxy, and fails if
-the Nginx configuration, static asset, or same-origin CSRF check does not pass.
-It does not edit the env files.
+Confirm that:
 
-If an env file is reported as new, no instance is created unless you explicitly
-run `python3 scripts/update_docker_instances.py --create-missing`. If the
-updater reports a duplicate project, endpoint conflict, shared data folder, or
-changed `SMS_DATA_DIR`, correct the env files and rerun the dry run. Do not
-bypass these checks.
+- the command is running from the checkout that owns the Compose project;
+- Docker Desktop is running;
+- `web` is healthy and `proxy` owns the public port;
+- both services use the same `sms_data` source, with the proxy mount read-only;
+- every maintained environment file has a unique
+  `COMPOSE_PROJECT_NAME`, endpoint, and `SMS_DATA_DIR`.
 
-For a legacy instance with no maintained env file, use
-`scripts/rebuild_docker_instances.py`. It preserves the live container
-environment and therefore will not apply an env-file edit.
+For a maintained environment file, apply changes with
+`scripts/update_docker_instances.py`. A new environment file is not started
+without `--create-missing`. Use `scripts/rebuild_docker_instances.py` only
+when recovering a running legacy instance whose maintained environment file is
+unavailable.
 
-### Docker shows the service fallback page
+If static or media files disappear with `SMS_DEBUG=0`, do not re-enable debug
+as a workaround. Verify the proxy's `sms_static` and read-only `sms_data`
+mounts and rebuild through the updater.
 
-For `Backing up`, `Moving conference data`, `Applying the latest version`, or
-`Restarting`, allow the named host script to finish. The page checks readiness
-without resubmitting the interrupted request. After two successful readiness
-checks it returns to the Dashboard, not the failed request URL. The Return to
-workspace button can be used immediately once readiness succeeds. Verify any
-change, upload, import, or export that was in progress before repeating it.
+If POST actions return CSRF 403 while GET pages load, confirm Nginx forwards
+`Host $http_host`, including the browser-visible non-default port. Do not use
+`csrf_exempt`, broad trusted origins, or a changed `SMS_ALLOWED_HOSTS` value
+as a substitute for correct proxy headers.
 
-`Application unavailable` means Nginx is reachable but no fresh planned
-operation explains why web is unavailable. Check `docker compose ps`; an
-exited web process is normally restarted by Docker, while an unhealthy process
-that remains running needs inspection. `Attention required` means a host
-operation failed and could not restore a healthy service automatically.
+A fallback page with a named backup, migration, update, or restart phase should
+be allowed to finish. A generic unavailable page means no fresh operation
+status explains the outage. The fallback returns to a new Dashboard GET after
+readiness succeeds; verify any interrupted POST, upload, import, or export
+before repeating it.
 
-The fallback cannot be served when proxy, Docker Desktop, the host, LAN, or
-WARP itself is unavailable. A direct `docker compose up -d --build` receives
-only generic outage handling; use `scripts/update_docker_instances.py` for
-env-managed instances or `scripts/rebuild_docker_instances.py` for legacy
-recovery so update phases and post-update validation are available.
+Update, rebuild, migration, and raw backup share
+`runtime/.docker-data-operation.lock`. Do not remove an active lock. Locks
+older than 12 hours are treated as stale. Preserve both the host mirror and any
+`.backup-swap` directory when both exist, then inspect
+`.sms-docker-backup-history.jsonl` before retrying.
 
-### Docker backup reports a lock or interrupted swap
-
-Rebuild, migration, and raw-data backup share
-`runtime/.docker-data-operation.lock`. Do not remove it while any of these
-scripts is running. If the process was terminated, locks older than 12 hours
-are cleared automatically. A `.backup-swap` directory means promotion was
-interrupted. The
-script restores it automatically only when the main host mirror is absent; if
-both exist, preserve both and inspect them before retrying.
-
-The backup writes and verifies a staging mirror before promotion. A failed sync
-does not replace the current host mirror, and the script attempts to restart
-every container that was running when backup began. Check
-`.sms-docker-backup-history.jsonl` beside the configured conference data
-folders for per-project results.
-
-### Need to run Docker from the host mirror
-
-Stop any active backup, then apply `docker-compose.bind.yml` with the same env
-file and project name:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.bind.yml \
-  --env-file .env.conference-a -p sms-conf-a up -d --build
-```
-
-The override mounts `SMS_DATA_DIR` directly at `/app/data`. Return to the named
-volume with the normal Compose command after resolving the problem. Both web
-and proxy must show the same host source for `/app/data`; proxy's mount is
-read-only. Do not add `-v` to `docker compose down`.
+To run temporarily from the verified host mirror, use the bind-rollback
+procedure in the [Docker Guide](docker_guide.md#roll-back-to-the-host-mirror).
+Never add `-v` to `docker compose down`.
 
 ### Need a completely clean conference
 

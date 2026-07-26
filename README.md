@@ -1,48 +1,79 @@
-# Conference Final Manager
+<p align="center">
+  <img src="submissions/static/submissions/brand/app-icon-512.png" width="112" alt="Conference Final Manager icon">
+</p>
 
-Conference Final Manager is a local Django + SQLite application for preparing
-conference final submissions for publication. It manages the Paper Master
-scope, Final Submission versions, PDFs and source files, editorial reviews,
-exceptions, publication exports, and portable System State backups.
+<h1 align="center">Conference Final Manager</h1>
 
-The application is designed for editors working on one local machine. It has no
-login system and does not depend on a cloud database.
+<p align="center">
+  A local-first editorial workspace for turning conference final submissions
+  into a verified, auditable publication package.
+</p>
 
-## Start Here
+<p align="center">
+  <strong>Django + SQLite</strong> ·
+  <strong>Runs locally</strong> ·
+  <strong>Fail-closed publication checks</strong> ·
+  <strong>Portable backups</strong>
+</p>
 
-Choose the document that matches your task:
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#editorial-workflow">Workflow</a> ·
+  <a href="docs/operator_guide.md">Operator guide</a> ·
+  <a href="docs/README.md">All documentation</a>
+</p>
 
-| Need | Document |
-| --- | --- |
-| Install the app and understand the main workflow | This README |
-| Run the conference workflow | [Operator Guide](docs/operator_guide.md) |
-| Resolve an error or unexpected result | [Troubleshooting](docs/troubleshooting.md) |
-| Understand publication scope, version, and file rules | [Publication Rules](docs/publication_rules.md) |
-| Develop or review code changes | [Developer Guide](docs/developer_guide.md) |
-| Understand service boundaries and safety design | [Architecture Notes](docs/architecture.md) |
-| Change worklists or shared UI behavior | [UI Conventions](docs/ui_conventions.md) |
-| Validate a release before a real handoff | [Editorial Acceptance Runbook](docs/editorial_acceptance_runbook.md) |
-| Review version history | [Changelog](CHANGELOG.md) |
+![Conference Final Manager dashboard showing publication readiness and next editorial actions](docs/assets/readme/dashboard-preview.jpg)
 
-`docs/publication_rules.md` is the canonical description of publication-facing
-behavior. Other guides describe how to operate or implement those rules without
-redefining them.
+> The preview uses a disposable example conference. No production conference
+> data is included in the repository.
 
-## Non-Goals
+## What It Does
 
-- No login or user accounts.
-- No hardened public internet deployment.
-- No cloud database or remote service dependency.
-- No plagiarism checking execution inside Django.
-- No manual copying from `data/` for normal exports; use app download actions.
+Conference Final Manager keeps the complete proceedings-preparation workflow in
+one local application:
 
-Plagiarism scores and reports are imported from CrossCheck or equivalent output.
-Title/author extraction runs locally. Optional GROBID fallback can be enabled
-for difficult PDFs, but its output still requires manual review.
+- imports the Paper Master scope and Final Submission metadata;
+- tracks Start2 versions, Editor Uploads, corrected files, and publication
+  exclusions;
+- processes PDFs and coordinates Paper ID, title/author, formatting,
+  plagiarism, author-count, and exception reviews;
+- gives Dashboard, Organized List, Error Report, and final export one shared
+  definition of publication readiness;
+- exports editorial workbooks, CrossCheck packages, and the final publication
+  package;
+- records state-changing work in an audit log and creates portable System State
+  backups.
+
+The application is designed for editors working on a trusted local machine. It
+has no login system, cloud database, or hardened public deployment mode.
+
+## Editorial Workflow
+
+```mermaid
+flowchart LR
+    A["Import scope<br>and submissions"] --> B["Resolve IDs<br>and versions"]
+    B --> C["Process PDFs<br>and review metadata"]
+    C --> D["Review formatting,<br>plagiarism, and exceptions"]
+    D --> E["Clear readiness<br>blockers"]
+    E --> F["Export publication<br>package and backup"]
+```
+
+The system deliberately fails closed: unresolved version ambiguity, missing or
+changed publication files, stale review evidence, and other structural
+conflicts block the final package instead of being guessed around.
+
+<details>
+<summary><strong>See the publication checklist view</strong></summary>
+
+![Organized List showing publication blockers and tracked information](docs/assets/readme/organized-list-preview.jpg)
+
+</details>
 
 ## Quick Start
 
-Python 3.12 or newer is required.
+Python 3.12 or newer is required. The first run needs internet access to install
+Python packages; normal local operation is offline afterward.
 
 macOS or Linux:
 
@@ -50,7 +81,7 @@ macOS or Linux:
 ./scripts/start_local.sh
 ```
 
-On macOS, `start.command` can also be opened from Finder.
+On macOS, you can also open `start.command` from Finder.
 
 Windows:
 
@@ -58,200 +89,70 @@ Windows:
 start_windows.bat
 ```
 
-The start scripts create `.venv`, install requirements, apply migrations,
-prepare local data folders, and start <http://127.0.0.1:8000/>.
+Open <http://127.0.0.1:8000/>. The startup scripts create `.venv`, install
+requirements, apply migrations, and prepare the local data folders.
 
-If macOS reports that the scripts are not executable:
+### Docker
 
-```bash
-chmod +x start.command scripts/start_local.sh
-```
-
-Press `Ctrl+C` in the terminal running the server to stop the app.
-
-The first run needs internet access to install Python dependencies. Normal local
-operation is offline afterward; Tabler and HTMX are pinned under Django static
-files and do not require a CDN.
-
-## Docker Quick Start
-
-Docker is optional. Use a distinct Compose project, port, and data mirror for
-each conference:
+Docker is optional and intended for trusted local or LAN operation:
 
 ```bash
 cp .env.example .env.conference-a
 docker compose --env-file .env.conference-a up -d --build
 ```
 
-The default example opens the app at <http://127.0.0.1:8000/>. Change
-`SMS_PORT` in the environment file when several conferences run on the same
-machine. Every conference env file must have a unique, stable
-`COMPOSE_PROJECT_NAME`.
+Use a unique `COMPOSE_PROJECT_NAME`, port, and data mirror for every conference.
+See the [Docker Guide](docs/docker_guide.md) before updating, backing up,
+migrating, or recovering a Docker instance.
 
-Docker places Nginx in front of Gunicorn. Nginx serves `/static/` from the
-rebuildable `sms_static` volume and `/media/` from a read-only mount of the
-conference `sms_data` volume; all other requests go to Django. Keep
-`SMS_DEBUG=0` for normal Docker operation. Debug mode controls Django
-diagnostics only and no longer controls whether static or media files load.
-The proxy preserves the configured public host and port so Django's normal
-same-origin CSRF protection works when `SMS_PORT` is not port 80.
-For dynamic downloads, Nginx buffers the upstream response in bounded memory
-and temporary files while serving a slow client. This is response buffering,
-not download caching; temporary data is request-scoped and is not reused.
-It also remains available while `web` restarts and serves a themed fallback
-page for backup, migration, update, restart, and unexpected upstream outages.
-The fallback checks readiness without automatically resubmitting interrupted
-editorial actions.
+## Publication Safety
 
-After changing code or any `.env.*` setting, use the unified updater. It scans
-the conference env files, validates all project names, ports, and data folders
-before changing anything, builds the current code, applies env changes, and
-verifies each instance:
-
-```bash
-python3 scripts/update_docker_instances.py --dry-run
-python3 scripts/update_docker_instances.py
-```
-
-New env files are reported but not started automatically. Create them only
-after reviewing the dry run:
-
-```bash
-python3 scripts/update_docker_instances.py --create-missing
-```
-
-For existing instances, the updater refuses to redirect `SMS_DATA_DIR`, detects
-overlapping host ports and shared data folders, builds before cutover, replaces
-only `web`, and recreates `proxy` only when proxy settings require it. It then
-checks readiness, proxy configuration, static delivery, and a non-mutating
-same-origin CSRF POST. Secrets are masked in the plan and env files are never
-rewritten.
-
-`scripts/rebuild_docker_instances.py` remains a recovery tool for legacy
-instances that do not have a maintained `.env.*` file. It preserves the
-effective settings recovered from the running containers; it does not apply
-edits made to an env file.
-
-Runtime data lives in a Compose project-scoped named volume.
-`SMS_DATA_DIR` is a verified, directly usable host mirror. Refresh every current
-instance mirror with:
-
-```bash
-python3 scripts/backup_docker_instances.py --dry-run
-python3 scripts/backup_docker_instances.py
-```
-
-Existing bind-mounted installations must first be migrated:
-
-```bash
-python3 scripts/migrate_docker_data_volumes.py --dry-run
-python3 scripts/migrate_docker_data_volumes.py
-```
-
-Never use `docker compose down -v` for a conference instance; `-v` deletes its
-named data volume. See the [Operator Guide](docs/operator_guide.md#backup-cleanup-and-clear-database)
-for backup and rollback procedures and the
-[Developer Guide](docs/developer_guide.md#docker-environment) for deployment
-details.
-
-## New Computer Or Restored Conference
-
-1. Install Python 3.12 or newer.
-2. Copy the complete project folder.
-3. Start the app with the appropriate start script.
-4. Open `/integrations/system-state/`.
-5. Preview the System State ZIP, then apply it only after the preview is correct.
-
-System State ZIPs restore settings, conference records, managed files, reports,
-review artifacts, and audit logs. Paths are remapped into the current
-installation instead of preserving old machine-specific absolute paths.
-
-## Editorial Workflow
-
-1. Configure Settings, including conference name, folders, limits, thresholds,
-   timezone, and the active-version rule.
-2. Import the Paper Master List.
-3. Import Final Submission metadata and matching PDF/source files.
-4. Resolve Paper ID mappings, Not Publishing decisions, and Start2/Editor
-   Upload conflicts.
-5. Run Process PDFs to refresh page counts, hashes, thumbnails, and publication
-   debug copies.
-6. Complete Title/Author Review.
-7. Complete Formatting Review and upload corrected files where necessary.
-8. Export CrossCheck PDFs, import plagiarism scores, and attach optional reports.
-9. Review author counts, duplicates, page limits, and approved exceptions.
-10. Use Dashboard, Organized List, and Error Report severity/category filters
-    to clear publication blockers.
-11. Export the final publication package.
-12. Review the Audit Log and download a System State ZIP before handoff.
-
-Paper selection controls in Editor Upload and Paper ID Review search on demand
-instead of loading the complete Paper Master List. Type a Paper ID, Master
-Title, or Master Author; exact Paper ID matches are shown first, and every
-result shows its Master ID, Title, and Authors. Process PDFs uses its regular
-Paper ID / Final ID / title worklist search so the page has one search control.
-
-The [Operator Guide](docs/operator_guide.md) explains each stage. The
-[Publication Rules](docs/publication_rules.md) define which records and files
-may enter publication output.
-
-## Publication Safety Summary
-
-These rules are intentionally fail-closed:
+The most important rules are:
 
 - Paper Master defines publication scope.
-- Editor Upload outranks Start2, but an unresolved mixed-source conflict blocks
-  final export.
+- Editor Upload outranks Start2, but mixed undiscarded sources block final
+  export.
 - Corrected files outrank Original files; a selected Corrected file that is
-  missing does not fall back to Original.
-- Publication output never reads from the generated debug-copy folder.
+  missing never silently falls back.
 - Dashboard and final export use the same readiness findings.
-- Final export rejects ambiguous active state, duplicate sanitized filenames,
-  changed files, and concurrent publication-state changes.
-- Review state resets only when its documented dependency changes.
+- Review state resets only when its documented evidence changes.
 - State-changing workflows and exports are audited.
 
-The complete rules and implementation map are in
-[Publication Rules](docs/publication_rules.md).
+[Publication Rules](docs/publication_rules.md) is the canonical specification.
+Do not select publication input by browsing or copying files from `data/`.
 
-## Important Pages
+## Documentation
 
-| Page | URL |
+| If you want to… | Read |
 | --- | --- |
-| Dashboard | `/` |
-| Paper Master List | `/papers/` |
-| Final Submissions | `/submissions/` |
-| Organized List | `/submissions/organized/` |
-| Process PDFs | `/processing/pdfs/` |
-| Paper ID Review | `/reviews/paper-ids/` |
-| Title/Author Review | `/reviews/title-authors/` |
-| Formatting Review | `/reviews/formatting/` |
-| Exceptions | `/reviews/exceptions/` |
-| Error Report | `/reports/errors/` |
-| Audit Log | `/reports/audit-log/` |
-| Export Reports | `/reports/` |
-| CrossCheck | `/integrations/crosscheck/` |
-| System State | `/integrations/system-state/` |
-| Settings | `/settings/` |
+| Understand the documentation set | [Documentation Home](docs/README.md) |
+| Run the conference workflow | [Operator Guide](docs/operator_guide.md) |
+| Diagnose an error or unexpected result | [Troubleshooting](docs/troubleshooting.md) |
+| Install, update, back up, or recover Docker | [Docker Guide](docs/docker_guide.md) |
+| Understand publication scope, versions, files, and export rules | [Publication Rules](docs/publication_rules.md) |
+| Develop or review code changes | [Developer Guide](docs/developer_guide.md) |
+| Understand service boundaries and safety design | [Architecture Notes](docs/architecture.md) |
+| Change shared UI or worklist behavior | [UI Conventions](docs/ui_conventions.md) |
+| Validate a release before a real handoff | [Editorial Acceptance Runbook](docs/editorial_acceptance_runbook.md) |
+| Review user-visible history | [Changelog](CHANGELOG.md) |
 
-The complete page map and page responsibilities are in the
-[Operator Guide](docs/operator_guide.md#page-map).
+## Restoring An Existing Conference
 
-## Templates And Data
+On the new or restored machine:
 
-Import templates can be downloaded inside the app. Static examples are stored
-in `sample_data/`:
+1. Start the application.
+2. Open `/integrations/system-state/`.
+3. Upload the System State ZIP.
+4. Review the preview.
+5. Apply only when the preview matches the intended conference.
 
-- `paper_master_list_template.csv`
-- `final_submissions_template.csv`
-
-Managed runtime data is stored under `data/` by default. Do not select
-publication files by browsing that folder. Use application links and export
-actions, which apply the publication-facing rules.
+System State restores settings, records, managed files, reports, review
+artifacts, and audit logs while remapping managed paths to the receiving
+installation.
 
 ## Development
 
-Manual environment setup:
+Manual setup:
 
 ```bash
 python3 -m venv .venv
@@ -262,15 +163,9 @@ python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```
 
-Required regression gate:
+Before changing workflow, storage, export, review, or publication behavior,
+read the [Developer Guide](docs/developer_guide.md). It contains the required
+regression gate, code ownership map, version rules, and release checklist.
 
-```bash
-.venv/bin/python manage.py check
-.venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python scripts/check_docs.py
-.venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
-```
-
-See the [Developer Guide](docs/developer_guide.md) before changing workflow,
-publication, storage, export, or review behavior.
+Import templates are available inside the application and under
+[`sample_data/`](sample_data/).

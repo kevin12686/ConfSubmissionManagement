@@ -3,7 +3,8 @@
 This document is the canonical description of publication-facing behavior.
 Operator and developer documentation may summarize these rules, but changes to
 publication scope, active versions, file resolution, readiness, or export must
-be reflected here.
+be reflected here. For task-oriented guides, start from the
+[Documentation Home](README.md).
 
 ## Rule Ownership
 

@@ -4,7 +4,9 @@ Conference Final Manager is a local Django application with SQLite storage and l
 
 This document explains system boundaries and safety rationale. The canonical
 business rules are in [Publication Rules](publication_rules.md), and shared
-presentation behavior is in [UI Conventions](ui_conventions.md).
+presentation behavior is in [UI Conventions](ui_conventions.md). Procedures
+belong in the audience-specific guides listed on the
+[Documentation Home](README.md).
 
 ## Application Boundaries
 
@@ -54,6 +56,8 @@ service loops flush bounded batches so SQLite is not locked for the duration of
 external processing.
 
 ## Workflow Rules
+
+### Editorial State Ownership
 
 - Paper Master List is the publication scope.
 - Final Submissions can come from Start2 imports or Editor Uploads.
@@ -115,6 +119,8 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
   the complete worklist URL. After reload, the component returns to the same
   card or the next/previous visible card if the selected filter removed it.
 
+### Server-Rendered Worklists
+
 The UI remains server-rendered. Tabler 1.4.0 and HTMX 2.0.10 are vendored
 locally. Normal worklist URLs support GET filter/search/tab/pagination
 navigation, while HTMX replaces the named worklist container and updates
@@ -139,6 +145,8 @@ before `WorklistPage` pagination. Natural identifier ordering is shared through
 active state, count badges, and spacing remain consistent across reports and
 review queues.
 
+### Publication Read Boundary
+
 `PublicationReadContext` is the request-scoped read boundary for Paper Master,
 active Final Submissions, settings, and filesystem inspection. Dashboard
 counts, publication readiness, duplicate detection, Error Report, and global
@@ -160,6 +168,8 @@ reads. SHA-256 results may be reused across requests only when device, inode,
 size, mtime, and ctime all match. A strict fresh hash re-stats the path even
 inside an existing context, and hashing verifies the signature again after
 reading, so a file changed during inspection is rejected.
+
+### Export Transaction
 
 Final Publication Package export keeps the same `PublicationReadContext` from
 readiness validation through manifest construction and ZIP assembly. PDF/source
@@ -194,6 +204,8 @@ reported as a missing review hash. Once status is Review OK, a missing or
 changed source hash is a Critical integrity blocker. A configured Corrected
 PDF/source that is missing never falls back to the Original file.
 
+### Stale-Write Protection
+
 Formatting writes use a second ephemeral review snapshot containing the
 submission update timestamp and filesystem identity of the selected publication
 PDF/source. Save revalidates that snapshot under a database row lock before
@@ -226,6 +238,8 @@ before long work and lock/recheck before persistence. PDF thumbnails are
 rendered into unique immutable directories so a rejected stale batch cannot
 overwrite a newer editor's visible preview.
 
+### Read-Only Reporting And Upload UI
+
 Error Report keeps duplicate categories and blocker messages unchanged in the
 readiness/report services. Its HTML worklist uses a compact duplicate-group
 summary and a read-only HTMX detail endpoint for the full matching-record list,
@@ -252,122 +266,51 @@ are centralized in `base.html` and documented in
 they must not alter publication scope, readiness, active versions, review state,
 or file selection.
 
-## Current Publication Resolution
+## Publication Read And Export Path
 
-The canonical selection and file rules are in
-[Publication Rules](publication_rules.md). Active-version selection is
-implemented in `submissions/services/pdf_processor.py`.
+The canonical selection rules live in
+[Publication Rules](publication_rules.md). Architecturally, publication reads
+follow one path:
 
-1. All `active_version` flags are cleared.
-2. Discarded submissions are excluded.
-3. Submissions are grouped by `paper_id_filled`.
-4. If a group has undiscarded Editor Uploads, only Editor Uploads are candidates.
-5. Otherwise all undiscarded submissions for that Paper ID are candidates.
-6. The selected candidate is determined by Settings:
-   - `final_id`: numeric/natural Final ID sort.
-   - `upload_date`: upload date, with Final ID sort as tie-breaker.
-7. State mirror tables and the compatibility `PaperAuthor` cache are refreshed
-   after active selection.
+1. `PublicationReadContext` captures Paper Master scope, settings, active
+   submissions, readiness inputs, and request-local file inspection.
+2. Active-version services select the current undiscarded candidate by origin
+   priority and the configured ordering rule.
+3. `publication_pdf_info()` and `publication_source_info()` resolve the
+   publication-facing files.
+4. Readiness, Dashboard, Organized List, Error Report, CrossCheck, duplicate
+   checks, and export reuse that shared scope instead of reconstructing it.
+5. Final export performs strict fresh file reads, rechecks publication-critical
+   database state, verifies the ZIP, and atomically promotes the result.
 
-Workflows that also recalculate duplicate/replaced status call
-`recompute_active_and_duplicate_state()`. It computes both values in memory,
-bulk-updates the compatibility table, bulk-syncs only Identity state, and
-rebuilds the author cache once. Publication scope and Editor Upload priority
-are unchanged.
-
-Publication readiness, Author Count, Exceptions, and package export do not
-trust `PaperAuthor`. They derive author entries directly from
-`PublicationReadContext.master_submissions`; the cache remains only for
-compatibility, diagnostics, and portable state archives.
-
-Publication file resolution is implemented in `submissions/services/file_manager.py`.
-
-`source_pdf_path()` is used for processing/extraction input and resolves:
-
-1. Corrected PDF.
-2. Original uploaded PDF.
-
-`publication_pdf_info()` is used for publication-facing links, CrossCheck export, duplicate checks, and publication package export. It currently resolves:
-
-1. Corrected PDF.
-2. Original uploaded PDF.
-
-`publication_source_info()` resolves corrected source, then original uploaded source.
-
-CrossCheck export manifests bind each external filename to its Paper ID, exact
-Final ID, and publication PDF SHA-256. Result and report import resolves through
-that manifest and rejects replacement versions, changed PDFs, ambiguous reused
-tokens, and legacy manifests without provenance.
-
-This distinction matters. Process PDFs recalculates active versions and then calculates page/hash/thumbnails only for current, non-discarded, non-Not-Publishing submissions whose Paper ID is in Paper Master. It may sync `data/publication_pdf_debug/` for inspection, but that debug folder is not read by publication package export, CrossCheck export, duplicate checks, or publication-facing links.
-
-Legacy `current_file_path`, `source_current_file_path`, `active_final_folder`, and `old_versions_folder` values are retained for compatibility with older restored data and debug traces. They are not publication source-of-truth fields.
+`FinalSubmission` remains the compatibility source of truth while its
+one-to-one state tables mirror lifecycle domains. `PaperAuthor` is a
+compatibility cache, not publication authority. Legacy current-path and
+generated debug-copy fields remain diagnostic or restore-compatibility data and
+never select package input.
 
 ## File And Path Safety
 
+### Managed State And Restore
+
 Managed files live under the project `data/` tree by default. Database fields may store file paths, but System State export/restore must remap managed paths into the receiving project folder. The snapshot includes referenced review artifacts such as title/author verification images, PDF thumbnails, and format previews because they preserve manual review context.
 
-Docker deployments use a `web` Gunicorn/Django service behind an Nginx `proxy`
-service. Nginx is the only published endpoint: it serves all `/static/`
-requests from a rebuildable `sms_static` volume, serves `/media/` from a
-read-only mount of the project-scoped `sms_data` volume, and proxies all other
-requests to `web:8000`. `SMS_DEBUG` controls Django diagnostics, not file
-availability. The proxy never participates in publication file selection and
-cannot write conference data. It preserves the browser-visible `Host` header,
-including a non-default public port, so Django performs its normal same-origin
-CSRF validation against the endpoint the editor actually opened.
+### Docker Runtime Boundary
 
-Nginx is also the stable service gateway. It starts independently from web,
-uses Docker's DNS resolver so a recreated web container can receive traffic
-without restarting Nginx, and intercepts only upstream `502`, `503`, and `504`
-responses. Its self-contained fallback shell renders planned backup,
-migration, update, and restart phases from the project-scoped
-`sms_gateway_state` volume; missing or stale status renders a generic service
-outage instead of guessing a cause. Failed operation status expires separately.
-The page polls the database-backed readiness endpoint but never replays the
-request that encountered the outage.
+Docker runs `web` behind the published Nginx `proxy`. Conference state lives
+in the project-scoped `sms_data` volume; `sms_static` is rebuildable and
+`sms_gateway_state` is temporary operational status. The proxy serves
+static/media, preserves the browser-visible Host header, buffers large dynamic
+responses without caching them, and shows a safe GET-only recovery page while
+web is unavailable.
 
-For proxied dynamic responses, Nginx uses response buffering with bounded
-memory buffers and request-scoped proxy temporary files up to `10240m` (10 GiB) per
-response. Large generated ZIPs therefore transfer from Django/Gunicorn to
-Nginx as quickly as local storage permits, while Nginx handles a slower browser
-connection. This is transport behavior only: no proxy cache is configured,
-temporary response files are not reusable application artifacts, and Nginx
-does not select or modify publication files. Upload request buffering remains
-disabled. The gateway fallback still handles upstream `502`, `503`, and `504`
-responses before output has started; it cannot replace a partially delivered
-download.
+The proxy cannot write conference data and does not participate in publication
+scope, file resolution, readiness, or export. Raw host mirrors are verified
+operational rollback copies, while System State ZIPs are portable, versioned
+application backups.
 
-The separately configured `SMS_DATA_DIR` is a raw, directly mountable host
-mirror maintained by the Docker backup script. Migration and backup use
-verified two-phase synchronization: an online pre-copy followed by a brief
-graceful stop of web for the final database/file-consistent
-sync. Mirror promotion occurs only after SHA256 comparison and SQLite integrity
-validation, and the previous complete mirror is retained. Instance discovery
-joins `web` data ownership with the `proxy` public endpoint and falls back to
-the legacy published web port during the first upgrade. Bind rollback mounts
-the same host mirror into both services. The `sms_static` volume is excluded
-from data migration and backup because `collectstatic` recreates it. This
-operational architecture does not change System State archive structure or
-publication-facing file resolution.
-
-Docker instance updates have two explicit sources of deployment state:
-
-- `scripts/update_docker_instances.py` is the normal update path. Operator
-  `.env` and `.env.*` files are authoritative, and each declares a stable
-  `COMPOSE_PROJECT_NAME`. The script renders Compose configuration before
-  applying anything and rejects project, endpoint, and data-directory
-  conflicts. Existing `SMS_DATA_DIR` ownership is immutable through this
-  command.
-- `scripts/rebuild_docker_instances.py` is the legacy recovery path. It treats
-  running containers as the source of effective deployment inputs when a
-  maintained env file is unavailable. It does not apply env-file edits.
-
-Both paths retain the deployment's data mount type, validate Compose and build
-first, publish update status, replace only web, wait for readiness, reload or
-recreate proxy as required, and verify the public HTTP/CSRF path. They share
-the Docker operation lock with migration and backup. Generated env files are
-temporary and never replace operator-maintained `.env.*` files.
+Deployment, update, backup, migration, and rollback procedures are centralized
+in the [Docker Guide](docker_guide.md).
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the
@@ -375,6 +318,8 @@ database transaction begins. Live files move to quarantine only after model
 restore succeeds; Python, database-commit, or filesystem failures restore the
 quarantine and roll back the database. Staging and quarantine live on the
 target filesystem so promotion uses rename rather than cross-device copying.
+
+### Storage Inventory And Cleanup
 
 Storage cleanup is split by risk:
 

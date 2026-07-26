@@ -2,7 +2,8 @@
 
 This document is the canonical implementation guide for shared UI, worklist,
 navigation, and presentation behavior. Publication decisions remain governed by
-[Publication Rules](publication_rules.md) and server-side services.
+[Publication Rules](publication_rules.md) and server-side services. For
+task-oriented guides, start from the [Documentation Home](README.md).
 
 ## Design Boundary
 

@@ -6,7 +6,8 @@ Use this guide for environment setup, service ownership, data dependencies,
 tests, and release work. Shared presentation rules live in
 [UI Conventions](ui_conventions.md); publication-facing business rules live in
 [Publication Rules](publication_rules.md). Architecture rationale lives in
-[Architecture Notes](architecture.md).
+[Architecture Notes](architecture.md). The complete guide map is in the
+[Documentation Home](README.md).
 
 ## Local Environment
 
@@ -23,167 +24,29 @@ python manage.py runserver 127.0.0.1:8000
 
 macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windows operators run `start_windows.bat`.
 
-## Docker Environment
+## Docker Development Boundary
 
-Docker support is intended for local/operator deployments, not as a hardened
-internet-facing service. The container provides the Python/Django runtime while
-the repository checkout stays bind-mounted on the host. Conference runtime data
-uses a Compose project-scoped named volume to avoid Docker Desktop bind-mount
-I/O overhead.
+Docker procedures are centralized in the [Docker Guide](docker_guide.md).
+Developers should use that guide for instance creation, environment ownership,
+updates, backups, migration, and rollback.
 
-Use one env file and one compose project name per conference:
+The development-facing boundaries are:
 
-```bash
-cp .env.example .env.conference-a
-docker compose --env-file .env.conference-a up -d --build
-```
+- Docker runs Django/Gunicorn as `web` behind the published Nginx `proxy`.
+- Conference state lives in the project-scoped `sms_data` volume; collected
+  static assets and gateway status are rebuildable or temporary.
+- Keep one Gunicorn worker with SQLite.
+- Nginx must preserve the public Host header, serve static/media independently
+  of `SMS_DEBUG`, and never participate in publication file selection.
+- Code or environment changes are applied through
+  `scripts/update_docker_instances.py`, beginning with `--dry-run`.
+- The Docker operation scripts share a lock and must retain the current data
+  mount type until an explicit migration or rollback.
+- Never use `docker compose down -v` for a conference instance.
 
-Set a unique `COMPOSE_PROJECT_NAME` in every conference env file. This is the
-stable identity used by Compose and the unified updater; do not derive project
-ownership from the env filename.
-
-Important settings:
-
-- `SMS_PORT`: host port for the instance.
-- `SMS_DATA_DIR`: raw host mirror destination. The mirror contains directly
-  usable `db.sqlite3`, media uploads, reports, audit logs, previews, and exports.
-- `SMS_BIND_HOST`: defaults to `127.0.0.1`; set `0.0.0.0` only for trusted LAN
-  access.
-- `SMS_ALLOWED_HOSTS`: add the LAN hostname or IP when exposing beyond
-  localhost.
-- `SMS_DEBUG`: use `0` for normal Docker operation. Nginx serves static/media
-  in either mode; this setting controls only Django diagnostics.
-- `SMS_PROXY_MAX_BODY_SIZE`: finite Nginx request-body limit for large
-  PDF/source batches. The default is `10g`.
-
-The image installs dependencies from `requirements.txt`, but compose also
-bind-mounts the working tree into `/app`. After `git pull`, restart or run
-`up -d --build`; prefer rebuilding when dependencies or Docker files may have
-changed.
-
-Docker runs two services. `web` creates the standard `data/...` folders, runs
-migrations unless `SMS_RUN_MIGRATIONS=0`, collects static assets into the
-rebuildable `sms_static` volume, and starts Gunicorn on the internal
-`0.0.0.0:8000` endpoint. `proxy` publishes `SMS_PORT`, serves `/static/` from
-`sms_static`, serves `/media/` from a read-only `sms_data` mount, and forwards
-all other requests to `web`. The proxy starts independently, resolves changing
-web container addresses through Docker DNS, and serves
-`docker/nginx/fallback.html` when the upstream returns `502`, `503`, or `504`.
-The project-scoped `sms_gateway_state` volume contains only short-lived
-operation status; it is not conference data and is not backed up.
-
-`/health/ready/` opens the Django database and returns non-cached JSON. Nginx
-exposes it internally to the fallback page as `/__sms_gateway/ready`. The page
-checks readiness but returns to `/` with a new GET; it never replays an
-interrupted POST, upload, import, or export request.
-
-The proxy must forward the original HTTP `Host` header including its port.
-Use Nginx `$http_host`, not `$host`: `$host` drops a non-default public
-`SMS_PORT`, causing Django to reject otherwise valid same-origin POST requests.
-Do not compensate with `csrf_exempt` or broad `CSRF_TRUSTED_ORIGINS`.
-
-WhiteNoise remains configured only as a non-Docker Gunicorn fallback; Docker
-requests for `/static/` never reach it. The web service defaults to one worker
-and four threads to avoid multi-process SQLite write contention.
-`SMS_WEB_WORKERS`, `SMS_WEB_THREADS`, and `SMS_WEB_TIMEOUT` are runtime
-overrides; keep one worker with SQLite. This does not change publication file
-selection rules. Dynamic response gzip uses
-`SelectiveGZipMiddleware`: only the explicit HTML/text/JSON/JavaScript/XML MIME
-allowlist is compressed. Binary and unknown MIME types must bypass gzip so
-download responses such as publication ZIPs retain their `Content-Length`.
-
-Nginx response buffering is enabled for proxied Django responses. It uses
-small memory buffers, spills larger responses to Nginx's request-scoped proxy
-temporary files, and permits up to `10240m` (10 GiB) of temporary response data per
-request. This lets Gunicorn finish handing off a generated ZIP without staying
-coupled to a slow browser for the full download when the response fits within
-that buffer. The directive uses `m` because its size parser does not accept a
-`g` suffix. Larger responses continue streaming after the finite buffer fills.
-This is not `proxy_cache`:
-Nginx does not reuse one editor's response for another request, and temporary
-files are removed after the request. Keep `proxy_request_buffering off` so this
-response policy does not change upload handling. Keep
-`proxy_intercept_errors on` so upstream `502`, `503`, and `504` responses still
-use the service fallback before response delivery begins.
-
-POST attachment responses must use the shared download lifecycle rather than
-the ordinary full-page submit lock:
-
-- mark the form with `data-cfm-download-form="true"`;
-- preserve the submitted `download_token`;
-- pass the `FileResponse` through
-  `submissions.controllers.exports._mark_download_response_ready()`.
-
-The completion cookie is a UI signal only. It must be added after the export
-service has produced the file and must not alter export selection, readiness,
-or file contents.
-
-Use `scripts/update_docker_instances.py` after either code or `.env.*` changes.
-It discovers `.env` and `.env.*` files, requires one unique
-`COMPOSE_PROJECT_NAME` per file, renders the desired Compose configuration, and
-validates the complete plan before changing a container. It rejects duplicate
-project names, overlapping bind address/port combinations, shared data
-directories, project names owned by another checkout, and any attempt to move
-an existing instance to a different `SMS_DATA_DIR`.
-
-Run `python3 scripts/update_docker_instances.py --dry-run` first, then the same
-command without `--dry-run`. Existing projects are synchronized and verified;
-env files for projects that do not exist are only reported. Use
-`--create-missing` after reviewing the plan to create those projects. Use
-repeatable `--project NAME` options to limit a run. Secret values are masked,
-and the updater never rewrites operator env files.
-
-The updater builds `web` while the current service remains available,
-publishes an `update` status, force-recreates only `web`, waits for health, and
-recreates `proxy` only when its bind address, port, or body-size configuration
-changed or its gateway layout is outdated. Otherwise it performs a validated
-in-place Nginx reload. It retains the current named-volume or bind-mount
-deployment type, then verifies the loaded Nginx Host directive, a collected
-static asset, and a non-mutating same-origin CSRF POST.
-
-`scripts/rebuild_docker_instances.py` is the lower-level recovery command for
-legacy instances without a maintained env file. It recovers the effective
-settings from running containers and intentionally does not apply `.env.*`
-edits. Its generated env file is temporary.
-
-Existing bind-mounted instances must be migrated with
-`scripts/migrate_docker_data_volumes.py`. The migration builds the current
-image, resolves the Compose project volume name, performs an online verified
-pre-copy, gracefully stops `web` while the proxy remains available, performs
-the final verified sync, checks SQLite integrity, and starts the new web
-container. After web is healthy, it briefly recreates proxy because its
-read-only data mount must also move from the host bind to the named volume. On
-failure it starts the old web container or recreates the bind deployment with
-`docker-compose.bind.yml`. It never deletes the original host data folder.
-
-`scripts/backup_docker_instances.py` discovers every named-volume instance for
-the current checkout. It pre-syncs raw data to a sibling staging folder while
-the app remains available, then briefly stops a running web container for the
-final consistent sync. A baseline hash manifest lets the final phase avoid
-rereading unchanged host files. The script validates SQLite before promoting
-the mirror, retains the previous complete mirror, always attempts to restore
-the original running state, logs results beside the host mirrors, and returns
-nonzero if any project fails. Bind-mounted instances are reported as already
-host-backed.
-
-Backup now stops only `web`; Nginx remains on the public port and renders the
-current backup phase until Gunicorn is healthy again.
-
-Backup, migration, and rebuild use
-`runtime/.docker-data-operation.lock` to prevent disruptive Docker operations
-from overlapping. Locks older than 12 hours are treated as stale. The data
-scripts support repeatable `--project`, `--dry-run`, and `--stop-timeout`
-options.
-The transfer helper rejects symlinks, removes stale destination entries, copies
-through per-file temporary paths, verifies SHA256 content, and runs SQLite
-`PRAGMA integrity_check`.
-
-The raw host mirror is an operational rollback copy, separate from portable
-System State ZIPs. `docker-compose.bind.yml` mounts that mirror at `/app/data`
-for both `web` and the read-only `proxy` view during rollback. The
-`sms_static` volume is regenerated by `collectstatic` and is intentionally not
-part of raw-data backup or System State. Never use `docker compose down -v`
-during normal operation.
+Changes to Compose, Nginx, gateway behavior, or the Docker management scripts
+must update the Docker Guide, affected troubleshooting entries, architecture
+rationale, and Stage 8 of the acceptance runbook.
 
 ## Regression Commands
 
@@ -215,7 +78,19 @@ For documentation-only changes, run at least:
 - `submissions/templates/submissions/`: server-rendered Tabler/Bootstrap-compatible templates and shared partials.
 - `submissions/tests/`: acceptance regression tests and factories.
 - `sample_data/`: CSV templates.
-- `docs/`: operator, developer, architecture, troubleshooting, and acceptance docs.
+- `docs/`: documentation home plus operator, Docker, developer, architecture,
+  troubleshooting, rules, UI, and acceptance guides.
+
+## README Preview Assets
+
+README screenshots live under `docs/assets/readme/`. Capture them from a
+disposable database and media root populated only with synthetic conference,
+paper, author, and submission data. Never capture the operator's normal
+`db.sqlite3` or `data/` tree.
+
+Update the affected preview when a user-visible Dashboard or Organized List
+change makes the current image misleading. Keep the image format, extension,
+alternative text, and README link consistent, then run the documentation gate.
 
 ## Where Logic Belongs
 

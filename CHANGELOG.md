@@ -3,6 +3,21 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.38 - 2026-07-26
+
+### Documentation Redesign
+
+- Redesigned the repository README as a concise product overview with a visual
+  workflow, quick start, publication-safety summary, and real UI previews built
+  from a disposable example conference.
+- Added a documentation home that routes editors, Docker operators,
+  developers, maintainers, and release reviewers to the correct guide.
+- Centralized Docker creation, update, backup, migration, recovery, and
+  rollback procedures in one Docker Guide.
+- Removed repeated Docker and UI explanations from the README, Operator Guide,
+  Developer Guide, Architecture Notes, and Troubleshooting while preserving
+  their audience-specific instructions.
+
 ## 1.10.37 - 2026-07-26
 
 ### Docker Service Recovery

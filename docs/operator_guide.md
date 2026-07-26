@@ -5,7 +5,8 @@ This guide is for editors running the local system to prepare final submissions 
 It explains what to do and what result to expect. For the authoritative rules
 that determine publication scope, active versions, selected files, readiness,
 and export safety, see [Publication Rules](publication_rules.md). For setup or
-failure recovery, see [Troubleshooting](troubleshooting.md).
+failure recovery, see [Troubleshooting](troubleshooting.md). Return to the
+[Documentation Home](README.md) to choose a different guide.
 
 ## Start And Restore
 
@@ -74,96 +75,53 @@ Use the `Checklist / Compact candidates` control to switch views. Both use the s
 
 ## Dashboard And Readiness
 
-Dashboard uses the same blocking rows as Final Publication Package export. Its top panel therefore answers whether a final package can be created now; it is not a separate approximate status calculation.
+Dashboard uses the same blocking rows as Final Publication Package export. Its
+top panel answers whether the final package can be created now; it is not an
+approximate status calculation.
 
-- `blocking papers` counts unique affected Paper IDs.
-- `blocking checks` counts individual readiness findings, so one paper can contribute more than one check.
-- `Next actions` lists only workflows that currently have blockers.
-- `No current blockers` lists workflows whose checks are clear instead of repeating zero-value cards.
-- `Tracked information` can include non-blocking editorial reminders, such as a verified Paper ID whose titles still differ.
+- **Blocking papers** counts unique affected Paper IDs.
+- **Blocking checks** counts individual findings, so one paper can contribute
+  more than one check.
+- **Next actions** lists only workflows with current blockers.
+- **No current blockers** lists workflow groups whose checks are clear.
+- **Tracked information** shows non-blocking editorial context.
 
-Uploading a corrected PDF intentionally sends the paper back through PDF processing and Title/Author review. Dashboard should show those actions again until the current Corrected/Original publication PDF has matching page/hash data and reviewed extracted metadata.
+Uploading a corrected PDF intentionally returns the paper to PDF processing and
+Title/Author Review. `Review OK` is the single Title/Author completion
+decision; a reviewed title wording difference remains tracked information
+instead of becoming a second blocker.
 
-`Review OK` completes the Title/Author check, including acceptance of the extracted-title comparison. A reviewed paper whose Final and extracted title wording still differs is tracked for reference, but it is not returned to Next actions and does not require a second Confirm Match action.
+### Worklists And Navigation
 
-Final Submission Edit is intentionally limited to submission metadata, original files, and plagiarism score/report entry. Processing state, Title/Author Review, duplicate-author review, and Not Publishing decisions are shown there for context but must be changed from their dedicated pages.
+Large worklists default to 25 rows and support `25 / 50 / 100 / 200 / All`.
+Filtering and sorting apply before pagination. Use `All` only when the complete
+filtered set must be compared together.
 
-`Import / Re-upload` is collapsed on the Final Submissions page until selected so submission tabs and the version list remain the primary view. Expanding it exposes aligned Metadata and PDF/Source upload zones on wide screens, stacks them on narrower screens, and places Preview Changes in a separate action row. Selected-file counts, PDF/source summary, per-file removal, and the existing preview-before-apply workflow remain available. Browser summaries are convenience only; server extension/hash checks decide actual file types. Final Submission Edit follows one sequence: Submission identity, Metadata, Current row files, Plagiarism data/report, read-only Workflow status summary, and Save. Destructive version actions are outside the normal edit form in the collapsed bottom `Version actions` danger zone and still require a reason. Not Publishing remains a separate workflow.
+Search is broad matching. Links created by the application target an exact
+Paper ID, Final Submission, or exception and show a focused banner. An
+out-of-scope target is explained instead of being replaced by a similar active
+record.
 
-Paper selectors do not preload the Paper Master List. Start typing a Paper ID,
-Master Title, or Master Author; the picker returns at most 20 matches with exact
-Paper IDs first. Editor Upload and Paper ID Review show Master Title beside each
-result. The control displays the selected Paper ID, and the submitted selection
-is validated against Paper Master by the server.
+Opening Final Submission Edit from a worklist preserves a safe local return
+URL. Save returns to the originating view, filter, sort, search, tab, page, or
+single-paper context. External return URLs are rejected.
 
-When Edit is opened from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, or Exceptions, Save returns to the originating worklist with its view, filter, sort, search, tab, or single-paper selection. External return URLs are rejected. Worklist filters/search can update only that list area without a full refresh, but the same links/forms work as ordinary Django requests. No client-side code decides review state, exception validity, active versions, or publication files.
+Final Submissions opens with its tabs and version list first; `Import /
+Re-upload` is collapsed until requested. Destructive version actions are kept
+in the separate bottom danger zone. Not Publishing remains a dedicated
+paper-level workflow.
 
-The workflow links inside Final Submission Edit are exact links, not prefilled
-searches. Their focused banner names the Paper ID, Final ID, origin, and current
-status. `Back to full worklist` returns to normal browsing. A focused page may
-say that the selected version is outside its current workflow scope; this is
-intentional and prevents an inactive or excluded version from being replaced on
-screen by a similarly named active record. Search boxes remain broad matching
-tools and should not be used as proof that a particular Final ID was selected.
+Status colors are consistent: red is blocking or dangerous, amber needs manual
+attention, blue is tracked information, green is complete, and gray is inactive
+or historical. Color is never the only status signal.
 
-Author Count supports author/Paper ID search, attention/over-limit/duplicate/allowed filters, and paper-count/name sorting. Exceptions supports search plus status and exception-type filters. Title/Author keeps Workflow and Tracked views separate. Verify Paper IDs preserves filter/search URLs. State-changing buttons still perform full audited server requests.
+Error Report filters severity, workflow area, and categories on the server
+before pagination. Multiple categories use OR; area, severity, and category
+dimensions combine with AND. Duplicate groups use a read-only detail view.
 
-Paper Master List can be sorted by Paper ID, Master Title, Accept Status, or
-recent update. Final Submissions can be sorted by Paper ID, Final ID, upload
-date, Final Title, or current-version state. ID sorting is natural rather than
-plain text sorting (`P2` precedes `P10`), and Final Submission tabs retain the
-current search and sort selection.
-
-Status colors are consistent across pages: red means a blocker or dangerous action, amber needs manual attention, blue is tracked information, green means the named review is complete, and gray is inactive/history. Primary text uses deep ink on muted work surfaces; labels and supporting text use a darker blue-gray instead of low-contrast gray. Compact pill-shaped labels report status, file origin, counts, or categories and are not controls. Action buttons are taller rectangular controls with stronger borders and visible hover states. Every label also includes text, so color is never the only status signal.
-
-Tables use one uniform row surface with clear horizontal separators. Zebra striping is intentionally disabled across the application; hovering a row provides the only temporary row highlight. Details, exception, note, and discard panels therefore cannot disrupt row coloring. Organized List keeps routine counts and file-origin information neutral, reserves muted green for completed editorial reviews, and marks blocking rows with a red left edge instead of replacing the entire row background.
-
-Typography is centralized for long editorial sessions. Normal page and table text uses 15px type with increased line height, supporting text has a fixed 13px minimum, and status pills use 12px type. Nested `small` elements do not shrink further. Muted text is reserved for supporting metadata and remains dark enough to read against the work surfaces.
-
-Large worklists default to 25 rows and provide `25 / 50 / 100 / 200 / All`.
-Filters and sorting apply to the complete result before pagination. Use `All`
-when every matching record must be compared together; routine numbered pages
-respond faster because file checks, previews, suggestions, and text diffs are
-prepared only for visible rows. The same pagination controls appear above and
-below the worklist. Changing page or page size returns to the worklist controls,
-so an editor can continue from the top of the new page without manually
-scrolling back. Paper ID Review, Title/Author Review, and Formatting Review also
-remember the paper card used for a state-changing action. If the paper remains
-in the selected filter, the page returns to that card at the same viewport
-position. If the update removes it from the filter, the page continues at the
-next visible card; Formatting reopens the relevant review workspace.
-
-Short-lived operation feedback such as `Settings saved`, review status updates,
-and upload results appears in the upper-right Toast stack. Success and
-informational Toasts close automatically; warning and failure Toasts remain
-until dismissed. Toasts are one-time Django messages and disappear after a
-refresh. Persistent workflow alerts, field validation, preview confirmations,
-and publication blocker lists remain inline because they must not disappear
-while action is still required. Dashboard readiness and global workflow alerts
-load just after the page shell, but remain server-calculated from the same
-rules used by publication export.
-
-Error Report severity tabs are server-side filters. Select `All`, `Critical`,
-`Medium`, or `Info` before paging; each selected severity has its own complete
-result count and numbered pages. Workflow-area links and severity filters can
-be combined without hiding issues on a different mixed-severity page.
-
-The Categories panel is the second filter layer. Categories are arranged in
-workflow-area rows and show their issue count for the selected severity before
-category filtering. Select or clear a pill to update the report immediately;
-multiple categories use OR, while workflow area, severity, and the category
-selection combine with AND. Selected categories stay in the URL and remain
-active while paging or changing severity. Severity totals update to show the
-current category selection. Use `Clear categories` to return to every category
-without changing the workflow-area or severity selection.
-
-Duplicate-title, PDF, or source rows in Error Report show a compact group
-summary. Use `Show matching records` to load the complete list for that row.
-This is a read-only detail view; it does not change the duplicate blocker,
-publication scope, or final-package result. The same control remains available
-when Page size is `All`.
-
-Technical values such as paths, action names, and expanded Audit Log JSON use dark monospace text on a muted light surface. If any expanded detail shows light text on a light background, treat it as a display defect rather than an indication that the log data is missing.
+Implementation and presentation contracts for partial navigation, exact
+targets, pagination, accessibility, and shared components live in
+[UI Conventions](ui_conventions.md).
 
 ## Import Workflow
 
@@ -474,101 +432,56 @@ Use `/reports/` for exports.
 
 ## Backup, Cleanup, And Clear Database
 
-Download a System State ZIP before moving machines, archiving work, or clearing data. The snapshot includes settings, conference name, database workflow state, managed PDFs/source files, plagiarism reports, title/author verification images, page thumbnails, and format previews. Temporary import/restore/upload preview tokens are not included.
+### System State
 
-For Docker deployments, runtime data is stored in a project-scoped named
-volume. `SMS_DATA_DIR` is a separate raw host mirror with the same directly
-usable `db.sqlite3` and managed-file layout. After upgrading an older
-bind-mounted installation, run
-`python scripts/migrate_docker_data_volumes.py --dry-run` and then the same
-command without `--dry-run`. The migration handles every conference from the
-current checkout one at a time and preserves the old host folder.
+Download a System State ZIP before moving machines, archiving work, performing
+major maintenance, or clearing data. It includes settings, conference records,
+managed files, reports, review artifacts, and active and archived audit logs.
+Temporary preview tokens are excluded.
 
-The Docker endpoint is Nginx. It serves system CSS/JavaScript from a
-rebuildable `sms_static` volume and uploaded/generated `/media/` files from a
-read-only view of the conference `sms_data` volume. Keep `SMS_DEBUG=0` for
-normal operation; changing it does not control whether images or PDFs load.
-Only `sms_data` and its verified `SMS_DATA_DIR` mirror contain conference
-state. The static volume is recreated automatically and is not a backup target.
-Nginx remains on the public port while Gunicorn is unavailable and shows the
-current backup, migration, update, or restart phase. If no fresh planned
-operation exists, it reports a generic outage instead of guessing the cause.
-Interrupted changes and uploads are not submitted again automatically. After
-the application passes two readiness checks, the fallback safely returns to
-the Dashboard; it never reloads or resubmits the failed request URL.
-Large generated downloads are response-buffered through Nginx. A slow browser
-may cause Nginx to use temporary disk space while the request is active, but
-the response is not cached or reused and the temporary file is removed when
-the request ends. Publication selection and ZIP contents remain controlled by
-Django's publication services.
+Restore is preview-before-apply and remaps managed paths to the receiving
+installation. Do not continue publishing from a restore that reports an
+unsupported archive version, corrupt file, or unresolved old-machine path.
 
-After changing the application checkout or any conference `.env.*` file, run
-`python3 scripts/update_docker_instances.py --dry-run`. Confirm every listed
-project, public endpoint, data folder, and masked environment change. Then run
-the command without `--dry-run` to build, synchronize, and verify each existing
-instance. The updater refuses data-folder changes and checks for port/data
-conflicts before modifying any instance.
+### Docker Data
 
-Every env file must declare its exact `COMPOSE_PROJECT_NAME`. A newly added env
-file is reported but not started; use
-`python3 scripts/update_docker_instances.py --create-missing` only after
-reviewing the plan. The update is complete only after readiness, proxy
-configuration, static delivery, and the same-origin CSRF POST all pass.
+Docker runtime backup, update, named-volume migration, and host-mirror rollback
+are documented in the [Docker Guide](docker_guide.md). The raw
+`SMS_DATA_DIR` mirror is for immediate operational rollback; the System State
+ZIP is the portable, versioned application backup.
 
-Use `scripts/rebuild_docker_instances.py` only as a recovery path for a legacy
-instance whose env file is unavailable. That command preserves values from the
-running containers and does not load later env-file edits.
+Never run `docker compose down -v` for a conference instance because `-v`
+deletes its named data volume.
 
-Run `python scripts/backup_docker_instances.py` manually or schedule it from the
-host. The command discovers all current conference instances, prepares most of
-the mirror while each app remains available, briefly stops and restarts only
-web for a consistent final copy, keeps the Nginx fallback available, validates
-SQLite, and preserves the prior mirror with a `.backup-previous` suffix. In
-Windows Task Scheduler,
-set the project folder as `Start in`, use the installed Python launcher or
-Python executable as the program, and use
-`scripts\backup_docker_instances.py` as the argument. Docker Desktop must be
-running under an account that the scheduled task can access.
+### Storage Cleanup
 
-The raw mirror is intended for immediate Docker rollback; the System State ZIP
-remains the portable, versioned application backup. Never use
-`docker compose down -v`, because `-v` deletes the active conference volume.
+Use Settings > Storage Management and review every preview before Apply:
 
-System State ZIPs include `data/logs/audit.log` and archived audit logs, so restored systems keep the same action trail.
-Restore verifies the uploaded ZIP again, stages and hashes all files beside
-their destination filesystems, restores database records, and then promotes
-the staged files. A normal database, Python, or filesystem failure rolls back
-both records and files; retained recovery paths are reported if cleanup cannot
-complete.
+- Conservative cleanup selects only unreferenced regenerated cache.
+- Generated reports/exports cleanup selects reproducible downloads and external
+  upload packages.
+- Original and corrected uploads, plagiarism reports, System State backups, and
+  referenced thumbnails/previews remain protected.
+- Apply skips files that changed, became referenced, or became protected after
+  Preview.
+- An unreadable managed folder blocks cleanup instead of being treated as
+  empty.
 
-Use Storage Management in Settings for preview-first cleanup:
+The Settings form loads before Storage Management and GROBID health checks
+finish. Their separate read-only requests do not change records.
 
-- Conservative cleanup keeps referenced thumbnails/previews and publication debug or legacy output folders. It only selects unreferenced generated cache.
-- Generated reports/exports cleanup removes regenerated Excel/ZIP download artifacts.
-- Cleanup skips files that changed after Preview and protects System State,
-  import/restore preview, extraction, plagiarism-report, and managed-media
-  folders even when a Reports folder setting overlaps them.
-- If any managed folder is unreadable, Storage Management reports the path and
-  disables cleanup preview instead of treating the unreadable tree as empty.
-  Apply performs the same complete-scan check again before deleting anything.
-- After Apply, verify both the deleted and kept counts. A kept count means a
-  file changed, became referenced/protected, or could not be removed; review
-  Audit Log and create a fresh preview before retrying.
+### Clear Database
 
-The Settings form appears before Storage Management finishes scanning the
-configured folders. The panel fills in separately and can be rescanned with
-Refresh. GROBID status is also checked after the page opens. On Docker bind
-mounts, these background panel requests may take longer than the form itself,
-but they do not delay editing or saving Settings. Without JavaScript, Open
-Storage Management loads the same controls as a complete page.
+Clear Database wipes database records and app-owned managed files so the
+application can start a new conference. Download a System State ZIP first when
+the current work must be preserved.
 
-Clear Database wipes records and managed files so the app can start a new conference. Use it only after downloading a System State ZIP if the current work must be preserved.
-It recursively clears only application-owned `data`/media locations. Configured
-absolute folders outside those roots are preserved to avoid deleting unrelated
-shared files. Clear Database stages managed files first; if the database reset
-fails, it restores them instead of leaving records that point to deleted files.
+Only application-owned `data` and media locations are staged for deletion.
+Configured absolute folders outside those roots are preserved. If the database
+reset fails, staged files are restored.
 
-Clear Database preserves the current audit log by default. Check `Also archive and clear audit log` only when you intentionally want a fresh log for a new environment. When checked, the app moves the current file into `data/logs/archive/` and starts a new `audit.log`.
+The active audit log is preserved by default. Select **Also archive and clear
+audit log** only when intentionally starting a fresh action trail.
 
 ## Audit Log
 

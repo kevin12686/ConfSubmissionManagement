@@ -6,7 +6,28 @@ Use a disposable conference data folder. Complete the automated command
 checklist first, then work through each stage in order. Expected publication
 behavior is defined in [Publication Rules](publication_rules.md); shared
 responsive and worklist behavior is defined in
-[UI Conventions](ui_conventions.md).
+[UI Conventions](ui_conventions.md). Docker procedures are centralized in the
+[Docker Guide](docker_guide.md).
+
+## Run Order
+
+1. Run the automated gate below.
+2. Create the disposable dataset.
+3. Complete Manual Stages 1-8 in order.
+4. Confirm the grouped acceptance checks before handoff.
+
+### Automated Gate
+
+```bash
+.venv/bin/python manage.py check
+.venv/bin/python manage.py makemigrations --check --dry-run
+.venv/bin/python scripts/check_docs.py
+.venv/bin/python manage.py test submissions
+.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
+```
+
+The Docker-specific manual checks use disposable instances and the procedures
+in the [Docker Guide](docker_guide.md).
 
 ## Dummy Conference Dataset
 
@@ -271,15 +292,3 @@ Create Final Submission records and files:
   raw JSON.
 - Clear Database preserves Audit Log by default, and the optional audit-clear checkbox archives the old log before starting a new one.
 - System State ZIP includes active and archived audit logs.
-
-## Automated Command Checklist
-
-Run these before manual acceptance:
-
-```bash
-.venv/bin/python manage.py check
-.venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python scripts/check_docs.py
-.venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
-```
