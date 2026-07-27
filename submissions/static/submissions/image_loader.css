@@ -7,13 +7,16 @@
     position: relative;
 }
 
-.cfm-image-loader-formatting {
+.cfm-image-loader-formatting:not(.is-ready) {
     min-height: clamp(12rem, 24vw, 22rem);
 }
 
 .cfm-image-loader-modal {
-    min-height: min(62vh, 36rem);
     width: 100%;
+}
+
+.cfm-image-loader-modal:not(.is-ready) {
+    min-height: min(62vh, 36rem);
 }
 
 .cfm-image-loader > img {

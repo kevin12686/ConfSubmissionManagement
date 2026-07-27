@@ -197,6 +197,10 @@ loaded image or an explicit retryable error. Formatting Review list previews
 load when their review collapse opens; Process PDFs modal previews load when
 the selected page opens. Do not render an empty or unresolved `src` directly,
 because the browser's broken-image indicator is not an editorial status.
+Placeholder dimensions apply only before loading, while loading, or after a
+load failure. Once an image is ready, its natural aspect ratio controls the
+container so unused placeholder space cannot resemble a partial or broken
+preview. Do not stretch or crop PDF evidence to fill a placeholder.
 
 Publication-wide read pages share
 `submissions.services.publication_read.PublicationReadContext`. Pass its

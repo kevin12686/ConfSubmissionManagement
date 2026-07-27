@@ -3,6 +3,15 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.43 - 2026-07-27
+
+### Image Preview Sizing
+
+- Limited deferred preview placeholder heights to loading and error states.
+- Let loaded Formatting Review and Process PDFs preview frames follow each
+  image's natural aspect ratio without stretching or cropping publication
+  evidence.
+
 ## 1.10.42 - 2026-07-27
 
 ### Image Preview Loading

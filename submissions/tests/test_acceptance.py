@@ -7935,6 +7935,22 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn(".cfm-image-loader.is-loading", stylesheet)
         self.assertIn(".cfm-image-loader.is-error", stylesheet)
         self.assertIn(".cfm-image-loader.is-ready", stylesheet)
+        self.assertIn(
+            ".cfm-image-loader-formatting:not(.is-ready)",
+            stylesheet,
+        )
+        self.assertIn(
+            ".cfm-image-loader-modal:not(.is-ready)",
+            stylesheet,
+        )
+        self.assertNotIn(
+            ".cfm-image-loader-formatting {\n    min-height:",
+            stylesheet,
+        )
+        self.assertNotIn(
+            ".cfm-image-loader-modal {\n    min-height:",
+            stylesheet,
+        )
 
     def test_formatting_review_ok_no_edit_filter(self):
         self.make_master_paper("P001", "Review OK Original", "Ada")
