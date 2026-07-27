@@ -103,6 +103,11 @@ their count. Verified Paper Master title differences, reviewed extracted-title
 differences, and combined Plagiarism/Single exceptions use dedicated filters
 instead of opening a broader workflow tab.
 
+Exceptions computes summary and status-tab counts after applying exception type
+and user search, but before applying the selected status tab. This keeps the
+tabs useful as a distribution of the current scope and makes their counts agree
+with the active type/search controls.
+
 Contextual links to Final Submission Edit pass a same-site `next` URL. The
 controller validates it with `url_has_allowed_host_and_scheme()`. Save returns
 to the originating worklist with its view, filter, search, sort, tab, page, and

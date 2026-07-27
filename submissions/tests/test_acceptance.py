@@ -7086,6 +7086,27 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(exceptions, "Page count")
         self.assertContains(exceptions, "P001")
         self.assertNotContains(exceptions, "P002")
+        self.assertEqual(
+            exceptions.context["counts"],
+            {
+                "not_allowed": 1,
+                "allowed": 0,
+                "stale": 0,
+                "all": 1,
+            },
+        )
+        self.assertEqual(
+            {
+                option["value"]: option["count"]
+                for option in exceptions.context["filter_options"]
+            },
+            {
+                "not_allowed": 1,
+                "allowed": 0,
+                "stale": 0,
+                "all": 1,
+            },
+        )
 
     def test_contextual_edit_links_return_to_review_worklists(self):
         self.make_master_paper("P001", "Return Workflow", "Ada")

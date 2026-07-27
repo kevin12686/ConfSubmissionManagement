@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.41 - 2026-07-26
+
+### Exception Filter Counts
+
+- Made Exceptions summary metrics and status-tab counts recalculate within the
+  selected exception type and search scope.
+- Kept status tabs as a distribution of the scoped results, so switching
+  between Not allowed, Allowed, Stale, and All does not lose the current type
+  or search context.
+
 ## 1.10.40 - 2026-07-26
 
 ### Error Report Exception Actions

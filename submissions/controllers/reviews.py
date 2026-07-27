@@ -1549,11 +1549,6 @@ def exceptions_center(request):
     valid_filters = {option["value"] for option in EXCEPTION_FILTER_OPTIONS}
     if current_filter not in valid_filters:
         current_filter = "not_allowed"
-    status_rows = (
-        all_rows
-        if current_filter == "all"
-        else [row for row in all_rows if row["status"] == current_filter]
-    )
     type_options = [
         {"value": "all", "label": "All exception types"},
         {"value": "page", "label": "Page count"},
@@ -1566,36 +1561,50 @@ def exceptions_center(request):
     valid_types = {option["value"] for option in type_options}
     if current_type not in valid_types:
         current_type = "all"
-    rows = status_rows
+    scoped_rows = all_rows
     if current_type == "plagiarism":
-        rows = [
+        scoped_rows = [
             row
-            for row in rows
+            for row in scoped_rows
             if row["type"] in {"plagiarism_percent", "single_percent"}
         ]
     elif current_type != "all":
-        rows = [row for row in rows if row["type"] == current_type]
+        scoped_rows = [
+            row for row in scoped_rows if row["type"] == current_type
+        ]
     if focused_key:
         rows = [row for row in all_rows if row["key"] == focused_key]
         q = ""
         current_filter = "all"
         current_type = "all"
-    elif q:
-        lowered_query = q.casefold()
-        rows = [
-            row
-            for row in rows
-            if lowered_query
-            in " ".join(
-                [
-                    row.get("subject", ""),
-                    row.get("paper_ids", ""),
-                    row.get("final_submission_id", ""),
-                    row.get("type_label", ""),
-                    row.get("reason", ""),
-                ]
-            ).casefold()
-        ]
+        counts = exception_counts(all_rows)
+    else:
+        if q:
+            lowered_query = q.casefold()
+            scoped_rows = [
+                row
+                for row in scoped_rows
+                if lowered_query
+                in " ".join(
+                    [
+                        row.get("subject", ""),
+                        row.get("paper_ids", ""),
+                        row.get("final_submission_id", ""),
+                        row.get("type_label", ""),
+                        row.get("reason", ""),
+                    ]
+                ).casefold()
+            ]
+        counts = exception_counts(scoped_rows)
+        rows = (
+            scoped_rows
+            if current_filter == "all"
+            else [
+                row
+                for row in scoped_rows
+                if row["status"] == current_filter
+            ]
+        )
 
     if request.method == "POST":
         rebuild_paper_authors()
@@ -1635,7 +1644,6 @@ def exceptions_center(request):
             messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "exceptions_center"))
 
-    counts = exception_counts(all_rows)
     filter_options = [
         {**option, "count": counts.get(option["value"], 0)}
         for option in EXCEPTION_FILTER_OPTIONS

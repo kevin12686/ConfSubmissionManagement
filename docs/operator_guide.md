@@ -401,7 +401,13 @@ beside the affected section so you can correct them without finding the paper
 again. A normal page refresh recalculates list summaries, filtering, and
 sorting from the latest state.
 
-Exceptions also supports Paper/Final ID text search and exception-type filtering. Author Count supports focused views for over-limit authors, duplicate names inside a paper, allowed exceptions, and all authors. These filters are review aids only and do not change exception validity.
+Exceptions also supports Paper/Final ID text search and exception-type
+filtering. Its summary metrics and status-tab counts recalculate within the
+selected type/search scope, while the selected status tab controls which of
+those scoped records are listed. Author Count supports focused views for
+over-limit authors, duplicate names inside a paper, allowed exceptions, and all
+authors. These filters are review aids only and do not change exception
+validity.
 
 `Manage exception` from Author Count opens the exact author exception. Row-level
 exception actions from Organized List continue to use the exact active Final
