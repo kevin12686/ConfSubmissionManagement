@@ -3,6 +3,17 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.10.42 - 2026-07-27
+
+### Image Preview Loading
+
+- Added one shared loading, failure, and retry presentation for deferred image
+  previews.
+- Kept Formatting Review previews hidden behind an integrated spinner until
+  their review card is opened and the image is ready.
+- Reset Process PDFs modal previews between pages so a loading state replaces
+  empty, stale, or broken-looking image content.
+
 ## 1.10.41 - 2026-07-26
 
 ### Exception Filter Counts

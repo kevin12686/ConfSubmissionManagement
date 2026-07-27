@@ -351,7 +351,16 @@
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header"><h2 class="modal-title h5" id="thumbnail-preview-title">PDF page preview</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-            <div class="modal-body text-center"><img class="cfm-thumbnail-modal-image" src="" alt="Expanded PDF page preview"></div>
+            <div class="modal-body text-center">
+                <div
+                    class="cfm-image-loader cfm-image-loader-modal"
+                    data-cfm-image-loader
+                    data-cfm-image-loading-label="Loading PDF page preview..."
+                    data-cfm-image-error-label="PDF page preview could not be loaded."
+                >
+                    <img class="cfm-thumbnail-modal-image" alt="Expanded PDF page preview">
+                </div>
+            </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Close</button>
                 <button class="btn btn-outline-danger" id="record-preview-formatting-issue" type="button">Record issue for this page</button>
@@ -364,9 +373,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const modal = document.getElementById("thumbnail-preview-modal");
     if (!modal) return;
     const recordIssueButton = modal.querySelector("#record-preview-formatting-issue");
+    const imageLoader = modal.querySelector("[data-cfm-image-loader]");
     modal.addEventListener("show.bs.modal", function (event) {
         const trigger = event.relatedTarget;
-        modal.querySelector("img").src = trigger.dataset.previewSrc || "";
+        window.CFMImageLoader.load(imageLoader, trigger.dataset.previewSrc || "");
         modal.querySelector("#thumbnail-preview-title").textContent = trigger.dataset.previewLabel || "PDF page preview";
         const card = trigger.closest(".cfm-pdf-preview-card");
         const panel = card ? card.querySelector("[data-formatting-triage-panel]") : null;
@@ -377,7 +387,7 @@ document.addEventListener("DOMContentLoaded", function () {
         recordIssueButton.disabled = !panel;
     });
     modal.addEventListener("hidden.bs.modal", function () {
-        modal.querySelector("img").src = "";
+        window.CFMImageLoader.reset(imageLoader);
     });
     recordIssueButton.addEventListener("click", function () {
         const panel = document.getElementById(recordIssueButton.dataset.panelId || "");

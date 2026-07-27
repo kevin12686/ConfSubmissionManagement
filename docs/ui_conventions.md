@@ -190,6 +190,14 @@ Do not decode, hash, or render evidence for rows that will not be displayed.
 Signed evidence tokens are also generated after pagination and must not perform
 database queries or publication-file reads.
 
+Deferred image previews use the shared `image_loader.js` and
+`image_loader.css` component. Keep the image hidden while its source is being
+resolved, show the standard loading surface, and replace it with either the
+loaded image or an explicit retryable error. Formatting Review list previews
+load when their review collapse opens; Process PDFs modal previews load when
+the selected page opens. Do not render an empty or unresolved `src` directly,
+because the browser's broken-image indicator is not an editorial status.
+
 Publication-wide read pages share
 `submissions.services.publication_read.PublicationReadContext`. Pass its
 `FileInspectionContext` through publication-facing helpers so a path is

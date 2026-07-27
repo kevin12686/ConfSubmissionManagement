@@ -879,7 +879,7 @@ class PublicationFileHydrationPaginationTests(TestCase):
         self.assertNotIn("formatting_review_snapshots", self.client.session)
         self.assertContains(
             page,
-            'data-format-preview-src="/reviews/formatting/',
+            'data-cfm-image-src="/reviews/formatting/',
             count=25,
         )
 

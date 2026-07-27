@@ -226,14 +226,18 @@
                     <div class="small fw-semibold mb-1">First page title/author preview</div>
                     {% if row.preview.exists %}
                         <div
-                            class="format-preview cfm-image-magnifier"
+                            class="format-preview cfm-image-magnifier{% if mode == 'list' %} cfm-image-loader cfm-image-loader-formatting{% endif %}"
                             data-cfm-image-magnifier
                             data-cfm-image-magnifier-hint="Hold Ctrl to magnify"
+                            {% if mode == "list" %}
+                                data-cfm-image-loader
+                                data-cfm-image-src="{{ row.preview.url }}"
+                                data-cfm-image-loading-label="Loading first-page preview..."
+                                data-cfm-image-error-label="First-page preview could not be loaded."
+                            {% endif %}
                         >
                             <img
-                                {% if mode == "list" %}
-                                    data-format-preview-src="{{ row.preview.url }}"
-                                {% else %}
+                                {% if mode != "list" %}
                                     src="{{ row.preview.url }}"
                                 {% endif %}
                                 loading="lazy"
@@ -357,22 +361,6 @@
 {% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}{% endif %}
 </div>
 </div>
-{% if mode == "list" %}
-<script>
-function loadFormattingPreview(root) {
-    root.querySelectorAll("img[data-format-preview-src]").forEach(function (image) {
-        image.src = image.dataset.formatPreviewSrc;
-        image.removeAttribute("data-format-preview-src");
-    });
-}
-document.addEventListener("shown.bs.collapse", function (event) {
-    loadFormattingPreview(event.target);
-});
-document.addEventListener("cfm:worklist-expanded", function (event) {
-    loadFormattingPreview(event.target);
-});
-</script>
-{% endif %}
 {% if mode != "list" %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {

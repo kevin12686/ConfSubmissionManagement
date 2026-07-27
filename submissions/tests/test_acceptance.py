@@ -5896,7 +5896,6 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             formatting_page,
             "/static/submissions/worklist_navigation.js",
         )
-        self.assertContains(formatting_page, "cfm:worklist-expanded")
         worklist_asset_path = finders.find(
             "submissions/worklist_navigation.js"
         )
@@ -7871,6 +7870,71 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("aspect-ratio: 3 / 2", stylesheet)
         self.assertIn("width: min(72%, 30rem)", stylesheet)
         self.assertIn(".cfm-image-magnifier-hint.is-visible", stylesheet)
+
+    def test_deferred_previews_use_shared_loading_component(self):
+        self.make_master_paper("P001", "Deferred Preview", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="101",
+            paper_id_filled="P001",
+            final_submission_title="Deferred Preview",
+            extracted_title="Deferred Preview",
+        )
+        preview = {
+            "exists": True,
+            "url": "/reviews/formatting/101/preview/",
+            "path": "",
+            "status": "deferred",
+            "message": "Preview loads when this review is opened.",
+        }
+        with patch(
+            "submissions.controllers.reviews.formatting_preview_info",
+            return_value=preview,
+        ):
+            formatting_page = self.open_formatting_review(submission)
+        process_page = self.client.get(reverse("submissions:process"))
+
+        self.assertContains(formatting_page, "data-cfm-image-loader")
+        self.assertContains(
+            formatting_page,
+            'data-cfm-image-src="/reviews/formatting/101/preview/"',
+        )
+        self.assertContains(
+            formatting_page,
+            'data-cfm-image-loading-label="Loading first-page preview..."',
+        )
+        self.assertNotContains(formatting_page, "data-format-preview-src")
+        self.assertContains(process_page, "cfm-image-loader-modal")
+        self.assertContains(
+            process_page,
+            'data-cfm-image-loading-label="Loading PDF page preview..."',
+        )
+        self.assertNotContains(
+            process_page,
+            'class="cfm-thumbnail-modal-image" src=""',
+        )
+        for response in (formatting_page, process_page):
+            self.assertContains(response, "/static/submissions/image_loader.js")
+            self.assertContains(response, "/static/submissions/image_loader.css")
+
+        script_path = finders.find("submissions/image_loader.js")
+        self.assertIsNotNone(script_path)
+        script = Path(script_path).read_text(encoding="utf-8")
+        self.assertIn("spinner-border", script)
+        self.assertIn('image.addEventListener("load"', script)
+        self.assertIn('image.addEventListener("error"', script)
+        self.assertIn("shown.bs.collapse", script)
+        self.assertIn("cfm:worklist-expanded", script)
+        self.assertIn("htmx:load", script)
+        self.assertIn("window.CFMImageLoader", script)
+        self.assertIn("reset", script)
+        self.assertNotIn('removeAttribute("src")', script)
+
+        stylesheet_path = finders.find("submissions/image_loader.css")
+        self.assertIsNotNone(stylesheet_path)
+        stylesheet = Path(stylesheet_path).read_text(encoding="utf-8")
+        self.assertIn(".cfm-image-loader.is-loading", stylesheet)
+        self.assertIn(".cfm-image-loader.is-error", stylesheet)
+        self.assertIn(".cfm-image-loader.is-ready", stylesheet)
 
     def test_formatting_review_ok_no_edit_filter(self):
         self.make_master_paper("P001", "Review OK Original", "Ada")
