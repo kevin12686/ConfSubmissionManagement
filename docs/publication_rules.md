@@ -62,7 +62,13 @@ and later Final imports or Editor Uploads inherit the current Master decision.
 Inconsistent mirror values cannot override the Paper Master decision and are a
 structural integrity blocker for final, draft, and CrossCheck exports. A Final
 outside Paper Master retains its legacy per-record classification workflow
-until its ID is corrected or it is explicitly excluded.
+until its ID is corrected or it is explicitly excluded. This unresolved orphan
+workflow is shown before Missing Final and tracked decisions in Not Publishing
+List. Correcting the ID must select a real Paper Master record and call the
+same signed-evidence `verify_submission()` command as Paper ID Review; it must
+not assign Official Paper ID through the general edit form. Excluding the
+orphan requires an explicit valid reason. No reason is inferred from an invalid
+ID.
 
 Undo returns a Paper Master record to `Publishing`. If it still has no Final,
 `Missing Final Submission` immediately becomes a blocker again. Marking or

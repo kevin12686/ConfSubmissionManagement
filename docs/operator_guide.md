@@ -168,6 +168,19 @@ remains an ID problem for manual correction/verification, or an editor may use
 the explicit Not Publishing workflow when that is the real publication
 decision.
 
+Not Publishing List places `Final Submissions Outside Paper Master` before
+Missing Final and tracked decisions. For each row:
+
+- choose `Resolve Paper ID`, search Paper Master by ID, title, or author, review
+  the selected Master metadata, then verify the selection; or
+- choose `Mark Not Publishing`, explicitly select a reason, and confirm the
+  decision.
+
+The compact row never edits Official Paper ID directly. `Open full Paper ID
+Review` remains available when title/author diffs need closer inspection. A
+successful resolution removes the orphan row because it now belongs to a valid
+Paper Master ID.
+
 Final Submission file upload supports large PDF/source batches up to 5000 files per request. This is a Django request-parsing limit, not a CSV row limit. If a conference upload set exceeds that number of files, split the file upload into multiple batches.
 
 Paper Master notes are internal editorial notes. They appear in review workbooks and Note Summary, but they do not go into the final publication package manifest.
@@ -283,6 +296,8 @@ Formatting Review queue mode keeps one paper expanded at a time. Its compact row
 Use `/reviews/paper-ids/` to compare author-entered IDs and titles against the Paper Master List.
 
 - IDs not in Paper Master cannot be verified.
+- Not Publishing List uses the same Paper Master picker, signed review
+  evidence, and verification command for its orphan Final resolution panel.
 - An orphan Paper ID group marked Not Publishing cannot be remapped or verified
   until that decision is explicitly undone.
 - If a paper is intentionally not publishing, mark it in the Not Publishing workflow instead of verifying an invalid ID.

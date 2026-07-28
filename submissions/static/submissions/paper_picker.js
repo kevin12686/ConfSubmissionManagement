@@ -111,6 +111,8 @@
             preload: false,
             openOnFocus: false,
             closeAfterSelect: true,
+            dropdownClass: "ts-dropdown cfm-paper-picker-dropdown",
+            dropdownParent: element.dataset.pickerDropdownParent || null,
             loadThrottle: 200,
             placeholder: element.dataset.pickerPlaceholder || "Type to search",
             shouldLoad: function (query) {

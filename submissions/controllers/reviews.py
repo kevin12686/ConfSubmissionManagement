@@ -133,6 +133,7 @@ from submissions.services.verification import (
     evaluate_submission,
     hydrate_verification_rows,
     mark_not_publishing,
+    paper_id_review_snapshot,
     set_duplicate_author_review,
     unverify_submission,
     undo_not_publishing,
@@ -586,7 +587,7 @@ def verify_paper_ids(request):
             elif action == "mark_not_publishing":
                 mark_not_publishing(
                     submission,
-                    request.POST.get("publication_exclusion_reason", "unpaid"),
+                    request.POST.get("publication_exclusion_reason", ""),
                     request.POST.get("publication_exclusion_notes", ""),
                     expected_evidence_token=request.POST.get("evidence_token", ""),
                 )
@@ -1448,6 +1449,28 @@ def not_publishing_list(request):
     if request.method == "POST":
         action = request.POST.get("action")
         try:
+            if action == "resolve_paper_id":
+                submission = get_object_or_404(
+                    FinalSubmission,
+                    pk=request.POST.get("submission_id"),
+                )
+                verify_submission(
+                    submission,
+                    request.POST.get("corrected_paper_id", "").strip(),
+                    expected_evidence_token=request.POST.get(
+                        "evidence_token",
+                        "",
+                    ),
+                )
+                messages.success(
+                    request,
+                    f"Final submission {submission.final_submission_id} "
+                    "Paper ID resolved and verified.",
+                )
+                return redirect(
+                    _worklist_return_url(request, "not_publishing_list")
+                )
+
             paper = None
             orphan_submission = None
             if request.POST.get("paper_id"):
@@ -1505,7 +1528,7 @@ def not_publishing_list(request):
                         submission,
                         request.POST.get(
                             "publication_exclusion_reason",
-                            "unpaid",
+                            "",
                         ),
                         request.POST.get("publication_exclusion_notes", ""),
                         expected_evidence_token=request.POST.get(
@@ -1532,6 +1555,14 @@ def not_publishing_list(request):
                         "moved back to publication review.",
                     )
         except ValueError as exc:
+            if action == "resolve_paper_id" and "submission" in locals():
+                audit_failure(
+                    "paper_id_verify",
+                    exc,
+                    "Paper ID resolution from Not Publishing List failed.",
+                    request=request,
+                    submission=submission,
+                )
             messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "not_publishing_list"))
 
@@ -1628,6 +1659,16 @@ def not_publishing_list(request):
                 submission,
                 _group_for_submission(submission, all_submission_groups),
             ),
+        )
+    paper_candidates = list(InitialPaper.objects.all())
+    for submission in needs_decision:
+        paper_id_evidence, _review_result = paper_id_review_snapshot(
+            submission,
+            paper_candidates,
+        )
+        submission.paper_id_review_evidence_token = make_evidence_token(
+            "paper-id-review",
+            paper_id_evidence,
         )
     for submission in excluded:
         replacement = active_by_paper.get(submission.paper_id_filled)

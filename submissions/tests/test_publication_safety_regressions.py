@@ -55,6 +55,148 @@ from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
 
 
 class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
+    def test_orphan_final_decision_worklist_prioritizes_safe_inline_resolution(self):
+        self.make_master_paper(
+            "P001",
+            "Official Publication Paper",
+            "Ada Lovelace",
+        )
+        self.make_master_paper(
+            "P002",
+            "Waiting For Final",
+            "Alan Turing",
+        )
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-UI",
+            start2_paper_id_raw="AUTHOR-X",
+            paper_id_filled="AUTHOR-X",
+            final_submission_title="Official Publication Paper",
+            paper_id_verified=False,
+            verification_status="invalid_paper_id",
+        )
+
+        page = self.client.get(reverse("submissions:not_publishing_list"))
+
+        self.assertEqual(page.status_code, 200)
+        content = page.content.decode()
+        self.assertLess(
+            content.index("Final Submissions Outside Paper Master"),
+            content.index("Missing Final - Publication Decision"),
+        )
+        self.assertContains(page, "Current Official Paper ID")
+        self.assertContains(page, "Paper ID decision required")
+        self.assertContains(page, "Resolve Paper ID")
+        self.assertContains(page, "Verify selected Paper ID")
+        self.assertContains(page, "Open full Paper ID Review")
+        self.assertContains(page, 'data-cfm-paper-picker="true"')
+        self.assertContains(page, 'data-picker-dropdown-parent="body"')
+        self.assertNotContains(page, "Edit Paper ID")
+        self.assertContains(page, '<option value="">Select reason</option>')
+
+        row = next(
+            item
+            for item in page.context["needs_decision"]
+            if item.pk == orphan.pk
+        )
+        response = self.client.post(
+            reverse("submissions:not_publishing_list"),
+            {
+                "submission_id": orphan.pk,
+                "action": "resolve_paper_id",
+                "corrected_paper_id": "P001",
+                "evidence_token": row.paper_id_review_evidence_token,
+                "return_to": reverse("submissions:not_publishing_list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.paper_id_filled, "P001")
+        self.assertTrue(orphan.paper_id_verified)
+        refreshed = self.client.get(reverse("submissions:not_publishing_list"))
+        self.assertFalse(
+            any(
+                item.pk == orphan.pk
+                for item in refreshed.context["needs_decision"]
+            )
+        )
+
+    def test_orphan_inline_resolution_rejects_stale_master_evidence(self):
+        paper = self.make_master_paper(
+            "P001",
+            "Original Master Title",
+            "Ada Lovelace",
+        )
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-STALE",
+            start2_paper_id_raw="UNKNOWN",
+            paper_id_filled="UNKNOWN",
+            paper_id_verified=False,
+            verification_status="invalid_paper_id",
+        )
+        page = self.client.get(reverse("submissions:not_publishing_list"))
+        row = next(
+            item
+            for item in page.context["needs_decision"]
+            if item.pk == orphan.pk
+        )
+        paper.title = "Changed After Preview"
+        paper.save(update_fields=["title", "updated_at"])
+
+        response = self.client.post(
+            reverse("submissions:not_publishing_list"),
+            {
+                "submission_id": orphan.pk,
+                "action": "resolve_paper_id",
+                "corrected_paper_id": "P001",
+                "evidence_token": row.paper_id_review_evidence_token,
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "changed after this page was loaded")
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.paper_id_filled, "UNKNOWN")
+        self.assertFalse(orphan.paper_id_verified)
+
+    def test_orphan_not_publishing_requires_explicit_valid_reason(self):
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-REASON",
+            start2_paper_id_raw="UNKNOWN",
+            paper_id_filled="UNKNOWN",
+            paper_id_verified=False,
+            verification_status="invalid_paper_id",
+        )
+        page = self.client.get(reverse("submissions:not_publishing_list"))
+        row = next(
+            item
+            for item in page.context["needs_decision"]
+            if item.pk == orphan.pk
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "Select a valid Not Publishing reason",
+        ):
+            mark_not_publishing(orphan, "")
+
+        response = self.client.post(
+            reverse("submissions:not_publishing_list"),
+            {
+                "submission_id": orphan.pk,
+                "action": "mark_not_publishing",
+                "publication_exclusion_reason": "",
+                "publication_exclusion_notes": "  Keep this note only if valid.  ",
+                "evidence_token": row.publication_decision_evidence_token,
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "Select a valid Not Publishing reason.")
+        orphan.refresh_from_db()
+        self.assertFalse(orphan.excluded_from_publication)
+        self.assertEqual(orphan.publication_exclusion_reason, "")
+        self.assertEqual(orphan.publication_exclusion_notes, "")
+
     def test_new_master_for_excluded_orphan_requires_explicit_decision(self):
         orphan = self.make_final_submission(
             final_submission_id="ORPHAN-10",

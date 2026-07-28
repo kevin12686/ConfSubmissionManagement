@@ -169,7 +169,8 @@ rendering the full Paper Master List into every form.
 - Do not preload results. An empty query shows no papers.
 - Master searches rank exact Paper ID first, then ID prefix/contains, Master
   Title, and Master Authors; responses are capped at 20.
-- Editor Upload and Paper ID Review options use the same three-line layout:
+- Editor Upload, Paper ID Review, and orphan resolution in Not Publishing use
+  the same three-line layout:
   Master Paper ID, Master Title, and Master Authors. The selected input remains
   compact as Paper ID; a separate summary may show the full Master metadata.
   Distinguish Title and Authors through typography, spacing, and the shared
@@ -178,6 +179,12 @@ rendering the full Paper Master List into every form.
   bounded mobile height. Do not add a second picker where an existing worklist
   search already finds the same records.
 - Do not auto-select the first result and do not allow arbitrary values.
+
+Tables with uncommon, high-impact row actions keep only compact command buttons
+in the main row. Expand a full-width action row for searchable selectors,
+required reasons, warnings, and confirmation controls. Do not force those
+controls into a narrow Actions cell. Hide the entire action section when no
+record requires it.
 - Server-side form/service validation remains authoritative.
 - Initialize on `DOMContentLoaded` and `htmx:load`; destroy instances before
   HTMX removes their elements.

@@ -7,7 +7,11 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 
-from submissions.models import FinalSubmission, InitialPaper
+from submissions.models import (
+    FinalSubmission,
+    InitialPaper,
+    PUBLICATION_EXCLUSION_REASON_CHOICES,
+)
 from submissions.services.audit import audit_success
 from submissions.services.checks import (
     duplicate_authors_in_paper,
@@ -16,6 +20,7 @@ from submissions.services.checks import (
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.recompute import recompute_active_and_duplicate_state
+from submissions.services.text_utils import clean_note_text
 from submissions.services.publication_decisions import (
     apply_master_decision_mirror,
     mark_paper_not_publishing,
@@ -449,7 +454,7 @@ def _verification_display_details(submission, initial, *, include_display_detail
     }
 
 
-def _paper_id_review_snapshot(submission, paper_candidates):
+def paper_id_review_snapshot(submission, paper_candidates):
     result = evaluate_submission(
         submission,
         save=False,
@@ -480,7 +485,7 @@ def verify_submission(
     caller_submission = submission
     if expected_evidence_token is None:
         displayed_candidates = list(InitialPaper.objects.all())
-        displayed_evidence, _displayed_result = _paper_id_review_snapshot(
+        displayed_evidence, _displayed_result = paper_id_review_snapshot(
             submission,
             displayed_candidates,
         )
@@ -493,7 +498,7 @@ def verify_submission(
         InitialPaper.objects.select_for_update().order_by("pk")
     )
     submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
-    current_evidence, current_result = _paper_id_review_snapshot(
+    current_evidence, current_result = paper_id_review_snapshot(
         submission,
         paper_candidates,
     )
@@ -624,11 +629,20 @@ def verify_submission(
 @transaction.atomic
 def mark_not_publishing(
     submission,
-    reason="unpaid",
+    reason="",
     notes="",
     *,
     expected_evidence_token=None,
 ):
+    reason = (reason or "").strip()
+    valid_reasons = {
+        value
+        for value, _label in PUBLICATION_EXCLUSION_REASON_CHOICES
+        if value
+    }
+    if reason not in valid_reasons:
+        raise ValueError("Select a valid Not Publishing reason.")
+    notes = clean_note_text(notes)
     caller_submission = submission
     master_paper = master_paper_for_submission(submission)
     if master_paper is not None:
@@ -668,8 +682,8 @@ def mark_not_publishing(
     excluded_at = timezone.now()
     for item in submissions:
         item.excluded_from_publication = True
-        item.publication_exclusion_reason = reason or "unpaid"
-        item.publication_exclusion_notes = notes or ""
+        item.publication_exclusion_reason = reason
+        item.publication_exclusion_notes = notes
         item.publication_excluded_at = excluded_at
         item.paper_id_verified = False
         item.auto_verify_blocked = True

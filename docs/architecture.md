@@ -92,6 +92,12 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
 - Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. `apply_final_submission_manual_edit()` requires an existing record and applies dependency-based reset rules; it must never receive `None` or synthesize an original record.
 - Editorial worklists preserve navigation context when they link into Final Submission Edit. Organized List, Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions pass a return URL that is restricted to the local host. The legacy Publication Candidates URL redirects to Organized List compact mode.
+- Not Publishing List treats unresolved Final Submissions outside Paper Master
+  as an attention-first decision queue. Its inline Paper Master search is only
+  a second entry point to `verify_submission()` and the signed Paper ID review
+  evidence contract; it is not a separate ID-editing implementation. The
+  alternate action calls the existing orphan publication-decision service and
+  requires an explicit reason.
 - Cross-page record navigation is separate from search. System-generated links
   identify a Final Submission by database primary key, a Paper Master record by
   exact Paper ID, or an exception by its service-generated key. Controllers

@@ -3,6 +3,23 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.1 - 2026-07-27
+
+### Orphan Final Decision Workflow
+
+- Moved Final Submissions outside Paper Master ahead of Missing Final and
+  tracked Not Publishing records so unresolved publication-scope decisions
+  receive attention first.
+- Replaced the ambiguous `Edit Paper ID` route with an inline Paper Master
+  search that uses the same signed-evidence verification service as Paper ID
+  Review.
+- Added full-width, expandable Resolve Paper ID and Mark Not Publishing
+  workspaces without crowding the decision table.
+- Removed the implicit `Unpaid` default. A valid Not Publishing reason is now
+  required and enforced by the service before orphan Final state can change.
+- Reused one Paper Master picker component across Verify Paper IDs and Not
+  Publishing workflows.
+
 ## 1.12.0 - 2026-07-27
 
 ### Final Submission Re-import Safety

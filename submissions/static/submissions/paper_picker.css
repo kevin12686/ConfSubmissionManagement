@@ -16,7 +16,8 @@
     box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.18);
 }
 
-.cfm-paper-picker .ts-dropdown {
+.cfm-paper-picker .ts-dropdown,
+.cfm-paper-picker-dropdown {
     background: var(--cfm-surface);
     border: 1px solid var(--cfm-border-strong);
     border-radius: 0.3rem;
@@ -26,20 +27,24 @@
     overflow: hidden;
 }
 
-.cfm-paper-picker .ts-dropdown-content {
+.cfm-paper-picker .ts-dropdown-content,
+.cfm-paper-picker-dropdown .ts-dropdown-content {
     max-height: min(55vh, 36rem);
 }
 
-.cfm-paper-picker .ts-dropdown .option {
+.cfm-paper-picker .ts-dropdown .option,
+.cfm-paper-picker-dropdown .option {
     border-bottom: 1px solid var(--cfm-border);
     padding: 0.6rem 0.75rem;
 }
 
-.cfm-paper-picker .ts-dropdown .option:last-child {
+.cfm-paper-picker .ts-dropdown .option:last-child,
+.cfm-paper-picker-dropdown .option:last-child {
     border-bottom: 0;
 }
 
-.cfm-paper-picker .ts-dropdown .active {
+.cfm-paper-picker .ts-dropdown .active,
+.cfm-paper-picker-dropdown .active {
     background: var(--cfm-primary-soft);
     color: var(--cfm-text);
 }
@@ -99,7 +104,8 @@
     font-weight: 650;
 }
 
-.cfm-paper-picker .no-results {
+.cfm-paper-picker .no-results,
+.cfm-paper-picker-dropdown .no-results {
     color: var(--cfm-muted);
     font-size: var(--cfm-font-small);
     padding: 0.65rem 0.7rem;

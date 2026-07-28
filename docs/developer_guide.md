@@ -277,6 +277,14 @@ Final re-import is keyed by Final ID. Keep Official Paper ID resolution in
 Paper Master and Final Submission imports are separate services. Do not
 reintroduce a combined Mapping Table workbook or hidden mapping metadata path.
 
+An orphan Final Paper ID may be resolved from Not Publishing List, but that
+controller must call `verify_submission()` with a current `paper-id-review`
+evidence token. Use `paper_id_review_snapshot()` to construct that token and
+the shared Paper Master picker partial for selection. Never assign
+`paper_id_filled` directly from this UI. Orphan Not Publishing actions must
+pass an explicit reason; `mark_not_publishing()` validates the reason in the
+service layer and has no semantic default.
+
 ## Dashboard Readiness Rules
 
 Dashboard must consume `publication_readiness_rows()` through the application selector. Do not build a second list of blockers from `dashboard_counts()`; otherwise Dashboard can appear clear while final export is blocked.

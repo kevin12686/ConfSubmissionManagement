@@ -355,6 +355,13 @@ Publishing state before it can be verified. Correct the ID, undo the Master
 Not Publishing decision, or classify an orphan Final as Not Publishing when it
 should not be published.
 
+For a Final outside Paper Master, open Not Publishing List. Use `Resolve Paper
+ID` to search the real Paper Master records and verify the selected ID, or use
+`Open full Paper ID Review` when you need the detailed title/author comparison.
+Do not use general Final Submission Edit to force an Official Paper ID. If the
+paper truly should not publish, use `Mark Not Publishing` and select an
+explicit reason; leaving the reason blank applies no change.
+
 ## Plagiarism / CrossCheck
 
 ### CrossCheck result import has no report

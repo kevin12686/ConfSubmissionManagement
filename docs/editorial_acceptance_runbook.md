@@ -305,6 +305,14 @@ Create Final Submission records and files:
   record with the same ID. Confirm Preview names the affected Final, Apply
   creates Decision Required, and Final, Draft, CrossCheck, and Verify remain
   blocked until an explicit publication decision is made.
+- Create an unclassified active Final outside Paper Master. Confirm its decision
+  section appears before Missing Final, has no preselected exclusion reason,
+  and does not offer a generic Edit Paper ID shortcut. Expand Resolve Paper ID,
+  search by Master ID/title/author, confirm the selected title/authors summary,
+  and verify it. Repeat with stale page evidence and confirm no ID changes.
+  Submit Mark Not Publishing without a reason and confirm no state changes;
+  then select a valid reason and confirm the orphan is retained only as tracked
+  Not Publishing information.
 - In a disposable database, create a Publishing Master with an inconsistent
   excluded Final mirror. Confirm Error Report shows Publication Decision
   Integrity Conflict and neither Draft nor Final package can bypass it.

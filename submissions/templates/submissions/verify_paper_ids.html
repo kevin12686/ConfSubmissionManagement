@@ -159,19 +159,7 @@
                                 <input type="hidden" name="submission_id" value="{{ row.submission.pk }}">
                                 <input type="hidden" name="evidence_token" value="{{ row.paper_id_evidence_token }}">
                                 <div class="flex-grow-1">
-                                    <label class="visually-hidden" for="paper-picker-{{ row.submission.pk }}">Corrected Paper ID</label>
-                                    <input
-                                        id="paper-picker-{{ row.submission.pk }}"
-                                        class="form-control"
-                                        name="corrected_paper_id"
-                                        value="{{ row.submission.paper_id_filled }}"
-                                        autocomplete="off"
-                                        data-cfm-paper-picker="true"
-                                        data-picker-url="{% url 'submissions:paper_picker_search' %}"
-                                        data-picker-context="master"
-                                        data-picker-value-field="paper_id"
-                                        data-picker-placeholder="Type a Paper ID, title, or author"
-                                    >
+                                    {% include "submissions/partials/paper_master_picker.html" with submission=row.submission picker_prefix="paper-picker" picker_label="Corrected Paper ID" picker_label_class="visually-hidden" picker_value=row.submission.paper_id_filled only %}
                                 </div>
                                 <button class="btn btn-primary" name="action" value="verify" {% if row.submission.excluded_from_publication %}disabled{% endif %}>Verify</button>
                                 {% if row.suggested_paper and not row.submission.excluded_from_publication %}
@@ -198,6 +186,7 @@
                                     <input type="hidden" name="evidence_token" value="{{ row.publication_decision_evidence_token }}">
                                     <div class="col-md-3">
                                         <select class="form-select form-select-sm" name="publication_exclusion_reason">
+                                            <option value="">Select reason</option>
                                             <option value="unpaid">Unpaid</option>
                                             <option value="withdrawn">Withdrawn</option>
                                             <option value="not_in_master">Not in Master List</option>

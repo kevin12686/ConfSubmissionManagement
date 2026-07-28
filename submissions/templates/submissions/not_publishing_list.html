@@ -172,6 +172,7 @@
                 <div class="col-md-4">
                     <label class="form-label">Reason</label>
                     <select class="form-select" name="publication_exclusion_reason">
+                        <option value="">Select reason</option>
                         <option value="unpaid">Unpaid</option>
                         <option value="withdrawn">Withdrawn</option>
                         <option value="not_in_master">Not in Master List</option>
@@ -265,6 +266,147 @@
 </section>
 {% endif %}
 
+{% if needs_decision %}
+<section class="cfm-section">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+            <h2 class="h5 mb-1">Final Submissions Outside Paper Master</h2>
+            <p class="text-muted mb-0">
+                These Final Submissions cannot enter publication review until
+                you resolve their Paper ID or explicitly classify them as Not
+                Publishing.
+            </p>
+        </div>
+        <span class="badge text-bg-danger">{{ needs_decision_count }} decision{{ needs_decision_count|pluralize }}</span>
+    </div>
+    <div class="alert alert-warning border cfm-attention">
+        <strong>
+            {% if needs_decision_count == 1 %}
+                1 final submission needs a decision.
+            {% else %}
+                {{ needs_decision_count }} final submissions need a decision.
+            {% endif %}
+        </strong>
+        Select a valid Paper Master record if this should publish, or record a
+        Not Publishing decision if it was unpaid, withdrawn, or otherwise
+        excluded.
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle table-sm cfm-table">
+            <thead>
+                <tr>
+                    <th>Final ID</th>
+                    <th>Author-entered ID</th>
+                    <th>Current Official Paper ID</th>
+                    <th>Final Title</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for submission in needs_decision %}
+                <tr>
+                    <td><strong>{{ submission.final_submission_id }}</strong></td>
+                    <td>{{ submission.start2_paper_id_raw|default:"--" }}</td>
+                    <td>{{ submission.paper_id_filled|default:"--" }}</td>
+                    <td class="cfm-title-cell">{{ submission.final_submission_title|default:"--" }}</td>
+                    <td><span class="badge text-bg-danger">Paper ID decision required</span></td>
+                    <td>
+                        <div class="cfm-table-actions">
+                            <button
+                                class="btn btn-sm btn-primary"
+                                type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#resolve-paper-id-{{ submission.pk }}"
+                                aria-expanded="false"
+                                aria-controls="resolve-paper-id-{{ submission.pk }}"
+                            >Resolve Paper ID</button>
+                            <button
+                                class="btn btn-sm btn-outline-danger"
+                                type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#exclude-final-{{ submission.pk }}"
+                                aria-expanded="false"
+                                aria-controls="exclude-final-{{ submission.pk }}"
+                            >Mark Not Publishing</button>
+                        </div>
+                    </td>
+                </tr>
+                <tr id="resolve-paper-id-{{ submission.pk }}" class="collapse">
+                    <td colspan="6" class="p-0">
+                        <div class="cfm-expanded-action">
+                            <div class="row g-3">
+                                <div class="col-lg-4">
+                                    <div class="small text-muted">Final Submission</div>
+                                    <div class="fw-semibold">Final {{ submission.final_submission_id }}</div>
+                                    <div class="small text-muted mt-2">Author-entered ID</div>
+                                    <div>{{ submission.start2_paper_id_raw|default:"--" }}</div>
+                                </div>
+                                <div class="col-lg-8">
+                                    <div class="small text-muted">Final Title</div>
+                                    <div class="cfm-title-cell">{{ submission.final_submission_title|default:"--" }}</div>
+                                </div>
+                            </div>
+                            <form method="post" class="mt-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ submission.paper_id_review_evidence_token }}">
+                                <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
+                                {% include "submissions/partials/paper_master_picker.html" with submission=submission picker_prefix="not-publishing-picker" picker_label="Select Paper Master record" picker_label_class="form-label" picker_value="" picker_dropdown_parent="body" only %}
+                                <div class="cfm-action-bar justify-content-end mt-3">
+                                    <a class="btn btn-outline-secondary" href="{% url 'submissions:verify_paper_ids' %}?submission={{ submission.pk }}">Open full Paper ID Review</a>
+                                    <button class="btn btn-primary" name="action" value="resolve_paper_id">Verify selected Paper ID</button>
+                                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#resolve-paper-id-{{ submission.pk }}">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <tr id="exclude-final-{{ submission.pk }}" class="collapse">
+                    <td colspan="6" class="p-0">
+                        <div class="cfm-expanded-action">
+                            <div class="alert alert-warning border mb-3">
+                                This keeps the Final Submission and its files for
+                                traceability, but excludes this Paper ID group
+                                from publication. It does not discard the
+                                version.
+                            </div>
+                            <form method="post" class="row g-3 align-items-start">
+                                {% csrf_token %}
+                                <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                                <input type="hidden" name="evidence_token" value="{{ submission.publication_decision_evidence_token }}">
+                                <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
+                                <div class="col-lg-4">
+                                    <label class="form-label">Reason</label>
+                                    <select class="form-select" name="publication_exclusion_reason" required>
+                                        <option value="">Select reason</option>
+                                        <option value="unpaid">Unpaid</option>
+                                        <option value="withdrawn">Withdrawn</option>
+                                        <option value="not_in_master">Not in Master List</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="col-lg-8">
+                                    <label class="form-label">Editorial note</label>
+                                    <textarea class="form-control" name="publication_exclusion_notes" rows="3" placeholder="Optional context for this decision"></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <div class="cfm-action-bar justify-content-end">
+                                        <button class="btn btn-outline-danger" name="action" value="mark_not_publishing">Confirm Not Publishing</button>
+                                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#exclude-final-{{ submission.pk }}">Cancel</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
 <section class="cfm-section">
     <h2 class="h5">Missing Final - Publication Decision</h2>
     <p class="text-muted">These Paper Master records still belong to publication scope but have no active Final Submission. Keep them here while waiting, or record an explicit Not Publishing decision.</p>
@@ -306,68 +448,6 @@
                 </tr>
             {% empty %}
                 <tr><td colspan="7" class="text-muted">No Paper Master records are marked Not Publishing.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
-
-{% if needs_decision %}
-    <div class="alert alert-warning border cfm-attention">
-        <strong>{{ needs_decision_count }} final submission{{ needs_decision_count|pluralize }} need a decision.</strong>
-        Correct the Paper ID if this should publish, or mark it as Not Publishing if it was unpaid, withdrawn, or otherwise excluded.
-    </div>
-{% endif %}
-
-<section class="cfm-section">
-    <h2 class="h5">Final Submissions Outside Paper Master</h2>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle table-sm cfm-table">
-            <thead>
-                <tr>
-                    <th>Final ID</th>
-                    <th>Author-entered ID</th>
-                    <th>Resolved Paper ID</th>
-                    <th>Final Title</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for submission in needs_decision %}
-                <tr class="table-warning">
-                    <td>{{ submission.final_submission_id }}</td>
-                    <td>{{ submission.start2_paper_id_raw|default:"--" }}</td>
-                    <td>{{ submission.paper_id_filled|default:"--" }}</td>
-                    <td>{{ submission.final_submission_title|default:"--" }}</td>
-                    <td><span class="badge text-bg-danger">Not in Master - needs decision</span></td>
-                    <td class="cfm-wide-cell">
-                        <form method="post" class="row g-2 align-items-end">
-                            {% csrf_token %}
-                            <input type="hidden" name="submission_id" value="{{ submission.pk }}">
-                            <input type="hidden" name="evidence_token" value="{{ submission.publication_decision_evidence_token }}">
-                            <div class="col-md-4">
-                                <select class="form-select form-select-sm" name="publication_exclusion_reason">
-                                    <option value="unpaid">Unpaid</option>
-                                    <option value="withdrawn">Withdrawn</option>
-                                    <option value="not_in_master">Not in Master List</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            <div class="col-md-5">
-                                <input class="form-control form-control-sm" name="publication_exclusion_notes" placeholder="Optional note">
-                            </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-sm btn-outline-danger w-100" name="action" value="mark_not_publishing">Mark</button>
-                            </div>
-                        </form>
-                        <div class="mt-1">
-                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit Paper ID</a>
-                        </div>
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="6" class="text-muted">No unclassified final submissions outside the Paper Master List.</td></tr>
             {% endfor %}
             </tbody>
         </table>
