@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pandas as pd
 from openpyxl import load_workbook
+from django import forms
 from django.conf import settings as django_settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
@@ -27,7 +28,13 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from submissions.forms import CrossCheckExportForm, FinalSubmissionForm, default_crosscheck_token
+from submissions.forms import (
+    CrossCheckExportForm,
+    EditorUploadForm,
+    FinalSubmissionForm,
+    InitialPaperForm,
+    default_crosscheck_token,
+)
 from submissions.models import (
     AppSetting,
     AuthorLimitWaiver,
@@ -9339,6 +9346,20 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         }:
             self.assertNotIn(field_name, form.fields)
 
+    def test_editable_metadata_titles_use_the_same_multiline_control_as_authors(self):
+        form_pairs = (
+            (InitialPaperForm(), "title", "authors"),
+            (FinalSubmissionForm(), "final_submission_title", "final_submission_authors"),
+            (EditorUploadForm(), "final_submission_title", "final_submission_authors"),
+        )
+
+        for form, title_field, authors_field in form_pairs:
+            with self.subTest(form=form.__class__.__name__):
+                self.assertIsInstance(form.fields[title_field].widget, forms.Textarea)
+                self.assertIsInstance(form.fields[authors_field].widget, forms.Textarea)
+                self.assertEqual(form.fields[title_field].widget.attrs["rows"], 3)
+                self.assertEqual(form.fields[authors_field].widget.attrs["rows"], 3)
+
     def test_publication_candidates_exclude_invalid_and_not_publishing_records(self):
         self.make_master_paper("P001", "Included Candidate", "Ada")
         self.make_master_paper("P002", "Excluded Candidate", "Ada")
@@ -11721,7 +11742,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(organized, "P003")
         self.assertContains(organized, "No final")
         self.assertContains(organized, "NOTMASTER")
-        self.assertContains(organized, "Not in Paper Master")
+        self.assertContains(organized, "Needs decision")
+        self.assertContains(
+            organized,
+            "Paper ID is not in Paper Master. Correct the ID through Paper ID Review",
+        )
         self.assertContains(organized, "Corrected")
         self.assertContains(organized, "P 4%")
         self.assertContains(organized, "S 1%")

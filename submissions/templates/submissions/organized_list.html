@@ -124,8 +124,7 @@
             <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid or row.row_type == 'unmatched' or not submission %}cfm-row-blocker{% endif %}">
                 <td>
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
-                    <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
-                    {% if row.row_type == 'unmatched' %}<div class="small text-danger">Not in Paper Master</div>{% endif %}
+                    <div><span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span></div>
                     {% if row.multiple_active_final_ids %}
                         <div class="small text-danger">Finals: {{ row.multiple_active_final_ids|join:", " }}</div>
                         <div class="small"><a href="{% url 'submissions:active_versions' %}">Recalculate active versions</a></div>
@@ -486,7 +485,7 @@
                             <div class="fw-semibold">Publication record</div>
                             {% if submission %}
                                 <div class="d-flex flex-wrap gap-1">
-                                    <span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span>
+                                    <span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span>
                                     <span class="badge text-bg-secondary">{{ submission.get_submission_origin_display }}</span>
                                 </div>
                             {% endif %}
@@ -510,6 +509,7 @@
                                 <div class="col-sm-6 col-lg">
                                     <div class="text-muted">Paper ID</div>
                                     <div>{% if submission %}{{ submission.paper_id_filled|default:"--" }}{% else %}--{% endif %}</div>
+                                    {% if row.verify_help %}<div class="small text-danger mt-1">{{ row.verify_help }}</div>{% endif %}
                                 </div>
                                 <div class="col-sm-6 col-lg">
                                     <div class="text-muted">Version</div>
@@ -680,7 +680,7 @@
         {% for row in rows %}
             {% with item=row.submission %}
             <tr>
-                <td><strong>{{ item.paper_id_filled }}</strong><div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div></td>
+                <td><strong>{{ item.paper_id_filled }}</strong><div><span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span></div></td>
                 <td>{{ item.final_submission_id }}</td>
                 <td class="cfm-title-cell">{{ item.extracted_title|default:item.final_submission_title|default:"Missing" }}</td>
                 <td>{{ item.extracted_authors|default:"Missing" }}</td>

@@ -191,6 +191,13 @@ record requires it.
 - Keep picker styling scoped under `.cfm-paper-picker` so ordinary selects and
   other worklists retain the shared site styling.
 
+## Metadata Forms
+
+Paper titles and author lists are multiline metadata. Editable Master, Final,
+Editor Upload, and manual-override title fields use the same three-row textarea
+pattern as their corresponding authors field. Search fields and Paper ID
+pickers remain single-line controls.
+
 ## Expensive Evidence And Request Context
 
 Do not decode, hash, or render evidence for rows that will not be displayed.
@@ -317,6 +324,10 @@ GET.
   unrelated review state.
 - Organized List separates publication blockers from tracked information and
   owns both Checklist and Compact candidates views.
+- Organized List keeps workflow badges short. Explanations that repeat a
+  status, such as why an Official Paper ID needs a decision, belong in the
+  badge tooltip and the row's Details metadata rather than a second line in
+  the main checklist.
 - Error Report uses server-side area, severity, and multi-category filtering
   before pagination. Category checkbox pills are arranged in workflow-area
   matrix rows, apply immediately through the scoped HTMX worklist, and use

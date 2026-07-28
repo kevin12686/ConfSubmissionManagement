@@ -55,6 +55,38 @@ from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
 
 
 class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
+    def test_organized_list_uses_compact_orphan_final_decision_status(self):
+        self.make_final_submission(
+            final_submission_id="ORPHAN-ORGANIZED",
+            start2_paper_id_raw="AVS8",
+            paper_id_filled="AVS8",
+            final_submission_title="Orphan Final",
+            paper_id_verified=False,
+            verification_status="invalid_paper_id",
+        )
+
+        page = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "all"},
+        )
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, ">Needs decision</span>", html=False)
+        self.assertContains(
+            page,
+            (
+                'title="Paper ID is not in Paper Master. Correct the ID through '
+                'Paper ID Review or mark this Final Submission as Not Publishing."'
+            ),
+            html=False,
+        )
+        self.assertNotContains(page, "Not in Master - needs decision")
+        self.assertNotContains(
+            page,
+            '<div class="small text-danger">Not in Paper Master</div>',
+            html=False,
+        )
+
     def test_orphan_final_decision_worklist_prioritizes_safe_inline_resolution(self):
         self.make_master_paper(
             "P001",

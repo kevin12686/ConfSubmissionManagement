@@ -3,6 +3,24 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.3 - 2026-07-27
+
+### Multiline Title Editing
+
+- Standardized editable Master, Final Submission, and Editor Upload titles as
+  three-row textareas matching their author fields.
+- Rebalanced Editor Upload metadata so Paper ID has a clear full-width context
+  row and Final Title/Final Authors form one aligned pair.
+
+## 1.12.2 - 2026-07-27
+
+### Organized List Status Clarity
+
+- Shortened the orphan Final Submission badge to `Needs decision`.
+- Removed the duplicate `Not in Paper Master` line from the checklist and
+  retained the complete correction/Not Publishing guidance in the badge
+  tooltip and row Details.
+
 ## 1.12.1 - 2026-07-27
 
 ### Orphan Final Decision Workflow

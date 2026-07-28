@@ -30,6 +30,7 @@ class InitialPaperForm(BootstrapMixin, forms.ModelForm):
             "notes",
         ]
         widgets = {
+            "title": forms.Textarea(attrs={"rows": 3}),
             "authors": forms.Textarea(attrs={"rows": 3}),
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
@@ -79,6 +80,7 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
         ]
         widgets = {
             "upload_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "final_submission_title": forms.Textarea(attrs={"rows": 3}),
             "final_submission_authors": forms.Textarea(attrs={"rows": 3}),
         }
     def __init__(self, *args, **kwargs):
@@ -134,7 +136,11 @@ class EditorUploadForm(BootstrapMixin, forms.Form):
     )
     pdf_file = forms.FileField(label="Editor PDF")
     source_file = forms.FileField(required=False, label="Editor source file")
-    final_submission_title = forms.CharField(required=False, label="Final Title")
+    final_submission_title = forms.CharField(
+        required=False,
+        label="Final Title",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
     final_submission_authors = forms.CharField(
         required=False,
         label="Final Authors",

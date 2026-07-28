@@ -148,24 +148,31 @@ def _page_status(submission, settings_obj, publication_pdf=None):
 
 def _verification_status(submission, paper=None):
     if not submission:
-        return "No final", "secondary"
+        return "No final", "secondary", ""
     if paper and paper.publication_decision_status == "not_publishing":
-        return "Excluded from publication", "secondary"
+        return "Excluded from publication", "secondary", ""
     if paper and paper.publication_decision_status == "decision_required":
-        return "Publication decision required", "danger"
+        return "Publication decision required", "danger", ""
     if paper is None and submission.excluded_from_publication:
-        return "Excluded from publication", "secondary"
+        return "Excluded from publication", "secondary", ""
+    if paper is None:
+        return (
+            "Needs decision",
+            "danger",
+            (
+                "Paper ID is not in Paper Master. Correct the ID through Paper ID "
+                "Review or mark this Final Submission as Not Publishing."
+            ),
+        )
     if submission.paper_id_verified and not paper_title_matches_master(submission, paper):
-        return "Verified, title differs", "warning"
+        return "Verified, title differs", "warning", ""
     if paper_id_effectively_verified(submission, paper):
         if submission.paper_id_verified:
-            return "Verified", "success"
-        return "Auto-verified by title", "success"
+            return "Verified", "success", ""
+        return "Auto-verified by title", "success", ""
     if submission.verification_status == "title_mismatch":
-        return "Paper ID title mismatch", "warning"
-    if submission.verification_status == "invalid_paper_id":
-        return "Not in Master - needs decision", "danger"
-    return "Paper ID needs review", "danger"
+        return "Paper ID title mismatch", "warning", ""
+    return "Paper ID needs review", "danger", ""
 
 
 def _plagiarism_status(submission, settings_obj):
@@ -821,9 +828,13 @@ def organized_list_rows(
             settings_obj,
             publication_pdf,
         )
-        verify_label, verify_level = _verification_status(submission, paper)
+        verify_label, verify_level, verify_help = _verification_status(
+            submission,
+            paper,
+        )
         if paper.paper_id in multiple_active_by_paper:
             verify_label, verify_level = "Multiple active finals", "danger"
+            verify_help = ""
         plagiarism_label, plagiarism_level = _plagiarism_status(submission, settings_obj)
         source_label, source_level = _source_status(
             submission,
@@ -889,6 +900,7 @@ def organized_list_rows(
                 "page_level": page_level,
                 "verify_label": verify_label,
                 "verify_level": verify_level,
+                "verify_help": verify_help,
                 "verify_is_blocker": bool(
                     submission
                     and not paper_id_effectively_verified(submission, paper)
@@ -953,7 +965,9 @@ def organized_list_rows(
             settings_obj,
             publication_pdf,
         )
-        verify_label, verify_level = _verification_status(submission)
+        verify_label, verify_level, verify_help = _verification_status(
+            submission,
+        )
         plagiarism_label, plagiarism_level = _plagiarism_status(submission, settings_obj)
         source_label, source_level = _source_status(
             submission,
@@ -1003,6 +1017,7 @@ def organized_list_rows(
                 "page_level": page_level,
                 "verify_label": verify_label,
                 "verify_level": verify_level,
+                "verify_help": verify_help,
                 "verify_is_blocker": True,
                 "verified_title_difference": False,
                 "plagiarism_label": plagiarism_label,
