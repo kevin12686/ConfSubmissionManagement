@@ -124,7 +124,13 @@
                                     <tr>
                                         <td>{{ item.paper_id_filled|default:"--" }}</td>
                                         <td>{{ item.final_submission_id }}</td>
-                                        <td>{{ item.processing_status|default:"pending" }}</td>
+                                        <td>
+                                            {% if item.processing_status == "error" %}
+                                                <span class="badge text-bg-danger">{{ ui_labels.processing.error }}</span>
+                                            {% else %}
+                                                <span class="badge text-bg-warning">{{ ui_labels.processing.needs_processing }}</span>
+                                            {% endif %}
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -253,8 +259,8 @@
                     <strong>{{ row.submission.paper_id_filled|default:"No Paper ID" }}</strong>
                     <span class="text-muted ms-2">Final ID {{ row.submission.final_submission_id }}</span>
                     {% if row.submission.page_count != None %}<span class="badge {% if row.page_issue %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">Page count: {{ row.submission.page_count }} pages</span>{% endif %}
-                    {% if row.needs_processing %}<span class="badge text-bg-warning">Needs processing</span>{% elif row.is_processed %}<span class="badge text-bg-success">Processed</span>{% endif %}
-                    {% if row.missing_pdf %}<span class="badge text-bg-danger">No PDF</span>{% endif %}
+                    {% if row.needs_processing %}<span class="badge text-bg-warning">{{ ui_labels.processing.needs_processing }}</span>{% elif row.is_processed %}<span class="badge text-bg-success">{{ ui_labels.processing.processed }}</span>{% endif %}
+                    {% if row.missing_pdf %}<span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>{% endif %}
                     <div class="small text-muted mt-1">{{ row.submission.final_submission_title|default:"Missing title" }}</div>
                 </div>
                 <div class="cfm-pdf-preview-actions">

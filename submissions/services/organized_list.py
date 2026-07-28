@@ -26,6 +26,7 @@ from submissions.services.file_manager import (
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.text_utils import natural_text_key
 from submissions.services.verification import normalize_title, text_diff_html, titles_identical
+from submissions.presentation import ui_label
 
 
 ORGANIZED_LIST_FILTER_OPTIONS = [
@@ -48,7 +49,7 @@ ORGANIZED_LIST_FILTER_OPTIONS = [
     {"value": "missing_plagiarism", "label": "Missing plagiarism"},
     {"value": "plagiarism_issues", "label": "Plagiarism issues"},
     {"value": "publication_duplicates", "label": "Publication duplicates"},
-    {"value": "format_not_ok", "label": "Format not OK"},
+    {"value": "format_not_ok", "label": "Formatting not OK"},
 ]
 
 ORGANIZED_LIST_SORT_OPTIONS = [
@@ -59,7 +60,7 @@ ORGANIZED_LIST_SORT_OPTIONS = [
     {"value": "page_count_desc", "label": "Page count descending"},
     {"value": "author_count_desc", "label": "Author count descending"},
     {"value": "similarity_desc", "label": "Plagiarism % descending"},
-    {"value": "format_status", "label": "Format status"},
+    {"value": "format_status", "label": "Formatting status"},
 ]
 
 
@@ -121,40 +122,48 @@ def _persisted_pdf_needs_processing(submission):
 
 def _page_status(submission, settings_obj, publication_pdf=None):
     if not submission:
-        return "No final", "danger"
+        return "No final", "danger", "no_final", ""
     publication_pdf = publication_pdf or publication_pdf_info(submission)
     if not publication_pdf["exists"]:
-        return "Requires PDF", "secondary"
+        return "Requires PDF", "secondary", "requires_pdf", ""
     if submission.processing_status == "error":
-        return "PDF error", "danger"
+        return ui_label("processing", "error"), "danger", "pdf_error", ""
     if submission.page_count is None:
-        return "Not processed", "warning"
+        return (
+            ui_label("processing", "needs_processing"),
+            "warning",
+            "needs_processing",
+            "",
+        )
     if submission.page_count < settings_obj.page_minimum:
         status = page_exception_status(submission, settings_obj)
-        if status == "allowed":
-            return "Allowed exception", "info"
-        if status == "stale":
-            return "Stale allowed exception", "warning"
-        return f"Below min {settings_obj.page_minimum}", "warning"
+        level = "info" if status == "allowed" else "warning"
+        return (
+            f"Below min {settings_obj.page_minimum}",
+            level,
+            "below_minimum",
+            status,
+        )
     if submission.page_count > settings_obj.page_limit:
         status = page_exception_status(submission, settings_obj)
-        if status == "allowed":
-            return "Allowed exception", "info"
-        if status == "stale":
-            return "Stale allowed exception", "warning"
-        return f"Over limit {settings_obj.page_limit}", "danger"
-    return "Page OK", "secondary"
+        level = (
+            "info"
+            if status == "allowed"
+            else ("warning" if status == "stale" else "danger")
+        )
+        return f"Over limit {settings_obj.page_limit}", level, "over_limit", status
+    return "Page OK", "secondary", "page_ok", ""
 
 
 def _verification_status(submission, paper=None):
     if not submission:
         return "No final", "secondary", ""
     if paper and paper.publication_decision_status == "not_publishing":
-        return "Excluded from publication", "secondary", ""
+        return ui_label("publication", "excluded"), "secondary", ""
     if paper and paper.publication_decision_status == "decision_required":
-        return "Publication decision required", "danger", ""
+        return ui_label("publication", "decision_required"), "danger", ""
     if paper is None and submission.excluded_from_publication:
-        return "Excluded from publication", "secondary", ""
+        return ui_label("publication", "excluded"), "secondary", ""
     if paper is None:
         return (
             "Needs decision",
@@ -165,14 +174,14 @@ def _verification_status(submission, paper=None):
             ),
         )
     if submission.paper_id_verified and not paper_title_matches_master(submission, paper):
-        return "Verified, title differs", "warning", ""
+        return ui_label("paper_id", "verified_title_differs"), "warning", ""
     if paper_id_effectively_verified(submission, paper):
         if submission.paper_id_verified:
-            return "Verified", "success", ""
-        return "Auto-verified by title", "success", ""
+            return ui_label("paper_id", "verified"), "success", ""
+        return ui_label("paper_id", "auto_verified"), "success", ""
     if submission.verification_status == "title_mismatch":
-        return "Paper ID title mismatch", "warning", ""
-    return "Paper ID needs review", "danger", ""
+        return ui_label("paper_id", "title_mismatch"), "warning", ""
+    return ui_label("paper_id", "needs_review"), "danger", ""
 
 
 def _plagiarism_status(submission, settings_obj):
@@ -578,7 +587,7 @@ def _has_page_issue(row):
         or not row["publication_pdf"]["exists"]
     ):
         return False
-    return row["page_level"] in {"danger", "warning"} or row["page_label"] == "Not processed"
+    return row["page_level"] in {"danger", "warning"}
 
 
 def _has_pdf_issue(row):
@@ -588,8 +597,7 @@ def _has_pdf_issue(row):
         and (
             not row["publication_pdf"]["exists"]
             or row["needs_processing_after_formatting"]
-            or row["page_label"] == "PDF error"
-            or row["page_label"] == "Not processed"
+            or row["page_status_key"] in {"pdf_error", "needs_processing"}
         )
     )
 
@@ -972,7 +980,7 @@ def organized_list_rows(
             if submission and hydrate
             else _persisted_file_info(submission, "source")
         )
-        page_label, page_level = _page_status(
+        page_label, page_level, page_status_key, page_exception_state = _page_status(
             submission,
             settings_obj,
             publication_pdf,
@@ -1058,6 +1066,8 @@ def organized_list_rows(
                     ),
                     "page_label": page_label,
                     "page_level": page_level,
+                    "page_status_key": page_status_key,
+                    "page_exception_status": page_exception_state,
                     "verify_label": verify_label,
                     "verify_level": verify_level,
                     "verify_help": verify_help,
@@ -1121,7 +1131,7 @@ def organized_list_rows(
             if hydrate
             else _persisted_file_info(submission, "source")
         )
-        page_label, page_level = _page_status(
+        page_label, page_level, page_status_key, page_exception_state = _page_status(
             submission,
             settings_obj,
             publication_pdf,
@@ -1172,6 +1182,8 @@ def organized_list_rows(
                     ),
                     "page_label": page_label,
                     "page_level": page_level,
+                    "page_status_key": page_status_key,
+                    "page_exception_status": page_exception_state,
                     "verify_label": verify_label,
                     "verify_level": verify_level,
                     "verify_help": verify_help,
@@ -1299,7 +1311,7 @@ def organized_list_rows(
         ("Extraction Review", summary["extraction_issues"], "warning", "extraction_issues"),
         ("No Plagiarism", summary["missing_plagiarism"], "warning", "missing_plagiarism"),
         ("P/S Issues", summary["plagiarism_issues"], "danger", "plagiarism_issues"),
-        ("Format Not OK", summary["format_issues"], "warning", "format_not_ok"),
+        ("Formatting Not OK", summary["format_issues"], "warning", "format_not_ok"),
         (
             "Duplicates",
             summary["publication_duplicates"],
@@ -1354,7 +1366,7 @@ def hydrate_organized_list_rows(rows, *, settings_obj, context):
             publication_source,
             context.file_inspection,
         )
-        page_label, page_level = _page_status(
+        page_label, page_level, page_status_key, page_exception_state = _page_status(
             submission,
             settings_obj,
             publication_pdf,
@@ -1386,6 +1398,8 @@ def hydrate_organized_list_rows(rows, *, settings_obj, context):
                     ),
                     "page_label": page_label,
                     "page_level": page_level,
+                    "page_status_key": page_status_key,
+                    "page_exception_status": page_exception_state,
                     "source_label": source_label,
                     "source_level": source_level,
                     **_author_count_status(submission, settings_obj),

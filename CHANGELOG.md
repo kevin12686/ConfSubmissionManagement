@@ -3,6 +3,38 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.8 - 2026-07-28
+
+### Unified Worklist Vocabulary
+
+- Standardized compact version, origin, Paper ID, review, processing,
+  publication-decision, exception, and file labels across all editorial
+  worklists.
+- Removed the one-off Final Submissions status guide and kept each state in its
+  owning table column, with origin shown as supporting metadata instead of a
+  competing badge.
+- Separated page-limit results from their exception decision in Organized List
+  so the page condition and waiver state are both visible without duplicate
+  labels.
+- Kept workflow values, filters, readiness checks, and publication export rules
+  unchanged.
+- Extended the shared expansion reveal behavior to Formatting Review cards, so
+  opening `Review paper` keeps the card header and review content in view
+  without interfering with post-save worklist position restoration.
+
+## 1.12.7 - 2026-07-27
+
+### Stable Organized List Details Width
+
+- Prevented an expanded Organized List Details panel from increasing the
+  calculated table width at wider browser sizes.
+- Kept the panel capped to the visible viewport when the checklist itself
+  requires horizontal scrolling.
+- Added one shared reveal behavior for table expansion rows so Details, notes,
+  exception forms, JSON, and version actions keep their owning row in context:
+  clipped groups are centered when they fit, while taller groups begin with
+  the owning row below the app header.
+
 ## 1.12.6 - 2026-07-27
 
 ### Organized List Root-Cause Presentation

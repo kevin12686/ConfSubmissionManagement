@@ -1,15 +1,16 @@
 from submissions.models import FinalSubmission
+from submissions.presentation import ui_label
 from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.file_manager import publication_pdf_info
 
 
 OLD_VERSION_FILTER_OPTIONS = [
     {"value": "all", "label": "All"},
-    {"value": "replaced", "label": "Replaced"},
-    {"value": "discarded", "label": "Discarded"},
-    {"value": "editor_uploads", "label": "Editor Uploads"},
-    {"value": "start2", "label": "Start2"},
-    {"value": "other", "label": "Other"},
+    {"value": "replaced", "label": ui_label("version", "replaced")},
+    {"value": "discarded", "label": ui_label("version", "discarded")},
+    {"value": "editor_uploads", "label": ui_label("origin", "editor_upload")},
+    {"value": "start2", "label": ui_label("origin", "start2")},
+    {"value": "other", "label": ui_label("version", "other_inactive")},
 ]
 
 
@@ -36,24 +37,24 @@ def classify_old_version(
 
     if submission.discarded:
         status_key = "discarded"
-        status_label = "Discarded"
+        status_label = ui_label("version", "discarded")
         status_class = "text-bg-dark"
         inactive_reason = "Discarded by editor"
     elif submission.duplicate_submission or replacement:
         status_key = "replaced"
-        status_label = "Replaced"
+        status_label = ui_label("version", "replaced")
         status_class = "text-bg-secondary"
         inactive_reason = "Replaced by active final version"
     else:
         status_key = "other"
-        status_label = "Other inactive"
+        status_label = ui_label("version", "other_inactive")
         status_class = "text-bg-light text-dark"
         inactive_reason = "Inactive without replacement/discard marker"
 
     origin_label = (
-        "Editor Upload"
+        ui_label("origin", "editor_upload")
         if submission.submission_origin == "editor_upload"
-        else "Start2"
+        else ui_label("origin", "start2")
     )
     origin_class = (
         "text-bg-primary"

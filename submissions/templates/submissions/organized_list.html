@@ -114,7 +114,7 @@
                 <th>Source</th>
                 <th>Extraction</th>
                 <th>Plagiarism</th>
-                <th>Format</th>
+                <th>Formatting</th>
                 <th></th>
             </tr>
         </thead>
@@ -218,11 +218,11 @@
                     {% endif %}
                     {% if row.over_author_limit %}
                         {% if row.author_number_exception_status == "allowed" %}
-                            <div class="mt-1"><span class="badge text-bg-info">Allowed exception</span></div>
+                            <div class="mt-1"><span class="badge text-bg-info">{{ ui_labels.exception.allowed }}</span></div>
                         {% elif row.author_number_exception_status == "stale" %}
-                            <div class="mt-1"><span class="badge text-bg-warning">Stale allowed exception</span></div>
+                            <div class="mt-1"><span class="badge text-bg-warning">{{ ui_labels.exception.stale }}</span></div>
                         {% else %}
-                            <div class="mt-1"><span class="badge text-bg-danger">Not allowed</span></div>
+                            <div class="mt-1"><span class="badge text-bg-danger">{{ ui_labels.exception.not_allowed }}</span></div>
                         {% endif %}
                     {% endif %}
                     {% if row.unresolved_duplicate_authors %}
@@ -246,13 +246,13 @@
                     {% else %}
                         {% if submission and submission.page_count %}<strong>{{ submission.page_count }}</strong>{% else %}<span class="text-muted">--</span>{% endif %}
                         <div><span class="badge text-bg-{{ row.page_level }}">{{ row.page_label }}</span></div>
-                        {% if row.page_level == "info" or row.page_label == "Stale allowed exception" or row.page_label|slice:":9" == "Below min" or row.page_label|slice:":10" == "Over limit" %}
-                            {% if row.page_level == "info" %}
-                                <div><span class="badge text-bg-info">Allowed exception</span></div>
-                            {% elif row.page_label == "Stale allowed exception" %}
-                                <div><span class="badge text-bg-warning">Stale allowed exception</span></div>
+                        {% if row.page_status_key == "below_minimum" or row.page_status_key == "over_limit" %}
+                            {% if row.page_exception_status == "allowed" %}
+                                <div><span class="badge text-bg-info">{{ ui_labels.exception.allowed }}</span></div>
+                            {% elif row.page_exception_status == "stale" %}
+                                <div><span class="badge text-bg-warning">{{ ui_labels.exception.stale }}</span></div>
                             {% else %}
-                                <div><span class="badge text-bg-danger">Not allowed</span></div>
+                                <div><span class="badge text-bg-danger">{{ ui_labels.exception.not_allowed }}</span></div>
                             {% endif %}
                         {% endif %}
                     {% endif %}
@@ -264,7 +264,7 @@
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% elif submission %}
-                        <span class="badge text-bg-danger">No PDF</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                     {% endif %}
                 </td>
                 <td data-column="source">
@@ -317,7 +317,7 @@
                 <td>
                     {% if submission %}
                         <span class="badge text-bg-{% if submission.format_status == 'review_ok' %}success{% elif submission.format_status == 'needs_edit' %}warning{% else %}secondary{% endif %}">
-                            {% if submission.format_status == "review_ok" %}Review OK{% elif submission.format_status == "needs_edit" %}Needs edit{% else %}Pending{% endif %}
+                            {% if submission.format_status == "review_ok" %}{{ ui_labels.review.review_ok }}{% elif submission.format_status == "needs_edit" %}{{ ui_labels.review.needs_edit }}{% else %}{{ ui_labels.review.pending }}{% endif %}
                         </span>
                         {% if submission.has_corrected_files %}
                             <div><span class="badge text-bg-primary">Edited</span></div>
@@ -336,7 +336,7 @@
                 {% endif %}
             </tr>
             {% if row.exception_panel_sections %}
-                <tr class="collapse{% if row.exception_panel_open %} show{% endif %}" id="exceptions-{{ submission.pk }}">
+                <tr class="collapse{% if row.exception_panel_open %} show{% endif %}" id="exceptions-{{ submission.pk }}" data-cfm-context-expansion>
                     <td colspan="10">
                         <div class="cfm-exception-panel">
                             {% if row.exception_feedback.message %}
@@ -514,7 +514,7 @@
                     </td>
                 </tr>
             {% endif %}
-            <tr class="collapse" id="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">
+            <tr class="collapse" id="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}" data-cfm-context-expansion>
                 <td colspan="10">
                     <div class="cfm-publication-record">
                         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -598,7 +598,7 @@
                                         {% if row.publication_pdf.exists %}
                                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                                         {% else %}
-                                            <span class="badge text-bg-danger">No PDF</span>
+                                            <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                                         {% endif %}
                                     </div>
                                     {% if row.publication_pdf.exists %}
@@ -615,7 +615,7 @@
                                         {% if row.publication_source.exists %}
                                             <span class="badge text-bg-{% if row.publication_source.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_source.label }}</span>
                                         {% else %}
-                                            <span class="badge text-bg-danger">No source</span>
+                                            <span class="badge text-bg-danger">{{ ui_labels.file.no_source }}</span>
                                         {% endif %}
                                     </div>
                                     {% if row.publication_source.exists %}
@@ -711,7 +711,7 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky cfm-compact-candidates-table">
-        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Extracted Title</th><th>Extracted Authors</th><th>Pages</th><th>Publication Files</th><th>Format</th><th></th></tr></thead>
+        <thead><tr><th>Paper ID</th><th>Final ID</th><th>Extracted Title</th><th>Extracted Authors</th><th>Pages</th><th>Publication Files</th><th>Formatting</th><th></th></tr></thead>
         <tbody>
         {% for row in rows %}
             {% with item=row.submission %}
@@ -721,7 +721,7 @@
                 <td class="cfm-title-cell">{{ item.extracted_title|default:item.final_submission_title|default:"Missing" }}</td>
                 <td>{{ item.extracted_authors|default:"Missing" }}</td>
                 <td>{{ item.page_count|default:"--" }}</td>
-                <td><div class="cfm-status-line">{% if row.publication_pdf.exists %}<a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">PDF</a><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>{% else %}<span class="badge text-bg-danger">No PDF</span>{% endif %}{% if row.publication_source.exists %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.publication_source.url }}">Source</a>{% else %}<span class="badge text-bg-danger">No source</span>{% endif %}</div></td>
+                <td><div class="cfm-status-line">{% if row.publication_pdf.exists %}<a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">PDF</a><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>{% endif %}{% if row.publication_source.exists %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.publication_source.url }}">Source</a>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_source }}</span>{% endif %}</div></td>
                 <td><span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">{{ item.get_format_status_display }}</span></td>
                 <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></td>
             </tr>
@@ -775,8 +775,9 @@
         box-sizing: border-box;
         left: 0;
         max-width: calc(100vw - 3rem);
+        min-width: 0;
         position: sticky;
-        width: calc(100vw - 3rem);
+        width: 100%;
     }
     .cfm-record-section {
         border-top: 1px solid var(--cfm-border-strong);
@@ -815,7 +816,7 @@
         .cfm-publication-record {
             max-width: calc(100vw - 2rem);
             padding: 0.75rem;
-            width: calc(100vw - 2rem);
+            width: 100%;
         }
         .cfm-publication-authors {
             grid-template-columns: minmax(0, 1fr);

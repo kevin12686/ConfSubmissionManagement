@@ -17,13 +17,13 @@
             <span class="text-muted">{{ focused_paper.title|default:"No Master title" }}</span>
         </div>
         {% if focused_paper.publication_integrity_conflict %}
-            <span class="badge text-bg-danger">Integrity conflict</span>
+            <span class="badge text-bg-danger">{{ ui_labels.publication.integrity_conflict }}</span>
         {% elif focused_paper.publication_decision_status == "not_publishing" %}
-            <span class="badge text-bg-secondary">Not Publishing</span>
+            <span class="badge text-bg-secondary">{{ ui_labels.publication.not_publishing }}</span>
         {% elif focused_paper.publication_decision_status == "decision_required" %}
-            <span class="badge text-bg-danger">Decision required</span>
+            <span class="badge text-bg-danger">{{ ui_labels.publication.decision_required }}</span>
         {% else %}
-            <span class="badge text-bg-success">Publishing</span>
+            <span class="badge text-bg-success">{{ ui_labels.publication.publishing }}</span>
         {% endif %}
     </div>
     <div class="card-body">
@@ -126,9 +126,9 @@
             <span class="text-muted">Final {{ focused_submission.final_submission_id }}</span>
         </div>
         {% if focused_submission.discarded %}
-            <span class="badge text-bg-secondary">Discarded version</span>
+            <span class="badge text-bg-secondary">{{ ui_labels.version.discarded }}</span>
         {% elif focused_submission.excluded_from_publication %}
-            <span class="badge text-bg-secondary">Not Publishing</span>
+            <span class="badge text-bg-secondary">{{ ui_labels.publication.not_publishing }}</span>
         {% else %}
             <span class="badge text-bg-primary">Publication candidate</span>
         {% endif %}
@@ -252,9 +252,9 @@
                     <td>{% if paper.active_submission %}{{ paper.active_submission.final_submission_id }}{% else %}No Final{% endif %}</td>
                     <td>
                         {% if paper.publication_integrity_conflict %}
-                            <span class="badge text-bg-danger">Integrity conflict</span>
+                            <span class="badge text-bg-danger">{{ ui_labels.publication.integrity_conflict }}</span>
                         {% else %}
-                            <span class="badge text-bg-danger">Decision required</span>
+                            <span class="badge text-bg-danger">{{ ui_labels.publication.decision_required }}</span>
                         {% endif %}
                     </td>
                     <td><a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">Review decision</a></td>
@@ -297,7 +297,7 @@
                 <tr>
                     <th>Final ID</th>
                     <th>Author-entered ID</th>
-                    <th>Current Official Paper ID</th>
+                    <th>Paper ID</th>
                     <th>Final Title</th>
                     <th>Status</th>
                     <th></th>
@@ -310,7 +310,7 @@
                     <td>{{ submission.start2_paper_id_raw|default:"--" }}</td>
                     <td>{{ submission.paper_id_filled|default:"--" }}</td>
                     <td class="cfm-title-cell">{{ submission.final_submission_title|default:"--" }}</td>
-                    <td><span class="badge text-bg-danger">Paper ID decision required</span></td>
+                    <td><span class="badge text-bg-danger">{{ ui_labels.publication.decision_required }}</span></td>
                     <td>
                         <div class="cfm-table-actions">
                             <button
@@ -332,7 +332,7 @@
                         </div>
                     </td>
                 </tr>
-                <tr id="resolve-paper-id-{{ submission.pk }}" class="collapse">
+                <tr id="resolve-paper-id-{{ submission.pk }}" class="collapse" data-cfm-context-expansion>
                     <td colspan="6" class="p-0">
                         <div class="cfm-expanded-action">
                             <div class="row g-3">
@@ -362,7 +362,7 @@
                         </div>
                     </td>
                 </tr>
-                <tr id="exclude-final-{{ submission.pk }}" class="collapse">
+                <tr id="exclude-final-{{ submission.pk }}" class="collapse" data-cfm-context-expansion>
                     <td colspan="6" class="p-0">
                         <div class="cfm-expanded-action">
                             <div class="alert alert-warning border mb-3">
@@ -462,7 +462,7 @@
                 <tr>
                     <th>Final ID</th>
                     <th>Paper ID</th>
-                    <th>Version state</th>
+                    <th>Version State</th>
                     <th>Origin</th>
                     <th>Replacement</th>
                     <th>Final Title</th>
@@ -478,7 +478,7 @@
                     <td>{{ submission.final_submission_id }}</td>
                     <td>{{ submission.paper_id_filled|default:"--" }}</td>
                     <td><span class="badge text-bg-{{ submission.version_state_level }}">{{ submission.version_state_label }}</span></td>
-                    <td><span class="badge text-bg-{% if submission.submission_origin == 'editor_upload' %}primary{% else %}light text-dark{% endif %}">{{ submission.origin_label }}</span></td>
+                    <td>{{ submission.origin_label }}</td>
                     <td>
                         {% if submission.active_replacement %}
                             Final {{ submission.active_replacement.final_submission_id }}

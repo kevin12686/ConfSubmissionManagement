@@ -33,7 +33,7 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky">
-        <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate In Paper</th><th>Status</th><th>Exception</th></tr></thead>
+        <thead><tr><th>Normalized Name</th><th>Display Names</th><th>Publication Paper Count</th><th>Paper IDs</th><th>Duplicate in Paper</th><th>Status</th><th>Exception</th></tr></thead>
         <tbody>
         {% for row in rows %}
             <tr class="{% if row.over_limit and not row.waiver_valid %}table-warning{% endif %}">
@@ -53,7 +53,7 @@
                             <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.paper_id }}</a>
                         {% else %}
                             <span class="text-muted">{{ paper.paper_id }}</span>
-                            <span class="badge text-bg-danger">No PDF</span>
+                            <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                         {% endif %}
                     {% empty %}
                         <span class="text-muted">--</span>
@@ -62,13 +62,13 @@
                 <td>{{ row.duplicate_author_papers|default:"--" }}</td>
                 <td>
                     {% if row.over_limit and row.waiver_valid %}
-                        <span class="badge text-bg-info">Allowed exception</span>
+                        <span class="badge text-bg-info">{{ ui_labels.exception.allowed }}</span>
                     {% elif row.over_limit and row.waiver and row.waiver.approved %}
-                        <span class="badge text-bg-warning">Stale allowed exception</span>
+                        <span class="badge text-bg-warning">{{ ui_labels.exception.stale }}</span>
                     {% elif row.over_limit %}
-                        <span class="badge text-bg-danger">Not allowed</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.exception.not_allowed }}</span>
                     {% else %}
-                        <span class="badge text-bg-success">OK</span>
+                        <span class="badge text-bg-success">Within limit</span>
                     {% endif %}
                 </td>
                 <td>

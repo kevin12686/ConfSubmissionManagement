@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from submissions.models import FinalSubmission, InitialPaper
+from submissions.presentation import ui_label
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
 from submissions.services.file_inspection import FileInspectionContext
@@ -46,17 +47,20 @@ from submissions.services.workflow_evidence import (
 
 FORMAT_FILTER_OPTIONS = [
     {"value": "needs_attention", "label": "Needs attention"},
-    {"value": "pending", "label": "Pending"},
-    {"value": "needs_edit", "label": "Needs edit"},
-    {"value": "review_ok", "label": "Review OK"},
-    {"value": "review_ok_no_edit", "label": "Review OK, no edit"},
+    {"value": "pending", "label": ui_label("review", "pending")},
+    {"value": "needs_edit", "label": ui_label("review", "needs_edit")},
+    {"value": "review_ok", "label": ui_label("review", "review_ok")},
+    {
+        "value": "review_ok_no_edit",
+        "label": f"{ui_label('review', 'review_ok')}, no edit",
+    },
     {"value": "edited", "label": "Edited"},
     {"value": "all", "label": "All"},
 ]
 FORMAT_STATUS_LABELS = {
-    "pending": "Pending",
-    "needs_edit": "Needs edit",
-    "review_ok": "Review OK",
+    "pending": ui_label("review", "pending"),
+    "needs_edit": ui_label("review", "needs_edit"),
+    "review_ok": ui_label("review", "review_ok"),
 }
 
 FORMATTING_QUEUE_SESSION_KEY = "formatting_review_queues"

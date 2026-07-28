@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from submissions.models import AppSetting, AuthorLimitWaiver, FinalSubmission
+from submissions.presentation import ui_label
 from submissions.services.audit import audit_success
 from submissions.services.checks import (
     author_count_rows,
@@ -33,9 +34,9 @@ from submissions.services.workflow_evidence import (
 
 
 EXCEPTION_FILTER_OPTIONS = [
-    {"value": "not_allowed", "label": "Not allowed"},
-    {"value": "allowed", "label": "Allowed"},
-    {"value": "stale", "label": "Stale"},
+    {"value": "not_allowed", "label": ui_label("exception", "not_allowed")},
+    {"value": "allowed", "label": ui_label("exception", "allowed")},
+    {"value": "stale", "label": ui_label("exception", "stale")},
     {"value": "all", "label": "All"},
 ]
 ROW_LEVEL_EXCEPTION_TYPES = {
@@ -93,9 +94,9 @@ def single_percent_exception_status(submission, setting=None):
 
 def exception_status_label(status):
     return {
-        "not_allowed": "Not allowed",
-        "allowed": "Allowed exception",
-        "stale": "Stale allowed exception",
+        "not_allowed": ui_label("exception", "not_allowed"),
+        "allowed": ui_label("exception", "allowed"),
+        "stale": ui_label("exception", "stale"),
     }.get(status, "")
 
 

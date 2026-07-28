@@ -27,6 +27,7 @@ from submissions.forms import (
     SystemStateRestoreForm,
 )
 from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
+from submissions.presentation import ui_label
 from submissions.services.checks import (
     author_count_rows,
     dashboard_counts,
@@ -632,10 +633,26 @@ def verify_paper_ids(request):
         ),
     }
     filter_options = [
-        {"value": "needs_verification", "label": "Needs verification", "count": counts["needs_verification"]},
-        {"value": "verified_with_diff", "label": "Verified with diff", "count": counts["verified_with_diff"]},
-        {"value": "identical", "label": "Identical", "count": counts["identical"]},
-        {"value": "title_mismatch", "label": "Title mismatch", "count": counts["title_mismatch"]},
+        {
+            "value": "needs_verification",
+            "label": ui_label("paper_id", "needs_review"),
+            "count": counts["needs_verification"],
+        },
+        {
+            "value": "verified_with_diff",
+            "label": ui_label("paper_id", "verified_title_differs"),
+            "count": counts["verified_with_diff"],
+        },
+        {
+            "value": "identical",
+            "label": ui_label("paper_id", "auto_verified"),
+            "count": counts["identical"],
+        },
+        {
+            "value": "title_mismatch",
+            "label": ui_label("paper_id", "title_mismatch"),
+            "count": counts["title_mismatch"],
+        },
         {"value": "all", "label": "All", "count": counts["all"]},
     ]
     if current_filter == "needs_verification":
@@ -922,10 +939,10 @@ def title_author_extraction(request):
             return redirect(_worklist_return_url(request, "title_author_extraction"))
 
     filter_options = [
-        {"value": "needs_verification", "label": "Needs Review", "tab_label": "Needs Review", "badge_level": "warning", "group": "workflow"},
-        {"value": "pending", "label": "Pending", "tab_label": "Pending", "badge_level": "warning", "group": "workflow"},
-        {"value": "red_flag", "label": "Red Flag", "tab_label": "Red Flag", "badge_level": "danger", "group": "workflow"},
-        {"value": "review_ok", "label": "Review OK", "tab_label": "Review OK", "badge_level": "success", "group": "workflow"},
+        {"value": "needs_verification", "label": "Needs attention", "tab_label": "Needs attention", "badge_level": "warning", "group": "workflow"},
+        {"value": "pending", "label": ui_label("review", "pending"), "tab_label": ui_label("review", "pending"), "badge_level": "warning", "group": "workflow"},
+        {"value": "red_flag", "label": ui_label("review", "red_flag"), "tab_label": ui_label("review", "red_flag"), "badge_level": "danger", "group": "workflow"},
+        {"value": "review_ok", "label": ui_label("review", "review_ok"), "tab_label": ui_label("review", "review_ok"), "badge_level": "success", "group": "workflow"},
         {"value": "all", "label": "All", "tab_label": "All", "badge_level": "secondary", "group": "workflow"},
         {"value": "reviewed_differences", "label": "Reviewed Differences", "tab_label": "Reviewed Differences", "badge_level": "info", "group": "tracked"},
         {"value": "missing", "label": "Missing Extraction", "tab_label": "Missing", "badge_level": "warning", "group": "tracked"},

@@ -74,6 +74,8 @@ For documentation-only changes, run at least:
 - `submissions/controllers/`: HTTP views grouped by workflow.
 - `submissions/application/selectors.py`: page/query context builders.
 - `submissions/application/commands.py`: workflow command wrappers.
+- `submissions/presentation.py`: canonical user-facing worklist vocabulary;
+  business logic must never branch on these display strings.
 - `submissions/services/`: domain services.
 - `submissions/templates/submissions/`: server-rendered Tabler/Bootstrap-compatible templates and shared partials.
 - `submissions/tests/`: acceptance regression tests and factories.
@@ -123,6 +125,11 @@ Put reusable workflow behavior in services:
 - Active/duplicate derived-state coordination: `recompute.py`.
 
 Do not put processing or integration logic directly in views.
+
+Shared worklist wording belongs in `submissions/presentation.py`. Keep database
+choices, filter query values, readiness checks, and workflow transitions based
+on stable internal values. A wording change must not alter publication
+eligibility or require templates to infer state from rendered label text.
 
 Storage inventory code must preserve the request boundary in
 `storage_inventory.py`: collect database references once, scan each managed

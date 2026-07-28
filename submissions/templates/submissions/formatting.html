@@ -189,23 +189,23 @@
         data-cfm-worklist-card="{{ item.pk }}"
         data-cfm-worklist-collapse="format-review-{{ item.pk }}"
     >
-        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center" data-cfm-expansion-owner>
             <div class="cfm-status-line">
                 <strong>{{ item.paper_id_filled }}</strong>
                 <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
                 <span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">
-                    {% if item.format_status == "review_ok" %}Review OK{% elif item.format_status == "needs_edit" %}Needs edit{% else %}Pending{% endif %}
+                    {% if item.format_status == "review_ok" %}{{ ui_labels.review.review_ok }}{% elif item.format_status == "needs_edit" %}{{ ui_labels.review.needs_edit }}{% else %}{{ ui_labels.review.pending }}{% endif %}
                 </span>
                 {% if item.has_corrected_files %}<span class="badge text-bg-primary">Edited</span>{% endif %}
                 {% if row.publication_pdf.exists %}
                     <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">PDF {{ row.publication_pdf.label }}</span>
                 {% else %}
-                    <span class="badge text-bg-danger">No PDF</span>
+                    <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                 {% endif %}
                 {% if row.publication_source.exists %}
                     <span class="badge text-bg-{% if row.publication_source.source == 'corrected' %}success{% else %}secondary{% endif %}">Source {{ row.publication_source.label }}</span>
                 {% else %}
-                    <span class="badge text-bg-danger">No source</span>
+                    <span class="badge text-bg-danger">{{ ui_labels.file.no_source }}</span>
                 {% endif %}
                 {% if row.needs_processing_after_formatting %}<span class="badge text-bg-warning">Needs Process PDFs</span>{% endif %}
                 {% if mode == "list" %}
@@ -219,7 +219,7 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
             </div>
         </div>
-        <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue"{% endif %}>
+        <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue" data-cfm-context-expansion{% endif %}>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-xl-4">

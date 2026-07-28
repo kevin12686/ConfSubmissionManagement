@@ -86,22 +86,22 @@
                         <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
                         <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                     {% else %}
-                        <span class="badge text-bg-danger">No PDF</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                     {% endif %}
                     {% if row.submission.excluded_from_publication %}
-                        <span class="badge text-bg-secondary">Excluded from publication</span>
+                        <span class="badge text-bg-secondary">{{ ui_labels.publication.excluded }}</span>
                     {% elif row.verified_with_diff %}
-                        <span class="badge text-bg-warning">Verified, title differs</span>
+                        <span class="badge text-bg-warning">{{ ui_labels.paper_id.verified_title_differs }}</span>
                     {% elif row.is_identical and row.is_verified %}
-                        <span class="badge text-bg-success">Auto-verified by title</span>
+                        <span class="badge text-bg-success">{{ ui_labels.paper_id.auto_verified }}</span>
                     {% elif row.is_verified %}
-                        <span class="badge text-bg-success">Verified</span>
+                        <span class="badge text-bg-success">{{ ui_labels.paper_id.verified }}</span>
                     {% elif row.status == "title_mismatch" %}
-                        <span class="badge text-bg-warning">Paper ID title mismatch</span>
+                        <span class="badge text-bg-warning">{{ ui_labels.paper_id.title_mismatch }}</span>
                     {% elif row.status == "invalid_paper_id" %}
                         <span class="badge text-bg-danger">Cannot verify: ID not in Paper Master List</span>
                     {% else %}
-                        <span class="badge text-bg-danger">Paper ID needs review</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.paper_id.needs_review }}</span>
                     {% endif %}
                     {% if row.score %}<span class="badge text-bg-light text-dark">Score {{ row.score }}%</span>{% endif %}
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' row.submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit submission</a>

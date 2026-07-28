@@ -14,7 +14,7 @@
             <div class="cfm-tool-label">Built-in extractor</div>
             <form method="post">
                 {% csrf_token %}
-                <button class="btn btn-primary" name="action" value="extract_needs_review">Extract Needs Review</button>
+                <button class="btn btn-primary" name="action" value="extract_needs_review">Extract Needs Attention</button>
             </form>
         </div>
         {% if settings_obj.grobid_enabled %}
@@ -127,11 +127,11 @@
                 <strong>{{ item.paper_id_filled }}</strong>
                 <span class="text-muted">Final ID {{ item.final_submission_id }}</span>
                 {% if item.title_author_review_status == 'review_ok' %}
-                    <span class="badge text-bg-success">Review OK</span>
+                    <span class="badge text-bg-success">{{ ui_labels.review.review_ok }}</span>
                 {% elif item.title_author_review_status == 'red_flag' %}
-                    <span class="badge text-bg-danger">Red Flag</span>
+                    <span class="badge text-bg-danger">{{ ui_labels.review.red_flag }}</span>
                 {% else %}
-                    <span class="badge text-bg-warning">Pending</span>
+                    <span class="badge text-bg-warning">{{ ui_labels.review.pending }}</span>
                 {% endif %}
                 {% if not row.has_extraction %}
                     <span class="badge text-bg-secondary">Missing extraction</span>
@@ -147,7 +147,7 @@
                 {% elif item.title_author_source == "manual" %}
                     <span class="badge text-bg-warning">Legacy manual</span>
                 {% endif %}
-                <span class="badge text-bg-light text-dark">Extraction: {{ item.get_title_author_source_display }} / {{ item.get_title_author_extraction_status_display }}</span>
+                <span class="small text-muted">Extraction: {{ item.get_title_author_source_display }} · {{ item.get_title_author_extraction_status_display }}</span>
             </div>
             <div class="cfm-status-line">
                 {% if row.publication_pdf.exists %}

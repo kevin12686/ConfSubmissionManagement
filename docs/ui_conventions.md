@@ -55,6 +55,41 @@ The page itself must not overflow at 390px. Wide tables may scroll within their
 containers. Keyboard operation must remain available for controls, modals, and
 collapses.
 
+### Shared Worklist Vocabulary
+
+Repeated workflow concepts use the exact shared wording below. The canonical
+implementation is `submissions/presentation.py`; database values, query
+parameters, and service decisions must not depend on these display strings.
+
+| Concept | Canonical compact labels |
+| --- | --- |
+| Version | `Current final`, `Replaced`, `Discarded`, `Other inactive`, `Version conflict` |
+| Origin | `Start2`, `Editor Upload` |
+| Paper ID | `Verified`, `Auto-verified by title`, `Verified, title differs`, `Paper ID needs review`, `Paper ID title mismatch`, `Paper ID not in Master List` |
+| Publication decision | `Publishing`, `Not Publishing`, `Decision required`, `Integrity conflict` |
+| Review | `Pending`, `Red Flag`, `Review OK`; Formatting may also use `Needs edit` |
+| PDF processing | `Needs processing`, `Processed`, `PDF error` |
+| Exception | `Not allowed`, `Allowed exception`, `Stale allowed exception` |
+| Submission file | `Original`, `Corrected`, `No PDF`, `No source` |
+
+- Let the column header provide context. Do not repeat `Version`, `Status`,
+  `Author Number`, or another obvious field name inside every badge.
+- A badge communicates one state. Put origin, extractor source, or other
+  supporting metadata in compact text when the table already has a dedicated
+  status column.
+- Use `Needs attention` for an umbrella work queue. Do not present it as a
+  replacement for a domain state such as `Pending`.
+- Do not add a generic status guide to one list. Put the current state in the
+  row and keep specialized evidence guides only where they explain an actual
+  review task, such as Paper ID title differences.
+- Import, audit, and operational result terms remain domain-specific when they
+  do not represent one of the shared workflow concepts above.
+
+Full-width content expanded inside a table row must inherit the existing cell
+width and may use a viewport-relative `max-width`; it must not use a
+viewport-relative fixed `width`, because expanded content must never change the
+table's calculated width.
+
 ## Navigation And Exact Targets
 
 User search is fuzzy; system navigation is exact.
@@ -142,7 +177,9 @@ precedes `P10`.
 
 Worklist tabs use `nav nav-tabs cfm-tabs`. Tabs that change the result set are
 server-side filters applied before pagination; they must not partition only the
-current browser page.
+current browser page. Tab and filter labels use the shared vocabulary when they
+represent a workflow state; page-specific aggregate filters may use concise
+task language such as `Needs attention`, `Page issues`, or `Edited`.
 
 ## Partial Navigation And Position Restoration
 
@@ -185,6 +222,16 @@ in the main row. Expand a full-width action row for searchable selectors,
 required reasons, warnings, and confirmation controls. Do not force those
 controls into a narrow Actions cell. Hide the entire action section when no
 record requires it.
+- Table rows and review cards opt into the shared
+  `data-cfm-context-expansion` behavior. After a user opens the Bootstrap
+  collapse, the browser treats the owning row or card header and expanded
+  content as one reading group. If that group fits in the available viewport
+  but is clipped, it is centered; if it cannot fit, the owning row or card
+  header is aligned below the app header. A fully visible group does not move.
+  Programmatic reopening after a form POST remains under worklist position
+  restoration, so the two behaviors do not compete. Horizontal table scroll,
+  button focus, reduced-motion preferences, and collapse-on-close behavior
+  remain unchanged.
 - Server-side form/service validation remains authoritative.
 - Initialize on `DOMContentLoaded` and `htmx:load`; destroy instances before
   HTMX removes their elements.

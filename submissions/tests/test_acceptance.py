@@ -7578,7 +7578,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(page, "Author asked us not to use this file.")
         self.assertContains(page, "Editor Upload")
         self.assertContains(page, "Email replacement was superseded.")
-        self.assertContains(page, "Not publishing flag")
+        self.assertContains(page, "Not Publishing flag")
         self.assertContains(page, "Unpaid paper retained for record.")
         self.assertContains(page, "Other inactive")
         self.assertNotContains(page, "Not Publishing</div>")
@@ -10178,7 +10178,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         needs_match = self.client.get(
             reverse("submissions:title_author_extraction") + "?filter=needs_verification"
         )
-        self.assertContains(needs_match, "Needs Review")
+        self.assertContains(needs_match, "Needs attention")
         self.assertContains(needs_match, "TM002")
         self.assertNotContains(needs_match, "TM001")
 
@@ -10509,6 +10509,75 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(organized, 'class="collapse"')
         self.assertContains(final_submissions, 'class="collapse"')
         self.assertContains(old_versions, 'class="collapse"')
+
+    def test_context_expansions_use_shared_conditional_reveal_behavior(self):
+        self.make_master_paper("P001", "Formatting Expansion", "Ada")
+        self.make_final_submission(
+            final_submission_id="FORMAT-EXPANSION",
+            paper_id_filled="P001",
+            final_submission_title="Formatting Expansion",
+            extracted_title="Formatting Expansion",
+            format_status="pending",
+        )
+        response = self.client.get(reverse("submissions:organized_list"))
+        self.assertContains(
+            response,
+            "/static/submissions/context_expansion.js",
+        )
+
+        asset_path = finders.find("submissions/context_expansion.js")
+        self.assertIsNotNone(asset_path)
+        asset = Path(asset_path).read_text(encoding="utf-8")
+        self.assertIn('document.addEventListener("shown.bs.collapse"', asset)
+        self.assertIn("[data-cfm-context-expansion]", asset)
+        self.assertIn("data-cfm-expansion-owner", asset)
+        self.assertIn("ownerFor", asset)
+        self.assertIn('candidate.getAttribute("aria-controls")', asset)
+        self.assertIn("userRequestedExpansions", asset)
+        self.assertIn('document.addEventListener("click"', asset)
+        self.assertIn("if (!userRequestedExpansions.has(expansion)) return", asset)
+        self.assertIn("groupIsFullyVisible", asset)
+        self.assertIn("groupFitsViewport", asset)
+        self.assertIn("(availableHeight - groupHeight) / 2", asset)
+        self.assertIn("prefers-reduced-motion: reduce", asset)
+        self.assertIn("left: window.scrollX", asset)
+        self.assertIn("window.scrollTo", asset)
+
+        template_markers = {
+            "organized_list.html": 2,
+            "final_submission_list.html": 2,
+            "not_publishing_list.html": 2,
+            "old_versions.html": 1,
+            "audit_log.html": 1,
+            "partials/error_report_exception_panel.html": 1,
+            "formatting.html": 1,
+        }
+        template_root = (
+            Path(django_settings.BASE_DIR)
+            / "submissions"
+            / "templates"
+            / "submissions"
+        )
+        for relative_path, expected_count in template_markers.items():
+            source = (template_root / relative_path).read_text(encoding="utf-8")
+            self.assertEqual(
+                source.count("data-cfm-context-expansion"),
+                expected_count,
+                relative_path,
+            )
+
+        self.make_master_paper("CTX001", "Formatting Expansion", "Ada")
+        self.make_final_submission(
+            final_submission_id="CTX001",
+            paper_id_filled="CTX001",
+            final_submission_title="Formatting Expansion",
+            extracted_title="Formatting Expansion",
+            format_status="pending",
+        )
+        formatting = self.client.get(
+            reverse("submissions:formatting") + "?filter=all"
+        )
+        self.assertContains(formatting, "data-cfm-expansion-owner")
 
     def test_dashboard_plagiarism_threshold_count_is_paper_count_not_score_count(self):
         self.make_master_paper("P001", "Both Scores High", "Ada")
@@ -11642,7 +11711,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         final_page = self.client.get(reverse("submissions:final_submission_list"))
         self.assertContains(final_page, 'class="nav nav-tabs')
-        self.assertContains(final_page, "Editor uploads")
+        self.assertContains(final_page, "Editor Upload")
         self.assertContains(final_page, "Start2")
 
         editor_tab = self.client.get(
@@ -11651,6 +11720,77 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(editor_tab, "Editor Upload")
         self.assertNotContains(editor_tab, ">10<")
+
+    def test_worklists_share_canonical_status_vocabulary(self):
+        pages = {
+            "final": self.client.get(reverse("submissions:final_submission_list")),
+            "verify": self.client.get(reverse("submissions:verify_paper_ids")),
+            "title_author": self.client.get(
+                reverse("submissions:title_author_extraction")
+            ),
+            "formatting": self.client.get(reverse("submissions:formatting")),
+            "process": self.client.get(reverse("submissions:process")),
+            "exceptions": self.client.get(reverse("submissions:exceptions_center")),
+            "old": self.client.get(reverse("submissions:old_versions")),
+            "author": self.client.get(reverse("submissions:author_count")),
+            "organized": self.client.get(reverse("submissions:organized_list")),
+        }
+
+        self.assertNotContains(pages["final"], "Status guide")
+        self.assertEqual(
+            [option["label"] for option in pages["final"].context["filter_options"]],
+            ["All", "Version conflict", "Editor Upload", "Discarded", "Start2"],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["verify"].context["filter_options"]],
+            [
+                "Paper ID needs review",
+                "Verified, title differs",
+                "Auto-verified by title",
+                "Paper ID title mismatch",
+                "All",
+            ],
+        )
+        self.assertEqual(
+            [
+                option["label"]
+                for option in pages["title_author"].context["filter_options"][:5]
+            ],
+            ["Needs attention", "Pending", "Red Flag", "Review OK", "All"],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["formatting"].context["filter_options"]],
+            [
+                "Needs attention",
+                "Pending",
+                "Needs edit",
+                "Review OK",
+                "Review OK, no edit",
+                "Edited",
+                "All",
+            ],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["process"].context["filter_options"]],
+            ["Needs processing", "Page issues", "Processed", "All"],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["exceptions"].context["filter_options"]],
+            ["Not allowed", "Allowed exception", "Stale allowed exception", "All"],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["old"].context["filter_options"]],
+            ["All", "Replaced", "Discarded", "Editor Upload", "Start2", "Other inactive"],
+        )
+        self.assertEqual(
+            [option["label"] for option in pages["author"].context["filter_options"]],
+            ["All", "Needs attention", "Over limit", "Duplicate in paper", "Allowed exception"],
+        )
+        organized_labels = {
+            option["label"] for option in pages["organized"].context["filter_options"]
+        }
+        self.assertIn("Formatting not OK", organized_labels)
+        self.assertNotIn("Format not OK", organized_labels)
 
     def test_editor_visible_data_matches_publication_package_contents(self):
         self.make_master_paper(

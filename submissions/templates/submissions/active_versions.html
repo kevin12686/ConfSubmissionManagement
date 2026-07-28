@@ -37,7 +37,7 @@
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% else %}
-                        <span class="badge text-bg-danger">No PDF</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>
                     {% endif %}
                 </td>
                 <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></td>

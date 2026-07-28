@@ -26,6 +26,7 @@ from submissions.forms import (
     SystemStateRestoreForm,
 )
 from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
+from submissions.presentation import ui_label
 from submissions.services.checks import (
     ERROR_SEVERITY_CONFIG,
     author_count_rows,
@@ -490,7 +491,7 @@ def author_count(request):
         {"value": "attention", "label": "Needs attention"},
         {"value": "over_limit", "label": "Over limit"},
         {"value": "duplicates", "label": "Duplicate in paper"},
-        {"value": "allowed", "label": "Allowed exceptions"},
+        {"value": "allowed", "label": ui_label("exception", "allowed")},
     ]
     page = paginate_worklist(
         request,

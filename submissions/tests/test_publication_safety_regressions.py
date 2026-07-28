@@ -325,8 +325,10 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
             content.index("Final Submissions Outside Paper Master"),
             content.index("Missing Final - Publication Decision"),
         )
-        self.assertContains(page, "Current Official Paper ID")
-        self.assertContains(page, "Paper ID decision required")
+        self.assertContains(page, "<th>Paper ID</th>", html=True)
+        self.assertNotContains(page, "Current Official Paper ID")
+        self.assertContains(page, "Decision required")
+        self.assertNotContains(page, "Paper ID decision required")
         self.assertContains(page, "Resolve Paper ID")
         self.assertContains(page, "Verify selected Paper ID")
         self.assertContains(page, "Open full Paper ID Review")

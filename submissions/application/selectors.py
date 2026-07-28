@@ -5,6 +5,7 @@ from django.urls import reverse
 
 from submissions.forms import FinalSubmissionImportForm, ImportFileForm
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
+from submissions.presentation import ui_label
 from submissions.services.checks import (
     author_count_rows,
     dashboard_counts,
@@ -40,18 +41,18 @@ def verification_badge(submission, master_paper=None):
     if paper_is_not_publishing(master_paper) or (
         master_paper is None and submission.excluded_from_publication
     ):
-        return "Excluded from publication", "secondary"
+        return ui_label("publication", "excluded"), "secondary"
     if submission.paper_id_verified and not paper_title_matches_master(submission, master_paper):
-        return "Verified, title differs", "warning"
+        return ui_label("paper_id", "verified_title_differs"), "warning"
     if paper_id_effectively_verified(submission, master_paper):
         if submission.paper_id_verified:
-            return "Verified", "success"
-        return "Auto-verified by title", "success"
+            return ui_label("paper_id", "verified"), "success"
+        return ui_label("paper_id", "auto_verified"), "success"
     if submission.verification_status == "title_mismatch":
-        return "Paper ID title mismatch", "warning"
+        return ui_label("paper_id", "title_mismatch"), "warning"
     if submission.verification_status == "invalid_paper_id":
-        return "Paper ID not in master list", "warning"
-    return "Paper ID needs review", "danger"
+        return ui_label("paper_id", "not_in_master"), "warning"
+    return ui_label("paper_id", "needs_review"), "danger"
 
 
 def search_query(request):
@@ -255,10 +256,10 @@ def paper_note_summary():
 
 FINAL_SUBMISSION_FILTER_OPTIONS = [
     {"value": "all", "label": "All"},
-    {"value": "version_conflicts", "label": "Version conflicts"},
-    {"value": "editor_uploads", "label": "Editor uploads"},
-    {"value": "discarded", "label": "Discarded"},
-    {"value": "start2", "label": "Start2"},
+    {"value": "version_conflicts", "label": ui_label("version", "conflict")},
+    {"value": "editor_uploads", "label": ui_label("origin", "editor_upload")},
+    {"value": "discarded", "label": ui_label("version", "discarded")},
+    {"value": "start2", "label": ui_label("origin", "start2")},
 ]
 
 FINAL_SUBMISSION_SORT_OPTIONS = [
@@ -445,9 +446,12 @@ def final_submission_list_context(
 
 
 PROCESS_PREVIEW_FILTER_OPTIONS = [
-    {"value": "needs_processing", "label": "Needs processing"},
+    {
+        "value": "needs_processing",
+        "label": ui_label("processing", "needs_processing"),
+    },
     {"value": "page_issues", "label": "Page issues"},
-    {"value": "processed", "label": "Processed"},
+    {"value": "processed", "label": ui_label("processing", "processed")},
     {"value": "all", "label": "All"},
 ]
 

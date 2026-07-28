@@ -70,7 +70,7 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table">
-        <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Publication decision</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Publication Decision</th><th>Notes</th><th></th></tr></thead>
         <tbody>
         {% for paper in papers %}
             <tr>
@@ -80,12 +80,12 @@
                 <td>{{ paper.authors|truncatechars:80 }}</td>
                 <td>
                     {% if paper.publication_decision_status == "not_publishing" %}
-                        <span class="badge text-bg-secondary">Not Publishing</span>
+                        <span class="badge text-bg-secondary">{{ ui_labels.publication.not_publishing }}</span>
                         <div class="small text-muted mt-1">{{ paper.get_publication_exclusion_reason_display }}</div>
                     {% elif paper.publication_decision_status == "decision_required" %}
-                        <span class="badge text-bg-danger">Decision required</span>
+                        <span class="badge text-bg-danger">{{ ui_labels.publication.decision_required }}</span>
                     {% else %}
-                        <span class="badge text-bg-success">Publishing</span>
+                        <span class="badge text-bg-success">{{ ui_labels.publication.publishing }}</span>
                     {% endif %}
                 </td>
                 <td class="cfm-note-cell">

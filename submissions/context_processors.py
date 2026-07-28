@@ -3,6 +3,7 @@ from django.conf import settings as django_settings
 from django.utils import timezone
 
 from submissions.models import AppSetting
+from submissions.presentation import UI_LABELS
 
 
 def global_workflow_alerts(request):
@@ -20,4 +21,5 @@ def global_workflow_alerts(request):
         "app_version": django_settings.APP_VERSION,
         "state_archive_version": django_settings.STATE_ARCHIVE_VERSION,
         "copyright_year": timezone.localdate().year,
+        "ui_labels": UI_LABELS,
     }

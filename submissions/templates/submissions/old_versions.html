@@ -16,19 +16,19 @@
         <div class="cfm-metric"><div class="cfm-metric-label">All</div><div class="cfm-metric-value">{{ summary_counts.all }}</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="cfm-metric"><div class="cfm-metric-label">Replaced</div><div class="cfm-metric-value">{{ summary_counts.replaced }}</div></div>
+        <div class="cfm-metric"><div class="cfm-metric-label">{{ ui_labels.version.replaced }}</div><div class="cfm-metric-value">{{ summary_counts.replaced }}</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="cfm-metric"><div class="cfm-metric-label">Discarded</div><div class="cfm-metric-value">{{ summary_counts.discarded }}</div></div>
+        <div class="cfm-metric"><div class="cfm-metric-label">{{ ui_labels.version.discarded }}</div><div class="cfm-metric-value">{{ summary_counts.discarded }}</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="cfm-metric"><div class="cfm-metric-label">Editor Uploads</div><div class="cfm-metric-value">{{ summary_counts.editor_uploads }}</div></div>
+        <div class="cfm-metric"><div class="cfm-metric-label">{{ ui_labels.origin.editor_upload }}</div><div class="cfm-metric-value">{{ summary_counts.editor_uploads }}</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="cfm-metric"><div class="cfm-metric-label">Start2</div><div class="cfm-metric-value">{{ summary_counts.start2 }}</div></div>
+        <div class="cfm-metric"><div class="cfm-metric-label">{{ ui_labels.origin.start2 }}</div><div class="cfm-metric-value">{{ summary_counts.start2 }}</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="cfm-metric"><div class="cfm-metric-label">Other inactive</div><div class="cfm-metric-value">{{ summary_counts.other }}</div></div>
+        <div class="cfm-metric"><div class="cfm-metric-label">{{ ui_labels.version.other_inactive }}</div><div class="cfm-metric-value">{{ summary_counts.other }}</div></div>
     </div>
 </div>
 
@@ -56,7 +56,7 @@
                 <th>Replacement</th>
                 <th>Final Title</th>
                 <th>Pages</th>
-                <th>Files / PDF</th>
+                <th>PDF</th>
                 <th>Notes</th>
             </tr>
         </thead>
@@ -78,10 +78,10 @@
                         <div><span class="badge text-bg-light text-dark">Also replaced</span></div>
                     {% endif %}
                     {% if row.not_publishing_flag %}
-                        <div><span class="badge text-bg-secondary">Not publishing flag</span></div>
+                        <div><span class="badge text-bg-secondary">{{ ui_labels.publication.not_publishing }} flag</span></div>
                     {% endif %}
                 </td>
-                <td><span class="badge {{ row.origin_class }}">{{ row.origin_label }}</span></td>
+                <td>{{ row.origin_label }}</td>
                 <td>
                     {% if row.active_replacement %}
                         <div>Final {{ row.active_replacement.final_submission_id }}</div>
@@ -99,7 +99,7 @@
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% else %}
-                        <span class="badge text-bg-warning">No PDF</span>
+                        <span class="badge text-bg-warning">{{ ui_labels.file.no_pdf }}</span>
                     {% endif %}
                 </td>
                 <td class="cfm-note-cell">
@@ -114,7 +114,7 @@
                 </td>
             </tr>
             {% if row.note_items %}
-                <tr class="collapse" id="old-notes-{{ item.pk }}">
+                <tr class="collapse" id="old-notes-{{ item.pk }}" data-cfm-context-expansion>
                     <td colspan="9">
                         {% for note in row.note_items %}
                             <div class="mb-2">

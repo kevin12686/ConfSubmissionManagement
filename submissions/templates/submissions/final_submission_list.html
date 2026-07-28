@@ -87,19 +87,6 @@
         </div>
 	    {% include "submissions/partials/loading_indicator.html" with indicator_id="final-submission-loading" message="Updating submissions..." %}
 	</form>
-	<details class="small text-muted border rounded px-2 py-1 mb-3">
-    <summary class="fw-semibold">Status guide</summary>
-    <div class="d-flex flex-wrap gap-2 mt-2">
-        <span><span class="badge text-bg-success">Current</span> newest version</span>
-        <span><span class="badge text-bg-secondary">Replaced</span> older version</span>
-        <span><span class="badge text-bg-primary">Editor Upload</span> editor-provided email version</span>
-        <span><span class="badge text-bg-warning">Version conflict</span> Start2 and Editor upload both need a discard decision</span>
-        <span><span class="badge text-bg-dark">Discarded</span> retained but not used for publication</span>
-        <span><span class="badge text-bg-danger">Needs review</span> Paper ID unchecked</span>
-        <span><span class="badge text-bg-warning">Verified, title differs</span> checked but title differs</span>
-        <span><span class="badge text-bg-success">Verified</span> checked or identical</span>
-    </div>
-</details>
     {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 	<div class="table-responsive">
     <table class="table table-hover align-middle cfm-table cfm-table-sticky">
@@ -109,24 +96,22 @@
             <tr>
                 <td>
                     <div>{{ item.final_submission_id }}</div>
-                    {% if item.submission_origin == "editor_upload" %}<span class="badge text-bg-primary">Editor Upload</span>{% else %}<span class="badge text-bg-light text-dark">Start2</span>{% endif %}
-                    {% if item.discarded %}<span class="badge text-bg-dark">Discarded</span>{% endif %}
-                    {% if item.version_conflict %}<span class="badge text-bg-warning">Version conflict</span>{% endif %}
+                    <div class="small text-muted">{{ item.get_submission_origin_display }}</div>
                 </td>
                 <td>{{ item.start2_paper_id_raw }}</td>
                 <td>
                     <div>{{ item.paper_id_filled }}</div>
                     <span class="badge text-bg-{{ item.verification_badge_level }}">{{ item.verification_badge_label }}</span>
-                    {% if item.duplicate_submission %}<span class="badge text-bg-light text-dark">Replaced</span>{% endif %}
                 </td>
 	                <td>
 	                    {% if item.discarded %}
-	                        <span class="badge text-bg-dark">Discarded</span>
+	                        <span class="badge text-bg-dark">{{ ui_labels.version.discarded }}</span>
 	                    {% elif item.active_version %}
-	                        <span class="badge text-bg-success">Current final</span>
+	                        <span class="badge text-bg-success">{{ ui_labels.version.current_final }}</span>
 	                    {% else %}
-	                        <span class="badge text-bg-secondary">Replaced</span>
+	                        <span class="badge text-bg-secondary">{{ ui_labels.version.replaced }}</span>
 	                    {% endif %}
+	                    {% if item.version_conflict %}<div class="mt-1"><span class="badge text-bg-warning">{{ ui_labels.version.conflict }}</span></div>{% endif %}
 	                    {% if item.discard_notes %}<div class="small text-muted">{{ item.discard_notes }}</div>{% endif %}
 	                </td>
 	                <td class="cfm-title-cell">{{ item.final_submission_title }}</td>
@@ -141,7 +126,7 @@
 	                                <a href="{{ item.display_pdf.url }}" target="_blank" rel="noopener">{{ item.display_pdf.filename|truncatechars:42 }}</a>
 	                            </div>
 	                        {% else %}
-	                            <div class="small text-warning">No PDF</div>
+	                        <div class="small text-warning">{{ ui_labels.file.no_pdf }}</div>
 	                        {% endif %}
 	                    </div>
 	                    <div>
@@ -154,7 +139,7 @@
 	                                <a href="{{ item.display_source.url }}">{{ item.display_source.filename|truncatechars:42 }}</a>
 	                            </div>
 	                        {% else %}
-	                            <div class="small text-muted">No source</div>
+	                        <div class="small text-muted">{{ ui_labels.file.no_source }}</div>
 	                        {% endif %}
 	                    </div>
 	                </td>
@@ -174,7 +159,15 @@
                         {% endif %}
                     {% endif %}
                 </td>
-                <td>{{ item.processing_status }}</td>
+                <td>
+                    {% if item.processing_status == "processed" %}
+                        <span class="badge text-bg-success">{{ ui_labels.processing.processed }}</span>
+                    {% elif item.processing_status == "error" %}
+                        <span class="badge text-bg-danger">{{ ui_labels.processing.error }}</span>
+                    {% else %}
+                        <span class="badge text-bg-warning">{{ ui_labels.processing.needs_processing }}</span>
+                    {% endif %}
+                </td>
 	                <td>
 		                    <div class="cfm-table-actions">
 		                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}">Edit</a>
@@ -196,7 +189,7 @@
 	                </td>
 	            </tr>
 	            {% if item.submission_origin == "editor_upload" and item.editor_upload_notes %}
-	            <tr class="collapse" id="editor-note-row-{{ item.pk }}">
+	            <tr class="collapse" id="editor-note-row-{{ item.pk }}" data-cfm-context-expansion>
 	                <td colspan="9">
 	                    <div class="border rounded p-3 bg-light">
 	                        <div class="fw-semibold mb-1">Editor upload note</div>
@@ -210,7 +203,7 @@
 	            </tr>
 	            {% endif %}
 	            {% if not item.discarded %}
-	            <tr class="collapse" id="discard-row-{{ item.pk }}">
+	            <tr class="collapse" id="discard-row-{{ item.pk }}" data-cfm-context-expansion>
 	                <td colspan="9">
 	                    <form method="post" class="border rounded p-3 bg-light">
 	                        {% csrf_token %}
