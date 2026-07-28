@@ -11,6 +11,7 @@ be reflected here. For task-oriented guides, start from the
 | Concern | Source of truth |
 | --- | --- |
 | Publication scope | Paper Master List |
+| Per-paper publication decision | `InitialPaper.publication_decision_status` |
 | Active Final Submission | Active-version services and configured ordering rule |
 | Publication PDF | `publication_pdf_info()` |
 | Publication source | `publication_source_info()` |
@@ -23,19 +24,49 @@ must not replace these sources of truth.
 
 ## Publication Scope
 
-Paper Master defines which Paper IDs belong to the publication.
+Paper Master defines which Paper IDs belong to the conference and owns the
+publication decision for each one:
+
+- `Publishing`: the paper is in publication scope and must satisfy readiness.
+- `Not Publishing`: the paper is retained for traceability but excluded from
+  processing, review queues, CrossCheck, duplicate and author counts, and
+  final or draft publication packages.
+- `Decision Required`: migrated or otherwise ambiguous state that blocks both
+  final and draft packages until an editor explicitly chooses Publishing or
+  Not Publishing.
 
 A Final Submission can participate only when:
 
 1. Its official Paper ID exists in Paper Master.
 2. It is not discarded.
-3. Its Paper ID group is not marked Not Publishing.
+3. Its Paper Master decision is `Publishing`.
 4. Its active-version state is unambiguous.
 
-Not Publishing is a paper-level decision. Mark and undo apply to every Final
-Submission with the same official Paper ID. Mixed included/excluded versions
-are a Critical `Mixed Not Publishing Decision` blocker; export does not guess
-which version should win.
+Not Publishing can be recorded before any Final Submission exists. This is the
+correct workflow for an accepted Master paper that is unpaid, withdrawn, or
+otherwise removed from the proceedings. Marking it requires a reason, note,
+signed evidence, and explicit confirmation of publication-scope impact.
+
+Creating or importing a new Paper Master record is a publication-scope
+transition. If any existing orphan Final under that Paper ID retains a Not
+Publishing decision, the new Master record must enter `Decision Required`.
+Import Preview shows the affected Final IDs, and the editor must explicitly
+choose Publishing or Not Publishing. Import, manual Master creation, and
+combined mapping workbooks use the same guarded creation service.
+
+Final Submission exclusion fields are compatibility mirrors, not authority, for
+Paper IDs that exist in Paper Master. Mark and undo synchronize those mirrors,
+and later Final imports or Editor Uploads inherit the current Master decision.
+Inconsistent mirror values cannot override the Paper Master decision and are a
+structural integrity blocker for final, draft, and CrossCheck exports. A Final
+outside Paper Master retains its legacy per-record classification workflow
+until its ID is corrected or it is explicitly excluded.
+
+Undo returns a Paper Master record to `Publishing`. If it still has no Final,
+`Missing Final Submission` immediately becomes a blocker again. Marking or
+undoing a publication decision does not reset Paper ID verification or other
+review evidence because the underlying files and reviewed metadata did not
+change.
 
 Discard is version-level. It removes one version from consideration while
 preserving the record and reason for traceability.
@@ -56,8 +87,9 @@ side is discarded with a reason. A clearly marked draft may use that
 deterministic Editor Upload selection and records the conflict in its warnings
 CSV.
 
-Inactive, discarded, Not Publishing, and invalid-ID records remain available
-for history or correction but do not become publication candidates.
+Inactive, discarded, Not Publishing, Decision Required, and invalid-ID records
+remain available for history or correction but do not become publication
+candidates.
 
 ## Publication File Resolution
 
@@ -118,6 +150,7 @@ Review state resets only when its evidence changes.
 | Official Paper ID | Paper ID verification and active grouping are recalculated |
 | Paper Master notes only | No review state resets |
 | Active-version ordering rule | Preview and apply selection changes; do not reset unrelated review fields |
+| Paper Master publication decision | Recalculate scope and compatibility mirrors; do not reset review evidence |
 
 `Review OK` is the single Title/Author completion decision. A reviewed
 Final-versus-extracted title difference remains tracked information, not a
@@ -149,8 +182,10 @@ Exceptions are narrow, evidence-bound decisions:
   do not modify the underlying measurement.
 
 Structural ambiguity is not an ordinary warning and cannot be bypassed by draft
-export. This includes multiple active candidates, mixed Not Publishing state,
-and duplicate sanitized publication filenames.
+export. This includes a Paper Master `Decision Required` state, multiple active
+candidates, unresolved orphan Final publication decisions, disagreement between
+Paper Master and Final decision mirrors, and duplicate sanitized publication
+filenames.
 
 ## Export Integrity
 
@@ -218,6 +253,7 @@ selects the archive-and-clear option.
 | Active versions and PDF processing | `submissions/services/pdf_processor.py` |
 | Publication file selection | `submissions/services/file_manager.py` |
 | Request-scoped publication snapshot | `submissions/services/publication_read.py` |
+| Publication decision transitions and integrity | `submissions/services/publication_decisions.py` |
 | Readiness and author checks | `submissions/services/checks.py` |
 | Exceptions | `submissions/services/exceptions.py` |
 | Publication and report exports | `submissions/services/reports.py` |

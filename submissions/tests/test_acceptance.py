@@ -87,6 +87,7 @@ from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions, process_all_pdfs
 from submissions.services import publication_read
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import mark_paper_not_publishing
 from submissions.services.reports import (
     EDITORIAL_WORKBOOK_SUPPORTING_SHEETS,
     author_count_frame,
@@ -153,6 +154,7 @@ from submissions.services.workflow_evidence import (
     final_submission_edit_evidence,
     formatting_issue_evidence,
     make_evidence_token,
+    paper_publication_decision_evidence,
     require_evidence_token,
 )
 from submissions.services.audit import (
@@ -448,6 +450,9 @@ class EditorialAcceptanceTestCase(TestCase):
             {"submission": submission.pk},
         )
         self.assertEqual(response.status_code, 200)
+        focused_paper = response.context["focused_paper"]
+        if focused_paper is not None:
+            return focused_paper.publication_decision_evidence_token
         return response.context[
             "focused_submission"
         ].publication_decision_evidence_token
@@ -1818,7 +1823,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         settings_obj.conference_name = "DSA 2026"
         settings_obj.page_limit = 10
         settings_obj.save()
-        self.make_master_paper(
+        master_paper = self.make_master_paper(
             paper_id="R001",
             title="Restored Paper",
             notes="  Restore note  \n\n\n  keep this  ",
@@ -1869,6 +1874,16 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         )
         reviewed_source_hash = submission.source_hash
         self.assertTrue(reviewed_source_hash)
+        decision_token = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(master_paper, [submission]),
+        )
+        mark_paper_not_publishing(
+            master_paper,
+            "withdrawn",
+            "Withdrawn after the review was completed.",
+            expected_evidence_token=decision_token,
+        )
         PaperAuthor.objects.create(
             final_submission=submission,
             paper_id="R001",
@@ -1919,8 +1934,21 @@ class SystemStateTests(EditorialAcceptanceTestCase):
         restored_paper = InitialPaper.objects.get()
         self.assertEqual(restored_paper.paper_id, "R001")
         self.assertEqual(restored_paper.notes, "Restore note\n\nkeep this")
+        self.assertEqual(
+            restored_paper.publication_decision_status,
+            "not_publishing",
+        )
+        self.assertEqual(
+            restored_paper.publication_exclusion_reason,
+            "withdrawn",
+        )
+        self.assertEqual(
+            restored_paper.publication_exclusion_notes,
+            "Withdrawn after the review was completed.",
+        )
         restored = FinalSubmission.objects.get()
         self.assertEqual(restored.final_submission_id, "9001")
+        self.assertTrue(restored.excluded_from_publication)
         self.assertTrue(Path(restored.current_file_path).exists())
         self.assertEqual(Path(restored.current_file_path).read_bytes(), b"publication pdf")
         self.assertTrue(Path(restored.source_current_file_path).exists())
@@ -2848,15 +2876,28 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
             similarity_score=None,
             single_similarity_score=None,
         )
-        self.make_master_paper("P005", "Excluded Missing", "Ada")
-        self.make_final_submission(
+        excluded_paper = self.make_master_paper(
+            "P005",
+            "Excluded Missing",
+            "Ada",
+        )
+        excluded_submission = self.make_final_submission(
             final_submission_id="50",
             paper_id_filled="P005",
             final_submission_title="Excluded Missing",
             extracted_title="Excluded Missing",
-            excluded_from_publication=True,
             similarity_score=None,
             single_similarity_score=None,
+        )
+        mark_not_publishing(
+            excluded_submission,
+            "unpaid",
+            "Excluded from CrossCheck publication scope.",
+        )
+        excluded_paper.refresh_from_db()
+        self.assertEqual(
+            excluded_paper.publication_decision_status,
+            "not_publishing",
         )
 
         all_result = prepare_crosscheck_upload("TOKEN")
@@ -2948,15 +2989,13 @@ class ComplexReplacementWorkflowTests(EditorialAcceptanceTestCase):
         determine_active_versions()
         _mark_duplicate_submissions()
         mark_not_publishing(active, "unpaid", "payment missing")
-        self.assert_publication_blocked("no publishable active final submissions")
+        self.assert_publication_blocked(
+            "no Paper Master records are currently in publication scope"
+        )
 
         undo_not_publishing(active)
         active.refresh_from_db()
-        self.assertFalse(active.paper_id_verified)
-        self.assertEqual(active.verification_status, "pending")
-        self.assert_publication_blocked("Unverified Paper ID")
-
-        verify_submission(active, "P001")
+        self.assertTrue(active.paper_id_verified)
         self.assertEqual(publication_readiness_rows(), [])
 
     def test_corrected_source_upload_resets_reviews_and_is_packaged(self):
@@ -3014,7 +3053,9 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         mark_not_publishing(submission, "unpaid", "not paid")
 
         self.assertEqual(publication_readiness_rows(), [])
-        self.assert_publication_blocked("no publishable active final submissions")
+        self.assert_publication_blocked(
+            "no Paper Master records are currently in publication scope"
+        )
 
     def test_missing_final_submission_blocks_publication(self):
         self.make_master_paper("P001")
@@ -3621,7 +3662,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             self.assertNotIn("PDF/P001-Ready Paper.pdf", archive.namelist())
 
         undo_not_publishing(excluded)
-        self.assert_publication_blocked("Unverified Paper ID")
+        self.assertTrue(Path(export_publication_package()).exists())
 
     def test_not_publishing_latest_replacement_does_not_resurrect_old_version_or_show_no_final(self):
         self.make_master_paper("P001", "Withdrawn Replacement", "Ada")
@@ -4029,7 +4070,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         ):
             export_publication_package(force=True)
 
-    def test_publishable_and_not_publishing_active_finals_still_block_and_remain_visible(self):
+    def test_multiple_active_finals_still_block_and_remain_visible(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
         included = self.make_final_submission(
             final_submission_id="10",
@@ -4039,18 +4080,9 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             final_submission_id="11",
             paper_id_filled="P001",
         )
-        excluded.excluded_from_publication = True
-        excluded.save(
-            update_fields=["excluded_from_publication", "updated_at"]
-        )
-
         rows = publication_readiness_rows()
         self.assertIn(
             "Multiple Active Final Submissions",
-            {row["category"] for row in rows},
-        )
-        self.assertIn(
-            "Mixed Not Publishing Decision",
             {row["category"] for row in rows},
         )
         organized_rows, _summary, _settings, _filter, _sort = organized_list_rows()
@@ -7623,6 +7655,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "submission_id": submission.pk,
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "unpaid",
+                "confirm_publication_decision": "yes",
                 "evidence_token": self.publication_decision_token(
                     submission
                 ),
@@ -7637,6 +7670,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             {
                 "submission_id": submission.pk,
                 "action": "undo_not_publishing",
+                "confirm_publication_decision": "yes",
                 "evidence_token": self.publication_decision_token(
                     submission
                 ),
@@ -9038,9 +9072,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.extracted_authors = "Ada Lovelace; Alan Turing"
         submission.title_author_review_status = "review_ok"
         submission.extracted_title_verified = True
-        submission.excluded_from_publication = True
-        submission.publication_exclusion_reason = "unpaid"
-        submission.publication_excluded_at = timezone.now()
+        submission.save()
+        mark_not_publishing(
+            submission,
+            "unpaid",
+            "Keep this paper outside publication scope.",
+        )
+        submission.refresh_from_db()
         submission.paper_id_verified = False
         submission.auto_verify_blocked = True
         submission.save()
@@ -9165,12 +9203,12 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             paper_id_filled="P001",
             final_submission_title="Included Candidate",
         )
-        self.make_final_submission(
+        excluded = self.make_final_submission(
             final_submission_id="PC002",
             paper_id_filled="P002",
             final_submission_title="Excluded Candidate",
-            excluded_from_publication=True,
         )
+        mark_not_publishing(excluded, "unpaid", "Not in publication scope.")
         self.make_final_submission(
             final_submission_id="PC003",
             paper_id_filled="NOTMASTER",
@@ -9193,11 +9231,11 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             final_submission_id="PROC001",
             paper_id_filled="P001",
         )
-        self.make_final_submission(
+        excluded = self.make_final_submission(
             final_submission_id="PROC002",
             paper_id_filled="P002",
-            excluded_from_publication=True,
         )
+        mark_not_publishing(excluded, "unpaid", "Not in publication scope.")
         self.make_final_submission(
             final_submission_id="PROC003",
             paper_id_filled="NOTMASTER",
@@ -11579,6 +11617,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "unpaid",
                 "publication_exclusion_notes": "payment not received",
+                "confirm_publication_decision": "yes",
                 "evidence_token": self.publication_decision_token(
                     excluded
                 ),
@@ -11691,14 +11730,14 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         by_category = {row["category"]: row for row in rows}
 
         self.assertEqual(by_category["Discarded Final Submission"]["severity"], "info")
-        self.assertEqual(by_category["Not Publishing Final Submission"]["severity"], "info")
+        self.assertEqual(by_category["Not Publishing Paper"]["severity"], "info")
         self.assertEqual(by_category["Discarded Final Submission"]["group"], "Version Tracking")
         self.assertIn("Use editor-uploaded email version instead.", by_category["Discarded Final Submission"]["message"])
-        self.assertIn("No publication fee received.", by_category["Not Publishing Final Submission"]["message"])
+        self.assertIn("No publication fee received.", by_category["Not Publishing Paper"]["message"])
 
         page = self.client.get(reverse("submissions:error_report"))
         self.assertContains(page, "Discarded Final Submission")
-        self.assertContains(page, "Not Publishing Final Submission")
+        self.assertContains(page, "Not Publishing Paper")
         self.assertContains(page, "Version Tracking")
 
     def test_import_preview_service_is_covered_by_view_ready_data(self):
@@ -12005,8 +12044,8 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Focused publication decision")
-        self.assertContains(response, "Publication candidate")
-        self.assertContains(response, "Mark Not Publishing")
+        self.assertContains(response, "Publishing")
+        self.assertContains(response, "Mark Paper Not Publishing")
 
     def test_author_count_links_to_exact_exception_key(self):
         for index in range(4):

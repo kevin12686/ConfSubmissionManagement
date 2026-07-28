@@ -30,7 +30,11 @@ Core route groups:
 
 ## FinalSubmission State Split
 
-`FinalSubmission` remains the compatibility record and behavior source of truth. Newer one-to-one state models mirror lifecycle domains:
+`FinalSubmission` remains the compatibility record and behavior source of truth
+for submission-version state. The Paper Master publication decision is the
+intentional exception: `InitialPaper.publication_decision_status` is
+authoritative and Final exclusion fields are mirrors for mapped Paper IDs.
+Newer one-to-one state models mirror lifecycle domains:
 
 - `FinalSubmissionIdentityState`
 - `FinalSubmissionFileState`
@@ -70,7 +74,11 @@ external processing.
   Upload apply locks and rechecks Paper Master evidence plus the exact temporary
   PDF/source size and SHA-256 before creating a version.
 - Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
-- Not Publishing is paper/publication-decision-level: it keeps records for traceability but excludes the paper from publication readiness and package output.
+- Not Publishing is Paper-Master-level: `InitialPaper.publication_decision_status`
+  is authoritative even before a Final exists. It keeps records for
+  traceability but excludes the paper from publication processing, reviews,
+  readiness, and package output. Final Submission exclusion fields are
+  synchronized compatibility mirrors for mapped Paper IDs.
 - Publication PDF priority is corrected PDF, then original author PDF.
 
 Dashboard readiness is derived from `publication_readiness_rows()`, the same service used to block Final Publication Package export. Controllers may group those rows for display, but must not recreate publication-blocking rules with independent counters. Dashboard workflow counts represent unique affected papers; the readiness header separately reports the number of individual blocker rows.
@@ -154,14 +162,25 @@ workflow alerts reuse this context rather than loading independent publication
 scopes. It is immutable request data, not a publication cache, and GET requests
 do not persist derived state.
 
-Not Publishing is enforced as a Paper ID group invariant over the existing
-Final Submission compatibility state: mark and undo lock/update every version
-with that Official Paper ID. A mixed group is a Critical readiness blocker;
-publication code does not infer which version's decision should win.
-Routine reads find mixed Not Publishing and Start2/Editor conflict groups with
-database conditional aggregation, then load details only for groups that
-actually conflict. Historical Final rows must not be materialized in Python
-merely to prove that no conflict exists.
+`InitialPaper.publication_decision_status` is the authoritative publication
+decision boundary. `PublicationReadContext` loads only `Publishing` Master
+records into publication scope, keeps `Not Publishing` records as tracked
+information, and reports `Decision Required` as structural ambiguity. Mark and
+undo lock the Master plus mapped Final rows, validate signed evidence, update
+the Master decision, and synchronize legacy Final exclusion fields in one
+transaction. Later imports and Editor Uploads apply the same mirror.
+
+New Master creation is centralized in
+`create_paper_master_with_publication_guard()`. Existing orphan exclusion
+evidence produces Decision Required instead of default Publishing. Mapped Final
+mirror disagreement does not change scope or override the Master, but the
+shared integrity checker blocks final, draft, and CrossCheck export. Decision
+Required preserves legacy mirror evidence until an explicit decision
+synchronizes it. Verify/remap checks the original and target Paper ID groups
+before changing the ID. Mixed legacy Final decisions are inspected only for
+records outside Paper Master, where no authoritative Master decision exists.
+Start2/Editor conflict groups continue to use database conditional aggregation
+and load details only for actual conflicts.
 
 `FileInspectionContext` reuses request-local filesystem observations for normal
 reads. SHA-256 results may be reused across requests only when device, inode,
@@ -448,6 +467,11 @@ The app version is defined in `conference_final_manager/settings.py` as `APP_VER
 The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`. Increment the archive version only when backup/restore structure or compatibility changes. Increment the app version for user-visible behavior, workflow, docs, or schema changes.
 
 The footer displays both values so a user can match a System State ZIP to the expected application version.
+
+Archive version 4 requires authoritative Paper Master publication decisions.
+Version 3 archives predate that contract and must be restored with a compatible
+older application before upgrading; treating a missing Master decision as
+Publishing would be unsafe.
 
 ## Optional GROBID Fallback
 

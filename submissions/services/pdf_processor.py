@@ -25,6 +25,7 @@ from submissions.services.file_manager import (
     source_pdf_path,
 )
 from submissions.services.audit import audit_failure, audit_success
+from submissions.services.publication_decisions import publication_master_paper_ids
 from submissions.services.text_utils import natural_text_key
 from submissions.services.workflow_evidence import (
     final_submission_state_evidence,
@@ -345,8 +346,7 @@ def process_all_pdfs(force=False):
         publication_submissions = FinalSubmission.objects.filter(
             active_version=True,
             discarded=False,
-            excluded_from_publication=False,
-            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+            paper_id_filled__in=publication_master_paper_ids(),
         )
         pending_updates = []
 
@@ -521,8 +521,7 @@ def processed_pdf_rows(
         submissions = FinalSubmission.objects.filter(
             active_version=True,
             discarded=False,
-            excluded_from_publication=False,
-            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+            paper_id_filled__in=publication_master_paper_ids(),
         ).order_by("paper_id_filled", "final_submission_id")
         if limit is not None:
             submissions = submissions[:limit]

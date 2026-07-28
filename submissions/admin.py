@@ -59,7 +59,14 @@ class FinalSubmissionPlagiarismStateInline(admin.StackedInline):
 
 @admin.register(InitialPaper)
 class InitialPaperAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
-    list_display = ("paper_id", "acceptance_status", "title", "has_notes")
+    list_display = (
+        "paper_id",
+        "acceptance_status",
+        "title",
+        "publication_decision_status",
+        "has_notes",
+    )
+    list_filter = ("publication_decision_status", "publication_exclusion_reason")
     search_fields = ("paper_id", "acceptance_status", "title", "authors", "notes")
 
     @admin.display(boolean=True, description="Notes")

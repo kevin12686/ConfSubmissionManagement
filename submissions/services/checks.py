@@ -26,6 +26,10 @@ from submissions.services.exception_keys import (
     submission_exception_key,
 )
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import (
+    publication_decision_integrity_rows,
+    publication_master_paper_ids,
+)
 
 
 ERROR_GROUPS = {
@@ -37,6 +41,8 @@ ERROR_GROUPS = {
             "Unverified Paper ID",
             "Final Title / Paper Master Title Mismatch",
             "Missing Final Submission",
+            "Publication Decision Required",
+            "Publication Decision Integrity Conflict",
             "Replaced Final Submission",
             "Multiple Active Final Submissions",
             "Mixed Not Publishing Decision",
@@ -105,6 +111,7 @@ ERROR_GROUPS = {
         "categories": {
             "Discarded Final Submission",
             "Not Publishing Final Submission",
+            "Not Publishing Paper",
         },
     },
 }
@@ -131,6 +138,8 @@ ERROR_CATEGORY_SEVERITY = {
     "Unclassified Final Not In Master": "critical",
     "Unverified Paper ID": "critical",
     "Missing Final Submission": "critical",
+    "Publication Decision Required": "critical",
+    "Publication Decision Integrity Conflict": "critical",
     "Multiple Active Final Submissions": "critical",
     "Mixed Not Publishing Decision": "critical",
     "Start2/Editor Version Conflict": "critical",
@@ -168,6 +177,7 @@ ERROR_CATEGORY_SEVERITY = {
     "Replaced Final Submission": "info",
     "Discarded Final Submission": "info",
     "Not Publishing Final Submission": "info",
+    "Not Publishing Paper": "info",
     "Allowed Page Exception": "info",
     "Allowed Author Number Exception": "info",
     "Allowed Author Paper Count Exception": "info",
@@ -180,6 +190,8 @@ ERROR_REPORT_AREA_CATEGORIES = {
         "Unverified Paper ID",
         "Final Title / Paper Master Title Mismatch",
         "Missing Final Submission",
+        "Publication Decision Required",
+        "Publication Decision Integrity Conflict",
         "Multiple Active Final Submissions",
         "Mixed Not Publishing Decision",
         "Start2/Editor Version Conflict",
@@ -246,16 +258,19 @@ def _titles_match_for_mapping(left, right):
 
 
 def paper_id_effectively_verified(submission, master_paper=None):
-    if not submission or submission.excluded_from_publication:
-        return False
-    if submission.paper_id_verified:
-        return True
-    if submission.auto_verify_blocked:
+    if not submission:
         return False
     master_paper = master_paper or InitialPaper.objects.filter(
         paper_id=submission.paper_id_filled
     ).first()
-    if not master_paper:
+    if (
+        not master_paper
+        or master_paper.publication_decision_status != "publishing"
+    ):
+        return False
+    if submission.paper_id_verified:
+        return True
+    if submission.auto_verify_blocked:
         return False
     final_title = _normalize_title_for_verification(submission.final_submission_title)
     master_title = _normalize_title_for_verification(master_paper.title)
@@ -833,8 +848,21 @@ def publication_readiness_rows(
     context = context or PublicationReadContext.load()
     setting = context.settings
     rows = []
+    rows.extend(publication_decision_integrity_rows(context))
     valid_ids = context.valid_paper_ids
     active_valid_submissions = context.master_submissions
+    for paper in context.decision_required_papers:
+        rows.append(
+            {
+                "category": "Publication Decision Required",
+                "paper_id": paper.paper_id,
+                "final_submission_id": "",
+                "message": (
+                    "Legacy publication decisions for this Paper ID were inconsistent. "
+                    "Open Not Publishing and explicitly choose Publishing or Not Publishing."
+                ),
+            }
+        )
     for paper_id, decision_group in context.mixed_publication_decision_groups.items():
         excluded_ids = ", ".join(decision_group["excluded"])
         included_ids = ", ".join(decision_group["included"])
@@ -874,8 +902,6 @@ def publication_readiness_rows(
             }
         )
     active_by_paper = active_master_submission_map(context)
-    excluded_paper_ids = context.excluded_paper_ids
-
     from submissions.services.editor_uploads import editor_conflict_details
 
     for conflict in editor_conflict_details():
@@ -902,9 +928,7 @@ def publication_readiness_rows(
             }
         )
 
-    for paper in context.papers:
-        if paper.paper_id in excluded_paper_ids:
-            continue
+    for paper in context.publication_papers:
         submission = active_by_paper.get(paper.paper_id)
         if not submission:
             rows.append(
@@ -1510,9 +1534,8 @@ def rebuild_paper_authors():
         rows = []
         for submission in FinalSubmission.objects.filter(
             active_version=True,
-            excluded_from_publication=False,
             discarded=False,
-            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+            paper_id_filled__in=publication_master_paper_ids(),
         ).exclude(
             extracted_authors=""
         ):
@@ -1719,7 +1742,6 @@ def dashboard_counts(*, context=None, author_rows=None):
         for submission in active
         if submission.paper_id_filled
     )
-    excluded_paper_ids = context.excluded_paper_ids
     valid_ids = context.valid_paper_ids
     unclassified_not_in_master = sum(
         1 for submission in active if submission.paper_id_filled not in valid_ids
@@ -1847,6 +1869,7 @@ def dashboard_counts(*, context=None, author_rows=None):
 
     return {
         "total_papers": len(context.papers),
+        "publication_scope_papers": len(context.publication_papers),
         "total_final_submissions": FinalSubmission.objects.count(),
         "active_final_versions": len(active),
         "publication_candidates": sum(
@@ -1861,16 +1884,18 @@ def dashboard_counts(*, context=None, author_rows=None):
             discarded=False,
         ).count(),
         "excluded_from_publication": sum(
-            1
-            for submission in context.active_submissions
-            if submission.excluded_from_publication
+            1 for _paper in context.not_publishing_papers
+        ),
+        "publication_decision_required": len(context.decision_required_papers),
+        "publication_decision_integrity_conflicts": len(
+            publication_decision_integrity_rows(context)
         ),
         "unclassified_not_in_master": unclassified_not_in_master,
         "invalid_paper_ids": len(invalid_paper_id_submissions(context)),
         "missing_final_submissions": sum(
             1
-            for paper in context.papers
-            if paper.paper_id not in active_paper_ids | excluded_paper_ids
+            for paper in context.publication_papers
+            if paper.paper_id not in active_paper_ids
         ),
         "page_limit_errors": sum(
             1
@@ -2000,7 +2025,26 @@ def error_report_rows(
                 "message": f"This final submission version was discarded. {note}".strip(),
             }
         )
-    for submission in FinalSubmission.objects.filter(excluded_from_publication=True):
+    for paper in context.not_publishing_papers:
+        note = (
+            paper.publication_exclusion_notes.strip()
+            if paper.publication_exclusion_notes
+            else ""
+        )
+        rows.append(
+            {
+                "category": "Not Publishing Paper",
+                "paper_id": paper.paper_id,
+                "final_submission_id": "",
+                "message": (
+                    f"Paper Master record marked not publishing "
+                    f"({paper.get_publication_exclusion_reason_display()}). {note}"
+                ).strip(),
+            }
+        )
+    for submission in FinalSubmission.objects.filter(
+        excluded_from_publication=True
+    ).exclude(paper_id_filled__in=context.valid_paper_ids):
         reason = submission.get_publication_exclusion_reason_display()
         note = (
             submission.publication_exclusion_notes.strip()

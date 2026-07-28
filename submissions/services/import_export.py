@@ -20,6 +20,9 @@ from submissions.services.file_manager import (
     publication_source_info,
 )
 from submissions.services.pdf_processor import final_submission_sort_key
+from submissions.services.publication_decisions import (
+    create_paper_master_with_publication_guard,
+)
 from submissions.services.text_utils import clean_note_text
 
 
@@ -214,9 +217,18 @@ def _import_initial_frame(frame):
             "authors": clean_value(row.get("authors")),
             "notes": clean_note_text(row.get("notes")),
         }
-        _obj, was_created = InitialPaper.objects.update_or_create(
-            paper_id=paper_id, defaults=defaults
-        )
+        existing = InitialPaper.objects.filter(paper_id=paper_id).first()
+        if existing:
+            for field_name, value in defaults.items():
+                setattr(existing, field_name, value)
+            existing.save(update_fields=[*defaults, "updated_at"])
+            was_created = False
+        else:
+            _obj, _transition = create_paper_master_with_publication_guard(
+                paper_id=paper_id,
+                **defaults,
+            )
+            was_created = True
         created += int(was_created)
         updated += int(not was_created)
     return {"created": created, "updated": updated}
@@ -329,6 +341,23 @@ def submissions_to_frame(queryset):
                 "paper_master_acceptance_status": master.acceptance_status if master else "",
                 "paper_master_title": master.title if master else "",
                 "paper_master_notes": master.notes if master else "",
+                "paper_master_publication_decision": (
+                    master.get_publication_decision_status_display()
+                    if master
+                    else ""
+                ),
+                "paper_master_publication_exclusion_reason": (
+                    master.get_publication_exclusion_reason_display()
+                    if master
+                    and master.publication_decision_status == "not_publishing"
+                    else ""
+                ),
+                "paper_master_publication_exclusion_notes": (
+                    master.publication_exclusion_notes if master else ""
+                ),
+                "paper_master_publication_excluded_at": (
+                    master.publication_excluded_at if master else None
+                ),
                 "submission_origin": item.submission_origin,
                 "editor_upload_notes": item.editor_upload_notes,
                 "editor_uploaded_at": item.editor_uploaded_at,

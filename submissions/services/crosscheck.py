@@ -22,6 +22,10 @@ from submissions.services.file_manager import publication_pdf_info, resolve_fold
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.import_export import clean_value, normalize_columns, read_table, round_percent
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import (
+    publication_decision_integrity_rows,
+    submission_is_not_publishing,
+)
 
 
 CROSSCHECK_RESULT_TEMPLATE_COLUMNS = [
@@ -252,6 +256,23 @@ def prepare_crosscheck_upload(token, scope=CROSSCHECK_EXPORT_ALL):
 
 
 def _assert_crosscheck_scope_unambiguous(context):
+    integrity_rows = publication_decision_integrity_rows(context)
+    if integrity_rows:
+        paper_ids = ", ".join(
+            sorted({row["paper_id"] for row in integrity_rows})
+        )
+        raise ValueError(
+            "CrossCheck export blocked by publication-decision integrity "
+            f"conflicts for: {paper_ids}."
+        )
+    if context.decision_required_papers:
+        paper_ids = ", ".join(
+            paper.paper_id for paper in context.decision_required_papers
+        )
+        raise ValueError(
+            "CrossCheck export blocked because Paper Master publication decisions "
+            f"are unresolved for: {paper_ids}."
+        )
     mixed_groups = context.mixed_publication_decision_groups
     if mixed_groups:
         paper_ids = ", ".join(sorted(mixed_groups))
@@ -261,7 +282,7 @@ def _assert_crosscheck_scope_unambiguous(context):
         )
     active_groups = {}
     for submission in context.active_submissions:
-        if submission.paper_id_filled not in context.valid_paper_ids:
+        if submission.paper_id_filled not in context.publication_paper_ids:
             continue
         active_groups.setdefault(submission.paper_id_filled, []).append(submission)
     conflicts = {
@@ -918,8 +939,11 @@ def _crosscheck_batch_submission(
     if (
         not submission.active_version
         or submission.discarded
-        or submission.excluded_from_publication
-        or not InitialPaper.objects.filter(paper_id=paper_id).exists()
+        or submission_is_not_publishing(submission)
+        or not InitialPaper.objects.filter(
+            paper_id=paper_id,
+            publication_decision_status="publishing",
+        ).exists()
     ):
         return (
             None,

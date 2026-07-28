@@ -110,6 +110,11 @@ migrating, or recovering a Docker instance.
 The most important rules are:
 
 - Paper Master defines publication scope.
+- Each Paper Master record owns its Publishing / Not Publishing decision, even
+  before a Final Submission exists.
+- Creating or importing a Master ID that matches an orphan Final with a prior
+  Not Publishing decision enters Decision Required; it never silently returns
+  that Final to publication scope.
 - Editor Upload outranks Start2, but mixed undiscarded sources block final
   export.
 - Corrected files outrank Original files; a selected Corrected file that is

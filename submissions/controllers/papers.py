@@ -104,6 +104,9 @@ from submissions.services.paper_master import (
     apply_initial_paper_manual_edit,
     delete_initial_paper,
 )
+from submissions.services.publication_decisions import (
+    create_paper_master_with_publication_guard,
+)
 from submissions.services.verification import (
     evaluate_submission,
     mark_not_publishing,
@@ -172,7 +175,12 @@ def initial_paper_form(request, pk=None):
                     request=request,
                 )
             else:
-                paper = form.save()
+                paper, transition = create_paper_master_with_publication_guard(
+                    **{
+                        field_name: form.cleaned_data[field_name]
+                        for field_name in InitialPaperForm.Meta.fields
+                    }
+                )
                 audit_success(
                     "paper_master_save",
                     "Paper master record saved.",
@@ -180,11 +188,34 @@ def initial_paper_form(request, pk=None):
                     object_type="InitialPaper",
                     paper_id=paper.paper_id,
                     changed_fields=form.changed_data,
+                    after={
+                        "publication_decision_status": (
+                            paper.publication_decision_status
+                        ),
+                        "prior_excluded_final_ids": transition[
+                            "excluded_final_ids"
+                        ],
+                    },
                 )
         except ValueError as exc:
             messages.error(request, str(exc))
-            return redirect("submissions:initial_paper_edit", pk=paper.pk)
+            if paper:
+                return redirect("submissions:initial_paper_edit", pk=paper.pk)
+            return redirect("submissions:initial_paper_add")
         messages.success(request, "Paper master record saved.")
+        if (
+            paper.publication_decision_status == "decision_required"
+            and not pk
+        ):
+            messages.warning(
+                request,
+                "Existing Not Publishing Final Submission decisions were found. "
+                "Explicitly confirm Keep Publishing or Not Publishing before this "
+                "paper can enter publication scope.",
+            )
+            return redirect(
+                f"{reverse('submissions:not_publishing_list')}?paper={paper.pk}"
+            )
         return redirect("submissions:initial_paper_list")
     evidence_token = (
         make_evidence_token(

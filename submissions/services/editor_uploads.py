@@ -22,6 +22,11 @@ from submissions.services.preview_storage import (
     purge_expired_preview_directories,
     save_preview_upload,
 )
+from submissions.services.publication_decisions import (
+    apply_master_decision_mirror,
+    publication_master_paper_ids,
+    submission_is_not_publishing,
+)
 from submissions.services.recompute import recompute_active_and_duplicate_state
 from submissions.services.file_manager import sanitize_filename_part
 from submissions.services.text_utils import clean_note_text
@@ -48,7 +53,6 @@ class EditorConflictSnapshot:
         submissions = list(
             FinalSubmission.objects.filter(
                 discarded=False,
-                excluded_from_publication=False,
                 paper_id_filled__in=conflict_ids,
             )
             .order_by("paper_id_filled", "submission_origin", "final_submission_id")
@@ -85,7 +89,7 @@ def editor_conflict_paper_ids(snapshot=None):
     conflict_ids = (
         FinalSubmission.objects.filter(
             discarded=False,
-            excluded_from_publication=False,
+            paper_id_filled__in=publication_master_paper_ids(),
         )
         .exclude(paper_id_filled="")
         .values("paper_id_filled")
@@ -115,7 +119,11 @@ def editor_conflict_details(snapshot=None):
 
 
 def submission_has_editor_conflict(submission):
-    if not submission or submission.discarded or submission.excluded_from_publication:
+    if (
+        not submission
+        or submission.discarded
+        or submission_is_not_publishing(submission)
+    ):
         return False
     return submission.paper_id_filled in set(editor_conflict_paper_ids())
 
@@ -396,6 +404,7 @@ def create_editor_submission(
             source.seek(0)
         submission.source_file.save(source.name, ContentFile(source.read()), save=False)
         submission.source_original_file_name = Path(source.name).name
+    apply_master_decision_mirror(submission, paper)
     submission.save()
     submission.current_file_path = submission.pdf_file.path
     if submission.source_file:

@@ -4,12 +4,121 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Not Publishing List</h1>
-        <div class="cfm-page-subtitle">Publication decisions for finals that should not be published. Old Versions remains the version history page.</div>
+        <div class="cfm-page-subtitle">Publication decisions are paper-level. Final Submissions outside the Paper Master List remain separately classifiable, while Old Versions remains the version history page.</div>
     </div>
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
 
-{% if focused_submission %}
+{% if focused_paper %}
+<section class="card cfm-review-card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <strong>{{ focused_paper.paper_id }}</strong>
+            <span class="text-muted">{{ focused_paper.title|default:"No Master title" }}</span>
+        </div>
+        {% if focused_paper.publication_integrity_conflict %}
+            <span class="badge text-bg-danger">Integrity conflict</span>
+        {% elif focused_paper.publication_decision_status == "not_publishing" %}
+            <span class="badge text-bg-secondary">Not Publishing</span>
+        {% elif focused_paper.publication_decision_status == "decision_required" %}
+            <span class="badge text-bg-danger">Decision required</span>
+        {% else %}
+            <span class="badge text-bg-success">Publishing</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="small text-muted">Paper Master authors</div>
+                <div>{{ focused_paper.authors|default:"Missing" }}</div>
+            </div>
+            <div class="col-lg-3">
+                <div class="small text-muted">Current Final</div>
+                <div>{% if focused_paper.active_submission %}{{ focused_paper.active_submission.final_submission_id }}{% else %}No Final submitted{% endif %}</div>
+            </div>
+            <div class="col-lg-3">
+                <div class="small text-muted">Retained Final versions</div>
+                <div>{{ focused_paper.final_version_count }}</div>
+            </div>
+            {% if focused_paper.publication_decision_status == "not_publishing" %}
+                <div class="col-md-4">
+                    <div class="small text-muted">Reason</div>
+                    <div>{{ focused_paper.get_publication_exclusion_reason_display }}</div>
+                </div>
+                <div class="col-md-8">
+                    <div class="small text-muted">Decision note</div>
+                    <div>{{ focused_paper.publication_exclusion_notes|default:"No note" }}</div>
+                </div>
+            {% endif %}
+        </div>
+        {% if focused_paper.publication_integrity_conflict %}
+            <div class="alert alert-danger border mt-3 mb-0">
+                <div class="fw-semibold">Publication decision records disagree</div>
+                <div class="small">
+                    This Paper Master decision disagrees with one or more mapped
+                    Final Submission records. Explicitly keep it in publication
+                    scope or mark it Not Publishing to synchronize every version.
+                </div>
+            </div>
+        {% endif %}
+        <div class="alert alert-warning border mt-3 mb-0">
+            {% if focused_paper.publication_decision_status == "not_publishing" %}
+                Returning this paper to publication scope will restore all readiness checks. If it has no Final Submission, Missing Final becomes a Critical blocker again.
+            {% else %}
+                Marking this paper Not Publishing removes the entire Paper ID from final and draft packages, CrossCheck export, processing, and publication review queues. Records and files are retained.
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-footer">
+        {% if focused_paper.publication_decision_status == "not_publishing" %}
+            <form method="post" class="d-flex flex-wrap align-items-center gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="paper_id" value="{{ focused_paper.pk }}">
+                <input type="hidden" name="evidence_token" value="{{ focused_paper.publication_decision_evidence_token }}">
+                <label class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" name="confirm_publication_decision" value="yes" required>
+                    <span class="form-check-label">I reviewed the publication-scope impact.</span>
+                </label>
+                <button class="btn btn-outline-secondary" name="action" value="undo_not_publishing">Return to publication scope</button>
+            </form>
+        {% else %}
+            <form method="post" class="row g-3 align-items-start">
+                {% csrf_token %}
+                <input type="hidden" name="paper_id" value="{{ focused_paper.pk }}">
+                <input type="hidden" name="evidence_token" value="{{ focused_paper.publication_decision_evidence_token }}">
+                <div class="col-md-6">
+                    <label class="form-label">Reason</label>
+                    <select class="form-select" name="publication_exclusion_reason">
+                        <option value="">Select reason</option>
+                        <option value="unpaid">Unpaid</option>
+                        <option value="withdrawn">Withdrawn</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-label">Confirmation</div>
+                    <div class="border rounded px-3 py-2">
+                        <label class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" name="confirm_publication_decision" value="yes" required>
+                            <span class="form-check-label">I reviewed the publication-scope impact.</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Editorial decision note</label>
+                    <textarea class="form-control" name="publication_exclusion_notes" rows="3"></textarea>
+                </div>
+                <div class="col-12 d-grid d-md-flex justify-content-md-end gap-2">
+                    {% if focused_paper.publication_decision_status == "decision_required" or focused_paper.publication_integrity_conflict %}
+                        <button class="btn btn-outline-primary" name="action" value="undo_not_publishing">Keep in publication scope</button>
+                    {% endif %}
+                    <button class="btn btn-outline-danger" name="action" value="mark_not_publishing">Mark Paper Not Publishing</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
+{% elif focused_submission %}
 <section class="card cfm-review-card">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div>
@@ -100,18 +209,108 @@
 <div class="row g-2 cfm-metric-strip">
     <div class="col-sm-6 col-lg-3">
         <div class="cfm-metric">
-            <div class="cfm-metric-label">Needs Decision</div>
+            <div class="cfm-metric-label">Missing Final</div>
+            <div class="cfm-metric-value {% if missing_final_count %}text-danger{% endif %}">{{ missing_final_count }}</div>
+            <div class="small text-muted">Still in publication scope</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="cfm-metric">
+            <div class="cfm-metric-label">Final Outside Master</div>
             <div class="cfm-metric-value {% if needs_decision_count %}text-danger{% endif %}">{{ needs_decision_count }}</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
         <div class="cfm-metric">
-            <div class="cfm-metric-label">Not Publishing</div>
+            <div class="cfm-metric-label">Not Publishing Papers</div>
             <div class="cfm-metric-value">{{ active_excluded_count }}</div>
-            <div class="small text-muted">{{ excluded_count }} total record{{ excluded_count|pluralize }}</div>
+            <div class="small text-muted">{{ excluded_count }} total decision record{{ excluded_count|pluralize }}</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="cfm-metric">
+            <div class="cfm-metric-label">Decision / Integrity Review</div>
+            <div class="cfm-metric-value {% if decision_required_count %}text-danger{% endif %}">{{ decision_required_count }}</div>
+            {% if integrity_conflict_count %}<div class="small text-danger">{{ integrity_conflict_count }} integrity conflict{{ integrity_conflict_count|pluralize }}</div>{% endif %}
         </div>
     </div>
 </div>
+
+{% if decision_required_papers %}
+<section class="cfm-section">
+    <h2 class="h5">Publication Decision / Integrity Review</h2>
+    <div class="alert alert-danger border">These Paper Master records have unresolved or inconsistent decision evidence. Explicitly keep each paper in scope or mark it Not Publishing before any publication export.</div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle table-sm cfm-table">
+            <thead><tr><th>Paper ID</th><th>Master Title</th><th>Current Final</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for paper in decision_required_papers %}
+                <tr>
+                    <td>{{ paper.paper_id }}</td>
+                    <td class="cfm-title-cell">{{ paper.title|default:"--" }}</td>
+                    <td>{% if paper.active_submission %}{{ paper.active_submission.final_submission_id }}{% else %}No Final{% endif %}</td>
+                    <td>
+                        {% if paper.publication_integrity_conflict %}
+                            <span class="badge text-bg-danger">Integrity conflict</span>
+                        {% else %}
+                            <span class="badge text-bg-danger">Decision required</span>
+                        {% endif %}
+                    </td>
+                    <td><a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">Review decision</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="cfm-section">
+    <h2 class="h5">Missing Final - Publication Decision</h2>
+    <p class="text-muted">These Paper Master records still belong to publication scope but have no active Final Submission. Keep them here while waiting, or record an explicit Not Publishing decision.</p>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle table-sm cfm-table">
+            <thead><tr><th>Paper ID</th><th>Master Title</th><th>Master Authors</th><th>Master Note</th><th></th></tr></thead>
+            <tbody>
+            {% for paper in missing_final_papers %}
+                <tr>
+                    <td>{{ paper.paper_id }}</td>
+                    <td class="cfm-title-cell">{{ paper.title|default:"--" }}</td>
+                    <td>{{ paper.authors|default:"--"|truncatechars:100 }}</td>
+                    <td>{% if paper.notes %}<span class="badge text-bg-warning">Note</span>{% else %}<span class="text-muted">--</span>{% endif %}</td>
+                    <td><a class="btn btn-sm btn-outline-warning" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">Manage decision</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5" class="text-muted">No Paper Master publication candidates are missing a Final Submission.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="cfm-section">
+    <h2 class="h5">Not Publishing Paper Master Records</h2>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle table-sm cfm-table">
+            <thead><tr><th>Paper ID</th><th>Master Title</th><th>Current Final</th><th>Reason</th><th>Decision Note</th><th>Marked At</th><th></th></tr></thead>
+            <tbody>
+            {% for paper in excluded_papers %}
+                <tr>
+                    <td>{{ paper.paper_id }}</td>
+                    <td class="cfm-title-cell">{{ paper.title|default:"--" }}</td>
+                    <td>{% if paper.active_submission %}{{ paper.active_submission.final_submission_id }}{% else %}<span class="text-muted">No Final</span>{% endif %}</td>
+                    <td><span class="badge text-bg-secondary">{{ paper.get_publication_exclusion_reason_display }}</span></td>
+                    <td>{{ paper.publication_exclusion_notes|default:"--" }}</td>
+                    <td>{% if paper.publication_excluded_at %}{{ paper.publication_excluded_at|date:"Y-m-d H:i" }}{% else %}--{% endif %}</td>
+                    <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">Review / Undo</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-muted">No Paper Master records are marked Not Publishing.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
 
 {% if needs_decision %}
     <div class="alert alert-warning border cfm-attention">
@@ -121,7 +320,7 @@
 {% endif %}
 
 <section class="cfm-section">
-    <h2 class="h5">Needs Decision</h2>
+    <h2 class="h5">Final Submissions Outside Paper Master</h2>
     <div class="table-responsive">
         <table class="table table-hover align-middle table-sm cfm-table">
             <thead>
@@ -176,7 +375,7 @@
 </section>
 
 <section class="cfm-section">
-    <h2 class="h5">Not Publishing</h2>
+    <h2 class="h5">Not Publishing Finals Outside Paper Master</h2>
     <div class="table-responsive">
         <table class="table table-hover align-middle table-sm cfm-table">
             <thead>
@@ -224,7 +423,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="10" class="text-muted">No final submissions are marked Not Publishing.</td></tr>
+                <tr><td colspan="10" class="text-muted">No Final Submissions outside Paper Master are classified Not Publishing.</td></tr>
             {% endfor %}
             </tbody>
         </table>

@@ -9,7 +9,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from submissions.forms import AppSettingForm, FinalSubmissionForm
-from submissions.models import AppSetting, FinalSubmission
+from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.checks import publication_readiness_rows
 from submissions.services.editor_uploads import discard_submission
 from submissions.services.exceptions import (
@@ -601,7 +601,7 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
             {"submission": target.pk},
         )
         stale_token = page.context[
-            "focused_submission"
+            "focused_paper"
         ].publication_decision_evidence_token
 
         target.paper_id_filled = "P002"
@@ -619,6 +619,7 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
                 "submission_id": target.pk,
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "withdrawn",
+                "confirm_publication_decision": "yes",
                 "evidence_token": stale_token,
             },
         )
@@ -693,12 +694,13 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
             {"submission": submission.pk},
         )
         stale_token = page.context[
-            "focused_submission"
+            "focused_paper"
         ].publication_decision_evidence_token
 
         submission.refresh_from_db()
-        submission.publication_exclusion_notes = "Editor B confirmed withdrawal."
-        submission.save(
+        paper = InitialPaper.objects.get(paper_id="P001")
+        paper.publication_exclusion_notes = "Editor B confirmed withdrawal."
+        paper.save(
             update_fields=["publication_exclusion_notes", "updated_at"]
         )
         self.client.post(
@@ -706,13 +708,15 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
             {
                 "submission_id": submission.pk,
                 "action": "undo_not_publishing",
+                "confirm_publication_decision": "yes",
                 "evidence_token": stale_token,
             },
         )
         submission.refresh_from_db()
         self.assertTrue(submission.excluded_from_publication)
+        paper.refresh_from_db()
         self.assertEqual(
-            submission.publication_exclusion_notes,
+            paper.publication_exclusion_notes,
             "Editor B confirmed withdrawal.",
         )
 
@@ -1101,7 +1105,7 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
             reverse("submissions:not_publishing_list"),
             {"submission": submission.pk},
         )
-        focused = not_publishing.context["focused_submission"]
+        focused = not_publishing.context["focused_paper"]
         self.client.post(
             reverse("submissions:not_publishing_list"),
             {
@@ -1109,6 +1113,7 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
                 "action": "mark_not_publishing",
                 "publication_exclusion_reason": "withdrawn",
                 "publication_exclusion_notes": "Temporary decision.",
+                "confirm_publication_decision": "yes",
                 "evidence_token": focused.publication_decision_evidence_token,
             },
         )
@@ -1119,18 +1124,19 @@ class MultiEditorConcurrencyTests(EditorialAcceptanceTestCase):
             reverse("submissions:not_publishing_list"),
             {"submission": submission.pk},
         )
-        focused = not_publishing.context["focused_submission"]
+        focused = not_publishing.context["focused_paper"]
         self.client.post(
             reverse("submissions:not_publishing_list"),
             {
                 "submission_id": submission.pk,
                 "action": "undo_not_publishing",
+                "confirm_publication_decision": "yes",
                 "evidence_token": focused.publication_decision_evidence_token,
             },
         )
         submission.refresh_from_db()
         self.assertFalse(submission.excluded_from_publication)
-        self.assertFalse(submission.paper_id_verified)
+        self.assertTrue(submission.paper_id_verified)
 
         verify_page = self.client.get(
             reverse("submissions:verify_paper_ids"),

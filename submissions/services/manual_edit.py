@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from submissions.models import AppSetting
+from submissions.models import AppSetting, InitialPaper
 from submissions.services.audit import audit_success
 from submissions.services.checks import (
     rebuild_paper_authors,
@@ -23,6 +23,7 @@ from submissions.services.import_preview import (
     _reset_source_dependent_state,
 )
 from submissions.services.recompute import recompute_active_and_duplicate_state
+from submissions.services.publication_decisions import apply_master_decision_mirror
 from submissions.services.title_author_extraction import evaluate_extracted_title_match
 from submissions.services.verification import evaluate_submission, title_similarity, titles_identical
 from submissions.services.workflow_evidence import (
@@ -366,15 +367,44 @@ def _guard_publication_decision_remap(locked, locked_scope, new_paper_id):
     new_paper_id = (new_paper_id or "").strip()
     if old_paper_id == new_paper_id:
         return
+    master_decisions = {
+        paper.paper_id: paper.publication_decision_status
+        for paper in InitialPaper.objects.filter(
+            paper_id__in={value for value in [old_paper_id, new_paper_id] if value}
+        )
+    }
+    if master_decisions.get(old_paper_id) in {
+        "not_publishing",
+        "decision_required",
+    }:
+        raise ValueError(
+            "Official Paper ID cannot be changed while the current Paper Master "
+            "record is Not Publishing or requires a publication decision. Undo "
+            "Not Publishing or resolve that decision first."
+        )
+    if master_decisions.get(new_paper_id) in {
+        "not_publishing",
+        "decision_required",
+    }:
+        raise ValueError(
+            "Official Paper ID cannot be changed into a Paper Master record that "
+            "is Not Publishing or requires a publication decision."
+        )
     source_excluded = any(
         item.excluded_from_publication
         for item in locked_scope
-        if (item.paper_id_filled or "").strip() == old_paper_id
+        if (
+            (item.paper_id_filled or "").strip() == old_paper_id
+            and old_paper_id not in master_decisions
+        )
     )
     target_excluded = any(
         item.excluded_from_publication
         for item in locked_scope
-        if (item.paper_id_filled or "").strip() == new_paper_id
+        if (
+            (item.paper_id_filled or "").strip() == new_paper_id
+            and new_paper_id not in master_decisions
+        )
     )
     if source_excluded:
         raise ValueError(
@@ -450,6 +480,7 @@ def create_final_submission_manual(form, report_file=None):
     if _guard_review_fields(obj):
         summary["review_status_guarded"] = True
 
+    apply_master_decision_mirror(obj)
     obj.save()
     _set_saved_file_paths(obj, pdf_uploaded, source_uploaded)
     evaluate_submission(obj, save=True)
@@ -612,6 +643,7 @@ def apply_final_submission_manual_edit(
     if _guard_review_fields(obj):
         summary["review_status_guarded"] = True
 
+    apply_master_decision_mirror(obj)
     obj.save()
     _set_saved_file_paths(obj, pdf_changed, source_changed)
 

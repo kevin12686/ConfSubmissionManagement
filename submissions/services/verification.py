@@ -16,9 +16,18 @@ from submissions.services.checks import (
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.recompute import recompute_active_and_duplicate_state
+from submissions.services.publication_decisions import (
+    apply_master_decision_mirror,
+    mark_paper_not_publishing,
+    master_paper_for_submission,
+    paper_is_not_publishing,
+    paper_requires_publication_decision,
+    undo_paper_not_publishing,
+)
 from submissions.services.workflow_evidence import (
     duplicate_author_review_evidence,
     make_evidence_token,
+    paper_publication_decision_evidence,
     paper_id_review_evidence,
     require_evidence_token,
     submission_group_evidence,
@@ -219,17 +228,21 @@ def evaluate_submission(
     include_display_details=True,
     include_suggestion=True,
 ):
-    if submission.excluded_from_publication:
+    initial = (
+        initial_paper_by_id.get(submission.paper_id_filled)
+        if initial_paper_by_id is not None
+        else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
+    )
+    master_not_publishing = paper_is_not_publishing(initial)
+    legacy_not_publishing = bool(
+        submission.excluded_from_publication and initial is None
+    )
+    if master_not_publishing or legacy_not_publishing:
         status = "invalid_paper_id"
         score = None
         message = "Excluded from publication."
-        initial = (
-            initial_paper_by_id.get(submission.paper_id_filled)
-            if initial_paper_by_id is not None
-            else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
-        )
         suggested_paper, suggested_score = None, None
-        if save:
+        if save and legacy_not_publishing:
             submission.verification_status = status
             submission.title_match_score = score
             submission.verification_message = message
@@ -265,11 +278,6 @@ def evaluate_submission(
             "final_authors_diff_html": display_details["final_authors_diff_html"],
         }
 
-    initial = (
-        initial_paper_by_id.get(submission.paper_id_filled)
-        if initial_paper_by_id is not None
-        else InitialPaper.objects.filter(paper_id=submission.paper_id_filled).first()
-    )
     suggested_paper, suggested_score = (
         best_title_match(submission.final_submission_title, paper_candidates)
         if include_suggestion and not initial
@@ -398,7 +406,10 @@ def evaluate_submissions_bulk(queryset=None):
         submission.verification_status = result["status"]
         submission.title_match_score = result["score"]
         submission.verification_message = result["message"]
-        if submission.excluded_from_publication:
+        if (
+            submission.excluded_from_publication
+            and submission.paper_id_filled not in initial_paper_by_id
+        ):
             submission.paper_id_verified = False
         elif (
             result["status"] == "verified"
@@ -492,27 +503,91 @@ def verify_submission(
         current_evidence,
     )
 
-    if submission.excluded_from_publication:
-        raise ValueError("Cannot verify: this final submission is marked Not Publishing.")
+    original_paper_id = (submission.paper_id_filled or "").strip()
     if use_suggestion:
         suggestion = current_result.get("suggested_paper")
         if not suggestion:
             raise ValueError(
                 "No current Paper ID suggestion is available. Reload and choose a Paper ID."
             )
-        submission.paper_id_filled = suggestion.paper_id
+        target_paper_id = suggestion.paper_id
     elif corrected_paper_id:
-        submission.paper_id_filled = corrected_paper_id
+        target_paper_id = corrected_paper_id
     elif submission.start2_paper_id_raw and not submission.paper_id_filled:
-        submission.paper_id_filled = resolve_official_paper_id(
+        target_paper_id = resolve_official_paper_id(
             submission.start2_paper_id_raw,
             submission.final_submission_title,
         )
+    else:
+        target_paper_id = submission.paper_id_filled
 
-    paper_ids = {paper.paper_id for paper in paper_candidates}
-    if submission.paper_id_filled not in paper_ids:
+    paper_by_id = {paper.paper_id: paper for paper in paper_candidates}
+    paper_ids = set(paper_by_id)
+    if target_paper_id not in paper_ids:
         raise ValueError("Cannot verify: ID not in Paper Master List.")
+    target_paper = paper_by_id[target_paper_id]
+    if paper_is_not_publishing(target_paper):
+        raise ValueError(
+            "Cannot verify: this Paper Master record is marked Not Publishing."
+        )
+    if paper_requires_publication_decision(target_paper):
+        raise ValueError(
+            "Cannot verify: this Paper Master record requires an explicit "
+            "publication decision."
+        )
 
+    decision_scope_ids = {
+        paper_id
+        for paper_id in [original_paper_id, target_paper_id]
+        if paper_id
+    }
+    decision_scope = list(
+        FinalSubmission.objects.select_for_update()
+        .filter(paper_id_filled__in=decision_scope_ids)
+        .order_by("pk")
+    )
+    source_master = paper_by_id.get(original_paper_id)
+    if paper_is_not_publishing(source_master):
+        raise ValueError(
+            "Cannot verify or remap a Final Submission from a Paper Master "
+            "record marked Not Publishing. Return that paper to publication "
+            "scope first."
+        )
+    if paper_requires_publication_decision(source_master):
+        raise ValueError(
+            "Cannot verify or remap a Final Submission while its current Paper "
+            "Master record requires a publication decision."
+        )
+    excluded_source_ids = [
+        item.final_submission_id
+        for item in decision_scope
+        if (
+            (item.paper_id_filled or "").strip() == original_paper_id
+            and item.excluded_from_publication
+        )
+    ]
+    if excluded_source_ids:
+        raise ValueError(
+            "Cannot verify or remap this Final Submission while its current "
+            "Paper ID group retains a Not Publishing decision. Undo that "
+            "decision first."
+        )
+    excluded_target_ids = [
+        item.final_submission_id
+        for item in decision_scope
+        if (
+            (item.paper_id_filled or "").strip() == target_paper_id
+            and item.excluded_from_publication
+        )
+    ]
+    if excluded_target_ids:
+        raise ValueError(
+            "Cannot verify into a Paper ID group with a publication-decision "
+            "integrity conflict. Resolve that Paper Master decision first."
+        )
+
+    submission.paper_id_filled = target_paper_id
+    apply_master_decision_mirror(submission, target_paper)
     submission.paper_id_verified = True
     submission.auto_verify_blocked = False
     submission.verified_at = timezone.now()
@@ -522,6 +597,10 @@ def verify_submission(
             "paper_id_verified",
             "auto_verify_blocked",
             "verified_at",
+            "excluded_from_publication",
+            "publication_exclusion_reason",
+            "publication_exclusion_notes",
+            "publication_excluded_at",
             "updated_at",
         ]
     )
@@ -551,6 +630,30 @@ def mark_not_publishing(
     expected_evidence_token=None,
 ):
     caller_submission = submission
+    master_paper = master_paper_for_submission(submission)
+    if master_paper is not None:
+        mapped_submissions = list(
+            FinalSubmission.objects.filter(
+                paper_id_filled=master_paper.paper_id
+            ).order_by("pk")
+        )
+        if expected_evidence_token is None:
+            expected_evidence_token = make_evidence_token(
+                "paper-publication-decision",
+                paper_publication_decision_evidence(
+                    master_paper,
+                    mapped_submissions,
+                ),
+            )
+        mark_paper_not_publishing(
+            master_paper,
+            reason,
+            notes,
+            expected_evidence_token=expected_evidence_token,
+        )
+        submission.refresh_from_db()
+        _copy_submission_state(submission, caller_submission)
+        return evaluate_submission(submission, save=False)
     expected_evidence_token = _default_group_evidence_token(
         submission,
         expected_evidence_token,
@@ -611,6 +714,28 @@ def mark_not_publishing(
 @transaction.atomic
 def undo_not_publishing(submission, *, expected_evidence_token=None):
     caller_submission = submission
+    master_paper = master_paper_for_submission(submission)
+    if master_paper is not None:
+        mapped_submissions = list(
+            FinalSubmission.objects.filter(
+                paper_id_filled=master_paper.paper_id
+            ).order_by("pk")
+        )
+        if expected_evidence_token is None:
+            expected_evidence_token = make_evidence_token(
+                "paper-publication-decision",
+                paper_publication_decision_evidence(
+                    master_paper,
+                    mapped_submissions,
+                ),
+            )
+        undo_paper_not_publishing(
+            master_paper,
+            expected_evidence_token=expected_evidence_token,
+        )
+        submission.refresh_from_db()
+        _copy_submission_state(submission, caller_submission)
+        return evaluate_submission(submission, save=False)
     expected_evidence_token = _default_group_evidence_token(
         submission,
         expected_evidence_token,

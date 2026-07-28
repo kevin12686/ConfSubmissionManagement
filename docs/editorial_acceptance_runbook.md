@@ -206,7 +206,9 @@ Create Final Submission records and files:
   directory.
 - Editor Uploads are active over Start2 until the conflict is resolved, but unresolved conflicts block final publication export.
 - Discarded versions remain traceable and appear as old versions, not current publication candidates.
-- Not Publishing records remain traceable but are excluded from publication readiness and final packages.
+- Paper Master owns Not Publishing, including before a Final exists. Such
+  records remain traceable but are excluded from publication processing,
+  readiness, CrossCheck, and final or draft packages.
 - Not Publishing and invalid-ID records are excluded from Title/Author and Formatting review queues; invalid-ID records remain visible in mapping/readiness workflows.
 - Final Submission Edit cannot directly change processing, Title/Author Review, duplicate-author review, or Not Publishing state; those states are owned by their dedicated workflows.
 
@@ -281,10 +283,23 @@ Create Final Submission records and files:
   publication PDF, then import the old result/report. Confirm it is counted as
   stale, neither score nor report is attached to the replacement, and final
   export remains blocked for missing current results.
-- Mark an inactive version Not Publishing and confirm every version with that
-  Official Paper ID is excluded. Manually create a mixed included/excluded
-  state in a disposable test database and confirm both final and draft package
-  exports stop with `Mixed Not Publishing Decision`.
+- Create a Paper Master record with no Final and confirm Missing Final
+  Submission blocks publication. Mark that Master paper Not Publishing with a
+  reason and scope-impact confirmation; confirm the blocker disappears and
+  both final and draft packages exclude it. Import a Final afterward and
+  confirm it inherits the Master exclusion. Undo the decision and confirm
+  review evidence is preserved while Missing Final or current-candidate
+  readiness returns.
+- Create a Paper Master `Decision Required` record in a disposable test
+  database and confirm both final and draft packages stop until an editor
+  explicitly keeps it in publication scope or marks it Not Publishing.
+- Mark an orphan Final Not Publishing, then preview/import a new Paper Master
+  record with the same ID. Confirm Preview names the affected Final, Apply
+  creates Decision Required, and Final, Draft, CrossCheck, and Verify remain
+  blocked until an explicit publication decision is made.
+- In a disposable database, create a Publishing Master with an inconsistent
+  excluded Final mirror. Confirm Error Report shows Publication Decision
+  Integrity Conflict and neither Draft nor Final package can bypass it.
 - Duplicate CJK, Greek, and canonically equivalent accented publication titles
   must appear as duplicate-title blockers.
 - Final publication manifest contains the publication fields plus the same

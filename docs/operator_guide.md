@@ -40,7 +40,7 @@ exist, and plagiarism review appears after score/report data is updated.
 | Page | URL | Main use |
 | --- | --- | --- |
 | Dashboard | `/` | Final-package readiness and current editorial actions |
-| Paper Master List | `/papers/` | Official publication scope, titles, authors, acceptance status, editorial notes |
+| Paper Master List | `/papers/` | Official paper scope, publication decisions, titles, authors, acceptance status, editorial notes |
 | Final Submissions | `/submissions/` | Imported Start2 submissions, uploaded files, editor uploads, discarded versions |
 | Editor Upload | `/submissions/editor-upload/` | Add email-provided replacement versions |
 | Organized List | `/submissions/organized/` | Publication checklist by Paper Master record |
@@ -172,11 +172,26 @@ Use Discard when a specific version should not be used. Discard keeps the record
 Use Not Publishing when the paper should not be published at all, such as unpaid, withdrawn, or intentionally excluded.
 
 Old Versions is version history. Not Publishing is a publication decision.
-Marking or undoing Not Publishing applies to every Final Submission version with
-the same Official Paper ID. If a later import creates mixed included/excluded
-versions, final and draft publication exports stop with `Mixed Not Publishing
-Decision`; re-apply Mark Not Publishing or Undo Not Publishing to resolve the
-paper-level decision.
+The Paper Master record owns that decision, including when no Final Submission
+has been received. Open Not Publishing List, focus the Paper Master record,
+choose a reason, enter a note, review the publication-scope impact, and confirm.
+The paper remains traceable but is removed from publication processing,
+reviews, CrossCheck, readiness, and final or draft packages.
+
+Existing and future Final Submission versions inherit the Paper Master
+decision. Their exclusion fields are compatibility mirrors and do not override
+the Master decision. Undo returns the paper to publication scope; if it still
+has no Final, Missing Final Submission becomes a blocker again. Neither action
+clears Paper ID verification or review work because no reviewed evidence
+changed.
+
+`Decision Required` means migrated state or a new Master/orphan transition was
+ambiguous. For example, importing a Master ID that matches an orphan Final
+already marked Not Publishing does not silently revive that Final. Import
+Preview identifies the affected Final IDs, and the Master remains outside
+publication scope until an editor explicitly keeps the paper in publication
+scope or marks it Not Publishing. Decision Required and any Master/Final
+decision integrity conflict block final, draft, and CrossCheck exports.
 Old Versions uses the same tab treatment and active-count styling as the other
 editorial worklists.
 
@@ -185,7 +200,8 @@ editorial worklists.
 The complete rules are maintained in
 [Publication Rules](publication_rules.md). Operationally:
 
-- Paper Master defines publication scope.
+- Paper Master defines the conference paper set and owns each paper's
+  Publishing / Not Publishing decision.
 - Discarded and Not Publishing records do not enter publication output.
 - Editor Upload wins active selection over Start2, but a mixed undiscarded
   source conflict blocks final export until one side is discarded with a reason.
@@ -245,6 +261,8 @@ Formatting Review queue mode keeps one paper expanded at a time. Its compact row
 Use `/reviews/paper-ids/` to compare author-entered IDs and titles against the Paper Master List.
 
 - IDs not in Paper Master cannot be verified.
+- An orphan Paper ID group marked Not Publishing cannot be remapped or verified
+  until that decision is explicitly undone.
 - If a paper is intentionally not publishing, mark it in the Not Publishing workflow instead of verifying an invalid ID.
 - Verified hard title differences remain visible but are lower priority than unverified mappings.
 - After Verify, Unverify, or publication-decision actions, the worklist returns

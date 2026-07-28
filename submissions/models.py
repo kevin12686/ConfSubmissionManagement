@@ -79,6 +79,12 @@ PUBLICATION_EXCLUSION_REASON_CHOICES = [
     ("other", "Other"),
 ]
 
+PAPER_PUBLICATION_DECISION_CHOICES = [
+    ("publishing", "Publishing"),
+    ("not_publishing", "Not Publishing"),
+    ("decision_required", "Decision required"),
+]
+
 ACTIVE_VERSION_RULE_CHOICES = [
     ("final_id", "Largest Final ID"),
     ("upload_date", "Latest upload date"),
@@ -100,6 +106,20 @@ class InitialPaper(models.Model):
     authors = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     corresponding_email = models.EmailField(blank=True)
+    publication_decision_status = models.CharField(
+        max_length=30,
+        choices=PAPER_PUBLICATION_DECISION_CHOICES,
+        default="publishing",
+        db_index=True,
+    )
+    publication_exclusion_reason = models.CharField(
+        max_length=30,
+        choices=PUBLICATION_EXCLUSION_REASON_CHOICES,
+        blank=True,
+        default="",
+    )
+    publication_exclusion_notes = models.TextField(blank=True)
+    publication_excluded_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -117,6 +137,25 @@ class InitialPaper(models.Model):
                 ),
                 name="initialpaper_paper_id_trimmed_nonempty",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        publication_decision_status="publishing",
+                        publication_exclusion_reason="",
+                        publication_exclusion_notes="",
+                        publication_excluded_at__isnull=True,
+                    )
+                    | (
+                        models.Q(
+                            publication_decision_status="not_publishing",
+                            publication_excluded_at__isnull=False,
+                        )
+                        & ~models.Q(publication_exclusion_reason="")
+                    )
+                    | models.Q(publication_decision_status="decision_required")
+                ),
+                name="initialpaper_publication_decision_valid",
+            ),
         ]
 
     def __str__(self):
@@ -124,7 +163,18 @@ class InitialPaper(models.Model):
 
     def save(self, *args, **kwargs):
         self.notes = clean_note_text(self.notes)
+        self.publication_exclusion_notes = clean_note_text(
+            self.publication_exclusion_notes
+        )
         super().save(*args, **kwargs)
+
+    @property
+    def excluded_from_publication(self):
+        return self.publication_decision_status == "not_publishing"
+
+    @property
+    def publication_decision_required(self):
+        return self.publication_decision_status == "decision_required"
 
 
 class FinalSubmission(models.Model):

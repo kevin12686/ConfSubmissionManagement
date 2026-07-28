@@ -8,7 +8,9 @@
             {% if q %}
                 <strong>{{ displayed_paper_count }}</strong> of <strong>{{ total_paper_count }}</strong> paper{{ total_paper_count|pluralize }} shown.
             {% else %}
-                <strong>{{ total_paper_count }}</strong> paper{{ total_paper_count|pluralize }} in publication scope.
+                <strong>{{ publication_scope_count }}</strong> paper{{ publication_scope_count|pluralize }} in publication scope.
+                {% if not_publishing_count %}<strong>{{ not_publishing_count }}</strong> Not Publishing.{% endif %}
+                {% if publication_decision_required_count %}<strong>{{ publication_decision_required_count }}</strong> need a publication decision.{% endif %}
             {% endif %}
             Source-of-truth accepted records used for matching and publication readiness checks.
         </div>
@@ -68,7 +70,7 @@
 {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
 <div class="table-responsive">
     <table class="table table-hover align-middle cfm-table">
-        <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Paper ID</th><th>Accept Status</th><th>Master Title</th><th>Master Authors</th><th>Publication decision</th><th>Notes</th><th></th></tr></thead>
         <tbody>
         {% for paper in papers %}
             <tr>
@@ -76,6 +78,16 @@
                 <td>{{ paper.acceptance_status }}</td>
                 <td class="cfm-title-cell">{{ paper.title }}</td>
                 <td>{{ paper.authors|truncatechars:80 }}</td>
+                <td>
+                    {% if paper.publication_decision_status == "not_publishing" %}
+                        <span class="badge text-bg-secondary">Not Publishing</span>
+                        <div class="small text-muted mt-1">{{ paper.get_publication_exclusion_reason_display }}</div>
+                    {% elif paper.publication_decision_status == "decision_required" %}
+                        <span class="badge text-bg-danger">Decision required</span>
+                    {% else %}
+                        <span class="badge text-bg-success">Publishing</span>
+                    {% endif %}
+                </td>
                 <td class="cfm-note-cell">
                     {% if paper.notes %}
                         <span class="badge text-bg-warning">Note</span>
@@ -86,13 +98,14 @@
                 <td>
                     <div class="cfm-table-actions">
                         <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:initial_paper_edit' paper.pk %}">Edit</a>
+                        <a class="btn btn-sm btn-outline-warning" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">Publication decision</a>
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:editor_upload' %}?paper_id={{ paper.paper_id|urlencode }}">Editor Upload</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:initial_paper_delete' paper.pk %}">Delete</a>
                     </div>
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="6" class="text-muted">No papers found.</td></tr>
+            <tr><td colspan="7" class="text-muted">No papers found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

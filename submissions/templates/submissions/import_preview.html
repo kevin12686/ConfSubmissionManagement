@@ -17,12 +17,15 @@
 </div>
 
 <div class="row g-2 cfm-metric-strip">
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">New</div><div class="cfm-metric-value">{{ preview.stats.new }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Unchanged</div><div class="cfm-metric-value">{{ preview.stats.unchanged }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Changed</div><div class="cfm-metric-value {% if preview.stats.metadata_updated %}text-warning{% endif %}">{{ preview.stats.metadata_updated }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Reset</div><div class="cfm-metric-value {% if preview.stats.paper_id_review_reset %}text-danger{% endif %}">{{ preview.stats.paper_id_review_reset }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">PDF Reset</div><div class="cfm-metric-value {% if preview.stats.pdf_reset %}text-danger{% endif %}">{{ preview.stats.pdf_reset }}</div></div></div>
-    <div class="col-sm-6 col-lg-2"><div class="cfm-metric"><div class="cfm-metric-label">Source Reset</div><div class="cfm-metric-value {% if preview.stats.source_reset %}text-warning{% endif %}">{{ preview.stats.source_reset }}</div></div></div>
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">New</div><div class="cfm-metric-value">{{ preview.stats.new }}</div></div></div>
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Unchanged</div><div class="cfm-metric-value">{{ preview.stats.unchanged }}</div></div></div>
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Changed</div><div class="cfm-metric-value {% if preview.stats.metadata_updated %}text-warning{% endif %}">{{ preview.stats.metadata_updated }}</div></div></div>
+    {% if preview.kind == "initial" or preview.mapping_workbook %}
+        <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Decision Required</div><div class="cfm-metric-value {% if preview.stats.publication_decision_required %}text-danger{% endif %}">{{ preview.stats.publication_decision_required }}</div></div></div>
+    {% endif %}
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Reset</div><div class="cfm-metric-value {% if preview.stats.paper_id_review_reset %}text-danger{% endif %}">{{ preview.stats.paper_id_review_reset }}</div></div></div>
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">PDF Reset</div><div class="cfm-metric-value {% if preview.stats.pdf_reset %}text-danger{% endif %}">{{ preview.stats.pdf_reset }}</div></div></div>
+    <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Source Reset</div><div class="cfm-metric-value {% if preview.stats.source_reset %}text-warning{% endif %}">{{ preview.stats.source_reset }}</div></div></div>
 </div>
 
 {% if preview.invalid_files %}
@@ -118,10 +121,27 @@
                     {% if row.affected_final_count %}
                         <div class="small text-danger">{{ row.affected_final_count }} Final Submission{{ row.affected_final_count|pluralize }} affected.</div>
                     {% endif %}
+                    {% if row.type == "initial" and row.publication_decision_required %}
+                        <div class="alert alert-danger cfm-attention mt-2 mb-0">
+                            <div class="fw-semibold">Publication decision required after apply</div>
+                            <div class="small">
+                                Existing Final Submission decision evidence was found for
+                                {{ row.excluded_final_ids|join:", " }}. This new Paper Master
+                                record will remain outside publication scope until Keep Publishing
+                                or Not Publishing is explicitly confirmed.
+                            </div>
+                        </div>
+                    {% endif %}
                     {% if row.type == "final" %}
                         <div class="small text-muted">Uploaded ID is treated as Author-entered ID. Resolved Paper ID after apply: {{ row.new.paper_id_filled|default:"--" }}</div>
                         {% if row.invalid_master_id %}
                             <div class="small text-danger fw-semibold">Needs decision: correct the Paper ID or mark this final submission as Not Publishing.</div>
+                        {% endif %}
+                        {% if row.master_not_publishing %}
+                            <div class="small text-warning fw-semibold">Paper Master is Not Publishing. This Final will be retained for traceability but will remain outside publication scope.</div>
+                        {% endif %}
+                        {% if row.master_publication_decision_required %}
+                            <div class="small text-danger fw-semibold">Paper Master publication decision must be resolved before this Final can enter publication scope.</div>
                         {% endif %}
                         {% if row.currently_discarded %}
                             <div class="small text-warning fw-semibold">Currently discarded. Import will preserve the discard status and note.</div>
@@ -157,7 +177,8 @@
                     {% if row.pdf_reset %}<div><span class="badge text-bg-danger">PDF checks reset</span></div>{% endif %}
                     {% if row.source_reset %}<div><span class="badge text-bg-warning">Format reset</span></div>{% endif %}
                     {% if row.corrected_files_archived %}<div><span class="badge text-bg-warning">Edited files archived</span></div>{% endif %}
-                    {% if not row.paper_id_review_reset and not row.title_match_reset and not row.pdf_reset and not row.source_reset and not row.corrected_files_archived %}
+                    {% if row.publication_decision_required %}<div><span class="badge text-bg-danger">Publication decision required</span></div>{% endif %}
+                    {% if not row.paper_id_review_reset and not row.title_match_reset and not row.pdf_reset and not row.source_reset and not row.corrected_files_archived and not row.publication_decision_required %}
                         <span class="text-muted">No review reset.</span>
                     {% endif %}
                 </td>

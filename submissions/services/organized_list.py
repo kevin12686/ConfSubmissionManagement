@@ -149,7 +149,11 @@ def _page_status(submission, settings_obj, publication_pdf=None):
 def _verification_status(submission, paper=None):
     if not submission:
         return "No final", "secondary"
-    if submission.excluded_from_publication:
+    if paper and paper.publication_decision_status == "not_publishing":
+        return "Excluded from publication", "secondary"
+    if paper and paper.publication_decision_status == "decision_required":
+        return "Publication decision required", "danger"
+    if paper is None and submission.excluded_from_publication:
         return "Excluded from publication", "secondary"
     if submission.paper_id_verified and not paper_title_matches_master(submission, paper):
         return "Verified, title differs", "warning"
@@ -862,7 +866,8 @@ def organized_list_rows(
                     )
                 ],
                 "publication_decision_conflict": (
-                    paper.paper_id in mixed_decision_paper_ids
+                    paper.publication_decision_status == "decision_required"
+                    or paper.paper_id in mixed_decision_paper_ids
                 ),
                 "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
                 "needs_processing_after_formatting": (
@@ -1103,9 +1108,7 @@ def organized_list_rows(
             if row.get("multiple_active_final_ids")
         ],
         "excluded_from_publication": sum(
-            1
-            for submission in context.active_submissions
-            if submission.excluded_from_publication
+            1 for _paper in context.not_publishing_papers
         ),
         "needs_process_pdfs": len(needs_process_rows),
         "needs_process_pdf_labels": [

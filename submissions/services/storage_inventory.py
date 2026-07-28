@@ -26,6 +26,7 @@ from submissions.services.file_manager import (
 )
 from submissions.services.audit import audit_failure, audit_preview, audit_success
 from submissions.services.final_submission_state import bulk_update_submissions
+from submissions.services.publication_decisions import publication_master_papers
 
 
 CLEANUP_CONFIRMATION_TEXT = "CLEAN STORAGE"
@@ -1234,7 +1235,6 @@ def sync_publication_pdf_debug_folder():
             for submission in FinalSubmission.objects.filter(
                 active_version=True,
                 discarded=False,
-                excluded_from_publication=False,
             )
         }
         with manifest_path.open("w", newline="", encoding="utf-8-sig") as manifest_file:
@@ -1250,7 +1250,7 @@ def sync_publication_pdf_debug_folder():
                 ],
             )
             writer.writeheader()
-            for paper in InitialPaper.objects.all().order_by("paper_id"):
+            for paper in publication_master_papers().order_by("paper_id"):
                 submission = active_by_paper.get(paper.paper_id)
                 if not submission:
                     skipped.append(

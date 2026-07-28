@@ -133,6 +133,8 @@ DASHBOARD_WORKFLOW_GROUPS = [
             "Start2/Editor Version Conflict",
             "Unclassified Final Not In Master",
             "Missing Final Submission",
+            "Publication Decision Required",
+            "Publication Decision Integrity Conflict",
             "Unverified Paper ID",
             "Final Title / Paper Master Title Mismatch",
         },
@@ -291,7 +293,7 @@ def _dashboard_context(counts, readiness_rows):
         "conference_totals": [
             {
                 "label": "Paper Master scope",
-                "value": counts["total_papers"],
+                "value": counts["publication_scope_papers"],
                 "url": reverse("submissions:initial_paper_list"),
             },
             {

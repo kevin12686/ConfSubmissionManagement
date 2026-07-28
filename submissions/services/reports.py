@@ -52,6 +52,8 @@ class PublicationPackageBlocked(ValueError):
 _DRAFT_UNSAFE_CATEGORIES = {
     "Multiple Active Final Submissions",
     "Mixed Not Publishing Decision",
+    "Publication Decision Required",
+    "Publication Decision Integrity Conflict",
     "Duplicate Publication Filename",
 }
 
@@ -125,6 +127,7 @@ def author_count_frame(*, context=None, rows=None):
 
 def not_publishing_frame():
     columns = [
+        "record_type",
         "final_submission_id",
         "author_entered_paper_id",
         "paper_id_filled",
@@ -139,8 +142,50 @@ def not_publishing_frame():
         "marked_at",
     ]
     rows = []
+    context = PublicationReadContext.load()
+    active_by_paper = {
+        submission.paper_id_filled: submission
+        for submission in context.active_submissions
+        if submission.paper_id_filled in context.valid_paper_ids
+    }
+    for paper in sorted(
+        context.not_publishing_papers,
+        key=lambda item: item.paper_id,
+    ):
+        item = active_by_paper.get(paper.paper_id)
+        rows.append(
+            {
+                "record_type": "Paper Master decision",
+                "final_submission_id": (
+                    item.final_submission_id if item else ""
+                ),
+                "author_entered_paper_id": (
+                    item.start2_paper_id_raw if item else ""
+                ),
+                "paper_id_filled": paper.paper_id,
+                "active_version": bool(item and item.active_version),
+                "version_state": (
+                    "Current final" if item else "No final submitted"
+                ),
+                "submission_origin": (
+                    item.get_submission_origin_display() if item else ""
+                ),
+                "active_replacement_final_id": "",
+                "final_submission_title": (
+                    item.final_submission_title if item else ""
+                ),
+                "final_submission_authors": (
+                    item.final_submission_authors if item else ""
+                ),
+                "reason": paper.get_publication_exclusion_reason_display(),
+                "notes": paper.publication_exclusion_notes,
+                "marked_at": paper.publication_excluded_at,
+            }
+        )
     for item in FinalSubmission.objects.filter(
         excluded_from_publication=True, discarded=False
+    ).exclude(
+        paper_id_filled__in=context.valid_paper_ids
     ).order_by("paper_id_filled", "final_submission_id"):
         active_replacement = (
             FinalSubmission.objects.filter(
@@ -153,6 +198,7 @@ def not_publishing_frame():
         )
         rows.append(
             {
+                "record_type": "Final outside Paper Master",
                 "final_submission_id": item.final_submission_id,
                 "author_entered_paper_id": item.start2_paper_id_raw,
                 "paper_id_filled": item.paper_id_filled,
@@ -181,6 +227,18 @@ def paper_master_frame():
                 "title": paper.title,
                 "authors": paper.authors,
                 "notes": paper.notes,
+                "publication_decision_status": (
+                    paper.get_publication_decision_status_display()
+                ),
+                "publication_exclusion_reason": (
+                    paper.get_publication_exclusion_reason_display()
+                    if paper.publication_decision_status == "not_publishing"
+                    else ""
+                ),
+                "publication_exclusion_notes": (
+                    paper.publication_exclusion_notes
+                ),
+                "publication_excluded_at": paper.publication_excluded_at,
                 "created_at": paper.created_at,
                 "updated_at": paper.updated_at,
             }
@@ -363,8 +421,10 @@ def publication_detail_frame(
         active_group = active_by_paper.get(paper.paper_id, [])
         submission = active_group[0] if len(active_group) == 1 else None
         blockers = blockers_by_paper.get(paper.paper_id, [])
-        if paper.paper_id in context.excluded_paper_ids:
+        if paper.publication_decision_status == "not_publishing":
             readiness = "Not publishing"
+        elif paper.publication_decision_status == "decision_required":
+            readiness = "Decision required"
         elif blockers or not submission:
             readiness = "Not ready"
         else:
@@ -433,11 +493,8 @@ def _write_single_sheet(path, sheet_name, frame):
 
 def export_active_versions():
     path = _reports_folder() / f"active_publishable_versions_{_timestamp()}.xlsx"
-    frame = submissions_to_frame(
-        FinalSubmission.objects.filter(
-            active_version=True, excluded_from_publication=False, discarded=False
-        )
-    )
+    context = PublicationReadContext.load()
+    frame = submissions_to_frame(context.master_submissions)
     _write_single_sheet(path, "Active Raw Data", frame)
     audit_success(
         "report_active_versions_export",
@@ -576,13 +633,20 @@ def export_publication_package(force=False):
         )
         settings_obj = publication_context.settings
         papers = sorted(
-            publication_context.papers,
+            publication_context.publication_papers,
             key=lambda paper: paper.paper_id,
         )
         if not papers:
-            exc = PublicationPackageBlocked(
-                "Publication package blocked because the Paper Master List is empty."
-            )
+            if publication_context.papers:
+                message = (
+                    "Publication package blocked because no Paper Master records "
+                    "are currently in publication scope."
+                )
+            else:
+                message = (
+                    "Publication package blocked because the Paper Master List is empty."
+                )
+            exc = PublicationPackageBlocked(message)
             audit_blocked("publication_package_export", str(exc), result_counts={"force": force})
             raise exc
 

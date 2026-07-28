@@ -154,6 +154,44 @@ def paper_master_edit_evidence(paper):
         "title": paper.title,
         "authors": paper.authors,
         "notes": paper.notes,
+        "publication_decision_status": paper.publication_decision_status,
+        "publication_exclusion_reason": paper.publication_exclusion_reason,
+        "publication_exclusion_notes": paper.publication_exclusion_notes,
+        "publication_excluded_at": (
+            paper.publication_excluded_at.isoformat()
+            if paper.publication_excluded_at
+            else None
+        ),
+    }
+
+
+def paper_publication_decision_evidence(paper, mapped_submissions):
+    return {
+        "paper": paper_master_edit_evidence(paper),
+        "mapped_submissions": [
+            {
+                "pk": submission.pk,
+                "final_submission_id": submission.final_submission_id,
+                "paper_id_filled": submission.paper_id_filled,
+                "discarded": submission.discarded,
+                "excluded_from_publication": submission.excluded_from_publication,
+                "publication_exclusion_reason": (
+                    submission.publication_exclusion_reason
+                ),
+                "publication_exclusion_notes": (
+                    submission.publication_exclusion_notes
+                ),
+                "publication_excluded_at": (
+                    submission.publication_excluded_at.isoformat()
+                    if submission.publication_excluded_at
+                    else None
+                ),
+            }
+            for submission in sorted(
+                mapped_submissions,
+                key=lambda item: item.pk,
+            )
+        ],
     }
 
 

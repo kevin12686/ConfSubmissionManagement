@@ -106,6 +106,11 @@ from submissions.services.organized_list import (
 from submissions.services.pdf_processor import processed_pdf_rows, process_all_pdfs
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import (
+    mark_paper_not_publishing,
+    publication_decision_integrity_rows,
+    undo_paper_not_publishing,
+)
 from submissions.services.title_author_extraction import (
     apply_title_author_manual_override,
     extract_active_title_authors,
@@ -138,6 +143,7 @@ from submissions.services.workflow_evidence import (
     duplicate_author_review_evidence,
     final_submission_state_evidence,
     make_evidence_token,
+    paper_publication_decision_evidence,
     paper_master_review_digest,
     paper_id_review_evidence,
     submission_group_evidence,
@@ -679,13 +685,27 @@ def verify_paper_ids(request):
             "paper-id-unverify",
             final_submission_state_evidence(submission),
         )
-        row["publication_decision_evidence_token"] = make_evidence_token(
-            "publication-decision",
-            submission_group_evidence(
-                submission,
-                _group_for_submission(submission, all_submission_groups),
-            ),
+        decision_group = _group_for_submission(
+            submission,
+            all_submission_groups,
         )
+        master_paper = initial_paper_by_id.get(submission.paper_id_filled)
+        if master_paper:
+            row["publication_decision_evidence_token"] = make_evidence_token(
+                "paper-publication-decision",
+                paper_publication_decision_evidence(
+                    master_paper,
+                    decision_group,
+                ),
+            )
+        else:
+            row["publication_decision_evidence_token"] = make_evidence_token(
+                "publication-decision",
+                submission_group_evidence(
+                    submission,
+                    decision_group,
+                ),
+            )
 
     focused_context = None
     if focused_submission:
@@ -1401,31 +1421,116 @@ def _formatting_redirect_after_save(
 def not_publishing_list(request):
     q = _search_query(request)
     focused_id = request.GET.get("submission", "").strip()
+    focused_paper_id = request.GET.get("paper", "").strip()
     focused_submission = (
         get_object_or_404(FinalSubmission, pk=focused_id) if focused_id else None
     )
-    if focused_submission:
+    focused_paper = (
+        get_object_or_404(InitialPaper, pk=focused_paper_id)
+        if focused_paper_id
+        else None
+    )
+    if focused_submission and not focused_paper:
+        focused_paper = InitialPaper.objects.filter(
+            paper_id=focused_submission.paper_id_filled
+        ).first()
+        if focused_paper:
+            focused_submission = None
+    if focused_submission or focused_paper:
         q = ""
     valid_ids = set(InitialPaper.objects.values_list("paper_id", flat=True))
+    publication_context = PublicationReadContext.load()
+    integrity_paper_ids = {
+        row["paper_id"]
+        for row in publication_decision_integrity_rows(publication_context)
+    }
 
     if request.method == "POST":
-        submission = get_object_or_404(FinalSubmission, pk=request.POST.get("submission_id"))
         action = request.POST.get("action")
         try:
-            if action == "mark_not_publishing":
-                mark_not_publishing(
-                    submission,
-                    request.POST.get("publication_exclusion_reason", "unpaid"),
-                    request.POST.get("publication_exclusion_notes", ""),
-                    expected_evidence_token=request.POST.get("evidence_token", ""),
+            paper = None
+            orphan_submission = None
+            if request.POST.get("paper_id"):
+                paper = get_object_or_404(
+                    InitialPaper,
+                    pk=request.POST.get("paper_id"),
                 )
-                messages.success(request, f"Final submission {submission.final_submission_id} marked Not Publishing.")
-            elif action == "undo_not_publishing":
-                undo_not_publishing(
-                    submission,
-                    expected_evidence_token=request.POST.get("evidence_token", ""),
+            else:
+                orphan_submission = get_object_or_404(
+                    FinalSubmission,
+                    pk=request.POST.get("submission_id"),
                 )
-                messages.success(request, f"Final submission {submission.final_submission_id} moved back to publication review.")
+                paper = InitialPaper.objects.filter(
+                    paper_id=orphan_submission.paper_id_filled
+                ).first()
+
+            if paper is not None:
+                if request.POST.get("confirm_publication_decision") != "yes":
+                    raise ValueError(
+                        "Confirm that you reviewed the publication-scope impact "
+                        "before applying this decision."
+                    )
+                if action == "mark_not_publishing":
+                    mark_paper_not_publishing(
+                        paper,
+                        request.POST.get("publication_exclusion_reason", ""),
+                        request.POST.get("publication_exclusion_notes", ""),
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                        request=request,
+                    )
+                    messages.success(
+                        request,
+                        f"Paper {paper.paper_id} marked Not Publishing.",
+                    )
+                elif action == "undo_not_publishing":
+                    undo_paper_not_publishing(
+                        paper,
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                        request=request,
+                    )
+                    messages.success(
+                        request,
+                        f"Paper {paper.paper_id} returned to publication scope.",
+                    )
+            else:
+                submission = orphan_submission
+                if action == "mark_not_publishing":
+                    mark_not_publishing(
+                        submission,
+                        request.POST.get(
+                            "publication_exclusion_reason",
+                            "unpaid",
+                        ),
+                        request.POST.get("publication_exclusion_notes", ""),
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                    )
+                    messages.success(
+                        request,
+                        f"Final submission {submission.final_submission_id} "
+                        "classified as Not Publishing.",
+                    )
+                elif action == "undo_not_publishing":
+                    undo_not_publishing(
+                        submission,
+                        expected_evidence_token=request.POST.get(
+                            "evidence_token",
+                            "",
+                        ),
+                    )
+                    messages.success(
+                        request,
+                        f"Final submission {submission.final_submission_id} "
+                        "moved back to publication review.",
+                    )
         except ValueError as exc:
             messages.error(request, str(exc))
         return redirect(_worklist_return_url(request, "not_publishing_list"))
@@ -1435,11 +1540,42 @@ def not_publishing_list(request):
         excluded_from_publication=False,
         discarded=False,
     ).exclude(paper_id_filled__in=valid_ids)
-    excluded = FinalSubmission.objects.filter(excluded_from_publication=True, discarded=False)
+    excluded = FinalSubmission.objects.filter(
+        excluded_from_publication=True,
+        discarded=False,
+    ).exclude(paper_id_filled__in=valid_ids)
+    excluded_papers = InitialPaper.objects.filter(
+        publication_decision_status="not_publishing"
+    )
+    decision_required_papers = InitialPaper.objects.filter(
+        Q(publication_decision_status="decision_required")
+        | Q(paper_id__in=integrity_paper_ids)
+    )
+    active_by_paper = {
+        submission.paper_id_filled: submission
+        for submission in FinalSubmission.objects.filter(
+            active_version=True,
+            discarded=False,
+        ).exclude(paper_id_filled="")
+    }
+    missing_final_papers = InitialPaper.objects.filter(
+        publication_decision_status="publishing"
+    ).exclude(paper_id__in=active_by_paper)
 
     if focused_submission:
         needs_decision = needs_decision.filter(pk=focused_submission.pk)
         excluded = excluded.filter(pk=focused_submission.pk)
+        excluded_papers = excluded_papers.none()
+        decision_required_papers = decision_required_papers.none()
+        missing_final_papers = missing_final_papers.none()
+    elif focused_paper:
+        needs_decision = needs_decision.none()
+        excluded = excluded.none()
+        excluded_papers = excluded_papers.filter(pk=focused_paper.pk)
+        decision_required_papers = decision_required_papers.filter(
+            pk=focused_paper.pk
+        )
+        missing_final_papers = missing_final_papers.filter(pk=focused_paper.pk)
     elif q:
         search_filter = (
             Q(final_submission_id__icontains=q)
@@ -1451,6 +1587,20 @@ def not_publishing_list(request):
         )
         needs_decision = needs_decision.filter(search_filter)
         excluded = excluded.filter(search_filter)
+        paper_search_filter = (
+            Q(paper_id__icontains=q)
+            | Q(title__icontains=q)
+            | Q(authors__icontains=q)
+            | Q(notes__icontains=q)
+            | Q(publication_exclusion_notes__icontains=q)
+        )
+        excluded_papers = excluded_papers.filter(paper_search_filter)
+        decision_required_papers = decision_required_papers.filter(
+            paper_search_filter
+        )
+        missing_final_papers = missing_final_papers.filter(
+            paper_search_filter
+        )
 
     needs_decision = list(
         needs_decision.order_by("paper_id_filled", "final_submission_id")
@@ -1458,17 +1608,19 @@ def not_publishing_list(request):
     excluded = list(
         excluded.order_by("-active_version", "-publication_excluded_at", "paper_id_filled", "final_submission_id")
     )
+    excluded_papers = list(excluded_papers.order_by("paper_id"))
+    decision_required_papers = list(
+        decision_required_papers.order_by("paper_id")
+    )
+    for paper in decision_required_papers:
+        paper.publication_integrity_conflict = (
+            paper.paper_id in integrity_paper_ids
+        )
+    missing_final_papers = list(missing_final_papers.order_by("paper_id"))
     evidence_targets = [*needs_decision, *excluded]
     if focused_submission:
         evidence_targets.append(focused_submission)
     all_submission_groups = _load_submission_groups_for_targets(evidence_targets)
-    active_by_paper = {
-        submission.paper_id_filled: submission
-        for submission in FinalSubmission.objects.filter(
-            active_version=True,
-            discarded=False,
-        ).exclude(paper_id_filled="")
-    }
     for submission in [*needs_decision, *excluded]:
         submission.publication_decision_evidence_token = make_evidence_token(
             "publication-decision",
@@ -1487,6 +1639,38 @@ def not_publishing_list(request):
         submission.version_state_level = "secondary" if submission.active_version else "light text-dark"
         submission.origin_label = submission.get_submission_origin_display()
         submission.active_replacement = replacement
+    paper_targets = [
+        *excluded_papers,
+        *decision_required_papers,
+        *missing_final_papers,
+    ]
+    if focused_paper:
+        paper_targets = [
+            paper
+            for paper in paper_targets
+            if paper.pk != focused_paper.pk
+        ]
+        paper_targets.append(focused_paper)
+        focused_paper.publication_integrity_conflict = (
+            focused_paper.paper_id in integrity_paper_ids
+        )
+    mapped_by_paper = {}
+    if paper_targets:
+        for submission in FinalSubmission.objects.filter(
+            paper_id_filled__in={paper.paper_id for paper in paper_targets}
+        ).order_by("pk"):
+            mapped_by_paper.setdefault(
+                submission.paper_id_filled,
+                [],
+            ).append(submission)
+    for paper in paper_targets:
+        mapped = mapped_by_paper.get(paper.paper_id, [])
+        paper.publication_decision_evidence_token = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(paper, mapped),
+        )
+        paper.active_submission = active_by_paper.get(paper.paper_id)
+        paper.final_version_count = len(mapped)
     focused_context = None
     if focused_submission:
         focused_submission.publication_decision_evidence_token = make_evidence_token(
@@ -1521,6 +1705,18 @@ def not_publishing_list(request):
             ),
             out_of_scope=focused_submission.discarded,
         )
+    elif focused_paper:
+        focused_context = focused_paper_context(
+            focused_paper,
+            title="Focused publication decision",
+            message=(
+                "Review the publication decision for this Paper Master record. "
+                "Not Publishing excludes the entire paper while preserving all "
+                "records and files."
+            ),
+            back_url=reverse("submissions:not_publishing_list"),
+            submission=active_by_paper.get(focused_paper.paper_id),
+        )
     return render(
         request,
         "submissions/not_publishing_list.html",
@@ -1528,10 +1724,19 @@ def not_publishing_list(request):
             "q": q,
             "needs_decision": needs_decision,
             "excluded": excluded,
+            "excluded_papers": excluded_papers,
+            "decision_required_papers": decision_required_papers,
+            "missing_final_papers": missing_final_papers,
             "needs_decision_count": len(needs_decision),
-            "excluded_count": len(excluded),
-            "active_excluded_count": sum(1 for item in excluded if item.active_version),
+            "excluded_count": len(excluded) + len(excluded_papers),
+            "active_excluded_count": len(excluded_papers),
+            "missing_final_count": len(missing_final_papers),
+            "decision_required_count": len(decision_required_papers),
+            "integrity_conflict_count": len(
+                integrity_paper_ids
+            ),
             "focused_submission": focused_submission,
+            "focused_paper": focused_paper,
             "focused_context": focused_context,
         },
     )

@@ -3,6 +3,36 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.11.0 - 2026-07-27
+
+### Paper Master Publication Decisions
+
+- Made Paper Master the authoritative owner of each paper's Publishing,
+  Not Publishing, or Decision Required state.
+- Added a safe Not Publishing workflow for unpaid or withdrawn Paper Master
+  records that do not have a Final Submission yet.
+- Required explicit publication-scope impact confirmation and a reason before
+  excluding a paper; Undo returns the paper to publication scope without
+  discarding review evidence.
+- Kept Final Submission exclusion fields as compatibility mirrors and made
+  later Final imports and Editor Uploads inherit their Paper Master's decision.
+- Excluded Not Publishing papers consistently from Process PDFs, review queues,
+  CrossCheck, duplicates, author counts, readiness, and final or draft packages.
+- Added a blocking Decision Required state for ambiguous migrated records so
+  publication code never guesses.
+- Guarded Master creation and import so an orphan Final with an existing Not
+  Publishing decision enters Decision Required instead of silently returning
+  to publication scope.
+- Prevented Paper ID verification/remapping from bypassing an existing
+  Not Publishing decision.
+- Added a non-bypassable publication-decision integrity check for Final,
+  Draft, and CrossCheck exports, and preserved legacy decision evidence while
+  a Master record remains Decision Required.
+- Classified discarded legacy versions during migration so Undo Discard cannot
+  revive an unreviewed publication decision.
+- Advanced the System State archive to version 4 because Paper Master
+  publication decisions are now required restore state.
+
 ## 1.10.43 - 2026-07-27
 
 ### Image Preview Sizing

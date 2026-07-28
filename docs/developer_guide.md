@@ -102,6 +102,7 @@ Put reusable workflow behavior in services:
 - CSV/XLSX parsing and templates: `import_export.py`.
 - PDF processing: `pdf_processor.py`.
 - Publication file resolution: `file_manager.py`.
+- Paper Master publication decisions: `publication_decisions.py`.
 - Paper ID verification: `verification.py`.
 - Title/author extraction and manual override: `title_author_extraction.py`, `builtin_title_author_extractor.py`, and optional `grobid_extractor.py`.
 - Formatting workflow: `formatting.py`.
@@ -244,8 +245,22 @@ Examples:
 - Changed Paper ID resets Paper ID verification and active-version grouping.
 - Changed Paper Master notes must not reset any review/check status.
 - Active-version rule changes must be previewed and applied without resetting review flags.
+- Changed Paper Master publication decision recalculates publication scope and
+  Final compatibility mirrors, but must not reset review/check evidence.
+- New Paper Master creation must use
+  `create_paper_master_with_publication_guard()`. Direct model creation is
+  acceptable only in controlled tests and migrations. Matching orphan
+  exclusion evidence must produce Decision Required.
 
-Workflow ownership is also a reset-safety boundary. `FinalSubmissionForm` must not expose processing messages/status, Title/Author Review status, duplicate-author review, or Not Publishing fields. Use the dedicated services and pages so required resets and audit events cannot be bypassed.
+Workflow ownership is also a reset-safety boundary. `FinalSubmissionForm` must
+not expose processing messages/status, Title/Author Review status,
+duplicate-author review, or Not Publishing fields. Paper Master publication
+decisions must use `publication_decisions.py`; mapped Final exclusion fields are
+compatibility mirrors only. Use the dedicated services and pages so required
+locking, evidence checks, synchronization, and audit events cannot be bypassed.
+`Decision Required` must preserve legacy mirror evidence. Final, draft, and
+CrossCheck exports must call the shared publication-decision integrity check;
+do not rely on UI state or Master scope filtering alone.
 
 Manual Final Submission create and edit paths are intentionally separate. Create must use `create_final_submission_manual()` so Paper ID evaluation, file paths, initial review state, active/duplicate selection, and audit logging happen atomically. Edit must use `apply_final_submission_manual_edit()` with an existing record; do not pass `None` or create a placeholder original record.
 
@@ -284,7 +299,18 @@ Use app-managed file helpers instead of ad hoc path logic.
 - System State backup must include referenced review artifacts, including title/author verification images, PDF thumbnails, and format previews.
 - System State restore must remap files into the current project `data/` tree and must not preserve old machine-specific absolute paths.
 
-Process PDFs is not a read-only page-count operation. It recalculates active versions, then processes only Paper Master publication candidates that are active, undiscarded, and not Not Publishing. For those candidates it calculates page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit exceptions when page count changes, rebuilds author cache, and syncs the publication PDF debug folder. Historical, discarded, Not Publishing, and invalid-ID records must not create processing errors. It must not scan incoming folders, create submissions, rewrite original/corrected files, or update publication source selection through `current_file_path`. Any future refactor that changes this behavior must update Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests together.
+Process PDFs is not a read-only page-count operation. It recalculates active
+versions, then processes only active, undiscarded Final versions whose Paper
+Master decision is Publishing. For those candidates it calculates
+page/hash/thumbnails from the Corrected/Original PDF source, resets page-limit
+exceptions when page count changes, rebuilds author cache, and syncs the
+publication PDF debug folder. Historical, discarded, Master Not Publishing,
+Decision Required, and invalid-ID records must not create processing errors.
+It must not scan incoming folders, create submissions, rewrite
+original/corrected files, or update publication source selection through
+`current_file_path`. Any future refactor that changes this behavior must update
+Operator Guide, Architecture Notes, Troubleshooting, and acceptance tests
+together.
 
 Thumbnail rendering must use operation-unique directories. Batch persistence
 compares `final_submission_state_evidence()` under row locks; stale generated
@@ -383,6 +409,11 @@ The app version is `APP_VERSION` in `conference_final_manager/settings.py`. The 
 Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export changes.
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
+
+Archive version 4 marks Paper Master publication decisions as required restore
+state. Do not accept an older archive as equivalent without an explicit
+migration path; defaulting a missing decision to Publishing can change package
+scope.
 
 Exact-navigation and focused-worklist changes do not alter System State archive
 contents, so they require an app version change but not an archive version

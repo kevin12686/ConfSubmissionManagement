@@ -293,15 +293,17 @@ def active_pdf_needs_processing(
 
 
 def active_pdfs_needing_processing(inspection=None, *, submissions=None):
-    from submissions.models import FinalSubmission, InitialPaper
+    from submissions.models import FinalSubmission
+    from submissions.services.publication_decisions import (
+        publication_master_paper_ids,
+    )
 
     inspection = inspection or FileInspectionContext()
     if submissions is None:
         submissions = FinalSubmission.objects.filter(
             active_version=True,
             discarded=False,
-            excluded_from_publication=False,
-            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+            paper_id_filled__in=publication_master_paper_ids(),
         )
     return [
         submission

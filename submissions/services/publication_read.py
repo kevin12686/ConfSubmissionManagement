@@ -92,20 +92,61 @@ class PublicationReadContext:
         return {paper.paper_id for paper in self.papers}
 
     @cached_property
+    def publication_papers(self):
+        return tuple(
+            paper
+            for paper in self.papers
+            if paper.publication_decision_status == "publishing"
+        )
+
+    @cached_property
+    def publication_paper_ids(self):
+        return {paper.paper_id for paper in self.publication_papers}
+
+    @cached_property
+    def decision_required_papers(self):
+        return tuple(
+            paper
+            for paper in self.papers
+            if paper.publication_decision_status == "decision_required"
+        )
+
+    @cached_property
+    def not_publishing_papers(self):
+        return tuple(
+            paper
+            for paper in self.papers
+            if paper.publication_decision_status == "not_publishing"
+        )
+
+    @cached_property
     def paper_by_id(self):
         return {paper.paper_id: paper for paper in self.papers}
 
     @cached_property
     def publishable_submissions(self):
+        paper_by_id = self.paper_by_id
         return tuple(
             submission
             for submission in self.active_submissions
-            if not submission.excluded_from_publication
+            if (
+                (
+                    submission.paper_id_filled in paper_by_id
+                    and paper_by_id[
+                        submission.paper_id_filled
+                    ].publication_decision_status
+                    == "publishing"
+                )
+                or (
+                    submission.paper_id_filled not in paper_by_id
+                    and not submission.excluded_from_publication
+                )
+            )
         )
 
     @cached_property
     def master_submissions(self):
-        valid_ids = self.valid_paper_ids
+        valid_ids = self.publication_paper_ids
         return tuple(
             submission
             for submission in self.publishable_submissions
@@ -123,27 +164,17 @@ class PublicationReadContext:
 
     @cached_property
     def excluded_paper_ids(self):
-        valid_ids = self.valid_paper_ids
-        active_by_paper = {}
-        for submission in self.active_submissions:
-            if submission.paper_id_filled in valid_ids:
-                active_by_paper.setdefault(submission.paper_id_filled, []).append(
-                    submission
-                )
         return {
-            paper_id
-            for paper_id, submissions in active_by_paper.items()
-            if submissions
-            and all(
-                submission.excluded_from_publication
-                for submission in submissions
-            )
+            paper.paper_id
+            for paper in self.not_publishing_papers
         }
 
     @cached_property
     def mixed_publication_decision_groups(self):
-        candidates = FinalSubmission.objects.filter(discarded=False).exclude(
-            paper_id_filled=""
+        candidates = (
+            FinalSubmission.objects.filter(discarded=False)
+            .exclude(paper_id_filled="")
+            .exclude(paper_id_filled__in=self.valid_paper_ids)
         )
         mixed_paper_ids = list(
             candidates.values("paper_id_filled")

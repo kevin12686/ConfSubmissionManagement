@@ -10,6 +10,7 @@ import pandas as pd
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from submissions.models import AppSetting, FinalSubmission, InitialPaper
 from submissions.services.crosscheck import (
@@ -82,7 +83,7 @@ class CrossCheckImportSafetyTests(TestCase):
         active=True,
         excluded=False,
     ):
-        InitialPaper.objects.get_or_create(
+        paper, _created = InitialPaper.objects.get_or_create(
             paper_id=paper_id,
             defaults={
                 "acceptance_status": "Accepted",
@@ -106,6 +107,12 @@ class CrossCheckImportSafetyTests(TestCase):
         )
         submission.current_file_path = submission.pdf_file.path
         submission.save(update_fields=["current_file_path", "updated_at"])
+        if excluded:
+            paper.publication_decision_status = "not_publishing"
+            paper.publication_exclusion_reason = "other"
+            paper.publication_exclusion_notes = "Test publication decision."
+            paper.publication_excluded_at = timezone.now()
+            paper.save()
         return submission
 
     def csv_upload(self, body):
@@ -423,7 +430,10 @@ class CrossCheckImportSafetyTests(TestCase):
         FinalSubmission.objects.all().delete()
         self.make_submission(final_id="20", active=True)
         self.make_submission(final_id="21", active=False, excluded=True)
-        with self.assertRaisesRegex(ValueError, "mixed Not Publishing"):
+        with self.assertRaisesRegex(
+            ValueError,
+            "publication-decision integrity conflicts",
+        ):
             prepare_crosscheck_upload("MIXED")
         self.assertFalse(
             (self.root / "data" / "crosscheck_upload" / "MIXED").exists()

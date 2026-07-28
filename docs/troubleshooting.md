@@ -305,9 +305,43 @@ Not Publishing excludes the paper from publication output because of an editoria
 
 Old Versions shows version history. Not Publishing List shows publication decisions.
 
+### A Paper Master record has no Final and will not be published
+
+Do not delete the Paper Master record and do not create a placeholder Final.
+Open Not Publishing List, focus the Paper Master record, choose the editorial
+reason, enter a note, review the scope-impact warning, and confirm. The decision
+is stored on Paper Master, so it works before a Final exists and excludes the
+paper from both final and draft packages.
+
+If the paper later receives a Final Submission, the imported or Editor Upload
+version inherits the Master decision and remains outside publication scope.
+Undo Not Publishing only when the paper should return to the proceedings. If no
+Final exists at that point, Missing Final Submission correctly returns as a
+blocker.
+
+### Publication Decision Required
+
+This state means older data, manually inconsistent data, or a newly imported
+Master ID matching an orphan Not Publishing Final could not be safely
+classified. It blocks final, draft, and CrossCheck exports. Open Not Publishing
+List and explicitly choose either Keep in publication scope or Mark Not
+Publishing; the system must not guess.
+
+### Publication Decision Integrity Conflict
+
+Paper Master is authoritative, but all mapped Final decision mirrors must agree
+with it. This Critical error means an import, restore, or legacy record left
+them inconsistent. Final and draft force export cannot bypass it. Open Not
+Publishing for the Paper ID and explicitly apply Keep Publishing or Not
+Publishing so every mapped version is synchronized. Do not edit the Final
+exclusion fields directly.
+
 ### ID cannot be verified
 
-A Paper ID must exist in the Paper Master List before it can be verified. Correct the ID or mark the record as Not Publishing if it should not be published.
+A Paper ID must exist in the Paper Master List and that Master paper must be in
+Publishing state before it can be verified. Correct the ID, undo the Master
+Not Publishing decision, or classify an orphan Final as Not Publishing when it
+should not be published.
 
 ## Plagiarism / CrossCheck
 

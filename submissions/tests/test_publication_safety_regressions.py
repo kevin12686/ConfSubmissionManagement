@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -11,16 +12,28 @@ from django.urls import reverse
 from django.utils import timezone
 
 from submissions.forms import FinalSubmissionForm
-from submissions.models import AppSetting, FinalSubmission, PaperAuthor
+from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
 from submissions.services.checks import (
     publication_readiness_rows,
     rebuild_paper_authors,
 )
 from submissions.services.editor_uploads import editor_conflict_paper_ids
+from submissions.services.import_preview import (
+    apply_import_preview,
+    preview_final_import,
+    preview_initial_import,
+)
+from submissions.services.crosscheck import prepare_crosscheck_upload
 from submissions.services.organized_list import organized_list_rows
 from submissions.services.manual_edit import apply_final_submission_manual_edit
 from submissions.services.pdf_processor import determine_active_versions
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import (
+    apply_master_decision_mirror,
+    mark_paper_not_publishing,
+    publication_decision_integrity_rows,
+    undo_paper_not_publishing,
+)
 from submissions.services.reports import (
     PublicationPackageBlocked,
     export_publication_package,
@@ -31,15 +44,266 @@ from submissions.services.title_author_extraction import (
 from submissions.services.verification import (
     mark_not_publishing,
     undo_not_publishing,
+    verify_submission,
 )
 from submissions.services.workflow_evidence import (
     final_submission_edit_evidence,
     make_evidence_token,
+    paper_publication_decision_evidence,
 )
 from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
 
 
 class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
+    def test_new_master_for_excluded_orphan_requires_explicit_decision(self):
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-10",
+            paper_id_filled="ORPHAN-X",
+            final_submission_title="Orphan Paper",
+            extracted_title="Orphan Paper",
+        )
+        mark_not_publishing(
+            orphan,
+            "unpaid",
+            "Explicit orphan Not Publishing decision.",
+        )
+
+        preview = preview_initial_import(
+            self.uploaded_csv(
+                "paper_master.csv",
+                "paper_id,acceptance_status,title,authors,notes\n"
+                "ORPHAN-X,accepted,Orphan Paper,Ada,\n",
+            )
+        )
+        row = preview["rows"][0]
+        self.assertTrue(row["publication_decision_required"])
+        self.assertEqual(row["excluded_final_ids"], ["ORPHAN-10"])
+        self.assertFalse(
+            InitialPaper.objects.filter(paper_id="ORPHAN-X").exists()
+        )
+
+        apply_import_preview(preview["token"])
+
+        paper = InitialPaper.objects.get(paper_id="ORPHAN-X")
+        orphan.refresh_from_db()
+        self.assertEqual(
+            paper.publication_decision_status,
+            "decision_required",
+        )
+        self.assertTrue(orphan.excluded_from_publication)
+        categories = {
+            row["category"] for row in publication_readiness_rows()
+        }
+        self.assertIn("Publication Decision Required", categories)
+        with self.assertRaises(PublicationPackageBlocked):
+            export_publication_package()
+        with self.assertRaises(PublicationPackageBlocked):
+            export_publication_package(force=True)
+        with self.assertRaisesRegex(
+            ValueError,
+            "publication decisions are unresolved",
+        ):
+            prepare_crosscheck_upload("ORPHAN_DECISION")
+
+        evidence = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(paper, [orphan]),
+        )
+        undo_paper_not_publishing(
+            paper,
+            expected_evidence_token=evidence,
+        )
+        orphan.refresh_from_db()
+        self.assertFalse(orphan.excluded_from_publication)
+        verify_submission(orphan, "ORPHAN-X")
+        with zipfile.ZipFile(export_publication_package()) as archive:
+            self.assertTrue(
+                any(
+                    name.startswith("PDF/ORPHAN-X-")
+                    for name in archive.namelist()
+                )
+            )
+
+    def test_manual_master_creation_for_excluded_orphan_requires_decision(self):
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-20",
+            paper_id_filled="ORPHAN-Y",
+            final_submission_title="Manual Master",
+        )
+        mark_not_publishing(orphan, "unpaid", "Keep excluded.")
+
+        response = self.client.post(
+            reverse("submissions:initial_paper_add"),
+            {
+                "paper_id": "ORPHAN-Y",
+                "acceptance_status": "accepted",
+                "title": "Manual Master",
+                "authors": "Ada",
+                "notes": "",
+            },
+        )
+
+        paper = InitialPaper.objects.get(paper_id="ORPHAN-Y")
+        self.assertRedirects(
+            response,
+            (
+                reverse("submissions:not_publishing_list")
+                + f"?paper={paper.pk}"
+            ),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(
+            paper.publication_decision_status,
+            "decision_required",
+        )
+
+    def test_verify_cannot_remap_an_excluded_orphan(self):
+        self.make_master_paper("P001", "Publishing Target", "Ada")
+        orphan = self.make_final_submission(
+            final_submission_id="ORPHAN-30",
+            paper_id_filled="ORPHAN-Z",
+            final_submission_title="Publishing Target",
+        )
+        mark_not_publishing(orphan, "unpaid", "Do not remap silently.")
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "retains a Not Publishing decision",
+        ):
+            verify_submission(orphan, "P001")
+
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.paper_id_filled, "ORPHAN-Z")
+        self.assertTrue(orphan.excluded_from_publication)
+        self.assertFalse(orphan.paper_id_verified)
+
+    def test_decision_required_preserves_legacy_mirror_evidence(self):
+        paper = self.make_master_paper("P001", "Decision Evidence", "Ada")
+        paper.publication_decision_status = "decision_required"
+        paper.save(update_fields=["publication_decision_status", "updated_at"])
+        submission = self.make_final_submission(
+            excluded_from_publication=True,
+            publication_exclusion_reason="unpaid",
+            publication_exclusion_notes="Legacy evidence.",
+            publication_excluded_at=timezone.now(),
+        )
+
+        apply_master_decision_mirror(submission, paper)
+
+        self.assertTrue(submission.excluded_from_publication)
+        self.assertEqual(submission.publication_exclusion_reason, "unpaid")
+        self.assertEqual(
+            submission.publication_exclusion_notes,
+            "Legacy evidence.",
+        )
+
+    def test_decision_integrity_conflict_blocks_every_publication_export(self):
+        self.make_master_paper("P001", "Integrity Conflict", "Ada")
+        submission = self.make_final_submission(
+            final_submission_title="Integrity Conflict",
+            extracted_title="Integrity Conflict",
+            excluded_from_publication=True,
+            publication_exclusion_reason="unpaid",
+            publication_exclusion_notes="Inconsistent legacy mirror.",
+            publication_excluded_at=timezone.now(),
+        )
+        context = PublicationReadContext.load()
+
+        integrity_rows = publication_decision_integrity_rows(context)
+        self.assertEqual(
+            [row["category"] for row in integrity_rows],
+            ["Publication Decision Integrity Conflict"],
+        )
+        self.assertIn(
+            "Publication Decision Integrity Conflict",
+            {
+                row["category"]
+                for row in publication_readiness_rows(context=context)
+            },
+        )
+        with self.assertRaises(PublicationPackageBlocked):
+            export_publication_package()
+        with self.assertRaises(PublicationPackageBlocked):
+            export_publication_package(force=True)
+        with self.assertRaisesRegex(
+            ValueError,
+            "publication-decision integrity conflicts",
+        ):
+            prepare_crosscheck_upload("INTEGRITY_CONFLICT")
+
+        page = self.client.get(
+            reverse("submissions:not_publishing_list"),
+            {"paper": context.paper_by_id["P001"].pk},
+        )
+        self.assertContains(page, "Integrity conflict")
+        paper = context.paper_by_id["P001"]
+        evidence = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(paper, [submission]),
+        )
+        undo_paper_not_publishing(
+            paper,
+            expected_evidence_token=evidence,
+        )
+        submission.refresh_from_db()
+        self.assertFalse(submission.excluded_from_publication)
+        self.assertEqual(
+            publication_decision_integrity_rows(
+                PublicationReadContext.load()
+            ),
+            [],
+        )
+        self.assertTrue(export_publication_package().exists())
+
+    def test_migration_classifies_discarded_legacy_decisions(self):
+        excluded = self.make_master_paper(
+            "P001",
+            "Discarded Excluded",
+            "Ada",
+        )
+        mixed = self.make_master_paper(
+            "P002",
+            "Mixed History",
+            "Grace",
+        )
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            discarded=True,
+            excluded_from_publication=True,
+        )
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            discarded=True,
+            excluded_from_publication=True,
+        )
+        self.make_final_submission(
+            final_submission_id="21",
+            paper_id_filled="P002",
+            discarded=False,
+            excluded_from_publication=False,
+        )
+        migration = importlib.import_module(
+            "submissions.migrations."
+            "0032_initialpaper_publication_decision_status_and_more"
+        )
+
+        from django.apps import apps
+
+        migration.migrate_master_publication_decisions(apps, None)
+
+        excluded.refresh_from_db()
+        mixed.refresh_from_db()
+        self.assertEqual(
+            excluded.publication_decision_status,
+            "not_publishing",
+        )
+        self.assertEqual(
+            mixed.publication_decision_status,
+            "decision_required",
+        )
+
     def test_active_version_uses_all_numeric_chunks_in_final_id(self):
         self.make_master_paper("P001", "Natural Final IDs", "Ada")
         lower = self.make_final_submission(
@@ -59,7 +323,7 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
         self.assertTrue(higher.active_version)
 
     def test_not_publishing_updates_every_version_for_the_paper(self):
-        self.make_master_paper("P001", "Withdrawn Paper", "Ada")
+        paper = self.make_master_paper("P001", "Withdrawn Paper", "Ada")
         self.make_master_paper("P002", "Publishing Paper", "Grace")
         start2 = self.make_final_submission(
             final_submission_id="10",
@@ -100,48 +364,33 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
         editor.refresh_from_db()
         self.assertFalse(start2.excluded_from_publication)
         self.assertFalse(editor.excluded_from_publication)
-        self.assertFalse(start2.paper_id_verified)
-        self.assertFalse(editor.paper_id_verified)
+        self.assertTrue(start2.paper_id_verified)
+        self.assertTrue(editor.paper_id_verified)
+        paper.refresh_from_db()
+        self.assertEqual(paper.publication_decision_status, "publishing")
 
-    def test_mixed_not_publishing_state_blocks_final_and_draft_packages(self):
-        self.make_master_paper("P001", "Mixed Decision", "Ada")
-        old = self.make_final_submission(
-            final_submission_id="10",
-            final_submission_title="Mixed Decision",
-            excluded_from_publication=True,
-            active_version=False,
-        )
-        active = self.make_final_submission(
-            final_submission_id="11",
-            final_submission_title="Mixed Decision",
-            active_version=True,
-        )
+    def test_master_decision_required_blocks_final_and_draft_packages(self):
+        paper = self.make_master_paper("P001", "Mixed Decision", "Ada")
+        paper.publication_decision_status = "decision_required"
+        paper.save(update_fields=["publication_decision_status", "updated_at"])
 
         categories = {row["category"] for row in publication_readiness_rows()}
-        self.assertIn("Mixed Not Publishing Decision", categories)
+        self.assertIn("Publication Decision Required", categories)
         with self.assertRaises(PublicationPackageBlocked):
             export_publication_package()
         with self.assertRaises(PublicationPackageBlocked):
             export_publication_package(force=True)
 
-        context = PublicationReadContext.load()
-        rows, *_rest = organized_list_rows(context=context, hydrate=False)
-        row = next(item for item in rows if item["paper"].paper_id == "P001")
-        self.assertTrue(row["publication_decision_conflict"])
-        self.assertEqual(row["submission"].pk, active.pk)
-        self.assertNotEqual(row["submission"].pk, old.pk)
-
-    def test_mixed_decision_lookup_aggregates_before_loading_details(self):
-        self.make_master_paper("P001", "Mixed Decision", "Ada")
+    def test_orphan_mixed_decision_lookup_aggregates_before_loading_details(self):
         self.make_final_submission(
             final_submission_id="10",
-            paper_id_filled="P001",
+            paper_id_filled="ORPHAN",
             excluded_from_publication=True,
             active_version=False,
         )
         self.make_final_submission(
             final_submission_id="11",
-            paper_id_filled="P001",
+            paper_id_filled="ORPHAN",
             excluded_from_publication=False,
             active_version=True,
         )
@@ -157,10 +406,145 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
         with CaptureQueriesContext(connection) as captured:
             groups = context.mixed_publication_decision_groups
 
-        self.assertEqual(set(groups), {"P001"})
+        self.assertEqual(set(groups), {"ORPHAN"})
         self.assertEqual(len(captured), 2)
         self.assertIn("COUNT", captured[0]["sql"].upper())
         self.assertIn(" IN ", captured[1]["sql"].upper())
+
+    def test_master_without_final_can_be_excluded_and_restored_safely(self):
+        waiting = self.make_master_paper("P001", "Unpaid Paper", "Ada")
+        self.make_master_paper("P002", "Publishing Paper", "Grace")
+        self.make_final_submission(
+            final_submission_id="20",
+            paper_id_filled="P002",
+            final_submission_title="Publishing Paper",
+            extracted_title="Publishing Paper",
+        )
+
+        self.assertIn(
+            "Missing Final Submission",
+            {
+                row["category"]
+                for row in publication_readiness_rows()
+                if row["paper_id"] == "P001"
+            },
+        )
+        evidence = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(waiting, []),
+        )
+        mark_paper_not_publishing(
+            waiting,
+            "unpaid",
+            "Payment was not received before publication close.",
+            expected_evidence_token=evidence,
+        )
+
+        waiting.refresh_from_db()
+        self.assertEqual(waiting.publication_decision_status, "not_publishing")
+        self.assertFalse(
+            any(
+                row["paper_id"] == "P001"
+                for row in publication_readiness_rows()
+            )
+        )
+        with zipfile.ZipFile(export_publication_package()) as archive:
+            self.assertFalse(
+                any(name.startswith("PDF/P001-") for name in archive.namelist())
+            )
+            self.assertTrue(
+                any(name.startswith("PDF/P002-") for name in archive.namelist())
+            )
+
+        waiting.refresh_from_db()
+        evidence = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(waiting, []),
+        )
+        undo_paper_not_publishing(
+            waiting,
+            expected_evidence_token=evidence,
+        )
+
+        waiting.refresh_from_db()
+        self.assertEqual(waiting.publication_decision_status, "publishing")
+        self.assertIn(
+            "Missing Final Submission",
+            {
+                row["category"]
+                for row in publication_readiness_rows()
+                if row["paper_id"] == "P001"
+            },
+        )
+
+    def test_master_without_final_requires_scope_impact_confirmation(self):
+        paper = self.make_master_paper("P001", "Unpaid Paper", "Ada")
+        page = self.client.get(
+            reverse("submissions:not_publishing_list"),
+            {"paper": paper.pk},
+        )
+        focused_paper = page.context["focused_paper"]
+
+        response = self.client.post(
+            reverse("submissions:not_publishing_list"),
+            {
+                "paper_id": paper.pk,
+                "action": "mark_not_publishing",
+                "publication_exclusion_reason": "unpaid",
+                "publication_exclusion_notes": "Payment was not received.",
+                "evidence_token": (
+                    focused_paper.publication_decision_evidence_token
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        paper.refresh_from_db()
+        self.assertEqual(paper.publication_decision_status, "publishing")
+        self.assertIn(
+            "Missing Final Submission",
+            {
+                row["category"]
+                for row in publication_readiness_rows()
+                if row["paper_id"] == "P001"
+            },
+        )
+
+    def test_final_import_inherits_master_not_publishing_decision(self):
+        paper = self.make_master_paper("P001", "Unpaid Paper", "Ada")
+        evidence = make_evidence_token(
+            "paper-publication-decision",
+            paper_publication_decision_evidence(paper, []),
+        )
+        mark_paper_not_publishing(
+            paper,
+            "unpaid",
+            "Payment was not received before publication close.",
+            expected_evidence_token=evidence,
+        )
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "100,P001,Unpaid Paper,Ada\n",
+            )
+        )
+        apply_import_preview(preview["token"])
+
+        submission = FinalSubmission.objects.get(final_submission_id="100")
+        self.assertTrue(submission.excluded_from_publication)
+        self.assertNotIn(
+            "P001",
+            PublicationReadContext.load().publication_paper_ids,
+        )
+        self.assertFalse(
+            any(
+                row["paper_id"] == "P001"
+                for row in publication_readiness_rows()
+            )
+        )
 
     def test_multiple_active_versions_do_not_display_an_arbitrary_file(self):
         self.make_master_paper("P001", "Ambiguous Active", "Ada")

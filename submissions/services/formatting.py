@@ -34,6 +34,7 @@ from submissions.services.preview_storage import (
     purge_expired_preview_directories,
     save_preview_upload,
 )
+from submissions.services.publication_decisions import publication_master_paper_ids
 from submissions.services.text_utils import clean_note_text, natural_text_key
 from submissions.services.verification import build_title_guard_context, titles_identical
 from submissions.services.workflow_evidence import (
@@ -90,9 +91,9 @@ def record_formatting_issue_from_pdf_preview(
     if (
         not submission.active_version
         or submission.discarded
-        or submission.excluded_from_publication
         or not InitialPaper.objects.filter(
-            paper_id=submission.paper_id_filled
+            paper_id=submission.paper_id_filled,
+            publication_decision_status="publishing",
         ).exists()
     ):
         raise FormattingWorkflowError(
@@ -629,8 +630,7 @@ def _formatting_queryset(query=""):
     submissions = FinalSubmission.objects.filter(
         active_version=True,
         discarded=False,
-        excluded_from_publication=False,
-        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+        paper_id_filled__in=publication_master_paper_ids(),
     )
     if query:
         submissions = submissions.filter(

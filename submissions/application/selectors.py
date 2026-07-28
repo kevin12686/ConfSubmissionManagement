@@ -22,6 +22,10 @@ from submissions.services.file_manager import (
 from submissions.services.file_inspection import FileInspectionContext
 from submissions.services.pdf_processor import processed_pdf_rows
 from submissions.services.publication_read import PublicationReadContext
+from submissions.services.publication_decisions import (
+    paper_is_not_publishing,
+    publication_master_paper_ids,
+)
 from submissions.services.editor_uploads import editor_conflict_paper_ids
 from submissions.services.text_utils import natural_text_key
 from submissions.services.version_history import (
@@ -33,7 +37,9 @@ from submissions.services.version_history import (
 
 
 def verification_badge(submission, master_paper=None):
-    if submission.excluded_from_publication:
+    if paper_is_not_publishing(master_paper) or (
+        master_paper is None and submission.excluded_from_publication
+    ):
         return "Excluded from publication", "secondary"
     if submission.paper_id_verified and not paper_title_matches_master(submission, master_paper):
         return "Verified, title differs", "warning"
@@ -79,18 +85,41 @@ def focused_submission_context(
     }
 
 
-def focused_paper_context(paper, *, message, back_url, submission=None):
+def focused_paper_context(
+    paper,
+    *,
+    message,
+    back_url,
+    submission=None,
+    title="Focused publication paper",
+):
+    if getattr(paper, "publication_integrity_conflict", False):
+        status_label = "Publication decision integrity conflict"
+        status_level = "danger"
+        out_of_scope = True
+    elif paper.publication_decision_status == "not_publishing":
+        status_label = "Not Publishing"
+        status_level = "secondary"
+        out_of_scope = True
+    elif paper.publication_decision_status == "decision_required":
+        status_label = "Publication decision required"
+        status_level = "danger"
+        out_of_scope = True
+    else:
+        status_label = "Current publication record" if submission else "No final"
+        status_level = "primary" if submission else "danger"
+        out_of_scope = False
     return {
-        "title": "Focused publication paper",
+        "title": title,
         "message": message,
         "paper_id": paper.paper_id,
         "final_submission_id": (
             submission.final_submission_id if submission else ""
         ),
         "origin": submission.get_submission_origin_display() if submission else "",
-        "status_label": "Current publication record" if submission else "No final",
-        "status_level": "primary" if submission else "danger",
-        "out_of_scope": False,
+        "status_label": status_label,
+        "status_level": status_level,
+        "out_of_scope": out_of_scope,
         "back_url": back_url,
         "edit_url": (
             reverse("submissions:final_submission_edit", args=[submission.pk])
@@ -159,6 +188,15 @@ def paper_master_list_context(
 ):
     all_papers = InitialPaper.objects.all()
     total_paper_count = all_papers.count()
+    publication_scope_count = all_papers.filter(
+        publication_decision_status="publishing"
+    ).count()
+    not_publishing_count = all_papers.filter(
+        publication_decision_status="not_publishing"
+    ).count()
+    publication_decision_required_count = all_papers.filter(
+        publication_decision_status="decision_required"
+    ).count()
     papers = all_papers
     valid_sorts = {option["value"] for option in PAPER_MASTER_SORT_OPTIONS}
     if current_sort not in valid_sorts:
@@ -170,6 +208,7 @@ def paper_master_list_context(
             | Q(title__icontains=query)
             | Q(authors__icontains=query)
             | Q(notes__icontains=query)
+            | Q(publication_exclusion_notes__icontains=query)
         )
     papers = _sort_paper_master_rows(papers, current_sort)
     displayed_paper_count = (
@@ -193,6 +232,11 @@ def paper_master_list_context(
         "current_sort": current_sort,
         "sort_options": PAPER_MASTER_SORT_OPTIONS,
         "total_paper_count": total_paper_count,
+        "publication_scope_count": publication_scope_count,
+        "not_publishing_count": not_publishing_count,
+        "publication_decision_required_count": (
+            publication_decision_required_count
+        ),
         "displayed_paper_count": displayed_paper_count,
         "import_form": ImportFileForm(),
         "note_summary": note_summary,
@@ -566,8 +610,7 @@ def active_versions_context(query=""):
         FinalSubmission.objects.filter(
             active_version=True,
             discarded=False,
-            excluded_from_publication=False,
-            paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+            paper_id_filled__in=publication_master_paper_ids(),
         )
     )
     master_by_id = {

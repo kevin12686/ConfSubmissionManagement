@@ -20,6 +20,7 @@ from submissions.services.grobid_extractor import (
     extract_header_with_grobid,
     is_grobid_service_unavailable_error,
 )
+from submissions.services.publication_decisions import publication_master_paper_ids
 from submissions.services.title_author_verification import generate_verification_image
 from submissions.services.verification import text_diff_html, title_similarity, titles_identical
 from submissions.services.workflow_evidence import (
@@ -68,8 +69,7 @@ def publication_review_submissions():
     return FinalSubmission.objects.filter(
         active_version=True,
         discarded=False,
-        excluded_from_publication=False,
-        paper_id_filled__in=InitialPaper.objects.values("paper_id"),
+        paper_id_filled__in=publication_master_paper_ids(),
     )
 
 

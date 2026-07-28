@@ -7,6 +7,7 @@ from submissions.services.checks import rebuild_paper_authors, reset_author_numb
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.import_export import clean_value, normalize_columns, parse_decimal, read_table
 from submissions.services.import_preview import _clear_title_author_manual_override
+from submissions.services.publication_decisions import publication_master_paper_ids
 
 
 def find_submission(row):
@@ -26,7 +27,7 @@ def find_submission(row):
                 paper_id_filled=paper_id,
                 active_version=True,
                 discarded=False,
-                excluded_from_publication=False,
+                paper_id_filled__in=publication_master_paper_ids(),
             )
             .order_by("pk")[:2]
         )

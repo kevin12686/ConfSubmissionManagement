@@ -131,7 +131,7 @@
                         <div class="small"><a href="{% url 'submissions:active_versions' %}">Recalculate active versions</a></div>
                     {% endif %}
                     {% if row.publication_decision_conflict %}
-                        <div><span class="badge text-bg-danger">Mixed Not Publishing decision</span></div>
+                        <div><span class="badge text-bg-danger">Publication decision required</span></div>
                         <div class="small"><a href="{% url 'submissions:not_publishing_list' %}">Resolve publication decision</a></div>
                     {% endif %}
 	                    {% if row.version_conflict %}

@@ -34,6 +34,11 @@ from submissions.services.import_export import (
 )
 from submissions.services.audit import audit_failure, audit_preview, audit_success
 from submissions.services.final_submission_state import defer_submission_state_sync
+from submissions.services.publication_decisions import (
+    apply_master_decision_mirror,
+    create_paper_master_with_publication_guard,
+    new_master_publication_transition,
+)
 
 
 logger = logging.getLogger("submissions.services.import_preview")
@@ -143,6 +148,7 @@ def _stats(rows):
         "pdf_reset": 0,
         "source_reset": 0,
         "corrected_files_archived": 0,
+        "publication_decision_required": 0,
     }
     for row in rows:
         if row.get("status") == "new":
@@ -160,6 +166,7 @@ def _stats(rows):
             "pdf_reset",
             "source_reset",
             "corrected_files_archived",
+            "publication_decision_required",
         ]:
             if row.get(key):
                 stats[key] += 1
@@ -184,6 +191,14 @@ def _preview_initial_frame(frame):
             existing_collisions.add(key)
         else:
             existing_by_key[key] = paper
+    orphan_submissions_by_id = {}
+    for submission in FinalSubmission.objects.exclude(
+        paper_id_filled=""
+    ).order_by("paper_id_filled", "pk"):
+        orphan_submissions_by_id.setdefault(
+            submission.paper_id_filled,
+            [],
+        ).append(submission)
     for index, row in enumerate(frame.to_dict("records"), start=2):
         paper_id = clean_value(row.get("paper_id") or row.get("submission id") or row.get("initial_submission_id"))
         if not paper_id:
@@ -217,6 +232,10 @@ def _preview_initial_frame(frame):
             "notes": clean_note_text(row.get("notes")),
         }
         if not existing:
+            transition = new_master_publication_transition(
+                paper_id,
+                submissions=orphan_submissions_by_id.get(paper_id, []),
+            )
             rows.append(
                 {
                     "type": "initial",
@@ -224,13 +243,24 @@ def _preview_initial_frame(frame):
                     "identifier": paper_id,
                     "new": new_values,
                     "changes": [],
-                    "affected_final_count": 0,
+                    "affected_final_count": transition[
+                        "affected_final_count"
+                    ],
                     "paper_id_review_reset": False,
                     "title_match_reset": False,
                     "pdf_reset": False,
                     "source_reset": False,
                     "corrected_files_archived": False,
                     "notes_changed": False,
+                    "publication_decision_required": transition[
+                        "requires_decision"
+                    ],
+                    "excluded_final_count": transition[
+                        "excluded_final_count"
+                    ],
+                    "excluded_final_ids": transition[
+                        "excluded_final_ids"
+                    ],
                 }
             )
             continue
@@ -274,14 +304,16 @@ def _preview_initial_frame(frame):
 
 
 def _initial_preview_sort_key(row):
-    if row.get("paper_id_review_reset"):
+    if row.get("publication_decision_required"):
         priority = 0
-    elif row.get("status") == "new":
+    elif row.get("paper_id_review_reset"):
         priority = 1
-    elif row.get("status") == "changed":
+    elif row.get("status") == "new":
         priority = 2
-    else:
+    elif row.get("status") == "changed":
         priority = 3
+    else:
+        priority = 4
     return priority, row.get("identifier", "")
 
 
@@ -355,6 +387,23 @@ def preview_final_import(uploaded_file, submission_files=None):
             rows.append(_protected_editor_upload_row(existing, new_values))
             continue
         rows.append(_changed_final_row(existing, new_values, files))
+    master_decisions = dict(
+        InitialPaper.objects.filter(
+            paper_id__in={
+                row["new"].get("paper_id_filled", "")
+                for row in rows
+                if row.get("new")
+            }
+        ).values_list("paper_id", "publication_decision_status")
+    )
+    for preview_row in rows:
+        paper_id = preview_row.get("new", {}).get("paper_id_filled", "")
+        preview_row["master_not_publishing"] = (
+            master_decisions.get(paper_id) == "not_publishing"
+        )
+        preview_row["master_publication_decision_required"] = (
+            master_decisions.get(paper_id) == "decision_required"
+        )
     rows.sort(key=_final_preview_sort_key)
     display_rows = [*master_rows, *rows] if mapping_mode else rows
     payload = _make_payload(
@@ -850,18 +899,33 @@ def _apply_initial_rows(rows, *, notes_policy="preserve_existing_notes"):
         if row.get("skip_apply"):
             continue
         values = row["new"]
-        existing = InitialPaper.objects.filter(paper_id=values["paper_id"]).first()
-        defaults = {
+        existing = (
+            InitialPaper.objects.select_for_update()
+            .filter(paper_id=values["paper_id"])
+            .first()
+        )
+        editable_values = {
             "acceptance_status": values["acceptance_status"],
             "title": values["title"],
             "authors": values["authors"],
         }
         if not existing or apply_imported_notes:
-            defaults["notes"] = values["notes"]
-        paper, _created = InitialPaper.objects.update_or_create(
-            paper_id=values["paper_id"],
-            defaults=defaults,
-        )
+            editable_values["notes"] = values["notes"]
+        if existing:
+            for field_name, value in editable_values.items():
+                setattr(existing, field_name, value)
+            existing.save(
+                update_fields=[
+                    *editable_values,
+                    "updated_at",
+                ]
+            )
+            paper = existing
+        else:
+            paper, _transition = create_paper_master_with_publication_guard(
+                paper_id=values["paper_id"],
+                **editable_values,
+            )
         if row.get("paper_id_review_reset"):
             _reset_paper_id_review_for_paper(paper.paper_id, "Master Title changed; Paper ID review required again.")
 
@@ -921,6 +985,7 @@ def _apply_final(payload):
             _reset_source_dependent_state(submission)
         if row.get("corrected_files_archived"):
             _archive_and_unlink_corrected_files(submission)
+        apply_master_decision_mirror(submission)
         submission.save()
         file_changes = row.get("file_changes", {})
         if file_changes.get("pdf", {}).get("status") in {"new", "different"}:
