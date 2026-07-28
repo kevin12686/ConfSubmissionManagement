@@ -6421,16 +6421,9 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            '<td data-column="source"><span class="text-muted">--</span></td>',
-            html=True,
-        )
-        self.assertContains(
-            response,
-            '<td data-column="extraction"><span class="text-muted">--</span></td>',
-            html=True,
-        )
+        self.assertContains(response, "Final Submission missing")
+        self.assertContains(response, 'class="cfm-root-cause-cell"')
+        self.assertContains(response, 'colspan="8"')
 
     def test_process_page_uses_full_width_when_only_one_issue_type_exists(self):
         self.make_master_paper("P001", "Pending PDF", "Ada")
@@ -10284,7 +10277,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(summary["missing_final"], 1)
         self.assertEqual(summary["unverified"], 1)
         self.assertEqual(summary["verified_title_differences"], 1)
-        self.assertEqual(summary["page_errors"], 1)
+        self.assertEqual(summary["page_errors"], 0)
+        self.assertEqual(summary["pdf_issues"], 1)
         self.assertEqual(summary["missing_plagiarism"], 0)
         self.assertEqual(summary["plagiarism_issues"], 1)
 

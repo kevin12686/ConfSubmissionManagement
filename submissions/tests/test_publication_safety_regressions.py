@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -14,6 +15,7 @@ from django.utils import timezone
 from submissions.forms import FinalSubmissionForm
 from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
 from submissions.services.checks import (
+    dashboard_counts,
     publication_readiness_rows,
     rebuild_paper_authors,
 )
@@ -51,18 +53,24 @@ from submissions.services.workflow_evidence import (
     make_evidence_token,
     paper_publication_decision_evidence,
 )
+from submissions.services.workflow_alerts import workflow_alert_counts
 from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
 
 
 class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
     def test_organized_list_uses_compact_orphan_final_decision_status(self):
-        self.make_final_submission(
+        orphan = self.make_final_submission(
             final_submission_id="ORPHAN-ORGANIZED",
             start2_paper_id_raw="AVS8",
             paper_id_filled="AVS8",
             final_submission_title="Orphan Final",
             paper_id_verified=False,
             verification_status="invalid_paper_id",
+            processing_status="pending",
+            page_count=None,
+            pdf_hash="",
+            thumbnail_folder="",
+            thumbnail_status="pending",
         )
 
         page = self.client.get(
@@ -72,11 +80,20 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
 
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, ">Needs decision</span>", html=False)
-        self.assertContains(
+        self.assertNotContains(
             page,
             (
                 'title="Paper ID is not in Paper Master. Correct the ID through '
                 'Paper ID Review or mark this Final Submission as Not Publishing."'
+            ),
+            html=False,
+        )
+        self.assertContains(
+            page,
+            (
+                '<div class="small text-danger mt-1">Paper ID is not in Paper Master. '
+                "Correct the ID through Paper ID Review or mark this Final Submission "
+                "as Not Publishing.</div>"
             ),
             html=False,
         )
@@ -86,6 +103,199 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
             '<div class="small text-danger">Not in Paper Master</div>',
             html=False,
         )
+        self.assertEqual(page.context["summary"]["needs_process_pdfs"], 0)
+        orphan_row = next(
+            row
+            for row in page.context["rows"]
+            if row["submission"] and row["submission"].pk == orphan.pk
+        )
+        self.assertEqual(
+            orphan_row["primary_blocker"]["kind"],
+            "needs_decision",
+        )
+        self.assertEqual(orphan_row["exception_panel_sections"], [])
+        for count_name in (
+            "pdf_issues",
+            "page_errors",
+            "source_issues",
+            "extraction_issues",
+            "format_issues",
+            "missing_plagiarism",
+            "plagiarism_issues",
+        ):
+            self.assertEqual(page.context["summary"][count_name], 0)
+        self.assertFalse(orphan_row["needs_processing_after_formatting"])
+        self.assertEqual(dashboard_counts()["active_pdfs_need_processing"], 0)
+        cache.clear()
+        self.assertEqual(workflow_alert_counts()["active_pdfs_need_processing"], 0)
+        process_page = self.client.get(reverse("submissions:process"))
+        self.assertFalse(
+            any(
+                row["submission"].pk == orphan.pk
+                for row in process_page.context["processed_rows"]
+            )
+        )
+
+        self.make_master_paper("AVS8", "Orphan Final", "Ada Lovelace")
+        candidate_page = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "all"},
+        )
+        self.assertEqual(candidate_page.context["summary"]["needs_process_pdfs"], 1)
+        self.assertEqual(dashboard_counts()["active_pdfs_need_processing"], 1)
+        cache.clear()
+        self.assertEqual(workflow_alert_counts()["active_pdfs_need_processing"], 1)
+        process_page = self.client.get(reverse("submissions:process"))
+        self.assertTrue(
+            any(
+                row["submission"].pk == orphan.pk
+                for row in process_page.context["processed_rows"]
+            )
+        )
+
+    def test_organized_list_structural_blockers_replace_derivative_status_noise(self):
+        missing_final = self.make_master_paper(
+            "P-MISSING",
+            "Missing Final Paper",
+            "Ada Lovelace",
+        )
+        decision_required = self.make_master_paper(
+            "P-DECIDE",
+            "Decision Required Paper",
+            "Alan Turing",
+        )
+        decision_required.publication_decision_status = "decision_required"
+        decision_required.save(update_fields=["publication_decision_status"])
+        self.make_master_paper(
+            "P-MULTI",
+            "Multiple Active Paper",
+            "Grace Hopper",
+        )
+        self.make_final_submission(
+            final_submission_id="MULTI-1",
+            paper_id_filled="P-MULTI",
+            final_submission_title="Multiple Active Paper",
+        )
+        self.make_final_submission(
+            final_submission_id="MULTI-2",
+            paper_id_filled="P-MULTI",
+            final_submission_title="Multiple Active Paper",
+        )
+
+        rows, summary, _settings, _current_filter, _current_sort = (
+            organized_list_rows(hydrate=False)
+        )
+        by_id = {
+            row["paper"].paper_id: row
+            for row in rows
+            if row["paper"]
+        }
+
+        self.assertEqual(
+            by_id[missing_final.paper_id]["primary_blocker"]["kind"],
+            "missing_final",
+        )
+        self.assertEqual(
+            by_id[decision_required.paper_id]["primary_blocker"]["kind"],
+            "publication_decision",
+        )
+        self.assertEqual(
+            by_id["P-MULTI"]["primary_blocker"]["kind"],
+            "multiple_active",
+        )
+        self.assertEqual(summary["missing_final"], 1)
+        self.assertEqual(summary["version_conflicts"], 1)
+        self.assertEqual(summary["pdf_issues"], 0)
+        self.assertEqual(summary["page_errors"], 0)
+        self.assertEqual(summary["source_issues"], 0)
+        self.assertEqual(summary["extraction_issues"], 0)
+        self.assertEqual(summary["missing_plagiarism"], 0)
+        self.assertEqual(summary["format_issues"], 0)
+
+        page = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "all"},
+        )
+        self.assertContains(page, "Final Submission missing")
+        self.assertContains(page, "Publication decision required")
+        self.assertContains(page, "Multiple active Final Submissions")
+        self.assertContains(
+            page,
+            f'?paper={missing_final.pk}',
+        )
+        self.assertContains(page, 'colspan="8"', count=3)
+
+    def test_organized_list_assigns_missing_pdf_and_extraction_to_root_columns(self):
+        self.make_master_paper(
+            "P-NO-PDF",
+            "Missing PDF",
+            "Ada Lovelace",
+        )
+        self.make_final_submission(
+            final_submission_id="NO-PDF",
+            paper_id_filled="P-NO-PDF",
+            final_submission_title="Missing PDF",
+            extracted_title="Missing PDF",
+            current_file_path="",
+            pdf_file="",
+            page_count=None,
+            processing_status="pending",
+            pdf_hash="",
+            thumbnail_folder="",
+            thumbnail_status="pending",
+        )
+        self.make_master_paper(
+            "P-NO-EXTRACTION",
+            "Missing Extraction",
+            "Alan Turing",
+        )
+        self.make_final_submission(
+            final_submission_id="NO-EXTRACTION",
+            paper_id_filled="P-NO-EXTRACTION",
+            final_submission_title="Missing Extraction",
+            extracted_title="",
+            extracted_authors="",
+            title_author_extraction_status="pending",
+            title_author_review_status="pending",
+            title_author_verified=False,
+            extracted_title_verified=False,
+        )
+
+        rows, summary, _settings, _current_filter, _current_sort = (
+            organized_list_rows(hydrate=False)
+        )
+        by_id = {row["paper"].paper_id: row for row in rows}
+        pdf_row = by_id["P-NO-PDF"]
+        extraction_row = by_id["P-NO-EXTRACTION"]
+
+        self.assertIsNone(pdf_row["primary_blocker"])
+        self.assertTrue(pdf_row["page_requires_pdf"])
+        self.assertEqual(pdf_row["page_label"], "Requires PDF")
+        self.assertIsNone(extraction_row["primary_blocker"])
+        self.assertTrue(extraction_row["title_awaiting_extraction"])
+        self.assertTrue(extraction_row["authors_awaiting_extraction"])
+        self.assertEqual(
+            extraction_row["extraction_label"],
+            "No extracted title/authors",
+        )
+        self.assertEqual(summary["pdf_issues"], 1)
+        self.assertEqual(summary["page_errors"], 0)
+        self.assertEqual(summary["extraction_issues"], 1)
+
+        categories = {
+            row["category"] for row in publication_readiness_rows()
+        }
+        self.assertIn("Missing PDF", categories)
+        self.assertIn("Missing Extracted Title", categories)
+        self.assertIn("Missing Extracted Authors", categories)
+
+        page = self.client.get(
+            reverse("submissions:organized_list"),
+            {"filter": "all"},
+        )
+        self.assertContains(page, "Requires PDF")
+        self.assertContains(page, "Awaiting extraction")
+        self.assertNotContains(page, ">Missing extracted title</span>")
 
     def test_orphan_final_decision_worklist_prioritizes_safe_inline_resolution(self):
         self.make_master_paper(

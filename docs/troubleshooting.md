@@ -93,6 +93,10 @@ The Dashboard header distinguishes affected papers from blocking checks. One pap
 Run `/processing/pdfs/`. This alert means an active publication PDF source exists but page count, hash, thumbnails, or debug-copy refresh is missing or stale.
 
 Missing PDFs are separate issues and do not count as process-needed.
+Final Submissions outside Paper Master remain under `Needs decision` and do not
+count as process-needed until their Paper ID is resolved into a Publishing
+Paper Master record. Organized List, Dashboard, the global alert, and Process
+PDFs use the same scope.
 
 ### What does Process PDFs change?
 

@@ -15,6 +15,7 @@ from submissions.models import (
 )
 from submissions.services.file_manager import (
     active_pdf_needs_processing,
+    active_pdfs_needing_processing,
     corrected_pdf_needs_processing,
     pdf_available_for_processing,
     publication_file_base_name,
@@ -1796,10 +1797,11 @@ def dashboard_counts(*, context=None, author_rows=None):
     format_needs_edit = sum(
         1 for submission in active if submission.format_status == "needs_edit"
     )
-    corrected_pdf_processing_needed = sum(
-        1
-        for submission in active
-        if active_pdf_needs_processing(submission, context.file_inspection)
+    active_pdf_processing_needed = len(
+        active_pdfs_needing_processing(
+            context.file_inspection,
+            submissions=context.master_submissions,
+        )
     )
     master_by_id = context.paper_by_id
     unverified_paper_ids = sum(
@@ -1967,8 +1969,8 @@ def dashboard_counts(*, context=None, author_rows=None):
         "format_pending": format_pending,
         "format_needs_edit": format_needs_edit,
         "format_not_ok": format_pending + format_needs_edit,
-        "active_pdfs_need_processing": corrected_pdf_processing_needed,
-        "corrected_pdf_needs_processing": corrected_pdf_processing_needed,
+        "active_pdfs_need_processing": active_pdf_processing_needed,
+        "corrected_pdf_needs_processing": active_pdf_processing_needed,
         "start2_editor_conflicts": editor_conflict_count(),
     }
 

@@ -141,6 +141,16 @@ It must not:
 - treat discarded, Not Publishing, invalid-ID, or historical versions as
   processing errors.
 
+Organized List, Dashboard, the global Process PDFs alert, and the Process PDFs
+page use this same candidate scope. An unmatched Final retains its pending PDF
+state, but it is not presented as actionable processing work until its Paper ID
+is resolved into a Publishing Paper Master record.
+
+Organized List may collapse derivative warnings into one root-cause row for
+editorial readability. This is presentation only: Error Report and Publication
+Package readiness continue to evaluate the full publication rules in this
+document.
+
 The compatibility author cache is not publication authority. Author counts and
 their blockers are derived from the current active Paper Master snapshot.
 

@@ -124,7 +124,7 @@ def _page_status(submission, settings_obj, publication_pdf=None):
         return "No final", "danger"
     publication_pdf = publication_pdf or publication_pdf_info(submission)
     if not publication_pdf["exists"]:
-        return "No PDF", "danger"
+        return "Requires PDF", "secondary"
     if submission.processing_status == "error":
         return "PDF error", "danger"
     if submission.page_count is None:
@@ -323,11 +323,22 @@ def _extraction_status(submission):
 
 
 def _author_count_status(submission, settings_obj, *, include_display_items=True):
-    if not submission or not submission.extracted_authors:
+    if not submission:
         return {
             "author_count": None,
-            "author_count_label": "No authors",
-            "author_count_level": "danger",
+            "author_count_label": "--",
+            "author_count_level": "secondary",
+            "author_display_items": [],
+            "over_author_limit": False,
+            "duplicate_authors": [],
+            "has_duplicate_authors": False,
+            "unresolved_duplicate_authors": False,
+        }
+    if not submission.extracted_authors:
+        return {
+            "author_count": None,
+            "author_count_label": "Awaiting extraction",
+            "author_count_level": "secondary",
             "author_display_items": [],
             "over_author_limit": False,
             "duplicate_authors": [],
@@ -471,15 +482,109 @@ def _row_paper_id(row):
     return submission.paper_id_filled if submission else ""
 
 
+def _primary_blocker(row):
+    paper = row["paper"]
+    submission = row["submission"]
+    if row.get("multiple_active_final_ids"):
+        final_ids = ", ".join(row["multiple_active_final_ids"])
+        return {
+            "kind": "multiple_active",
+            "label": "Version conflict",
+            "level": "danger",
+            "title": "Multiple active Final Submissions",
+            "detail": (
+                "No publication candidate is selected until the active-version "
+                "conflict is resolved."
+            ),
+            "meta": f"Active Final IDs: {final_ids}",
+            "action_label": "Resolve versions",
+        }
+    if row.get("publication_decision_conflict"):
+        return {
+            "kind": "publication_decision",
+            "label": "Decision required",
+            "level": "danger",
+            "title": "Publication decision required",
+            "detail": (
+                "Decide whether this Paper Master record will publish before "
+                "continuing its publication checks."
+            ),
+            "meta": "",
+            "action_label": "Resolve decision",
+        }
+    if row["row_type"] == "unmatched" and submission:
+        return {
+            "kind": "needs_decision",
+            "label": "Needs decision",
+            "level": "danger",
+            "title": "Paper ID decision required",
+            "detail": (
+                "This active Final Submission is outside Paper Master. Correct "
+                "its Paper ID or mark it as Not Publishing."
+            ),
+            "meta": f"Final {submission.final_submission_id}",
+            "action_label": "Resolve",
+        }
+    if not submission:
+        return {
+            "kind": "missing_final",
+            "label": "No final",
+            "level": "danger",
+            "title": "Final Submission missing",
+            "detail": (
+                "No active Final Submission is linked to this publishing Paper "
+                "Master record."
+            ),
+            "meta": paper.title if paper else "",
+            "action_label": "Review decision",
+        }
+    return None
+
+
+def _apply_row_presentation(row):
+    primary_blocker = _primary_blocker(row)
+    submission = row["submission"]
+    row["primary_blocker"] = primary_blocker
+    row["page_requires_pdf"] = bool(
+        not primary_blocker
+        and submission
+        and not row["publication_pdf"]["exists"]
+    )
+    row["title_awaiting_extraction"] = bool(
+        not primary_blocker
+        and submission
+        and not submission.extracted_title
+    )
+    row["authors_awaiting_extraction"] = bool(
+        not primary_blocker
+        and submission
+        and not submission.extracted_authors
+    )
+    if primary_blocker:
+        # Row-level exceptions are not actionable until this record becomes a
+        # single Paper Master publication candidate.
+        row["exception_panel_sections"] = []
+    return row
+
+
+def _has_primary_blocker(row):
+    return bool(row.get("primary_blocker"))
+
+
 def _has_page_issue(row):
-    if not row["submission"]:
+    if (
+        _has_primary_blocker(row)
+        or not row["submission"]
+        or not row["publication_pdf"]["exists"]
+    ):
         return False
     return row["page_level"] in {"danger", "warning"} or row["page_label"] == "Not processed"
 
 
 def _has_pdf_issue(row):
     return bool(
-        row["submission"]
+        not _has_primary_blocker(row)
+        and row["submission"]
         and (
             not row["publication_pdf"]["exists"]
             or row["needs_processing_after_formatting"]
@@ -490,17 +595,26 @@ def _has_pdf_issue(row):
 
 
 def _has_source_issue(row):
-    return bool(row["submission"] and row["source_level"] == "danger")
+    return bool(
+        not _has_primary_blocker(row)
+        and row["submission"]
+        and row["source_level"] == "danger"
+    )
 
 
 def _has_extraction_issue(row):
-    return bool(row["submission"] and row["extraction_level"] in {"danger", "warning"})
+    return bool(
+        not _has_primary_blocker(row)
+        and row["submission"]
+        and row["extraction_level"] in {"danger", "warning"}
+    )
 
 
 def _has_plagiarism_issue(row):
     submission = row["submission"]
     return bool(
-        submission
+        not _has_primary_blocker(row)
+        and submission
         and (
             submission.similarity_score is None
             or submission.single_similarity_score is None
@@ -513,7 +627,8 @@ def _has_plagiarism_issue(row):
 def _has_missing_plagiarism(row):
     submission = row["submission"]
     return bool(
-        submission
+        not _has_primary_blocker(row)
+        and submission
         and (
             submission.similarity_score is None
             or submission.single_similarity_score is None
@@ -524,7 +639,8 @@ def _has_missing_plagiarism(row):
 def _has_non_missing_plagiarism_issue(row):
     submission = row["submission"]
     return bool(
-        submission
+        not _has_primary_blocker(row)
+        and submission
         and (
             row.get("plagiarism_over_threshold")
             or submission.plagiarism_report_stale
@@ -533,7 +649,11 @@ def _has_non_missing_plagiarism_issue(row):
 
 
 def _has_format_issue(row):
-    return bool(row["submission"] and row["submission"].format_status != "review_ok")
+    return bool(
+        not _has_primary_blocker(row)
+        and row["submission"]
+        and row["submission"].format_status != "review_ok"
+    )
 
 
 def _is_verified_title_diff(row):
@@ -547,7 +667,7 @@ def _is_verified_title_diff(row):
 
 
 def _has_missing_title_issue(row):
-    if not row["submission"]:
+    if _has_primary_blocker(row) or not row["submission"]:
         return False
     title_check = row["title_check"]
     return bool(
@@ -561,7 +681,8 @@ def _has_title_match_unverified_issue(row):
     submission = row["submission"]
     title_check = row["title_check"]
     return bool(
-        submission
+        not _has_primary_blocker(row)
+        and submission
         and title_check["final_title"]
         and title_check["extracted_title"]
         and not submission.title_match_review_complete
@@ -578,7 +699,8 @@ def _has_hard_title_diff(row):
 def _has_verified_hard_title_diff(row):
     submission = row["submission"]
     return bool(
-        submission
+        not _has_primary_blocker(row)
+        and submission
         and (
             _is_verified_title_diff(row)
             or (
@@ -591,20 +713,23 @@ def _has_verified_hard_title_diff(row):
 
 def _has_soft_title_issue(row):
     return bool(
-        row["title_check"]["has_soft_diff"]
-        or any(
-            comparison["status"] == "soft"
-            for comparison in row["title_check"]["comparisons"]
+        not _has_primary_blocker(row)
+        and (
+            row["title_check"]["has_soft_diff"]
+            or any(
+                comparison["status"] == "soft"
+                for comparison in row["title_check"]["comparisons"]
+            )
         )
     )
 
 
 def _has_author_issue(row):
     return bool(
-        row["submission"]
+        not _has_primary_blocker(row)
+        and row["submission"]
         and (
-            row["author_count"] is None
-            or (row["over_author_limit"] and not row.get("author_number_exception_valid"))
+            (row["over_author_limit"] and not row.get("author_number_exception_valid"))
             or row.get("unresolved_duplicate_authors")
         )
     )
@@ -612,18 +737,21 @@ def _has_author_issue(row):
 
 def _has_title_issue(row):
     return bool(
-        _has_missing_title_issue(row)
-        or _has_title_match_unverified_issue(row)
-        or _has_verified_hard_title_diff(row)
-        or _has_soft_title_issue(row)
+        not _has_primary_blocker(row)
+        and (
+            _has_missing_title_issue(row)
+            or _has_title_match_unverified_issue(row)
+            or _has_verified_hard_title_diff(row)
+            or _has_soft_title_issue(row)
+        )
     )
 
 
 def _needs_attention(row):
+    if _has_primary_blocker(row):
+        return True
     return any(
         [
-            not row["submission"],
-            row["row_type"] == "unmatched",
             row.get("duplicate_badges"),
             row.get("version_conflict"),
             row["verify_level"] in {"danger", "warning"},
@@ -640,9 +768,16 @@ def _needs_attention(row):
 
 
 def _attention_priority(row):
-    if not row["submission"]:
+    primary_kind = (row.get("primary_blocker") or {}).get("kind")
+    if primary_kind == "missing_final":
         return 0
-    if row["row_type"] == "unmatched" or row["verify_level"] == "danger":
+    if primary_kind in {
+        "needs_decision",
+        "publication_decision",
+        "multiple_active",
+    }:
+        return 1
+    if row["verify_level"] == "danger":
         return 1
     if row.get("version_conflict"):
         return 2
@@ -687,10 +822,17 @@ def _filter_rows(rows, current_filter):
         "all": lambda row: True,
         "needs_attention": _needs_attention,
         "missing_final": lambda row: bool(
-            not row["submission"] and not row.get("multiple_active_final_ids")
+            (row.get("primary_blocker") or {}).get("kind") == "missing_final"
         ),
         "paper_id_review": lambda row: bool(
-            row["submission"] and row["verify_level"] in {"danger", "warning"}
+            row["submission"]
+            and (
+                (row.get("primary_blocker") or {}).get("kind") == "needs_decision"
+                or (
+                    not _has_primary_blocker(row)
+                    and row["verify_level"] in {"danger", "warning"}
+                )
+            )
         ),
         "version_conflicts": lambda row: bool(
             row.get("version_conflict") or row.get("multiple_active_final_ids")
@@ -699,7 +841,11 @@ def _filter_rows(rows, current_filter):
         "verified_title_differences": lambda row: bool(
             row.get("verified_title_difference")
         ),
-        "no_authors": lambda row: row["author_count"] is None,
+        "no_authors": lambda row: bool(
+            not _has_primary_blocker(row)
+            and row["submission"]
+            and row["author_count"] is None
+        ),
         "author_over_limit": lambda row: row["over_author_limit"] and not row.get("author_number_exception_valid"),
         "page_issues": _has_page_issue,
         "pdf_issues": _has_pdf_issue,
@@ -771,6 +917,9 @@ def organized_list_rows(
     debug_pdf_context = PublicationDebugPdfContext.from_settings(settings_obj)
     papers = list(context.papers)
     valid_paper_ids = {paper.paper_id for paper in papers}
+    processing_candidate_ids = {
+        submission.pk for submission in context.master_submissions
+    }
     duplicate_map = publication_duplicate_map(context)
     conflict_paper_ids = set(editor_conflict_paper_ids())
     active_submissions = sorted(
@@ -859,82 +1008,94 @@ def organized_list_rows(
             else None
         )
         rows.append(
-            {
-                "row_type": "master",
-                "paper": paper,
-                "submission": submission,
-                "publication_pdf": publication_pdf,
-                "publication_source": publication_source,
-                "debug_pdf": debug_pdf,
-                "duplicate_badges": duplicate_map.get(submission.pk, []) if submission else [],
-                "multiple_active_final_ids": [
-                    item.final_submission_id
-                    for item in sorted(
-                        multiple_active_by_paper.get(paper.paper_id, []),
-                        key=lambda candidate: natural_text_key(
-                            candidate.final_submission_id
-                        ),
+            _apply_row_presentation(
+                {
+                    "row_type": "master",
+                    "paper": paper,
+                    "submission": submission,
+                    "publication_pdf": publication_pdf,
+                    "publication_source": publication_source,
+                    "debug_pdf": debug_pdf,
+                    "duplicate_badges": (
+                        duplicate_map.get(submission.pk, [])
+                        if submission
+                        else []
+                    ),
+                    "multiple_active_final_ids": [
+                        item.final_submission_id
+                        for item in sorted(
+                            multiple_active_by_paper.get(paper.paper_id, []),
+                            key=lambda candidate: natural_text_key(
+                                candidate.final_submission_id
+                            ),
+                        )
+                    ],
+                    "publication_decision_conflict": (
+                        paper.publication_decision_status == "decision_required"
+                        or paper.paper_id in mixed_decision_paper_ids
+                    ),
+                    "version_conflict": bool(
+                        submission and paper.paper_id in conflict_paper_ids
+                    ),
+                    "needs_processing_after_formatting": (
+                        active_pdf_needs_processing(
+                            submission,
+                            context.file_inspection,
+                        )
+                        if (
+                            submission
+                            and submission.pk in processing_candidate_ids
+                            and hydrate
+                        )
+                        else _persisted_pdf_needs_processing(submission)
                     )
-                ],
-                "publication_decision_conflict": (
-                    paper.publication_decision_status == "decision_required"
-                    or paper.paper_id in mixed_decision_paper_ids
-                ),
-                "version_conflict": bool(submission and paper.paper_id in conflict_paper_ids),
-                "needs_processing_after_formatting": (
-                    active_pdf_needs_processing(
+                    if submission and submission.pk in processing_candidate_ids
+                    else False,
+                    "title_check": _title_check(
+                        paper,
                         submission,
-                        context.file_inspection,
-                    )
-                    if submission and hydrate
-                    else _persisted_pdf_needs_processing(submission)
-                )
-                if submission
-                else False,
-                "title_check": _title_check(
-                    paper,
-                    submission,
-                    include_diff=hydrate,
-                ),
-                "page_label": page_label,
-                "page_level": page_level,
-                "verify_label": verify_label,
-                "verify_level": verify_level,
-                "verify_help": verify_help,
-                "verify_is_blocker": bool(
-                    submission
-                    and not paper_id_effectively_verified(submission, paper)
-                ),
-                "verified_title_difference": bool(
-                    submission
-                    and paper_id_effectively_verified(submission, paper)
-                    and not paper_title_matches_master(submission, paper)
-                ),
-                "plagiarism_label": plagiarism_label,
-                "plagiarism_level": plagiarism_level,
-                "plagiarism_percent_level": _score_level(
-                    submission.similarity_score if submission else None,
-                    settings_obj.plagiarism_percent_threshold,
-                ),
-                "single_percent_level": _score_level(
-                    submission.single_similarity_score if submission else None,
-                    settings_obj.single_similarity_threshold,
-                ),
-                "plagiarism_over_threshold": _is_plagiarism_over_threshold(
-                    submission, settings_obj
-                ),
-                **_plagiarism_exception_summary(submission, settings_obj),
-                "exception_panel_sections": (
-                    _exception_panel_sections(submission, settings_obj)
-                    if hydrate
-                    else []
-                ),
-                "source_label": source_label,
-                "source_level": source_level,
-                "extraction_label": extraction_label,
-                "extraction_level": extraction_level,
-                **author_status,
-            }
+                        include_diff=hydrate,
+                    ),
+                    "page_label": page_label,
+                    "page_level": page_level,
+                    "verify_label": verify_label,
+                    "verify_level": verify_level,
+                    "verify_help": verify_help,
+                    "verify_is_blocker": bool(
+                        submission
+                        and not paper_id_effectively_verified(submission, paper)
+                    ),
+                    "verified_title_difference": bool(
+                        submission
+                        and paper_id_effectively_verified(submission, paper)
+                        and not paper_title_matches_master(submission, paper)
+                    ),
+                    "plagiarism_label": plagiarism_label,
+                    "plagiarism_level": plagiarism_level,
+                    "plagiarism_percent_level": _score_level(
+                        submission.similarity_score if submission else None,
+                        settings_obj.plagiarism_percent_threshold,
+                    ),
+                    "single_percent_level": _score_level(
+                        submission.single_similarity_score if submission else None,
+                        settings_obj.single_similarity_threshold,
+                    ),
+                    "plagiarism_over_threshold": _is_plagiarism_over_threshold(
+                        submission, settings_obj
+                    ),
+                    **_plagiarism_exception_summary(submission, settings_obj),
+                    "exception_panel_sections": (
+                        _exception_panel_sections(submission, settings_obj)
+                        if hydrate
+                        else []
+                    ),
+                    "source_label": source_label,
+                    "source_level": source_level,
+                    "extraction_label": extraction_label,
+                    "extraction_level": extraction_level,
+                    **author_status,
+                }
+            )
         )
 
     for submission in active_submissions:
@@ -991,60 +1152,57 @@ def organized_list_rows(
             else None
         )
         rows.append(
-            {
-                "row_type": "unmatched",
-                "paper": None,
-                "submission": submission,
-                "publication_pdf": publication_pdf,
-                "publication_source": publication_source,
-                "debug_pdf": debug_pdf,
-                "duplicate_badges": duplicate_map.get(submission.pk, []),
-                "version_conflict": submission.paper_id_filled in conflict_paper_ids,
-                "needs_processing_after_formatting": (
-                    active_pdf_needs_processing(
+            _apply_row_presentation(
+                {
+                    "row_type": "unmatched",
+                    "paper": None,
+                    "submission": submission,
+                    "publication_pdf": publication_pdf,
+                    "publication_source": publication_source,
+                    "debug_pdf": debug_pdf,
+                    "duplicate_badges": duplicate_map.get(submission.pk, []),
+                    "version_conflict": (
+                        submission.paper_id_filled in conflict_paper_ids
+                    ),
+                    "needs_processing_after_formatting": False,
+                    "title_check": _title_check(
+                        None,
                         submission,
-                        context.file_inspection,
-                    )
-                    if hydrate
-                    else _persisted_pdf_needs_processing(submission)
-                ),
-                "title_check": _title_check(
-                    None,
-                    submission,
-                    include_diff=hydrate,
-                ),
-                "page_label": page_label,
-                "page_level": page_level,
-                "verify_label": verify_label,
-                "verify_level": verify_level,
-                "verify_help": verify_help,
-                "verify_is_blocker": True,
-                "verified_title_difference": False,
-                "plagiarism_label": plagiarism_label,
-                "plagiarism_level": plagiarism_level,
-                "plagiarism_percent_level": _score_level(
-                    submission.similarity_score,
-                    settings_obj.plagiarism_percent_threshold,
-                ),
-                "single_percent_level": _score_level(
-                    submission.single_similarity_score,
-                    settings_obj.single_similarity_threshold,
-                ),
-                "plagiarism_over_threshold": _is_plagiarism_over_threshold(
-                    submission, settings_obj
-                ),
-                **_plagiarism_exception_summary(submission, settings_obj),
-                "exception_panel_sections": (
-                    _exception_panel_sections(submission, settings_obj)
-                    if hydrate
-                    else []
-                ),
-                "source_label": source_label,
-                "source_level": source_level,
-                "extraction_label": extraction_label,
-                "extraction_level": extraction_level,
-                **author_status,
-            }
+                        include_diff=hydrate,
+                    ),
+                    "page_label": page_label,
+                    "page_level": page_level,
+                    "verify_label": verify_label,
+                    "verify_level": verify_level,
+                    "verify_help": verify_help,
+                    "verify_is_blocker": True,
+                    "verified_title_difference": False,
+                    "plagiarism_label": plagiarism_label,
+                    "plagiarism_level": plagiarism_level,
+                    "plagiarism_percent_level": _score_level(
+                        submission.similarity_score,
+                        settings_obj.plagiarism_percent_threshold,
+                    ),
+                    "single_percent_level": _score_level(
+                        submission.single_similarity_score,
+                        settings_obj.single_similarity_threshold,
+                    ),
+                    "plagiarism_over_threshold": _is_plagiarism_over_threshold(
+                        submission, settings_obj
+                    ),
+                    **_plagiarism_exception_summary(submission, settings_obj),
+                    "exception_panel_sections": (
+                        _exception_panel_sections(submission, settings_obj)
+                        if hydrate
+                        else []
+                    ),
+                    "source_label": source_label,
+                    "source_level": source_level,
+                    "extraction_label": extraction_label,
+                    "extraction_level": extraction_level,
+                    **author_status,
+                }
+            )
         )
 
     valid_filter_values = {option["value"] for option in ORGANIZED_LIST_FILTER_OPTIONS}
@@ -1065,14 +1223,18 @@ def organized_list_rows(
     needs_process_rows = [
         row
         for row in searched_rows
-        if row["submission"] and row["needs_processing_after_formatting"]
+        if (
+            row["submission"]
+            and row["submission"].pk in processing_candidate_ids
+            and row["needs_processing_after_formatting"]
+        )
     ]
     summary = {
         "total_rows": len(filtered_rows),
         "missing_final": sum(
             1
             for row in filtered_rows
-            if not row["submission"] and not row.get("multiple_active_final_ids")
+            if (row.get("primary_blocker") or {}).get("kind") == "missing_final"
         ),
         "unverified": sum(1 for row in filtered_rows if row["verify_is_blocker"]),
         "verified_title_differences": sum(
@@ -1092,11 +1254,7 @@ def organized_list_rows(
         "missing_plagiarism": sum(
             1
             for row in filtered_rows
-            if row["submission"]
-            and (
-                row["submission"].similarity_score is None
-                or row["submission"].single_similarity_score is None
-            )
+            if _has_missing_plagiarism(row)
         ),
         "plagiarism_issues": sum(
             1
@@ -1173,6 +1331,9 @@ def organized_list_rows(
 
 def hydrate_organized_list_rows(rows, *, settings_obj, context):
     debug_pdf_context = PublicationDebugPdfContext.from_settings(settings_obj)
+    processing_candidate_ids = {
+        submission.pk for submission in context.master_submissions
+    }
     hydrated = []
     for row in rows:
         submission = row["submission"]
@@ -1199,30 +1360,36 @@ def hydrate_organized_list_rows(rows, *, settings_obj, context):
             publication_pdf,
         )
         hydrated.append(
-            {
-                **row,
-                "publication_pdf": publication_pdf,
-                "publication_source": publication_source,
-                "debug_pdf": publication_debug_pdf_info(
-                    submission,
-                    paper,
-                    debug_pdf_context,
-                    context.file_inspection,
-                ),
-                "title_check": _title_check(paper, submission),
-                "exception_panel_sections": _exception_panel_sections(
-                    submission,
-                    settings_obj,
-                ),
-                "needs_processing_after_formatting": active_pdf_needs_processing(
-                    submission,
-                    context.file_inspection,
-                ),
-                "page_label": page_label,
-                "page_level": page_level,
-                "source_label": source_label,
-                "source_level": source_level,
-                **_author_count_status(submission, settings_obj),
-            }
+            _apply_row_presentation(
+                {
+                    **row,
+                    "publication_pdf": publication_pdf,
+                    "publication_source": publication_source,
+                    "debug_pdf": publication_debug_pdf_info(
+                        submission,
+                        paper,
+                        debug_pdf_context,
+                        context.file_inspection,
+                    ),
+                    "title_check": _title_check(paper, submission),
+                    "exception_panel_sections": _exception_panel_sections(
+                        submission,
+                        settings_obj,
+                    ),
+                    "needs_processing_after_formatting": (
+                        active_pdf_needs_processing(
+                            submission,
+                            context.file_inspection,
+                        )
+                        if submission.pk in processing_candidate_ids
+                        else False
+                    ),
+                    "page_label": page_label,
+                    "page_level": page_level,
+                    "source_label": source_label,
+                    "source_level": source_level,
+                    **_author_count_status(submission, settings_obj),
+                }
+            )
         )
     return hydrated

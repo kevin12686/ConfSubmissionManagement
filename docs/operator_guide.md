@@ -285,9 +285,23 @@ The Process PDFs status area uses the full page width when only one issue type i
 present. It splits into two columns only when both unprocessed PDFs and missing-PDF
 issues need to be shown at the same time.
 
-In Organized List, checks that require a Final Submission show `--` when a Paper
-Master record has no Final Submission. Empty status badges are never used as a
-placeholder.
+Organized List presents structural blockers once instead of repeating their
+effects across every workflow column. Missing Final, Paper ID decision,
+publication decision, and multiple-active-Final rows merge the workflow columns
+into one explanation with an exact resolution action. `Details` retains the
+underlying metadata for traceability.
+
+For a normal publication candidate, each issue belongs to its root workflow:
+
+- a missing PDF is a PDF issue; Pages shows `Requires PDF` rather than a second
+  blocker;
+- missing extracted title/authors is an Extraction issue; Title and Authors
+  show `Awaiting extraction`;
+- independent page, source, review, plagiarism, and formatting findings remain
+  visible in their own columns.
+
+This presentation does not relax Error Report or Publication Package readiness.
+Those services continue to report every formal publication blocker.
 
 Formatting Review queue mode keeps one paper expanded at a time. Its compact row identifies Paper ID, status, edited state, PDF/source origin, and processing warning before you open the full preview/upload workspace. Single Paper Mode remains the safer sequential workflow; Save stays on the current paper and Go next remains a separate action with unsaved-change protection.
 

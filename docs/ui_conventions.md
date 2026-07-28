@@ -324,10 +324,20 @@ GET.
   unrelated review state.
 - Organized List separates publication blockers from tracked information and
   owns both Checklist and Compact candidates views.
-- Organized List keeps workflow badges short. Explanations that repeat a
-  status, such as why an Official Paper ID needs a decision, belong in the
-  badge tooltip and the row's Details metadata rather than a second line in
-  the main checklist.
+- Organized List uses one structural blocker row for Missing Final, unresolved
+  Paper ID, publication-decision, and multiple-active-Final states. Merge the
+  downstream workflow columns into a persistent root-cause explanation and an
+  exact resolution action; do not render derivative missing-state badges in
+  every column.
+- Normal Organized List candidates assign missing prerequisites to one root
+  column. A missing PDF belongs to PDF while Pages waits for it. Missing
+  extracted metadata belongs to Extraction while Title and Authors wait for
+  extraction. Summary metrics and filters use the same root-cause ownership.
+- Organized List keeps workflow badges short and self-contained in their column
+  context. Status badges do not hide workflow explanations in hover tooltips;
+  actionable reasons belong in the row's Details metadata or another persistent
+  review surface. Reserve hover text for icon controls and visibly truncated
+  content, never publication-safety information.
 - Error Report uses server-side area, severity, and multi-category filtering
   before pagination. Category checkbox pills are arranged in workflow-area
   matrix rows, apply immediately through the scoped HTMX worklist, and use

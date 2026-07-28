@@ -121,35 +121,58 @@
         {% for row in rows %}
             {% with paper=row.paper submission=row.submission %}
             <tbody id="{% if submission %}organized-row-submission-{{ submission.pk }}{% else %}organized-row-paper-{{ paper.pk }}{% endif %}" class="cfm-organized-row-group">
-            <tr class="{% if row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid or row.row_type == 'unmatched' or not submission %}cfm-row-blocker{% endif %}">
+            <tr class="{% if row.primary_blocker or row.unresolved_duplicate_authors or row.over_author_limit and not row.author_number_exception_valid %}cfm-row-blocker{% endif %}">
                 <td>
                     {% if paper %}{{ paper.paper_id }}{% else %}<span class="text-danger">{{ submission.paper_id_filled|default:"Missing" }}</span>{% endif %}
-                    <div><span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span></div>
-                    {% if row.multiple_active_final_ids %}
-                        <div class="small text-danger">Finals: {{ row.multiple_active_final_ids|join:", " }}</div>
-                        <div class="small"><a href="{% url 'submissions:active_versions' %}">Recalculate active versions</a></div>
+                    {% if row.primary_blocker %}
+                        <div><span class="badge text-bg-{{ row.primary_blocker.level }}">{{ row.primary_blocker.label }}</span></div>
+                    {% else %}
+                        <div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div>
+                        {% if row.version_conflict %}
+                            <div><span class="badge text-bg-warning">Start2/Editor conflict</span></div>
+                            <div class="small"><a href="{% url 'submissions:final_submission_list' %}?filter=version_conflicts">Resolve versions</a></div>
+                        {% endif %}
+                        {% for badge in row.duplicate_badges %}
+                            <div><span class="badge text-bg-danger">{{ badge }}</span></div>
+                        {% endfor %}
                     {% endif %}
-                    {% if row.publication_decision_conflict %}
-                        <div><span class="badge text-bg-danger">Publication decision required</span></div>
-                        <div class="small"><a href="{% url 'submissions:not_publishing_list' %}">Resolve publication decision</a></div>
+                    {% if paper and paper.notes %}
+                        <div><span class="badge text-bg-warning">Note</span></div>
                     {% endif %}
-	                    {% if row.version_conflict %}
-	                        <div><span class="badge text-bg-warning">Start2/Editor conflict</span></div>
-	                        <div class="small"><a href="{% url 'submissions:final_submission_list' %}?filter=version_conflicts">Resolve versions</a></div>
-	                    {% endif %}
-	                    {% if paper and paper.notes %}
-	                        <div><span class="badge text-bg-warning">Note</span></div>
-	                    {% endif %}
-	                    {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
-	                        <div><span class="badge text-bg-primary">Editor note</span></div>
-	                    {% endif %}
-	                    {% for badge in row.duplicate_badges %}
-                        <div><span class="badge text-bg-danger">{{ badge }}</span></div>
-                    {% endfor %}
+                    {% if submission.submission_origin == "editor_upload" and submission.editor_upload_notes %}
+                        <div><span class="badge text-bg-primary">Editor note</span></div>
+                    {% endif %}
                 </td>
+                {% if row.primary_blocker %}
+                    <td colspan="8" class="cfm-root-cause-cell">
+                        <div class="cfm-root-cause">
+                            <div class="fw-semibold">{{ row.primary_blocker.title }}</div>
+                            <div class="text-muted">{{ row.primary_blocker.detail }}</div>
+                            {% if row.primary_blocker.meta %}
+                                <div class="small text-muted mt-1">{{ row.primary_blocker.meta }}</div>
+                            {% endif %}
+                            {% if submission and submission.final_submission_title %}
+                                <div class="small mt-1 text-break">{{ submission.final_submission_title }}</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="cfm-table-actions">
+                            {% if row.primary_blocker.kind == "needs_decision" %}
+                                <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:not_publishing_list' %}?submission={{ submission.pk }}">{{ row.primary_blocker.action_label }}</a>
+                            {% elif row.primary_blocker.kind == "multiple_active" %}
+                                <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:active_versions' %}">{{ row.primary_blocker.action_label }}</a>
+                            {% else %}
+                                <a class="btn btn-sm btn-outline-danger" href="{% url 'submissions:not_publishing_list' %}?paper={{ paper.pk }}">{{ row.primary_blocker.action_label }}</a>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}" aria-expanded="false" aria-controls="details-{% if submission %}submission-{{ submission.pk }}{% else %}paper-{{ paper.pk }}{% endif %}">Details</button>
+                        </div>
+                    </td>
+                {% else %}
                 <td class="cfm-wide-cell">
-                    {% if not row.title_check.extracted_title %}
-                        <span class="badge text-bg-danger">Missing extracted title</span>
+                    {% if row.title_awaiting_extraction %}
+                        <span class="text-muted">--</span>
+                        <div class="small text-muted">Awaiting extraction</div>
                     {% elif row.title_check.all_exact_identical %}
                         <div>{{ row.title_check.extracted_title }}</div>
                     {% else %}
@@ -178,14 +201,21 @@
                             {% endfor %}
                         </div>
                     {% endif %}
-                    <div class="d-flex flex-wrap gap-1 mt-1">
-                        {% for badge in row.title_check.badges %}
-                            <span class="badge text-bg-{{ badge.level }}">{{ badge.label }}</span>
-                        {% endfor %}
-                    </div>
+                    {% if not row.title_awaiting_extraction %}
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            {% for badge in row.title_check.badges %}
+                                <span class="badge text-bg-{{ badge.level }}">{{ badge.label }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
                 </td>
                 <td>
-                    <span class="badge text-bg-{{ row.author_count_level }}">{{ row.author_count_label }}</span>
+                    {% if row.authors_awaiting_extraction %}
+                        <span class="text-muted">--</span>
+                        <div class="small text-muted">Awaiting extraction</div>
+                    {% else %}
+                        <span class="badge text-bg-{{ row.author_count_level }}">{{ row.author_count_label }}</span>
+                    {% endif %}
                     {% if row.over_author_limit %}
                         {% if row.author_number_exception_status == "allowed" %}
                             <div class="mt-1"><span class="badge text-bg-info">Allowed exception</span></div>
@@ -210,15 +240,20 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if submission and submission.page_count %}<strong>{{ submission.page_count }}</strong>{% else %}<span class="text-muted">--</span>{% endif %}
-                    <div><span class="badge text-bg-{{ row.page_level }}">{{ row.page_label }}</span></div>
-                    {% if row.page_level == "info" or row.page_label == "Stale allowed exception" or row.page_label|slice:":9" == "Below min" or row.page_label|slice:":10" == "Over limit" %}
-                        {% if row.page_level == "info" %}
-                            <div><span class="badge text-bg-info">Allowed exception</span></div>
-                        {% elif row.page_label == "Stale allowed exception" %}
-                            <div><span class="badge text-bg-warning">Stale allowed exception</span></div>
-                        {% else %}
-                            <div><span class="badge text-bg-danger">Not allowed</span></div>
+                    {% if row.page_requires_pdf %}
+                        <span class="text-muted">--</span>
+                        <div class="small text-muted">Requires PDF</div>
+                    {% else %}
+                        {% if submission and submission.page_count %}<strong>{{ submission.page_count }}</strong>{% else %}<span class="text-muted">--</span>{% endif %}
+                        <div><span class="badge text-bg-{{ row.page_level }}">{{ row.page_label }}</span></div>
+                        {% if row.page_level == "info" or row.page_label == "Stale allowed exception" or row.page_label|slice:":9" == "Below min" or row.page_label|slice:":10" == "Over limit" %}
+                            {% if row.page_level == "info" %}
+                                <div><span class="badge text-bg-info">Allowed exception</span></div>
+                            {% elif row.page_label == "Stale allowed exception" %}
+                                <div><span class="badge text-bg-warning">Stale allowed exception</span></div>
+                            {% else %}
+                                <div><span class="badge text-bg-danger">Not allowed</span></div>
+                            {% endif %}
                         {% endif %}
                     {% endif %}
                 </td>
@@ -298,6 +333,7 @@
                         {% if submission %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}
                     </div>
                 </td>
+                {% endif %}
             </tr>
             {% if row.exception_panel_sections %}
                 <tr class="collapse{% if row.exception_panel_open %} show{% endif %}" id="exceptions-{{ submission.pk }}">
@@ -485,7 +521,7 @@
                             <div class="fw-semibold">Publication record</div>
                             {% if submission %}
                                 <div class="d-flex flex-wrap gap-1">
-                                    <span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span>
+                                    <span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span>
                                     <span class="badge text-bg-secondary">{{ submission.get_submission_origin_display }}</span>
                                 </div>
                             {% endif %}
@@ -680,7 +716,7 @@
         {% for row in rows %}
             {% with item=row.submission %}
             <tr>
-                <td><strong>{{ item.paper_id_filled }}</strong><div><span class="badge text-bg-{{ row.verify_level }}"{% if row.verify_help %} title="{{ row.verify_help }}"{% endif %}>{{ row.verify_label }}</span></div></td>
+                <td><strong>{{ item.paper_id_filled }}</strong><div><span class="badge text-bg-{{ row.verify_level }}">{{ row.verify_label }}</span></div></td>
                 <td>{{ item.final_submission_id }}</td>
                 <td class="cfm-title-cell">{{ item.extracted_title|default:item.final_submission_title|default:"Missing" }}</td>
                 <td>{{ item.extracted_authors|default:"Missing" }}</td>

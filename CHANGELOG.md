@@ -3,6 +3,38 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.6 - 2026-07-27
+
+### Organized List Root-Cause Presentation
+
+- Replaced repeated downstream warning badges for missing Finals, unresolved
+  Paper IDs, publication decisions, and multiple active Finals with one
+  structural blocker row and an exact resolution action.
+- Assigned missing PDFs to the PDF column while Pages waits for a PDF, and
+  assigned missing extracted metadata to Extraction while Title and Authors
+  wait for extraction.
+- Kept publication readiness and final-package blockers unchanged while making
+  Organized List filters and summary counts follow the same root-cause
+  presentation.
+
+## 1.12.5 - 2026-07-27
+
+### Process PDFs Scope Consistency
+
+- Aligned Organized List and Dashboard processing indicators with the Process
+  PDFs publication-candidate scope.
+- Kept unmatched Final PDF state intact while deferring processing prompts
+  until the Paper ID resolves to a Publishing Paper Master record.
+
+## 1.12.4 - 2026-07-27
+
+### Consistent Status Badges
+
+- Removed the one-off hover explanation from Organized List status badges and
+  retained the full Paper ID decision guidance in persistent Details content.
+- Documented that status badges must not hide workflow or publication-safety
+  explanations in hover-only text.
+
 ## 1.12.3 - 2026-07-27
 
 ### Multiline Title Editing
