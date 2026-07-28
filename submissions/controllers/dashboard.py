@@ -307,7 +307,7 @@ def _dashboard_context(counts, readiness_rows):
                 "url": reverse("submissions:final_submission_list"),
             },
             {
-                "label": "Current Not Publishing",
+                "label": "Not Publishing Papers",
                 "value": counts["excluded_from_publication"],
                 "url": reverse("submissions:not_publishing_list"),
             },

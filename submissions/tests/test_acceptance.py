@@ -11645,7 +11645,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         dashboard = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(dashboard, "Final package checks are clear")
         self.assertContains(dashboard, "Publication candidates")
-        self.assertContains(dashboard, "Current Not Publishing")
+        self.assertContains(dashboard, "Not Publishing Papers")
         self.assertContains(dashboard, "Plagiarism results")
         clean_organized = self.client.get(reverse("submissions:organized_list"), {"filter": "all"})
         self.assertContains(clean_organized, "Main Ready Paper")

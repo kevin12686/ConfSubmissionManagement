@@ -3,6 +3,14 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.11.1 - 2026-07-27
+
+### Dashboard Wording
+
+- Renamed `Current Not Publishing` to `Not Publishing Papers` so the metric
+  clearly describes Paper Master publication decisions rather than active Final
+  Submission versions.
+
 ## 1.11.0 - 2026-07-27
 
 ### Paper Master Publication Decisions
