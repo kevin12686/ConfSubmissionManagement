@@ -3,6 +3,15 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.9 - 2026-07-28
+
+### Expansion Reveal Event Fix
+
+- Fixed shared row and review-card expansion positioning after Bootstrap had
+  already updated the collapse trigger state.
+- Preserved post-save worklist restoration while restoring conditional
+  centering or owner-row alignment for user-opened panels.
+
 ## 1.12.8 - 2026-07-28
 
 ### Unified Worklist Vocabulary

@@ -92,13 +92,13 @@
     document.addEventListener("click", function (event) {
         const target = event.target instanceof Element ? event.target : null;
         const trigger = target?.closest('[data-bs-toggle="collapse"]');
-        if (!trigger || trigger.getAttribute("aria-expanded") === "true") return;
+        if (!trigger || trigger.getAttribute("aria-expanded") !== "true") return;
 
         const expansion = controlledExpansion(trigger);
         if (expansion?.matches(expansionSelector)) {
             userRequestedExpansions.add(expansion);
         }
-    }, true);
+    });
 
     document.addEventListener("shown.bs.collapse", function (event) {
         const expansion = event.target;

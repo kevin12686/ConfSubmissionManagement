@@ -10535,6 +10535,10 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn('candidate.getAttribute("aria-controls")', asset)
         self.assertIn("userRequestedExpansions", asset)
         self.assertIn('document.addEventListener("click"', asset)
+        self.assertIn(
+            'trigger.getAttribute("aria-expanded") !== "true"',
+            asset,
+        )
         self.assertIn("if (!userRequestedExpansions.has(expansion)) return", asset)
         self.assertIn("groupIsFullyVisible", asset)
         self.assertIn("groupFitsViewport", asset)
