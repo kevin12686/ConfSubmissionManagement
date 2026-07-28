@@ -11,7 +11,6 @@ from submissions.forms import InitialPaperForm
 from submissions.models import FinalSubmission, InitialPaper
 from submissions.services.checks import resolve_official_paper_id
 from submissions.services.import_export import (
-    MAPPING_SHEET_NAME,
     START2_SHEET_NAME,
     import_initial_papers,
 )
@@ -170,7 +169,7 @@ class PaperIdIntegrityTests(TestCase):
             "P001",
         )
 
-    def test_mapping_workbook_normalizes_official_id_case(self):
+    def test_final_xlsx_normalizes_official_id_case(self):
         InitialPaper.objects.create(
             paper_id="P001",
             title="Canonical title",
@@ -191,16 +190,8 @@ class PaperIdIntegrityTests(TestCase):
                 sheet_name=START2_SHEET_NAME,
                 index=False,
             )
-            pd.DataFrame(
-                [["10", "p001"]],
-                columns=["Final ID", "Official Paper ID"],
-            ).to_excel(
-                writer,
-                sheet_name=MAPPING_SHEET_NAME,
-                index=False,
-            )
         workbook = SimpleUploadedFile(
-            "mapping.xlsx",
+            "final.xlsx",
             buffer.getvalue(),
             content_type=(
                 "application/vnd.openxmlformats-officedocument."

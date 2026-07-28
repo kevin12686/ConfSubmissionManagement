@@ -120,6 +120,14 @@ Create Final Submission records and files:
 14. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
 15. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again. In Organized List, type reasons into two exception sections for the same paper, submit only one section, and confirm the complete paper row refreshes while the other unsaved reason remains. Confirm only the clicked exception was stored, the panel stays open, and a stale evidence warning reloads the current backend value without applying the old decision.
 16. Confirm Final Submissions opens with submission tabs/table first and `Import / Re-upload` collapsed. Expand it, drop/select metadata plus PDF/source files, verify counts/type summary/removal, and confirm preview-before-apply still controls storage. Open Final Submission Edit from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, and Exceptions. Confirm Save returns to the same worklist/view/filter/search/tab. Confirm the edit order is Submission identity, Metadata, Current row files, Plagiarism data/report, Workflow status summary, and Save. Confirm version discard is a separate form under the collapsed bottom `Version actions` danger zone and still requires a reason. Then open Organized List, switch Checklist/Compact candidates, and confirm both show the same active publication scope.
+    Re-import an existing Final ID with the same Author-entered ID but a changed
+    Final Title that resembles another Master paper. Confirm Preview preserves
+    the current Official Paper ID and resets Paper ID review without remapping.
+    Re-import again with a changed Author-entered ID and confirm Official ID is
+    re-resolved. Change Final Authors only and confirm Title/Author Review
+    returns to Pending while existing extracted metadata remains visible.
+    Upload a legacy workbook containing `Mapping Table` and confirm Apply is
+    blocked without creating or updating records.
 17. From one Final Submission Edit page, open Paper ID Review, Process PDFs,
     Title/Author Review, Formatting Review, Not Publishing, and Organized List.
     Confirm each destination shows the shared focused-record banner and only the

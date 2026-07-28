@@ -286,8 +286,6 @@ class FinalSubmission(models.Model):
         max_length=30, choices=FORMAT_STATUS_CHOICES, default="pending", db_index=True
     )
     format_notes = models.TextField(blank=True)
-    mapping_source = models.CharField(max_length=100, blank=True)
-    mapping_order = models.PositiveIntegerField(blank=True, null=True, db_index=True)
     duplicate_submission = models.BooleanField(default=False, db_index=True)
     discarded = models.BooleanField(default=False, db_index=True)
     discard_notes = models.TextField(blank=True)
@@ -416,8 +414,6 @@ class FinalSubmissionIdentityState(models.Model):
     )
     editor_upload_notes = models.TextField(blank=True)
     editor_uploaded_at = models.DateTimeField(blank=True, null=True)
-    mapping_source = models.CharField(max_length=100, blank=True)
-    mapping_order = models.PositiveIntegerField(blank=True, null=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

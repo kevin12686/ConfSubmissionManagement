@@ -119,6 +119,9 @@ The most important rules are:
   export.
 - Corrected files outrank Original files; a selected Corrected file that is
   missing never silently falls back.
+- Paper Master and Final Submission imports are separate preview-before-apply
+  workflows. Re-importing a Final preserves its Official Paper ID unless the
+  Author-entered ID changed or the existing Official ID is blank.
 - Dashboard and final export use the same readiness findings.
 - Review state resets only when its documented evidence changes.
 - State-changing workflows and exports are audited.

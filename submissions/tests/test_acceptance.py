@@ -65,7 +65,6 @@ from submissions.services.formatting import (
 from submissions.services.exceptions import approve_exception, exception_rows
 from submissions.services.import_export import (
     MASTER_SHEET_NAME,
-    MAPPING_SHEET_NAME,
     START2_SHEET_NAME,
     _mark_duplicate_submissions,
     import_final_submissions,
@@ -2305,9 +2304,142 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
         self.assertTrue(submission.pdf_file.name.endswith(".pdf"))
         self.assertTrue(submission.source_file.name.endswith(".docx"))
 
-    def test_mapping_workbook_imports_master_start2_and_mapping_table(self):
+    def test_final_reimport_preserves_official_id_when_only_title_changes(self):
+        self.make_master_paper("P001", "Original Master Title", "Ada")
+        self.make_master_paper("P002", "New Final Title", "Grace")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Original Master Title",
+            final_submission_authors="Ada",
+            start2_paper_id_raw="P001",
+        )
+        submission.paper_id_verified = True
+        submission.verification_status = "verified"
+        submission.save(
+            update_fields=[
+                "paper_id_verified",
+                "verification_status",
+                "updated_at",
+            ]
+        )
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "10,P001,New Final Title,Ada\n",
+            )
+        )
+
+        row = preview["rows"][0]
+        self.assertEqual(row["new"]["paper_id_filled"], "P001")
+        self.assertEqual(row["official_paper_id_resolution"], "preserved")
+        self.assertTrue(row["paper_id_review_reset"])
+        self.assertFalse(row["paper_id_changed"])
+        apply_import_preview(preview["token"])
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.paper_id_filled, "P001")
+        self.assertEqual(submission.final_submission_title, "New Final Title")
+        self.assertFalse(submission.paper_id_verified)
+
+    def test_final_reimport_resolves_blank_official_id_once(self):
+        self.make_master_paper("P001", "Canonical Title", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="",
+            final_submission_title="Canonical Title",
+            final_submission_authors="Ada",
+            start2_paper_id_raw="P001",
+        )
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "10,P001,Canonical Title,Ada\n",
+            )
+        )
+
+        row = preview["rows"][0]
+        self.assertEqual(row["new"]["paper_id_filled"], "P001")
+        self.assertEqual(row["official_paper_id_resolution"], "resolved_missing")
+        self.assertTrue(row["paper_id_changed"])
+        apply_import_preview(preview["token"])
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.paper_id_filled, "P001")
+
+    def test_unresolved_official_id_requires_review_and_is_not_auto_excluded(self):
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "11,UNKNOWN,Unmapped Final,Ada\n",
+            )
+        )
+
+        row = preview["rows"][0]
+        self.assertEqual(row["new"]["paper_id_filled"], "UNKNOWN")
+        self.assertTrue(row["invalid_master_id"])
+        self.assertFalse(row["master_not_publishing"])
+        apply_import_preview(preview["token"])
+
+        submission = FinalSubmission.objects.get(final_submission_id="11")
+        self.assertFalse(submission.paper_id_verified)
+        self.assertFalse(submission.excluded_from_publication)
+        self.assertFalse(InitialPaper.objects.filter(paper_id="UNKNOWN").exists())
+
+    def test_final_authors_change_resets_review_without_replacing_extraction(self):
+        self.make_master_paper("P001", "Canonical Title", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Canonical Title",
+            final_submission_authors="Old Final Author",
+            extracted_title="Canonical Title",
+            extracted_authors="Reviewed Extracted Author",
+            start2_paper_id_raw="P001",
+        )
+        submission.title_author_review_status = "review_ok"
+        submission.title_author_verified = True
+        submission.save(
+            update_fields=[
+                "title_author_review_status",
+                "title_author_verified",
+                "updated_at",
+            ]
+        )
+
+        preview = preview_final_import(
+            self.uploaded_csv(
+                "final.csv",
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "10,P001,Canonical Title,New Final Author\n",
+            )
+        )
+
+        row = preview["rows"][0]
+        self.assertTrue(row["final_authors_review_reset"])
+        self.assertTrue(row["title_author_review_reset"])
+        self.assertFalse(row["paper_id_review_reset"])
+        self.assertFalse(row["paper_id_changed"])
+        apply_import_preview(preview["token"])
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.paper_id_filled, "P001")
+        self.assertEqual(submission.final_submission_authors, "New Final Author")
+        self.assertEqual(submission.extracted_authors, "Reviewed Extracted Author")
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+
+    def test_combined_mapping_workbook_is_rejected_without_writes(self):
         buffer = io.BytesIO()
-        mapping_columns = [f"c{i}" for i in range(15)]
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             pd.DataFrame(
                 [{"paper_id": "P777", "acceptance_status": "accepted", "title": "Mapped Paper", "authors": "Ada"}]
@@ -2315,23 +2447,30 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
             pd.DataFrame(
                 [{"submission id": "77", "paper-id": "author typo", "title": "Mapped Paper", "authors": "Ada"}]
             ).to_excel(writer, sheet_name=START2_SHEET_NAME, index=False)
-            pd.DataFrame([["77", "P777", "", "", "", "", "", "", "", "", "", "", "", "", "77_file_Submit_PDF.pdf"]], columns=mapping_columns).to_excel(
+            pd.DataFrame([["77", "P777"]], columns=["Final ID", "Official Paper ID"]).to_excel(
                 writer,
-                sheet_name=MAPPING_SHEET_NAME,
+                sheet_name="Mapping Table",
                 index=False,
             )
         buffer.seek(0)
 
-        result = import_final_submissions(
-            SimpleUploadedFile("mapping.xlsx", buffer.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        preview = preview_final_import(
+            SimpleUploadedFile(
+                "mapping.xlsx",
+                buffer.getvalue(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
         )
 
-        submission = FinalSubmission.objects.get(final_submission_id="77")
-        self.assertEqual(result["initial_created"], 1)
-        self.assertEqual(result["imported"], 1)
-        self.assertEqual(submission.paper_id_filled, "P777")
-        self.assertEqual(submission.mapping_source, MAPPING_SHEET_NAME)
-        self.assertEqual(submission.original_file_name, "77_file_Submit_PDF.pdf")
+        self.assertEqual(len(preview["blocking_errors"]), 1)
+        self.assertIn(
+            "Combined Mapping Table workbooks are no longer supported",
+            preview["blocking_errors"][0],
+        )
+        with self.assertRaisesMessage(ValueError, "Preview has blocking errors"):
+            apply_import_preview(preview["token"])
+        self.assertFalse(InitialPaper.objects.filter(paper_id="P777").exists())
+        self.assertFalse(FinalSubmission.objects.exists())
 
     def test_final_import_preview_pdf_change_resets_dependent_reviews(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
@@ -2366,12 +2505,14 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
             final_submission_id="10",
             paper_id_filled="P001",
             final_submission_title="Reset Paper",
+            final_submission_authors="Ada",
             extracted_title="Reset Paper",
         )
         file_submission = self.make_final_submission(
             final_submission_id="20",
             paper_id_filled="P002",
             final_submission_title="File Paper",
+            final_submission_authors="Ada",
             extracted_title="File Paper",
         )
         metadata_submission = self.make_final_submission(
@@ -2385,12 +2526,14 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
             final_submission_id="50",
             paper_id_filled="P005",
             final_submission_title="Same Paper",
+            final_submission_authors="Ada",
             extracted_title="Same Paper",
         )
         self.make_final_submission(
             final_submission_id="60",
             paper_id_filled="P006",
             final_submission_title="Editor Paper",
+            final_submission_authors="Ada",
             extracted_title="Editor Paper",
             submission_origin="editor_upload",
         )
@@ -2417,7 +2560,9 @@ class ImportAndMappingTests(EditorialAcceptanceTestCase):
             ],
         )
         ordered_ids = [row["identifier"] for row in preview["rows"]]
-        self.assertEqual(ordered_ids, ["60", "70", "10", "20", "30", "40", "50"])
+        metadata_row = next(row for row in preview["rows"] if row["identifier"] == "40")
+        self.assertTrue(metadata_row["final_authors_review_reset"], metadata_row)
+        self.assertEqual(ordered_ids, ["60", "70", "10", "40", "20", "30", "50"])
 
         apply_import_preview(preview["token"])
         metadata_submission.refresh_from_db()
@@ -8817,7 +8962,6 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertEqual(response.status_code, 302)
         submission = FinalSubmission.objects.get(final_submission_id="101")
-        self.assertEqual(submission.mapping_source, "manual_add")
         self.assertTrue(submission.paper_id_verified)
         self.assertEqual(submission.verification_status, "verified")
         self.assertTrue(submission.active_version)

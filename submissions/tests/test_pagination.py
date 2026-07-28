@@ -542,7 +542,6 @@ class WorklistPaginationViewTests(TestCase):
                     paper_id_filled=f"P{index:04d}",
                     final_submission_title=f"Paper {index:04d}",
                     submission_origin="editor_upload",
-                    mapping_source="editor_upload",
                 )
                 for index in range(1, 206)
             ]

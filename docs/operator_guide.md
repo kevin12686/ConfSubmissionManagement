@@ -143,8 +143,30 @@ targets, pagination, accessibility, and shared components live in
 3. Review the Paper Master Import Preview. Rows needing attention are sorted above unchanged rows.
 4. For existing Paper Master notes, choose whether to preserve existing system notes or apply imported notes. The default is preserve.
 5. Import Final Submission metadata and upload all PDF/source files together.
-6. Review the Final Submission Import Preview. Mapping, reset, file, and new-row issues are sorted above unchanged rows.
+6. Review the Final Submission Import Preview. ID/reset risks, file changes,
+   new rows, metadata-only changes, and unchanged rows appear in that order.
 7. Apply only after the preview matches the intended import.
+
+Paper Master and Final Submission imports are intentionally separate. Combined
+`Mapping Table` workbooks are rejected because they bypass the normal source
+and confirmation boundaries.
+
+For an existing Final ID:
+
+- the same Author-entered ID preserves the current Official Paper ID;
+- a changed Author-entered ID re-resolves the Official Paper ID and resets
+  Paper ID review;
+- a blank current Official Paper ID is resolved from the imported
+  Author-entered ID;
+- a changed Final Title preserves the Official Paper ID but resets Paper ID
+  review and extracted-title comparison;
+- changed Final Authors return Title/Author Review to Pending without replacing
+  the current extracted title/authors.
+
+An unresolved Official Paper ID is not automatically marked Not Publishing. It
+remains an ID problem for manual correction/verification, or an editor may use
+the explicit Not Publishing workflow when that is the real publication
+decision.
 
 Final Submission file upload supports large PDF/source batches up to 5000 files per request. This is a Django request-parsing limit, not a CSV row limit. If a conference upload set exceeds that number of files, split the file upload into multiple batches.
 

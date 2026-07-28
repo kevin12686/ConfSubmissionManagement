@@ -20,7 +20,7 @@
     <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">New</div><div class="cfm-metric-value">{{ preview.stats.new }}</div></div></div>
     <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Unchanged</div><div class="cfm-metric-value">{{ preview.stats.unchanged }}</div></div></div>
     <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Changed</div><div class="cfm-metric-value {% if preview.stats.metadata_updated %}text-warning{% endif %}">{{ preview.stats.metadata_updated }}</div></div></div>
-    {% if preview.kind == "initial" or preview.mapping_workbook %}
+    {% if preview.kind == "initial" %}
         <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Decision Required</div><div class="cfm-metric-value {% if preview.stats.publication_decision_required %}text-danger{% endif %}">{{ preview.stats.publication_decision_required }}</div></div></div>
     {% endif %}
     <div class="col-sm-6 col-xl"><div class="cfm-metric"><div class="cfm-metric-label">Paper ID Reset</div><div class="cfm-metric-value {% if preview.stats.paper_id_review_reset %}text-danger{% endif %}">{{ preview.stats.paper_id_review_reset }}</div></div></div>
@@ -135,13 +135,22 @@
                     {% if row.type == "final" %}
                         <div class="small text-muted">Uploaded ID is treated as Author-entered ID. Resolved Paper ID after apply: {{ row.new.paper_id_filled|default:"--" }}</div>
                         {% if row.invalid_master_id %}
-                            <div class="small text-danger fw-semibold">Needs decision: correct the Paper ID or mark this final submission as Not Publishing.</div>
+                            <div class="small text-danger fw-semibold">
+                                Cannot verify: Official Paper ID is not in Paper Master.
+                                Correct the ID, or explicitly mark Not Publishing only when that is the editorial decision.
+                            </div>
                         {% endif %}
                         {% if row.master_not_publishing %}
                             <div class="small text-warning fw-semibold">Paper Master is Not Publishing. This Final will be retained for traceability but will remain outside publication scope.</div>
                         {% endif %}
                         {% if row.master_publication_decision_required %}
                             <div class="small text-danger fw-semibold">Paper Master publication decision must be resolved before this Final can enter publication scope.</div>
+                        {% endif %}
+                        {% if row.official_paper_id_note %}
+                            <div class="small text-muted mt-1">{{ row.official_paper_id_note }}</div>
+                        {% endif %}
+                        {% if row.final_authors_review_reset and not row.pdf_reset and not row.source_reset %}
+                            <div class="small text-warning fw-semibold">Final Authors changed; Title/Author Review will return to Pending.</div>
                         {% endif %}
                         {% if row.currently_discarded %}
                             <div class="small text-warning fw-semibold">Currently discarded. Import will preserve the discard status and note.</div>

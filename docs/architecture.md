@@ -85,6 +85,9 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
 - Publication source priority is corrected source, then original source.
 - Active version selection is previewed before changing the active-version rule in Settings.
 - Import/re-upload workflows are preview-before-apply when they may change existing records or files.
+- Paper Master and Final Submission imports are separate boundaries. Final
+  re-import is keyed by Final ID and preserves an existing Official Paper ID
+  while Author-entered ID is unchanged; Final Title alone never remaps it.
 - Review flags are reset only when dependent data changes.
 - Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
 - Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. `apply_final_submission_manual_edit()` requires an existing record and applies dependency-based reset rules; it must never receive `None` or synthesize an original record.
@@ -468,10 +471,11 @@ The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`
 
 The footer displays both values so a user can match a System State ZIP to the expected application version.
 
-Archive version 4 requires authoritative Paper Master publication decisions.
-Version 3 archives predate that contract and must be restored with a compatible
-older application before upgrading; treating a missing Master decision as
-Publishing would be unsafe.
+Archive version 5 matches the schema after removal of obsolete Mapping Table
+metadata. Archive version 4 introduced authoritative Paper Master publication
+decisions. Older archives must be restored with a compatible application before
+upgrading; treating missing decision state or removed fields as equivalent
+would be unsafe.
 
 ## Optional GROBID Fallback
 

@@ -3,6 +3,26 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.0 - 2026-07-27
+
+### Final Submission Re-import Safety
+
+- Removed the unused combined Mapping Table workbook path and its legacy
+  mapping metadata fields. Paper Master and Final Submission imports now remain
+  separate, preview-before-apply workflows.
+- Preserved an existing Official Paper ID when a re-import keeps the same
+  Author-entered ID. A changed Final Title resets Paper ID review without
+  silently remapping the submission.
+- Re-resolved the Official Paper ID only when the Author-entered ID changes or
+  the existing Official Paper ID is blank.
+- Returned Title/Author Review to Pending when Final Authors change while
+  preserving the existing extraction for comparison.
+- Corrected Final Submission preview ordering so metadata review resets, file
+  resets, new rows, metadata-only changes, and unchanged rows appear in their
+  documented attention order.
+- Advanced the System State archive to version 5 because removed model fields
+  make older archive state incompatible with this schema.
+
 ## 1.11.1 - 2026-07-27
 
 ### Dashboard Wording

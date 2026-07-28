@@ -449,7 +449,6 @@ def create_final_submission_manual(form, report_file=None):
     summary = _empty_summary()
 
     obj.submission_origin = "start2"
-    obj.mapping_source = "manual_add"
     _reset_identity_review(
         obj,
         "Final submission created manually; Paper ID review was evaluated.",
@@ -497,7 +496,6 @@ def create_final_submission_manual(form, report_file=None):
     audit_fields.update(
         {
             "submission_origin",
-            "mapping_source",
             "paper_id_verified",
             "auto_verify_blocked",
             "verification_status",

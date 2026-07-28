@@ -52,7 +52,9 @@ transition. If any existing orphan Final under that Paper ID retains a Not
 Publishing decision, the new Master record must enter `Decision Required`.
 Import Preview shows the affected Final IDs, and the editor must explicitly
 choose Publishing or Not Publishing. Import, manual Master creation, and
-combined mapping workbooks use the same guarded creation service.
+normal Paper Master import use the same guarded creation service. Paper Master
+and Final Submission files are imported separately; legacy combined
+`Mapping Table` workbooks are rejected.
 
 Final Submission exclusion fields are compatibility mirrors, not authority, for
 Paper IDs that exist in Paper Master. Mark and undo synchronize those mirrors,
@@ -142,6 +144,9 @@ Review state resets only when its evidence changes.
 
 | Changed evidence | Required effect |
 | --- | --- |
+| Author-entered ID on an existing Final | Re-resolve Official Paper ID and reset Paper ID review |
+| Final Title | Preserve Official Paper ID; reset Paper ID review and extracted-title comparison |
+| Final Authors | Preserve Official Paper ID and extracted metadata; return Title/Author Review to Pending |
 | Publication PDF bytes or selected PDF | PDF processing, page exception, Title/Author, duplicate-author, plagiarism, and Formatting state become stale |
 | Publication source bytes or selected source | Title/Author, duplicate-author, and Formatting state become stale |
 | Page count | Page-limit exception becomes stale |
@@ -155,6 +160,13 @@ Review state resets only when its evidence changes.
 `Review OK` is the single Title/Author completion decision. A reviewed
 Final-versus-extracted title difference remains tracked information, not a
 second publication blocker.
+
+Final re-import is keyed by Final ID. When the Author-entered ID is unchanged
+and the current Official Paper ID is nonblank, re-import preserves that
+Official ID even if title-based matching would prefer another Master paper.
+Only a changed Author-entered ID, or a currently blank Official ID, invokes
+Official ID resolution. Failure to resolve remains a manual ID-review problem;
+it never silently creates a Not Publishing decision.
 
 Formatting `Review OK` binds the SHA-256 of the selected publication source.
 Pending or Needs Edit is blocked by Formatting status. A missing review hash is

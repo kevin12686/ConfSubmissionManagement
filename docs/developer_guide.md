@@ -266,6 +266,17 @@ Manual Final Submission create and edit paths are intentionally separate. Create
 
 Prefer preview-before-apply for imports, re-uploads, restore, and any setting change that can materially alter current publication candidates.
 
+Final re-import is keyed by Final ID. Keep Official Paper ID resolution in
+`preview_final_import()`:
+
+- preserve a nonblank Official ID when Author-entered ID is unchanged;
+- resolve when Author-entered ID changes or Official ID is blank;
+- never use a Final Title change alone to remap an existing submission;
+- never infer Not Publishing from a missing/invalid Official ID.
+
+Paper Master and Final Submission imports are separate services. Do not
+reintroduce a combined Mapping Table workbook or hidden mapping metadata path.
+
 ## Dashboard Readiness Rules
 
 Dashboard must consume `publication_readiness_rows()` through the application selector. Do not build a second list of blockers from `dashboard_counts()`; otherwise Dashboard can appear clear while final export is blocked.
@@ -410,10 +421,11 @@ Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export c
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
 
-Archive version 4 marks Paper Master publication decisions as required restore
-state. Do not accept an older archive as equivalent without an explicit
-migration path; defaulting a missing decision to Publishing can change package
-scope.
+Archive version 5 matches the schema after removal of the unused Mapping Table
+metadata fields. Version 4 introduced authoritative Paper Master publication
+decisions. Do not accept an older archive as equivalent without an explicit
+migration path; either missing decision state or unknown removed fields can
+make a restore ambiguous.
 
 Exact-navigation and focused-worklist changes do not alter System State archive
 contents, so they require an app version change but not an archive version

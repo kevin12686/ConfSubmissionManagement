@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import shutil
@@ -6,7 +5,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pandas as pd
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -21,9 +19,6 @@ from submissions.services.crosscheck import (
     upload_crosscheck_reports,
 )
 from submissions.services.import_export import (
-    MAPPING_SHEET_NAME,
-    MASTER_SHEET_NAME,
-    START2_SHEET_NAME,
     import_final_submissions,
 )
 from submissions.services.import_preview import (
@@ -477,76 +472,30 @@ class CrossCheckImportSafetyTests(TestCase):
             FinalSubmission.objects.filter(final_submission_id="10").exists()
         )
 
-    def test_legacy_mapping_api_uses_preview_and_blocks_duplicate_rows(self):
-        workbook = io.BytesIO()
-        mapping_columns = [f"c{index}" for index in range(15)]
-        with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
-            pd.DataFrame(
-                [
-                    {
-                        "paper_id": "P001",
-                        "acceptance_status": "accepted",
-                        "title": "Mapped",
-                        "authors": "Ada",
-                    }
-                ]
-            ).to_excel(writer, sheet_name=MASTER_SHEET_NAME, index=False)
-            pd.DataFrame(
-                [
-                    {
-                        "submission id": "10",
-                        "paper-id": "P001",
-                        "title": "Mapped",
-                        "authors": "Ada",
-                    },
-                    {
-                        "submission id": "10",
-                        "paper-id": "P001",
-                        "title": "Different",
-                        "authors": "Grace",
-                    },
-                ]
-            ).to_excel(writer, sheet_name=START2_SHEET_NAME, index=False)
-            pd.DataFrame(
-                [
-                    [
-                        "10",
-                        "P001",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "10_file_Submit_PDF.pdf",
-                    ]
-                ],
-                columns=mapping_columns,
-            ).to_excel(writer, sheet_name=MAPPING_SHEET_NAME, index=False)
-        workbook.seek(0)
+    def test_direct_import_api_blocks_duplicate_final_ids(self):
+        InitialPaper.objects.create(
+            paper_id="P001",
+            acceptance_status="Accepted",
+            title="Mapped",
+            authors="Ada",
+        )
+        metadata = SimpleUploadedFile(
+            "final.csv",
+            (
+                "final_submission_id,author_entered_paper_id,"
+                "final_submission_title,final_submission_authors\n"
+                "10,P001,Mapped,Ada\n"
+                "10,P001,Different,Grace\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
 
         with self.assertRaisesRegex(ValueError, "Duplicate Final ID"):
-            import_final_submissions(
-                SimpleUploadedFile(
-                    "mapping.xlsx",
-                    workbook.getvalue(),
-                    content_type=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                )
-            )
+            import_final_submissions(metadata)
 
-        self.assertFalse(InitialPaper.objects.filter(paper_id="P001").exists())
         self.assertFalse(FinalSubmission.objects.exists())
 
-    def test_legacy_mapping_update_uses_canonical_review_resets(self):
+    def test_author_entered_id_change_uses_canonical_review_resets(self):
         submission = self.make_submission(paper_id="P001", final_id="10")
         InitialPaper.objects.create(
             paper_id="P002",
@@ -561,33 +510,15 @@ class CrossCheckImportSafetyTests(TestCase):
         submission.extracted_title_match_status = "verified"
         submission.save()
 
-        workbook = io.BytesIO()
-        mapping_columns = [f"c{index}" for index in range(15)]
-        with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
-            pd.DataFrame(
-                [
-                    {
-                        "submission id": "10",
-                        "paper-id": "P002",
-                        "title": "Different Final Title",
-                        "authors": "Grace",
-                    }
-                ]
-            ).to_excel(writer, sheet_name=START2_SHEET_NAME, index=False)
-            pd.DataFrame(
-                [["10", "P002", *("" for _index in range(13))]],
-                columns=mapping_columns,
-            ).to_excel(writer, sheet_name=MAPPING_SHEET_NAME, index=False)
-        workbook.seek(0)
-
         import_final_submissions(
             SimpleUploadedFile(
-                "mapping.xlsx",
-                workbook.getvalue(),
-                content_type=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
+                "final.csv",
+                (
+                    "final_submission_id,author_entered_paper_id,"
+                    "final_submission_title,final_submission_authors\n"
+                    "10,P002,Different Final Title,Grace\n"
+                ).encode("utf-8"),
+                content_type="text/csv",
             )
         )
 

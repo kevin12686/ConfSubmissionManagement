@@ -28,7 +28,6 @@ from submissions.services.text_utils import clean_note_text
 
 MASTER_SHEET_NAME = "我們自己準備的表格"
 START2_SHEET_NAME = "Start2導出的資料"
-MAPPING_SHEET_NAME = "Mapping Table"
 
 
 def is_excel_file(uploaded_file):
@@ -194,10 +193,6 @@ def import_final_submissions(uploaded_file, submission_files=None):
     result.setdefault("attached_pdfs", result.get("pdf_reset", 0))
     result.setdefault("attached_sources", result.get("source_reset", 0))
     return result
-
-
-def import_mapping_workbook(uploaded_file):
-    return import_final_submissions(uploaded_file)
 
 
 def _import_initial_frame(frame):
@@ -433,8 +428,6 @@ def submissions_to_frame(queryset):
                 "plagiarism_report_stale": item.plagiarism_report_stale,
                 "processing_status": item.processing_status,
                 "processing_message": item.processing_message,
-                "mapping_source": item.mapping_source,
-                "mapping_order": item.mapping_order,
                 "duplicate_submission": item.duplicate_submission,
                 "paper_id_verified": item.paper_id_verified,
                 "verification_status": item.verification_status,

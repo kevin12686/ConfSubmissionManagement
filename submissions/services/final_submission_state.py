@@ -53,8 +53,6 @@ STATE_DOMAINS = (
             StateField("submission_origin", "submission_origin"),
             StateField("editor_upload_notes", "editor_upload_notes"),
             StateField("editor_uploaded_at", "editor_uploaded_at"),
-            StateField("mapping_source", "mapping_source"),
-            StateField("mapping_order", "mapping_order"),
         ),
     ),
     StateDomain(

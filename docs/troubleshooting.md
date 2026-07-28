@@ -188,6 +188,18 @@ replays the export POST.
 
 The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.
 
+### Final import rejects a Mapping Table workbook
+
+Combined Mapping Table workbooks are no longer supported. Download and use the
+Paper Master template on the Paper Master page, apply that preview first, then
+use the Final Submission template and file upload on Final Submissions.
+
+For an existing Final ID, changing Final Title does not silently move the row
+to another Official Paper ID. The current Official ID is preserved and Paper ID
+review is reset. Change the Author-entered ID only when the submitted ID itself
+was corrected. An invalid/unresolved ID remains in Paper ID Review; it is not
+automatically classified as Not Publishing.
+
 ### Why did Settings show a missing legacy processed PDF path?
 
 Settings Storage checks DB file references against files on disk. `Legacy processed PDF path` means the old `current_file_path` field. It is retained for older restored data and debug traces, but it is no longer used to choose publication files.
