@@ -4,6 +4,22 @@ import re
 import pymupdf
 
 
+def format_author_names(author_names):
+    """Serialize parsed author names with one consistent display format."""
+    names = [
+        re.sub(r"\s+", " ", name).strip()
+        for name in author_names
+        if name and name.strip()
+    ]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
 def flags_decomposer(flags):
     """Make font flags human readable."""
     l = []
@@ -116,26 +132,18 @@ def get_title_author(f, verify=True, verify_folder="verification"):
                         exit_flag = True  # finish process, exit singal
                         break
 
-    # general cleaning up and formating
+    # General cleanup and formatting.
     title = re.sub(r"\s+", r" ", title.strip())
     author = re.sub(r"\s+", r" ", author.strip().replace("*", ""))
     author = re.sub(r"\s*,\s*", r", ", author)
-    author = re.sub(r"(.+)(?<!,)(, (and\s+)?|\s+and\s+)(.+)", r"\1, and \4", author)
 
-    # special case: only 2 authors
-    if author.count(",") <= 1:
-        author = author.replace(",", "")
+    # Parse once, then use the same list for storage, count, and verification.
+    # The previous comma-count heuristic misclassified multi-author lines that
+    # used "and" between every name.
+    from submissions.services.checks import split_authors
 
-    # remove redundant space
-    title = re.sub(r"\s+", " ", title.strip())
-    author = re.sub(r"\s+", " ", author.strip())
-
-    # remove the "," at the end
-    if author.endswith(","):
-        author = author[:-1]
-
-    # extract author names for verify
-    author_list = author.replace(", and ", ", ").replace(" and ", ", ").split(", ")
+    author_list = split_authors(author)
+    author = format_author_names(author_list)
 
     doc.close()
 

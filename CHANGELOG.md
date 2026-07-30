@@ -3,6 +3,20 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.10 - 2026-07-29
+
+### Built-In Author List Formatting
+
+- Replaced the built-in extractor's comma-count author heuristic with one
+  parsed author list shared by stored metadata, author count, and verification
+  rendering.
+- Standardized extracted author display as `A`, `A and B`, or
+  `A, B, and C` without changing the extracted names themselves.
+- Fixed multi-line author blocks that use `and` between every author so they
+  no longer remain as an ambiguous all-`and` display string.
+- Kept title extraction, review resets, GROBID, Manual Override, and
+  publication readiness unchanged.
+
 ## 1.12.9 - 2026-07-28
 
 ### Expansion Reveal Event Fix

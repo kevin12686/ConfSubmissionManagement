@@ -126,6 +126,10 @@ Put reusable workflow behavior in services:
 
 Do not put processing or integration logic directly in views.
 
+The built-in extractor must derive stored author text, author count, and
+verification-renderer input from one parsed author list. Do not infer author
+count from punctuation or independently re-split the formatted display string.
+
 Shared worklist wording belongs in `submissions/presentation.py`. Keep database
 choices, filter query values, readiness checks, and workflow transitions based
 on stable internal values. A wording change must not alter publication
