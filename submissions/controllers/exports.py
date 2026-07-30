@@ -140,6 +140,33 @@ def _mark_download_response_ready(response, request):
     return response
 
 
+def _publication_package_error_context(exc, *, draft=False):
+    blockers = exc.blockers
+    if draft:
+        title = "Draft publication package could not be created"
+        message = (
+            "Draft export still stops when version, publication-decision, or "
+            "filename ambiguity could select the wrong files. Resolve these "
+            "structural blockers before trying again."
+        )
+    else:
+        title = "Publication package is not ready"
+        message = (
+            "Fix these blockers before downloading the final ZIP. "
+            "If you need an intermediate copy, download a draft package; "
+            "it may skip missing files and is not final-ready."
+        )
+    return {
+        "title": title,
+        "message": message,
+        "detail": str(exc),
+        "blockers": blockers[:20],
+        "total_blockers": len(blockers),
+        "remaining_blockers": max(len(blockers) - 20, 0),
+        "allow_force_download": not draft,
+    }
+
+
 DEFAULT_FOLDER_SETTINGS = {
     "incoming_folder": "data/incoming",
     "active_final_folder": "data/active_final",
@@ -547,27 +574,14 @@ def export_reports(request):
                 exported_path = Path(exporter())
             except reports.PublicationPackageBlocked as exc:
                 logger.warning("Publication package blocked: %s", exc)
-                if action == "publication_package_force":
-                    messages.error(request, f"Draft package could not be created: {exc}")
-                    return redirect("submissions:export_reports")
-                blockers = exc.blockers
                 return render(
                     request,
                     "submissions/export_reports.html",
                     {
-                        "export_error": {
-                            "title": "Publication package is not ready",
-                            "message": (
-                                "Fix these blockers before downloading the final ZIP. "
-                                "If you need an intermediate copy, download a draft package; "
-                                "it may skip missing files and is not final-ready."
-                            ),
-                            "detail": str(exc),
-                            "blockers": blockers[:20],
-                            "total_blockers": len(blockers),
-                            "remaining_blockers": max(len(blockers) - 20, 0),
-                            "allow_force_download": True,
-                        }
+                        "export_error": _publication_package_error_context(
+                            exc,
+                            draft=action == "publication_package_force",
+                        )
                     },
                     status=200,
                 )

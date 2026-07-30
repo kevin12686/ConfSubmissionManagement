@@ -268,6 +268,9 @@ Create Final Submission records and files:
   base filename. Confirm Error Report and Organized List both flag the
   collision and final export does not create a ZIP.
 - Draft publication package is clearly marked and contains a warnings CSV.
+- Trigger a structural Draft blocker such as two active finals for one Paper ID.
+  Confirm Draft export fails closed and shows the full blocker table instead of
+  only a transient message.
 - Final publication package contains one PDF/source pair per publishable Paper Master record and no replaced, discarded, or Not Publishing records.
 - Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
 - Formatting Review `Review OK` stores the current publication source hash.
@@ -283,6 +286,17 @@ Create Final Submission records and files:
 - Change Paper Master, active/Not Publishing state, review status, or settings
   from a second editor request while final export is assembling. Confirm the
   export fails and removes all partial outputs.
+- Export each Excel report and confirm it does not create, delete, or rebuild
+  any `PaperAuthor` rows. Change publication state while the Editorial Workbook
+  is assembling and confirm the export fails, records a failed audit event, and
+  leaves no final or `.part.xlsx` file.
+- Enter disposable title/note text beginning with `=`, `+`, `-`, or `@`.
+  Confirm XLSX cells contain the exact literal text and are not formulas; confirm
+  generated manifest/warning CSV strings are neutralized while numeric values
+  remain numeric.
+- Preview generated reports/exports cleanup and confirm generated publication
+  manifest/warning CSV files are selected while an unrelated editorial CSV in
+  the Reports folder is retained.
 - Open Final Submission Edit, Paper Master Edit, Title/Author Review,
   Exceptions, and Process PDF formatting triage in editor A. Change the same
   evidence in editor B, then submit editor A's stale form. Confirm every action

@@ -37,6 +37,10 @@ GENERATED_CACHE_DIRS = {
     "title_author_verification": "Generated title/author verification images",
 }
 REPORT_EXPORT_EXTENSIONS = {".xlsx", ".zip"}
+GENERATED_REPORT_CSV_PREFIXES = (
+    "publication_manifest_",
+    "publication_package_warnings_",
+)
 POLICY_LABELS = {
     "generated_cache_or_orphan_output": "Conservative cleanup",
     "generated_reports_exports": "Generated reports/exports cleanup",
@@ -798,6 +802,19 @@ def build_storage_inventory():
     return StorageInventoryBuilder().build()
 
 
+def _is_generated_report_export(path):
+    path = Path(path)
+    if path.suffix.lower() in REPORT_EXPORT_EXTENSIONS:
+        return True
+    return (
+        path.suffix.lower() == ".csv"
+        and any(
+            path.name.startswith(prefix)
+            for prefix in GENERATED_REPORT_CSV_PREFIXES
+        )
+    )
+
+
 def _report_export_cleanup_candidates(settings_obj, records):
     candidates = []
     reports_root = _canonical_path(
@@ -821,7 +838,7 @@ def _report_export_cleanup_candidates(settings_obj, records):
         in_reports = _relative_to(record.path, reports_root)
         if not in_external_upload and not (
             in_reports
-            and record.path.suffix.lower() in REPORT_EXPORT_EXTENSIONS
+            and _is_generated_report_export(record.path)
         ):
             continue
         candidates.append(
@@ -939,7 +956,7 @@ def _deletable_path(path, category=None):
             return False
         reports_root = _configured_folder(settings_obj.reports_folder).resolve()
         if _relative_to(resolved, reports_root):
-            return resolved.suffix.lower() in REPORT_EXPORT_EXTENSIONS
+            return _is_generated_report_export(resolved)
         for root in _cleanup_report_export_roots(settings_obj)[1:]:
             try:
                 resolved.relative_to(root.resolve())

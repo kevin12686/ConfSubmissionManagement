@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import io
+import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -16,10 +17,12 @@ from submissions.services.checks import (
     author_count_rows,
     error_report_rows,
     publication_readiness_rows,
-    rebuild_paper_authors,
     split_authors,
 )
-from submissions.services.excel_workbook import write_formatted_workbook
+from submissions.services.excel_workbook import (
+    validate_formatted_workbook,
+    write_formatted_workbook,
+)
 from submissions.services.exceptions import exception_rows
 from submissions.services.file_manager import (
     publication_file_base_name,
@@ -28,10 +31,18 @@ from submissions.services.file_manager import (
     resolve_folder,
 )
 from submissions.services.import_export import submissions_to_frame
-from submissions.services.audit import audit_blocked, audit_failure, audit_success
+from submissions.services.audit import (
+    audit_blocked,
+    audit_failure,
+    audit_requested,
+    audit_success,
+)
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.verification import normalize_title
 from submissions.services.version_history import old_version_rows
+
+
+logger = logging.getLogger(__name__)
 
 
 EDITORIAL_WORKBOOK_SUPPORTING_SHEETS = {
@@ -125,7 +136,7 @@ def author_count_frame(*, context=None, rows=None):
     )
 
 
-def not_publishing_frame():
+def not_publishing_frame(*, context=None, excluded_outside_master=None):
     columns = [
         "record_type",
         "final_submission_id",
@@ -142,7 +153,7 @@ def not_publishing_frame():
         "marked_at",
     ]
     rows = []
-    context = PublicationReadContext.load()
+    context = context or PublicationReadContext.load()
     active_by_paper = {
         submission.paper_id_filled: submission
         for submission in context.active_submissions
@@ -182,11 +193,16 @@ def not_publishing_frame():
                 "marked_at": paper.publication_excluded_at,
             }
         )
-    for item in FinalSubmission.objects.filter(
-        excluded_from_publication=True, discarded=False
-    ).exclude(
-        paper_id_filled__in=context.valid_paper_ids
-    ).order_by("paper_id_filled", "final_submission_id"):
+    if excluded_outside_master is None:
+        excluded_outside_master = tuple(
+            FinalSubmission.objects.filter(
+                excluded_from_publication=True,
+                discarded=False,
+            )
+            .exclude(paper_id_filled__in=context.valid_paper_ids)
+            .order_by("paper_id_filled", "final_submission_id")
+        )
+    for item in excluded_outside_master:
         active_replacement = (
             FinalSubmission.objects.filter(
                 active_version=True,
@@ -218,7 +234,12 @@ def not_publishing_frame():
     return pd.DataFrame(rows, columns=columns)
 
 
-def paper_master_frame():
+def paper_master_frame(*, context=None):
+    papers = (
+        context.papers
+        if context is not None
+        else InitialPaper.objects.all().order_by("paper_id")
+    )
     return pd.DataFrame(
         [
             {
@@ -242,7 +263,7 @@ def paper_master_frame():
                 "created_at": paper.created_at,
                 "updated_at": paper.updated_at,
             }
-            for paper in InitialPaper.objects.all().order_by("paper_id")
+            for paper in sorted(papers, key=lambda item: item.paper_id)
         ]
     )
 
@@ -484,38 +505,102 @@ def publication_detail_frame(
     return pd.DataFrame(rows, columns=columns)
 
 
-def _write_single_sheet(path, sheet_name, frame):
-    return write_formatted_workbook(
-        path,
-        [(sheet_name, _excel_safe_frame(frame))],
-    )
+def _write_audited_workbook(
+    path,
+    *,
+    action,
+    requested_message,
+    success_message,
+    build_sheets,
+    result_counts,
+    verify_state=None,
+):
+    path = Path(path)
+    pending_path = path.with_name(f"{path.stem}.part{path.suffix}")
+    pending_path.unlink(missing_ok=True)
+    promoted = False
+    try:
+        audit_requested(action, requested_message)
+        sheets = list(build_sheets())
+        safe_sheets = [
+            (sheet_name, _excel_safe_frame(frame))
+            for sheet_name, frame in sheets
+        ]
+        write_formatted_workbook(pending_path, safe_sheets)
+        validate_formatted_workbook(
+            pending_path,
+            [sheet_name for sheet_name, _frame in safe_sheets],
+        )
+        if verify_state is not None:
+            verify_state()
+        pending_path.replace(path)
+        promoted = True
+        audit_success(
+            action,
+            success_message,
+            result_counts=result_counts(sheets),
+            file_changes={
+                "path": str(path),
+                "sheets": [sheet_name for sheet_name, _frame in sheets],
+            },
+        )
+        return path
+    except Exception as exc:
+        pending_path.unlink(missing_ok=True)
+        if promoted:
+            path.unlink(missing_ok=True)
+        try:
+            audit_failure(
+                action,
+                exc,
+                f"{success_message.rstrip('.')} failed.",
+            )
+        except Exception:
+            logger.exception(
+                "Could not write the failure audit event for %s.",
+                action,
+            )
+        raise
 
 
 def export_active_versions():
     path = _reports_folder() / f"active_publishable_versions_{_timestamp()}.xlsx"
-    context = PublicationReadContext.load()
-    frame = submissions_to_frame(context.master_submissions)
-    _write_single_sheet(path, "Active Raw Data", frame)
-    audit_success(
-        "report_active_versions_export",
-        "Active publishable versions exported.",
-        result_counts={"rows": len(frame)},
-        file_changes={"path": str(path)},
+    snapshot = {}
+
+    def build_sheets():
+        context = PublicationReadContext.load(require_stable_database=True)
+        snapshot["context"] = context
+        return [("Active Raw Data", submissions_to_frame(context.master_submissions))]
+
+    return _write_audited_workbook(
+        path,
+        action="report_active_versions_export",
+        requested_message="Active publishable versions export requested.",
+        success_message="Active publishable versions exported.",
+        build_sheets=build_sheets,
+        result_counts=lambda sheets: {"rows": len(sheets[0][1])},
+        verify_state=lambda: snapshot["context"].assert_database_unchanged(),
     )
-    return path
 
 
 def export_old_versions():
     path = _reports_folder() / f"old_versions_{_timestamp()}.xlsx"
-    frame = old_versions_frame()
-    _write_single_sheet(path, "Old Versions", frame)
-    audit_success(
-        "report_old_versions_export",
-        "Old versions exported.",
-        result_counts={"rows": len(frame)},
-        file_changes={"path": str(path)},
+    snapshot = {}
+
+    def build_sheets():
+        context = PublicationReadContext.load(require_stable_database=True)
+        snapshot["context"] = context
+        return [("Old Versions", old_versions_frame())]
+
+    return _write_audited_workbook(
+        path,
+        action="report_old_versions_export",
+        requested_message="Old versions export requested.",
+        success_message="Old versions exported.",
+        build_sheets=build_sheets,
+        result_counts=lambda sheets: {"rows": len(sheets[0][1])},
+        verify_state=lambda: snapshot["context"].assert_database_unchanged(),
     )
-    return path
 
 
 def old_versions_frame():
@@ -543,31 +628,56 @@ def old_versions_frame():
 
 
 def export_error_report():
-    rebuild_paper_authors()
     path = _reports_folder() / f"readiness_issues_{_timestamp()}.xlsx"
-    frame = error_report_frame()
-    _write_single_sheet(path, "Readiness Issues", frame)
-    audit_success(
-        "report_error_export",
-        "Readiness issues exported.",
-        result_counts={"rows": len(frame)},
-        file_changes={"path": str(path)},
+    snapshot = {}
+
+    def build_sheets():
+        context = PublicationReadContext.load(require_stable_database=True)
+        snapshot["context"] = context
+        author_rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
+        return [
+            (
+                "Readiness Issues",
+                error_report_frame(context=context, author_rows=author_rows),
+            )
+        ]
+
+    return _write_audited_workbook(
+        path,
+        action="report_error_export",
+        requested_message="Readiness issues export requested.",
+        success_message="Readiness issues exported.",
+        build_sheets=build_sheets,
+        result_counts=lambda sheets: {"rows": len(sheets[0][1])},
+        verify_state=lambda: snapshot["context"].assert_database_unchanged(),
     )
-    return path
 
 
 def export_author_count():
-    rebuild_paper_authors()
     path = _reports_folder() / f"author_count_{_timestamp()}.xlsx"
-    frame = author_count_frame()
-    _write_single_sheet(path, "Author Count", frame)
-    audit_success(
-        "report_author_count_export",
-        "Author count exported.",
-        result_counts={"rows": len(frame)},
-        file_changes={"path": str(path)},
+    snapshot = {}
+
+    def build_sheets():
+        context = PublicationReadContext.load(require_stable_database=True)
+        snapshot["context"] = context
+        rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
+        return [("Author Count", author_count_frame(context=context, rows=rows))]
+
+    return _write_audited_workbook(
+        path,
+        action="report_author_count_export",
+        requested_message="Author count export requested.",
+        success_message="Author count exported.",
+        build_sheets=build_sheets,
+        result_counts=lambda sheets: {"rows": len(sheets[0][1])},
+        verify_state=lambda: snapshot["context"].assert_database_unchanged(),
     )
-    return path
 
 
 def _readiness_blocker_preview(readiness_blockers):
@@ -607,11 +717,29 @@ def _publication_warning_rows(readiness_blockers, skipped_rows):
     return rows
 
 
+_SPREADSHEET_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _spreadsheet_safe_csv_value(value):
+    if not isinstance(value, str):
+        return value
+    candidate = value.lstrip(" \t\r\n")
+    if candidate.startswith(_SPREADSHEET_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
 def _csv_bytes(fieldnames, rows):
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
-    writer.writerows(rows)
+    writer.writerows(
+        {
+            key: _spreadsheet_safe_csv_value(value)
+            for key, value in row.items()
+        }
+        for row in rows
+    )
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
 
@@ -927,74 +1055,84 @@ def export_all_reports(*, supporting_sheets=None):
         for key in EDITORIAL_WORKBOOK_SUPPORTING_SHEETS
         if key in requested_sheets
     ]
-    rebuild_paper_authors()
     path = (
         _reports_folder()
         / f"editorial_publication_workbook_{_timestamp()}.xlsx"
     )
-    context = PublicationReadContext.load()
-    author_rows = author_count_rows(
-        context=context,
-        include_file_links=False,
-    )
-    readiness_rows = publication_readiness_rows(
-        context=context,
-        author_rows=author_rows,
-    )
-    all_exception_rows, _status_filter = exception_rows(
-        "all",
-        context=context,
-        hydrate=False,
-    )
-    sheets = [
-        (
-            "Publication Detail",
-            publication_detail_frame(
-                context=context,
-                author_rows=author_rows,
-                readiness_rows=readiness_rows,
-                all_exception_rows=all_exception_rows,
-            ),
-        ),
-    ]
-    supporting_frames = {
-        "exception_detail": lambda: exception_detail_frame(all_exception_rows),
-        "readiness_issues": lambda: error_report_frame(
+    snapshot = {}
+    result_metadata = {}
+
+    def build_sheets():
+        context = PublicationReadContext.load(require_stable_database=True)
+        snapshot["context"] = context
+        excluded_outside_master = tuple(
+            FinalSubmission.objects.filter(
+                excluded_from_publication=True,
+                discarded=False,
+            )
+            .exclude(paper_id_filled__in=context.valid_paper_ids)
+            .order_by("paper_id_filled", "final_submission_id")
+        )
+        author_rows = author_count_rows(
+            context=context,
+            include_file_links=False,
+        )
+        readiness_rows = publication_readiness_rows(
             context=context,
             author_rows=author_rows,
-        ),
-        "paper_master": paper_master_frame,
-        "not_publishing": not_publishing_frame,
-        "author_count": lambda: author_count_frame(
-            context=context,
-            rows=author_rows,
-        ),
-    }
-    sheets.extend(
-        (
-            EDITORIAL_WORKBOOK_SUPPORTING_SHEETS[key],
-            supporting_frames[key](),
         )
-        for key in selected_supporting_sheets
-    )
-    write_formatted_workbook(
+        all_exception_rows, _status_filter = exception_rows(
+            "all",
+            context=context,
+            hydrate=False,
+        )
+        sheets = [
+            (
+                "Publication Detail",
+                publication_detail_frame(
+                    context=context,
+                    author_rows=author_rows,
+                    readiness_rows=readiness_rows,
+                    all_exception_rows=all_exception_rows,
+                ),
+            ),
+        ]
+        supporting_frames = {
+            "exception_detail": lambda: exception_detail_frame(all_exception_rows),
+            "readiness_issues": lambda: error_report_frame(
+                context=context,
+                author_rows=author_rows,
+            ),
+            "paper_master": lambda: paper_master_frame(context=context),
+            "not_publishing": lambda: not_publishing_frame(
+                context=context,
+                excluded_outside_master=excluded_outside_master,
+            ),
+            "author_count": lambda: author_count_frame(
+                context=context,
+                rows=author_rows,
+            ),
+        }
+        sheets.extend(
+            (
+                EDITORIAL_WORKBOOK_SUPPORTING_SHEETS[key],
+                supporting_frames[key](),
+            )
+            for key in selected_supporting_sheets
+        )
+        result_metadata["exception_rows"] = len(all_exception_rows)
+        return sheets
+
+    return _write_audited_workbook(
         path,
-        [
-            (sheet_name, _excel_safe_frame(frame))
-            for sheet_name, frame in sheets
-        ],
-    )
-    audit_success(
-        "report_editorial_workbook_export",
-        "Editorial publication workbook exported.",
-        result_counts={
+        action="report_editorial_workbook_export",
+        requested_message="Editorial publication workbook export requested.",
+        success_message="Editorial publication workbook exported.",
+        build_sheets=build_sheets,
+        result_counts=lambda sheets: {
             "publication_rows": len(sheets[0][1]),
-            "exception_rows": len(all_exception_rows),
+            "exception_rows": result_metadata["exception_rows"],
             "supporting_sheets": len(selected_supporting_sheets),
         },
-        file_changes={
-            "path": str(path),
-            "sheets": [sheet_name for sheet_name, _frame in sheets],
-        },
+        verify_state=lambda: snapshot["context"].assert_database_unchanged(),
     )
-    return Path(path)

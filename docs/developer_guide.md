@@ -116,7 +116,9 @@ Put reusable workflow behavior in services:
 - Shared XLSX presentation: `excel_workbook.py`. Keep CSV/package output out of
   this formatter; CSV schemas are machine-readable contracts. Editorial
   Workbook supporting sheets must use the whitelist in `reports.py`; raw/debug
-  sheets stay separate from the workbook selector.
+  sheets stay separate from the workbook selector. All Excel exporters must use
+  the shared atomic/audited workbook transaction in `reports.py`; do not write
+  final XLSX paths directly.
 - Storage cleanup: `storage_inventory.py`.
 - Backup/restore: `system_state.py`.
 - Audit logging: `audit.py`.
@@ -361,6 +363,18 @@ publication candidates and must write an audit event.
 
 Any new workflow that changes records, files, review status, publication readiness, settings, exports, cleanup, or backup/restore must write an audit event through `submissions/services/audit.py`.
 
+Report exports are read-only operations with audited output. They must not call
+`rebuild_paper_authors()` or persist any derived cache. Build all selected
+Editorial Workbook sheets from one stable `PublicationReadContext`, validate
+the temporary workbook, recheck publication-critical database state, and
+atomically promote it. Requested and failed export attempts must be auditable;
+if audit persistence fails, no downloadable workbook may remain.
+
+All string values written to XLSX reports or package CSVs must be safe when
+opened in spreadsheet software. XLSX preserves formula-like input as literal
+text. CSV protection applies only to string values that begin, after leading
+whitespace, with `=`, `+`, `-`, or `@`; numeric report values remain numeric.
+
 Register every production action in
 `submissions/services/audit_actions.py` and use its canonical
 `<domain>_<operation>[_<phase>]` code at the call site. Keep workflow phases
@@ -403,6 +417,8 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   filename collisions.
 - System State export/restore.
 - Storage cleanup policy.
+- Excel report formula safety, read-only behavior, atomic cleanup, audit
+  lifecycle, and one-snapshot Editorial Workbook consistency.
 - Storage inventory exact-file and referenced-directory protection, including
   the fresh reference check between cleanup preview and apply.
 - Audit logging for state-changing workflows.
@@ -463,5 +479,6 @@ Before release:
 6. If publication export changed, test both final and draft package paths.
    Draft export may include ordinary readiness warnings, but structural ambiguity
    (`Multiple Active Final Submissions` or `Duplicate Publication Filename`) must
-   fail closed rather than selecting or overwriting a file.
+   fail closed rather than selecting or overwriting a file, and the response
+   must render the detailed blocker panel.
 7. Commit code, migrations, templates, docs, and sample data together when they describe one user-facing change.

@@ -512,9 +512,15 @@ Use `/reports/` for exports.
   deliverables or complete backups.
 - Generated XLSX files share frozen/filterable headers, bounded column widths,
   wrapped long text, whole-number percentage display, and consistent readable
-  styling. CSV files remain unformatted machine-readable data.
+  styling. They are read-only snapshots and do not rebuild author records or
+  change review state. CSV files remain unformatted machine-readable data.
+- Formula-like editorial text is kept as literal, non-executable text when an
+  XLSX or package CSV is opened in spreadsheet software.
 - Final and draft package PDFs use the publication-facing priority above: Corrected PDF, then Original PDF. They do not read the publication debug folder or legacy active-final/current-file paths.
-- Draft export can carry ordinary readiness warnings, but it still blocks when one Paper ID has multiple active finals or when sanitized ZIP filenames collide; those conditions cannot select an unambiguous file.
+- Draft export can carry ordinary readiness warnings, but it still blocks when
+  publication scope/version decisions are ambiguous or sanitized ZIP filenames
+  collide. The blocked page shows the same detailed issue table as final export
+  so the structural problem can be resolved without guessing.
 - Final export blocks if two records would receive the same sanitized ZIP
   filename, or if a selected PDF/source changes after the readiness inspection.
   Resolve the Error Report item or reprocess the changed PDF before retrying.
@@ -557,7 +563,8 @@ Use Settings > Storage Management and review every preview before Apply:
 
 - Conservative cleanup selects only unreferenced regenerated cache.
 - Generated reports/exports cleanup selects reproducible downloads and external
-  upload packages.
+  upload packages, including generated publication manifest/warning CSV files.
+  It does not select unrelated CSV files placed in the Reports folder.
 - Original and corrected uploads, plagiarism reports, System State backups, and
   referenced thumbnails/previews remain protected.
 - Apply skips files that changed, became referenced, or became protected after

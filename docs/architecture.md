@@ -222,6 +222,17 @@ old-version data remain separate debug exports. Excel formatting and report
 sheets must not feed publication selection or modify Final/Draft package CSV
 schemas.
 
+All Excel exports use one atomic audited transaction. They load a stable
+`PublicationReadContext`, compute author/report rows without rebuilding
+`PaperAuthor`, write a `.part.xlsx`, force formula-like report values to literal
+text, reopen the workbook to validate its exact sheet set, recheck the database
+snapshot, and then rename it into place. Requested, successful, and failed
+events use the same canonical report action. If final audit persistence fails,
+the promoted workbook is removed so an unaudited report is never left behind.
+The Editorial Publication Workbook reuses the same context, author rows,
+readiness rows, exception rows, Paper Master rows, and Not Publishing snapshot
+for all selected sheets.
+
 Final export also fingerprints publication-critical database state before
 loading the snapshot and after ZIP assembly. A concurrent editor change to
 Paper Master, submissions, settings, or author waivers deletes the
@@ -352,7 +363,9 @@ target filesystem so promotion uses rename rather than cross-device copying.
 Storage cleanup is split by risk:
 
 - Conservative cleanup removes only unreferenced regenerated cache. It does not delete publication debug, legacy active-final, or old-version output folders.
-- Generated reports/exports cleanup removes regenerated Excel/ZIP downloads and external upload packages.
+- Generated reports/exports cleanup removes regenerated Excel/ZIP downloads,
+  generated publication manifest/warning CSV files, and external upload
+  packages. Arbitrary editorial CSV files in the Reports folder are retained.
 - Original uploads, corrected uploads, plagiarism report PDFs, system state backups, and referenced thumbnails/previews are retained.
 
 `submissions/services/storage_inventory.py` builds one request-scoped

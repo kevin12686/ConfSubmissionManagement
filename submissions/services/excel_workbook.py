@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -129,11 +130,32 @@ def _format_worksheet(worksheet):
         )
 
 
+def _force_report_values_to_text(worksheet):
+    """Reports never contain executable formulas; preserve formula-like input as text."""
+    for row in worksheet.iter_rows():
+        for cell in row:
+            if cell.data_type == "f":
+                cell.data_type = "s"
+
+
 def write_formatted_workbook(path, sheets):
     path = Path(path)
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         for sheet_name, frame in sheets:
             frame.to_excel(writer, sheet_name=sheet_name, index=False)
-            _format_worksheet(writer.book[sheet_name])
+            worksheet = writer.book[sheet_name]
+            _force_report_values_to_text(worksheet)
+            _format_worksheet(worksheet)
         writer.book.active = 0
     return path
+
+
+def validate_formatted_workbook(path, expected_sheet_names):
+    workbook = load_workbook(path, read_only=True, data_only=False)
+    try:
+        if workbook.sheetnames != list(expected_sheet_names):
+            raise ValueError(
+                "Generated workbook sheets differ from the requested report."
+            )
+    finally:
+        workbook.close()

@@ -91,11 +91,12 @@ from submissions.services.editor_uploads import (
 )
 from submissions.services.organized_list import organized_list_rows
 from submissions.services.pdf_processor import calculate_pdf_hash, determine_active_versions, process_all_pdfs
-from submissions.services import publication_read
+from submissions.services import publication_read, reports
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.publication_decisions import mark_paper_not_publishing
 from submissions.services.reports import (
     EDITORIAL_WORKBOOK_SUPPORTING_SHEETS,
+    _csv_bytes,
     author_count_frame,
     export_active_versions,
     export_all_reports,
@@ -1709,8 +1710,20 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         reports_root.mkdir(parents=True, exist_ok=True)
         report_excel = reports_root / "active_publishable_versions.xlsx"
         report_zip = reports_root / "publication_package_draft.zip"
+        report_manifest = reports_root / "publication_manifest_20260729.csv"
+        report_warnings = (
+            reports_root / "publication_package_warnings_20260729.csv"
+        )
+        unrelated_csv = reports_root / "editor_notes.csv"
         report_text = reports_root / "notes.txt"
-        for path in [report_excel, report_zip, report_text]:
+        for path in [
+            report_excel,
+            report_zip,
+            report_manifest,
+            report_warnings,
+            unrelated_csv,
+            report_text,
+        ]:
             path.write_bytes(b"report")
         crosscheck_zip = self.root / "data" / "crosscheck_upload" / "TOKEN" / "crosscheck_upload_TOKEN.zip"
         crosscheck_zip.parent.mkdir(parents=True, exist_ok=True)
@@ -1734,7 +1747,10 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         selected_paths = {Path(row["path"]).resolve() for row in preview["files"]}
         self.assertIn(report_excel.resolve(), selected_paths)
         self.assertIn(report_zip.resolve(), selected_paths)
+        self.assertIn(report_manifest.resolve(), selected_paths)
+        self.assertIn(report_warnings.resolve(), selected_paths)
         self.assertIn(crosscheck_zip.resolve(), selected_paths)
+        self.assertNotIn(unrelated_csv.resolve(), selected_paths)
         self.assertNotIn(report_text.resolve(), selected_paths)
         self.assertNotIn(plagiarism_report.resolve(), selected_paths)
         self.assertNotIn(system_backup.resolve(), selected_paths)
@@ -1743,10 +1759,13 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
         with override_settings(BASE_DIR=self.root):
             result = apply_storage_cleanup(preview["token"], CLEANUP_CONFIRMATION_TEXT)
 
-        self.assertGreaterEqual(result["deleted_count"], 3)
+        self.assertGreaterEqual(result["deleted_count"], 5)
         self.assertFalse(report_excel.exists())
         self.assertFalse(report_zip.exists())
+        self.assertFalse(report_manifest.exists())
+        self.assertFalse(report_warnings.exists())
         self.assertFalse(crosscheck_zip.exists())
+        self.assertTrue(unrelated_csv.exists())
         self.assertTrue(report_text.exists())
         self.assertTrue(plagiarism_report.exists())
         self.assertTrue(system_backup.exists())
@@ -6540,6 +6559,40 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertNotContains(response, "Author Count Excel")
         self.assertNotContains(response, "Audit / Backup")
         self.assertNotContains(response, "System State Backup")
+
+    def test_draft_package_structural_blockers_render_full_issue_panel(self):
+        self.make_master_paper("P001", "Ambiguous Draft", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Ambiguous Draft",
+            extracted_title="Ambiguous Draft",
+            active_version=True,
+        )
+        self.make_final_submission(
+            final_submission_id="11",
+            paper_id_filled="P001",
+            final_submission_title="Ambiguous Draft",
+            extracted_title="Ambiguous Draft",
+            active_version=True,
+        )
+
+        response = self.client.post(
+            reverse("submissions:export_reports"),
+            {"action": "publication_package_force"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Draft publication package could not be created",
+        )
+        self.assertContains(response, "Multiple Active Final Submissions")
+        self.assertContains(
+            response,
+            "structural blockers before trying again",
+        )
+        self.assertNotContains(response, "Download Draft Package Anyway")
 
     def test_export_reports_passes_selected_supporting_sheets_to_workbook(self):
         exported_path = self.root / "selected_editorial_workbook.xlsx"
@@ -11554,6 +11607,164 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertNotIn("Active Raw Data", selected_workbook.sheetnames)
         self.assertNotIn("Old Versions", selected_workbook.sheetnames)
+
+    def test_report_exports_preserve_formula_like_xlsx_text_and_neutralize_csv(self):
+        self.make_master_paper(
+            "P001",
+            "=HYPERLINK(\"https://example.test\",\"Paper\")",
+            "Ada",
+            notes="+Internal note",
+        )
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="=HYPERLINK(\"https://example.test\",\"Paper\")",
+            extracted_title="=HYPERLINK(\"https://example.test\",\"Paper\")",
+        )
+
+        workbook_path = export_all_reports(supporting_sheets=["paper_master"])
+        workbook = load_workbook(workbook_path, data_only=False)
+        publication_sheet = workbook["Publication Detail"]
+        publication_headers = {
+            cell.value: cell.column for cell in publication_sheet[1]
+        }
+        extracted_title_cell = publication_sheet.cell(
+            row=2,
+            column=publication_headers["Extracted Title"],
+        )
+        self.assertEqual(
+            extracted_title_cell.value,
+            '=HYPERLINK("https://example.test","Paper")',
+        )
+        self.assertEqual(extracted_title_cell.data_type, "s")
+        master_sheet = workbook["Paper Master"]
+        master_headers = {cell.value: cell.column for cell in master_sheet[1]}
+        note_cell = master_sheet.cell(row=2, column=master_headers["notes"])
+        self.assertEqual(note_cell.value, "+Internal note")
+        self.assertEqual(note_cell.data_type, "s")
+        workbook.close()
+
+        csv_rows = list(
+            csv.DictReader(
+                io.StringIO(
+                    _csv_bytes(
+                        ["Title", "Authors", "Pages"],
+                        [
+                            {
+                                "Title": "=2+2",
+                                "Authors": " @SUM(A1:A2)",
+                                "Pages": 12,
+                            }
+                        ],
+                    ).decode("utf-8-sig")
+                )
+            )
+        )
+        self.assertEqual(csv_rows[0]["Title"], "'=2+2")
+        self.assertEqual(csv_rows[0]["Authors"], "' @SUM(A1:A2)")
+        self.assertEqual(csv_rows[0]["Pages"], "12")
+
+    def test_excel_report_downloads_do_not_rebuild_paper_author_index(self):
+        self.make_master_paper("P001", "Read Only Export", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Read Only Export",
+            extracted_title="Read Only Export",
+            extracted_authors="Ada Lovelace",
+        )
+        cached = PaperAuthor.objects.create(
+            final_submission=submission,
+            paper_id="LEGACY",
+            author_name="Cached Name",
+            normalized_author_name="cached name",
+            author_order=7,
+        )
+        before = list(
+            PaperAuthor.objects.order_by("pk").values_list(
+                "pk",
+                "final_submission_id",
+                "paper_id",
+                "author_name",
+                "normalized_author_name",
+                "author_order",
+            )
+        )
+
+        export_error_report()
+        export_author_count()
+        export_all_reports(supporting_sheets=["author_count"])
+
+        after = list(
+            PaperAuthor.objects.order_by("pk").values_list(
+                "pk",
+                "final_submission_id",
+                "paper_id",
+                "author_name",
+                "normalized_author_name",
+                "author_order",
+            )
+        )
+        self.assertEqual(after, before)
+        self.assertTrue(PaperAuthor.objects.filter(pk=cached.pk).exists())
+
+    def test_excel_export_failure_removes_partial_output_and_records_failure(self):
+        self.make_master_paper("P001", "Audit Failure", "Ada")
+        self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Audit Failure",
+            extracted_title="Audit Failure",
+        )
+        reports_root = Path(AppSetting.load().reports_folder)
+        before = set(reports_root.glob("author_count*"))
+
+        with patch(
+            "submissions.services.reports.audit_success",
+            side_effect=OSError("audit storage unavailable"),
+        ):
+            with self.assertRaisesRegex(OSError, "audit storage unavailable"):
+                export_author_count()
+
+        self.assertEqual(set(reports_root.glob("author_count*")), before)
+        event = self.latest_audit_event("report_author_count_export")
+        self.assertEqual(event["status"], "failed")
+
+    def test_editorial_workbook_rejects_concurrent_publication_state_change(self):
+        self.make_master_paper("P001", "Snapshot Workbook", "Ada")
+        submission = self.make_final_submission(
+            final_submission_id="10",
+            paper_id_filled="P001",
+            final_submission_title="Snapshot Workbook",
+            extracted_title="Snapshot Workbook",
+        )
+        reports_root = Path(AppSetting.load().reports_folder)
+        before = set(reports_root.glob("editorial_publication_workbook*"))
+        original_validate = reports.validate_formatted_workbook
+
+        def mutate_after_workbook_validation(path, sheet_names):
+            original_validate(path, sheet_names)
+            FinalSubmission.objects.filter(pk=submission.pk).update(
+                format_status="pending",
+                updated_at=timezone.now(),
+            )
+
+        with patch(
+            "submissions.services.reports.validate_formatted_workbook",
+            side_effect=mutate_after_workbook_validation,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Publication workflow state changed during export",
+            ):
+                export_all_reports(supporting_sheets=["paper_master"])
+
+        self.assertEqual(
+            set(reports_root.glob("editorial_publication_workbook*")),
+            before,
+        )
+        event = self.latest_audit_event("report_editorial_workbook_export")
+        self.assertEqual(event["status"], "failed")
 
     def test_all_excel_report_downloads_use_shared_readable_formatting(self):
         self.make_master_paper("P001", "Formatted Export", "Ada")

@@ -457,6 +457,11 @@ pagination regression rather than missing readiness data.
 
 Use Download Draft Package Anyway from Export Reports after reviewing the warning. The draft ZIP may skip missing files and includes a warnings CSV. Do not treat it as final-ready.
 
+If the draft request shows a detailed structural-blocker table instead of a
+download, the package cannot unambiguously choose publication records or
+filenames. Draft mode does not bypass those safety checks. Resolve the listed
+version, publication-decision, or filename conflicts and retry.
+
 ### Excel export fails
 
 Run:
@@ -466,6 +471,12 @@ Run:
 ```
 
 If the error mentions dates, inspect uploaded `upload_date` values and re-import with valid dates. If the export still fails, use the Error Report text and recent import preview to identify the row with invalid data.
+
+Excel report generation is atomic and audited. A failed workbook validation,
+concurrent publication-state change, or audit write removes the partial file;
+refresh the current worklist, resolve the reported condition, and generate a
+new workbook. Exporting a report does not rebuild author records or change
+review state.
 
 ## Storage And Backup
 
@@ -493,7 +504,10 @@ The Audit Log page shows the latest events and search results without loading th
 
 ### Generated reports are taking space
 
-Use Settings > Storage Management > generated reports/exports cleanup. It removes regenerated Excel/ZIP downloads and external upload packages.
+Use Settings > Storage Management > generated reports/exports cleanup. It
+removes regenerated Excel/ZIP downloads, generated publication
+manifest/warning CSV files, and external upload packages. Other CSV files in
+the Reports folder are preserved.
 
 It does not remove original uploads, corrected files, plagiarism report PDFs, System State backups, or thumbnails/previews still referenced by the database.
 

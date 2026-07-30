@@ -404,6 +404,9 @@ GET.
   mandatory core sheet and optional supporting sheets in one selector; raw
   active/old-version spreadsheets live in one collapsed Advanced / Debug Excel
   area and are never mixed into the editorial workbook.
+- Final and Draft package failures use the same full-width blocker panel. Draft
+  wording explains that structural ambiguity cannot be overridden and omits the
+  force-download action; do not replace this with a toast-only failure.
 - POST forms that return file attachments use the shared
   `data-cfm-download-form="true"` lifecycle. The browser adds a one-use token,
   prevents duplicate submission while the server prepares the file, and

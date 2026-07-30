@@ -3,6 +3,24 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.11 - 2026-07-29
+
+### Export Integrity And Report Safety
+
+- Made every Excel report a read-only, atomically promoted, fully audited
+  snapshot; failed validation, concurrent state changes, or audit persistence
+  now remove partial output.
+- Built all selected Editorial Publication Workbook sheets from one stable
+  publication context without rebuilding the PaperAuthor cache.
+- Preserved formula-like editorial text as non-executable XLSX values and
+  neutralized formula-like strings in generated package CSV files.
+- Extended generated-report cleanup to publication manifest/warning CSV files
+  while retaining unrelated CSV files.
+- Replaced the Draft package's abbreviated structural-error message with the
+  same detailed blocker panel used by Final package failures.
+- Kept publication scope, active-version selection, readiness rules, and
+  publication PDF/source selection unchanged.
+
 ## 1.12.10 - 2026-07-29
 
 ### Built-In Author List Formatting

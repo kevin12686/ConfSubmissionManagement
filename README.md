@@ -125,6 +125,8 @@ The most important rules are:
 - Dashboard and final export use the same readiness findings.
 - Review state resets only when its documented evidence changes.
 - State-changing workflows and exports are audited.
+- Editorial Excel exports are read-only, atomically generated snapshots; text
+  that resembles a spreadsheet formula is preserved as non-executable text.
 
 [Publication Rules](docs/publication_rules.md) is the canonical specification.
 Do not select publication input by browsing or copying files from `data/`.

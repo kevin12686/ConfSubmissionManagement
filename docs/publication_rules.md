@@ -246,6 +246,20 @@ Package manifest explicitly reuses the Editorial Publication Workbook's
 per-paper `Exceptions` summary, including recorded reasons; other internal
 review columns do not enter the package manifest.
 
+Every Excel report is generated from a stable publication read snapshot without
+rebuilding or modifying the PaperAuthor cache. The workbook is written to a
+temporary file, reopened for structural validation, checked for concurrent
+publication-state changes, and atomically promoted only after its requested and
+successful audit events can be recorded. A failed validation, state check, or
+audit write removes the partial output.
+
+Imported editorial text that begins with a spreadsheet formula marker is stored
+as a non-executable string in XLSX reports. Machine-readable publication
+manifest and warning CSV values receive an explicit text prefix when a string
+could otherwise be interpreted as a formula by spreadsheet software. Numeric
+fields remain numeric. This protection does not alter publication file
+selection or readiness.
+
 ## Concurrency And Preview Safety
 
 Long-running processing and extraction capture semantic row/file evidence and
