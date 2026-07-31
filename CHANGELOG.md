@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.12.12 - 2026-07-31
+
+### Dashboard Action Count Integrity
+
+- Derived every Next action total and breakdown from the same publication
+  readiness findings used by strict final-package export.
+- Added the previously ungrouped publication-decision, corrected-file, source
+  integrity, and filename-collision blockers to their owning workflows.
+- Scoped Dashboard Error Report links to the exact blocking categories shown on
+  each action so valid Allowed exceptions do not appear in the target result.
+- Clarified allowed P/S tracking as affected papers plus active approval count,
+  while keeping stale exceptions blocking and valid exceptions non-blocking.
+- Added an unknown-category fail-safe action and aligned the desktop count
+  column without changing readiness, exception, publication-file, or export
+  rules.
+
 ## 1.12.11 - 2026-07-29
 
 ### Export Integrity And Report Safety

@@ -138,6 +138,13 @@ their count. Verified Paper Master title differences, reviewed extracted-title
 differences, and combined Plagiarism/Single exceptions use dedicated filters
 instead of opening a broader workflow tab.
 
+Dashboard Next-action totals and breakdowns use affected-paper counts from the
+same readiness rows. A paper may appear in more than one breakdown, so the UI
+does not imply that breakdown values sum to the card total. Desktop action rows
+reserve one stable-width count column; mobile rows return to a single-column
+layout. Error Report actions carry the exact blocker categories represented by
+the card and must not mix Allowed Info records into a blocking count.
+
 Exceptions computes summary and status-tab counts after applying exception type
 and user search, but before applying the selected status tab. This keeps the
 tabs useful as a distribution of the current scope and makes their counts agree

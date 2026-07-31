@@ -81,7 +81,7 @@ external processing.
   synchronized compatibility mirrors for mapped Paper IDs.
 - Publication PDF priority is corrected PDF, then original author PDF.
 
-Dashboard readiness is derived from `publication_readiness_rows()`, the same service used to block Final Publication Package export. Controllers may group those rows for display, but must not recreate publication-blocking rules with independent counters. Dashboard workflow counts represent unique affected papers; the readiness header separately reports the number of individual blocker rows.
+Dashboard readiness is derived from `publication_readiness_rows()`, the same service used to block Final Publication Package export. The Dashboard controller owns one workflow registry that groups those rows, derives both primary and breakdown counts as unique affected papers, and builds exact-category worklist links. It must not recreate publication-blocking rules with independent counters. The readiness header separately reports the number of individual blocker rows. An unregistered readiness category is rendered as `Other publication blockers` and suppresses the clear-workflow summary, so a new blocker cannot disappear from Next actions while final export remains blocked.
 - Publication source priority is corrected source, then original source.
 - Active version selection is previewed before changing the active-version rule in Settings.
 - Import/re-upload workflows are preview-before-apply when they may change existing records or files.

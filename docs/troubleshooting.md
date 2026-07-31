@@ -88,6 +88,13 @@ Dashboard and final package export use the same readiness service. Refresh the p
 
 The Dashboard header distinguishes affected papers from blocking checks. One paper can have several checks, so the two numbers do not always match.
 
+Next-action card totals and their breakdowns also count affected papers. A
+paper may belong to several breakdowns, so do not add the breakdown values to
+reconstruct the card total. Valid Allowed exceptions are tracked information,
+not Next actions; stale exceptions are blockers. For P/S exceptions, the
+tracked row distinguishes papers from individual approvals because one paper
+can have both a Plagiarism % approval and a Single % approval.
+
 ### Dashboard shows Process PDFs needed
 
 Run `/processing/pdfs/`. This alert means an active publication PDF source exists but page count, hash, thumbnails, or debug-copy refresh is missing or stale.

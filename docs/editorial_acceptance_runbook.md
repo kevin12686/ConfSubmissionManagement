@@ -72,7 +72,7 @@ Create Final Submission records and files:
 
 ### Stage 2: Scope And Version Decisions
 
-5. Open Dashboard and confirm its blocking check count matches the current final-package readiness rows. Only workflows with blockers should appear under Next actions; clear workflows should appear under No current blockers.
+5. Open Dashboard and confirm its blocking check count matches the current final-package readiness rows. Only workflows with blockers should appear under Next actions; clear workflows should appear under No current blockers. Confirm each action total and breakdown count unique affected papers from those rows, its link opens only the represented blocking categories, valid Allowed exceptions remain under Tracked information, and a stale exception returns to Next actions.
 6. Open Verify Paper IDs. Correct P003 and verify only after it maps to a valid Paper Master record.
 7. Mark P004 as Not Publishing and confirm it moves out of publication blockers while remaining visible in the Not Publishing List.
 8. Create the Editor Upload for P007. Trigger a title mismatch and confirm the title safety check shows the uploaded PDF title above vertically stacked Paper Master and Final comparisons, combines identical references, and provides word-level plus expandable character differences. At 320, 768, 1024, and 1440 pixel widths, confirm long titles wrap without horizontal page overflow. Open the temporary PDF, then test replacing and canceling a preview without creating a submission. Finally confirm a mismatched upload and verify it remains unverified and the Start2/Editor conflict warning appears.

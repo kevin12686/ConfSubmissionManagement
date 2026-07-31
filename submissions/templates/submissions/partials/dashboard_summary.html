@@ -14,7 +14,7 @@
             {% if readiness.ready %}
                 <p class="mb-0">The current publication candidates have no blocking readiness issues.</p>
             {% elif readiness.blocking_paper_count %}
-                <p class="mb-0"><strong>{{ readiness.blocking_paper_count }} paper{{ readiness.blocking_paper_count|pluralize }}</strong> have {{ readiness.blocking_issue_count }} blocking check{{ readiness.blocking_issue_count|pluralize }}.</p>
+                <p class="mb-0"><strong>{{ readiness.blocking_paper_count }} paper{{ readiness.blocking_paper_count|pluralize }}</strong> {% if readiness.blocking_paper_count == 1 %}has{% else %}have{% endif %} {{ readiness.blocking_issue_count }} blocking check{{ readiness.blocking_issue_count|pluralize }}.</p>
             {% else %}
                 <p class="mb-0">Complete the required system setup before creating a final package.</p>
             {% endif %}
@@ -54,18 +54,12 @@
                             <div class="cfm-dashboard-action-content">
                                 <div class="fw-semibold">{{ item.title }}</div>
                                 <div class="small text-muted">{{ item.description }}</div>
-                                {% if item.key == "files" %}
-                                    <div class="small mt-1">{{ counts.active_pdfs_need_processing }} need processing · {{ counts.missing_pdfs }} missing PDFs · {{ counts.page_minimum_errors|add:counts.page_limit_errors }} page issues</div>
-                                {% elif item.key == "title_authors" %}
-                                    <div class="small mt-1">{{ counts.title_author_pending }} Pending · {{ counts.title_author_red_flag }} Red Flag · {{ counts.missing_title_author_extraction }} missing extraction</div>
-                                {% elif item.key == "formatting" %}
-                                    <div class="small mt-1">{{ counts.format_pending }} Pending · {{ counts.format_needs_edit }} Needs edit</div>
-                                {% elif item.key == "plagiarism" %}
-                                    <div class="small mt-1">{{ counts.missing_plagiarism_result }} missing · {{ counts.plagiarism_threshold_issue_papers }} papers over threshold{% if counts.stale_plagiarism_exceptions %} · {{ counts.stale_plagiarism_exceptions }} stale exceptions{% endif %}</div>
-                                {% elif item.key == "mapping" %}
-                                    <div class="small mt-1">{{ counts.unverified_paper_ids }} unverified · {{ counts.unclassified_not_in_master }} need decision · {{ counts.start2_editor_conflicts }} Start2/Editor Conflicts · {{ counts.missing_final_submissions }} missing finals</div>
-                                {% elif item.key == "authors" %}
-                                    <div class="small mt-1">{{ counts.papers_over_author_number_limit }} papers over author limit · {{ counts.authors_over_limit }} authors over paper-count limit · {{ counts.duplicate_author_papers }} duplicate-author reviews</div>
+                                {% if item.breakdowns %}
+                                    <div class="cfm-dashboard-action-breakdown small mt-1">
+                                        {% for detail in item.breakdowns %}
+                                            <span><strong>{{ detail.count }}</strong> {{ detail.label }}</span>
+                                        {% endfor %}
+                                    </div>
                                 {% endif %}
                             </div>
                             <div><a class="btn btn-sm btn-outline-primary" href="{{ item.action_url }}">{{ item.action_label }}</a></div>
@@ -103,7 +97,7 @@
                 <div class="cfm-dashboard-tracking {% if not forloop.last %}mb-3 pb-3 border-bottom{% endif %}">
                     <div class="d-flex justify-content-between gap-2">
                         <a href="{{ item.url }}">{{ item.label }}</a>
-                        <strong>{{ item.value }}</strong>
+                        <strong>{% if item.value_label %}{{ item.value_label }}{% else %}{{ item.value }}{% endif %}</strong>
                     </div>
                     <div class="small text-muted">{{ item.help }}</div>
                 </div>
@@ -127,7 +121,7 @@
         border-top: 1px solid var(--cfm-border);
         display: grid;
         gap: 1rem;
-        grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto;
+        grid-template-columns: 8.5rem minmax(0, 1fr) auto;
         padding: 0.9rem 0;
     }
     .cfm-dashboard-action:first-child {
@@ -145,6 +139,12 @@
         font-weight: 600;
         padding: 0.35rem 0.55rem;
         text-align: center;
+        width: 100%;
+    }
+    .cfm-dashboard-action-breakdown {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.9rem;
     }
     .cfm-dashboard-total {
         align-items: center;
@@ -172,6 +172,8 @@
         }
         .cfm-dashboard-action-count {
             justify-self: start;
+            min-width: 8.5rem;
+            width: auto;
         }
     }
 </style>

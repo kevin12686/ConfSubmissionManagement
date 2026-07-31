@@ -82,9 +82,20 @@ approximate status calculation.
 - **Blocking papers** counts unique affected Paper IDs.
 - **Blocking checks** counts individual findings, so one paper can contribute
   more than one check.
-- **Next actions** lists only workflows with current blockers.
+- **Next actions** lists only workflows with current blockers. Its primary
+  number and each breakdown number count unique affected papers from the same
+  readiness findings. Breakdown groups can overlap, so they are not intended
+  to add up to the primary number.
 - **No current blockers** lists workflow groups whose checks are clear.
 - **Tracked information** shows non-blocking editorial context.
+
+Valid Allowed exceptions stay out of Next actions. A stale exception is no
+longer valid and therefore remains a blocker. The allowed P/S tracking row
+shows both the number of affected papers and the number of active P/S approvals,
+because one paper can have separate Plagiarism % and Single % approvals.
+
+Next-action links open only the blocking categories represented by that card.
+They do not add Allowed Info records from the broader Error Report area.
 
 Uploading a corrected PDF intentionally returns the paper to PDF processing and
 Title/Author Review. `Review OK` is the single Title/Author completion

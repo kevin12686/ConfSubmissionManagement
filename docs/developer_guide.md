@@ -302,9 +302,9 @@ service layer and has no semantic default.
 
 Dashboard must consume `publication_readiness_rows()` through the application selector. Do not build a second list of blockers from `dashboard_counts()`; otherwise Dashboard can appear clear while final export is blocked.
 
-`dashboard_counts()` is for display details, conference totals, and non-blocking tracking information. Counts labeled as papers must deduplicate by active publication paper. Inactive, discarded, and Not Publishing versions must not inflate active issue counts. Keep verified/reviewed title differences separate from unverified title-mapping blockers. Title/Author `Review OK` is the completion decision for both extracted metadata and its title comparison; do not add a second publication blocker for a reviewed title difference.
+`dashboard_counts()` is for conference totals and non-blocking tracking information. Next-action primary and breakdown counts must be derived from the grouped readiness rows, not from parallel queries. Counts labeled as papers must deduplicate by affected Paper ID; breakdown groups may overlap but must use the same row scope as their primary workflow card. Inactive, discarded, and Not Publishing versions must not inflate active issue counts. Keep verified/reviewed title differences separate from unverified title-mapping blockers. Title/Author `Review OK` is the completion decision for both extracted metadata and its title comparison; do not add a second publication blocker for a reviewed title difference.
 
-When adding or renaming a publication readiness category, update the Dashboard workflow category grouping and add an acceptance test proving Dashboard and final package export still agree.
+When adding or renaming a publication readiness category, update the Dashboard workflow registry and its breakdown grouping. Acceptance coverage must prove categories are assigned to at most one workflow, all blocking Error Report categories are registered, valid Allowed exceptions stay out of Next actions, stale exceptions remain actions, and unknown categories fail safe into `Other publication blockers`.
 
 Error Report category selection is presentation-only and must filter the
 already annotated rows in `checks.py`; it must never reimplement readiness

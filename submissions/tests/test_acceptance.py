@@ -47,7 +47,12 @@ from submissions.models import (
     InitialPaper,
     PaperAuthor,
 )
+from submissions.controllers.dashboard import (
+    DASHBOARD_WORKFLOW_GROUPS,
+    _dashboard_context,
+)
 from submissions.services.checks import (
+    ERROR_CATEGORY_SEVERITY,
     _annotate_error_rows,
     author_count_rows,
     dashboard_counts,
@@ -3455,8 +3460,8 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         summary = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(alerts, "Process PDFs needed")
         self.assertContains(alerts, "2 active PDFs")
-        self.assertContains(summary, "2 need processing")
-        self.assertContains(summary, "1 missing PDFs")
+        self.assertContains(summary, "papers needing PDF processing")
+        self.assertContains(summary, "paper with a missing file")
         self.assertContains(summary, "PDF, source, and page checks")
 
         process_page = self.client.get(reverse("submissions:process"))
@@ -10662,8 +10667,151 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(counts["plagiarism_threshold_issue_papers"], 2)
 
         response = self.client.get(reverse("submissions:dashboard_summary"))
-        self.assertContains(response, "2 papers over threshold")
-        self.assertNotContains(response, "3 papers over threshold")
+        plagiarism_action = next(
+            item
+            for item in response.context["action_items"]
+            if item["key"] == "plagiarism"
+        )
+        threshold_breakdown = next(
+            detail
+            for detail in plagiarism_action["breakdowns"]
+            if detail["label"] == "papers over a threshold"
+        )
+        self.assertEqual(plagiarism_action["paper_count"], 2)
+        self.assertEqual(threshold_breakdown["count"], 2)
+        self.assertNotEqual(threshold_breakdown["count"], 3)
+
+    def test_dashboard_workflow_registry_covers_structural_readiness_categories(self):
+        categories_by_workflow = {
+            group["key"]: group["categories"]
+            for group in DASHBOARD_WORKFLOW_GROUPS
+        }
+        expected = {
+            "Mixed Not Publishing Decision": "mapping",
+            "Missing Corrected PDF": "files",
+            "Missing Corrected Source": "files",
+            "Source Review Hash Missing": "files",
+            "Source Changed After Review": "files",
+            "Duplicate Publication Filename": "duplicates",
+        }
+
+        for category, expected_workflow in expected.items():
+            with self.subTest(category=category):
+                matches = [
+                    key
+                    for key, categories in categories_by_workflow.items()
+                    if category in categories
+                ]
+                self.assertEqual(matches, [expected_workflow])
+
+        registered_categories = [
+            category
+            for group in DASHBOARD_WORKFLOW_GROUPS
+            for category in group["categories"]
+        ]
+        blocking_error_categories = {
+            category
+            for category, severity in ERROR_CATEGORY_SEVERITY.items()
+            if severity != "info"
+        }
+        self.assertEqual(len(registered_categories), len(set(registered_categories)))
+        self.assertTrue(
+            blocking_error_categories.issubset(set(registered_categories))
+        )
+
+    def test_dashboard_unknown_blocker_fails_safe_into_other_action(self):
+        context = _dashboard_context(
+            dashboard_counts(),
+            [
+                {
+                    "category": "Future Publication Blocker",
+                    "paper_id": "P001",
+                    "final_submission_id": "10",
+                    "message": "Synthetic future blocker.",
+                }
+            ],
+        )
+
+        other_action = next(
+            item for item in context["action_items"] if item["key"] == "other"
+        )
+        self.assertEqual(other_action["paper_count"], 1)
+        self.assertEqual(
+            other_action["breakdowns"],
+            [{"count": 1, "label": "Future Publication Blocker"}],
+        )
+        self.assertEqual(context["completed_checks"], [])
+
+    def test_dashboard_keeps_stale_plagiarism_exception_as_next_action(self):
+        self.make_master_paper("P001", "Stale Score", "Ada")
+        self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Stale Score",
+            extracted_title="Stale Score",
+            similarity_score=43,
+            single_similarity_score=4,
+            plagiarism_percent_exception_approved=True,
+            plagiarism_percent_exception_reason="Approved before score changed.",
+            plagiarism_percent_exception_approved_score=42,
+        )
+
+        response = self.client.get(reverse("submissions:dashboard_summary"))
+        plagiarism_action = next(
+            item
+            for item in response.context["action_items"]
+            if item["key"] == "plagiarism"
+        )
+        stale_breakdown = next(
+            detail
+            for detail in plagiarism_action["breakdowns"]
+            if detail["label"] == "stale exception"
+        )
+
+        self.assertEqual(plagiarism_action["paper_count"], 1)
+        self.assertEqual(stale_breakdown["count"], 1)
+        self.assertContains(
+            response,
+            "<strong>1 paper</strong> has",
+            html=False,
+        )
+
+    def test_dashboard_file_action_excludes_allowed_exception_info(self):
+        self.make_master_paper("P001", "Missing PDF", "Ada")
+        self.make_final_submission(
+            final_submission_id="1",
+            paper_id_filled="P001",
+            final_submission_title="Missing PDF",
+            extracted_title="Missing PDF",
+            pdf_file="",
+            current_file_path="",
+        )
+        self.make_master_paper("P002", "Allowed Pages", "Grace")
+        self.make_final_submission(
+            final_submission_id="2",
+            paper_id_filled="P002",
+            final_submission_title="Allowed Pages",
+            extracted_title="Allowed Pages",
+            page_count=20,
+            page_limit_exception_approved=True,
+            page_limit_exception_reason="Editorial approval.",
+            page_limit_exception_page_count=20,
+        )
+
+        dashboard = self.client.get(reverse("submissions:dashboard_summary"))
+        files_action = next(
+            item
+            for item in dashboard.context["action_items"]
+            if item["key"] == "files"
+        )
+        query = parse_qs(urlparse(files_action["action_url"]).query)
+        self.assertIn("Missing PDF", query["category"])
+        self.assertNotIn("Allowed Page Exception", query["category"])
+
+        report = self.client.get(files_action["action_url"])
+        categories = {row["category"] for row in report.context["rows"]}
+        self.assertIn("Missing PDF", categories)
+        self.assertNotIn("Allowed Page Exception", categories)
 
     def test_dashboard_counts_only_active_invalid_ids_and_tracks_verified_title_differences(self):
         self.make_master_paper("P001", "Paper Master Title", "Ada")
@@ -10801,6 +10949,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
                 "?filter=verified_title_differences"
             ),
             html=False,
+        )
+        self.assertContains(dashboard, "Papers with allowed P/S exceptions")
+        self.assertContains(dashboard, "1 paper")
+        self.assertContains(dashboard, "2 active P/S approvals currently in effect.")
+        self.assertNotIn(
+            "plagiarism",
+            {item["key"] for item in dashboard.context["action_items"]},
         )
         self.assertContains(
             dashboard,
@@ -11822,7 +11977,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         alerts = self.client.get(reverse("submissions:workflow_alerts"))
         dashboard = self.client.get(reverse("submissions:dashboard_summary"))
         self.assertContains(alerts, "Start2/Editor version decision needed")
-        self.assertContains(dashboard, "Start2/Editor Conflicts")
+        self.assertContains(dashboard, "version conflict")
 
         filtered = self.client.get(
             reverse("submissions:final_submission_list"),
@@ -12602,14 +12757,17 @@ class ExactNavigationTests(EditorialAcceptanceTestCase):
     def test_dashboard_links_open_scoped_worklists(self):
         self.make_master_paper(paper_id="MISSING")
         response = self.client.get(reverse("submissions:dashboard_summary"))
-        self.assertContains(
-            response,
-            f'{reverse("submissions:error_report")}?area=mapping',
-            html=False,
+        mapping_action = next(
+            item
+            for item in response.context["action_items"]
+            if item["key"] == "mapping"
         )
+        mapping_query = parse_qs(urlparse(mapping_action["action_url"]).query)
+        self.assertEqual(mapping_query["area"], ["mapping"])
+        self.assertEqual(mapping_query["category"], ["Missing Final Submission"])
 
         report = self.client.get(
-            reverse("submissions:error_report"), {"area": "mapping"}
+            mapping_action["action_url"]
         )
         self.assertEqual(report.context["current_area"], "mapping")
         self.assertContains(report, "Focused workflow area")
