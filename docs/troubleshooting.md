@@ -51,6 +51,18 @@ The first run needs internet access. Retry after checking network access:
 
 ## Imports
 
+### Record edit says the preview is stale
+
+Existing Paper Master and Final Submission edits are previewed before apply.
+If the record, its selected current file, or its staged upload changed after the
+preview, the system rejects confirmation and removes the temporary token. Reopen
+the edit page, check the current values, select files again if needed, and create
+a new preview. Do not work around this check by editing the database or files.
+
+Selecting the same file bytes again produces `No effective changes to save`.
+This is intentional: a filename or upload event alone must not reset verified
+publication evidence.
+
 ### CSV has encoding errors
 
 Use the app's template download when possible. If a CSV came from Excel, save it as UTF-8 CSV or upload XLSX instead.

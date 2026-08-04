@@ -1262,8 +1262,8 @@ class PublicationSafetyRegressionTests(EditorialAcceptanceTestCase):
         current_page = self.client.get(
             reverse("submissions:initial_paper_edit", args=[paper.pk])
         )
-        response = self.client.post(
-            reverse("submissions:initial_paper_edit", args=[paper.pk]),
+        _preview, response = self.preview_and_apply_paper_master_edit(
+            paper,
             {
                 "evidence_token": current_page.context["evidence_token"],
                 "paper_id": "P001",

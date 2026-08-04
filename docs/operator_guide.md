@@ -196,6 +196,15 @@ Final Submission file upload supports large PDF/source batches up to 5000 files 
 
 Paper Master notes are internal editorial notes. They appear in review workbooks and Note Summary, but they do not go into the final publication package manifest.
 
+Editing an existing Paper Master or Final Submission is a two-step operation.
+The form marks a field only while its current browser value differs from the
+value originally loaded. Select **Review changes** to see server-validated
+current/proposed values and every workflow reset before anything is saved.
+Select **Confirm and save changes** only after checking that list. Selecting a
+byte-identical file again is reported as no effective change and does not reset
+review state. If the record or current file changes before confirmation, apply
+is rejected and you must reopen the record.
+
 ## Version Decisions
 
 Final Submissions can be Start2 imports or Editor Uploads.
@@ -611,9 +620,10 @@ The log is append-only JSON Lines stored at `data/logs/audit.log`. It records ke
 
 Historical logs are not rewritten. The Audit Log page maps legacy action names
 to their canonical action for filtering and display, while expanded JSON keeps
-the original stored event. Expanded events provide a syntax-highlighted
-Formatted view, a Plain view, and a Copy JSON action; these presentation tools
-do not modify the append-only log.
+the original stored event. Expanded edit events show readable User changes,
+System changes, Workflow effects, and File effects before the syntax-highlighted
+Formatted/Plain JSON views and Copy JSON action. These presentation tools do
+not modify the append-only log.
 
 The log records metadata, reset flags, counts, file names, hashes, and portable paths. It does not store PDF/source/report binary content.
 
@@ -623,7 +633,7 @@ Exceptions, Settings, and Process PDF formatting triage reject a submit if
 another editor changed the relevant record first. Editor Upload confirmation
 also rejects changed temporary file bytes or changed Paper Master data. Reload
 and review the new values; stale forms never merge or overwrite
-publication-critical state. Temporary Editor Upload and Formatting previews
+publication-critical state. Temporary record-edit, Editor Upload, and Formatting previews
 expire automatically after two hours; a changed preview is deleted when the
 system rejects it, so the files must be uploaded and reviewed again.
 

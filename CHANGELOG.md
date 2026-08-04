@@ -3,6 +3,30 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.13.0 - 2026-08-04
+
+### Safe Record Editing And Readable Change History
+
+- Changed existing Paper Master and Final Submission edits to a two-step
+  Review Changes then Confirm and Save workflow; preview does not mutate the
+  database or managed files.
+- Added server-validated old/new values, file SHA-256 comparison, and an
+  explicit workflow-impact summary before apply.
+- Rejected confirmed edits when the database record, current file, or staged
+  upload changed after preview, and excluded temporary edit previews from
+  System State backup.
+- Treated byte-identical replacement uploads as no effective change so review
+  state is not reset merely because a file was selected again.
+- Aligned Final Authors edits with the documented dependency rule by returning
+  Title/Author Review to Pending and clearing duplicate-author and per-paper
+  author-number approvals.
+- Added integrated changed-field markers to both edit forms and human-readable
+  User Changes, System Changes, Workflow Effects, and File Effects to expanded
+  Audit Log events.
+- Kept publication scope, active-version selection, publication file priority,
+  readiness, and package export rules unchanged. State archive version remains
+  5 because no persisted archive contract changed.
+
 ## 1.12.12 - 2026-07-31
 
 ### Dashboard Action Count Integrity

@@ -57,6 +57,7 @@ PATH_TEXT_FIELDS = {
 TEMP_SNAPSHOT_EXCLUDED_DIRS = {
     "formatting_upload_previews",
     "import_previews",
+    "record_edit_previews",
     "storage_cleanup_previews",
     "system_state_restore_previews",
     "system_state_backups",

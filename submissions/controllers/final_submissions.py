@@ -62,9 +62,11 @@ from submissions.services.import_preview import (
     preview_final_import,
     preview_initial_import,
 )
-from submissions.services.manual_edit import (
-    apply_final_submission_manual_edit,
-    create_final_submission_manual,
+from submissions.services.manual_edit import create_final_submission_manual
+from submissions.services.record_edit_preview import (
+    apply_final_submission_edit_preview,
+    cancel_record_edit_preview,
+    preview_final_submission_edit,
 )
 from submissions.services.system_state import (
     CONFIRMATION_TEXT,
@@ -307,6 +309,52 @@ def final_submission_list(request):
 def final_submission_form(request, pk=None):
     submission = get_object_or_404(FinalSubmission, pk=pk) if pk else None
     return_url = _safe_return_url(request)
+    action = request.POST.get("action", "") if request.method == "POST" else ""
+    if submission and action in {"apply_edit_preview", "cancel_edit_preview"}:
+        try:
+            if action == "cancel_edit_preview":
+                cancel_record_edit_preview(
+                    request.POST.get("preview_token", ""),
+                    expected_kind="final_submission",
+                    request=request,
+                )
+                messages.info(request, "Final Submission edit canceled. No changes were applied.")
+            else:
+                _obj, summary = apply_final_submission_edit_preview(
+                    request.POST.get("preview_token", ""),
+                    request=request,
+                )
+                details = [
+                    label
+                    for key, label in [
+                        ("identity_recalculated", "identity/review recalculated"),
+                        ("pdf_reset", "PDF-dependent checks reset"),
+                        ("source_reset", "source-dependent checks reset"),
+                        ("plagiarism_stale", "plagiarism report marked stale"),
+                        ("active_versions_recalculated", "active versions recalculated"),
+                        ("corrected_files_archived", "corrected files invalidated"),
+                        ("extracted_metadata_reset", "Title/Author review reset"),
+                    ]
+                    if summary.get(key)
+                ]
+                suffix = f" ({'; '.join(details)})." if details else "."
+                messages.success(request, f"Final submission changes applied{suffix}")
+                if return_url:
+                    return redirect(return_url)
+                return redirect("submissions:final_submission_list")
+        except (FinalSubmission.DoesNotExist, ValueError) as exc:
+            audit_failure(
+                "final_submission_edit",
+                exc,
+                "Final Submission edit preview could not be applied.",
+                request=request,
+                submission=submission,
+            )
+            messages.error(request, str(exc))
+        edit_url = reverse("submissions:final_submission_edit", args=[submission.pk])
+        if return_url:
+            edit_url = f"{edit_url}?{urlencode({'next': return_url})}"
+        return redirect(edit_url)
     if submission and request.method == "POST" and request.POST.get("action") in {
         "discard_submission",
         "undo_discard_submission",
@@ -358,14 +406,46 @@ def final_submission_form(request, pk=None):
                 )
                 saved_action = "created"
             else:
-                _obj, summary = apply_final_submission_manual_edit(
+                preview = preview_final_submission_edit(
                     submission,
                     form,
-                    form.cleaned_data.get("plagiarism_report_file"),
-                    expected_evidence_token=request.POST.get("evidence_token", ""),
+                    request.POST.get("evidence_token", ""),
+                    return_url=return_url,
+                    request=request,
                 )
-                saved_action = "saved"
+                if not preview["has_changes"]:
+                    messages.info(request, "No effective changes to save.")
+                    if return_url:
+                        return redirect(return_url)
+                    return redirect("submissions:final_submission_list")
+                return render(
+                    request,
+                    "submissions/record_edit_preview.html",
+                    {
+                        "preview": preview,
+                        "apply_url": reverse(
+                            "submissions:final_submission_edit",
+                            args=[submission.pk],
+                        ),
+                        "back_url": (
+                            f"{reverse('submissions:final_submission_edit', args=[submission.pk])}?{urlencode({'next': return_url})}"
+                            if return_url
+                            else reverse(
+                                "submissions:final_submission_edit",
+                                args=[submission.pk],
+                            )
+                        ),
+                    },
+                )
         except ValueError as exc:
+            if submission:
+                audit_failure(
+                    "final_submission_edit_preview",
+                    exc,
+                    "Final Submission edit preview failed.",
+                    request=request,
+                    submission=submission,
+                )
             messages.error(request, str(exc))
             edit_url = reverse(
                 "submissions:final_submission_edit",
@@ -393,7 +473,11 @@ def final_submission_form(request, pk=None):
         if return_url:
             return redirect(return_url)
         return redirect("submissions:final_submission_list")
-    context = {"form": form, "submission": submission, "return_url": return_url}
+    context = {
+        "form": form,
+        "submission": submission,
+        "return_url": return_url,
+    }
     if submission:
         context["publication_pdf"] = publication_pdf_info(submission)
         context["publication_source"] = publication_source_info(submission)

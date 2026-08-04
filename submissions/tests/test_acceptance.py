@@ -88,6 +88,7 @@ from submissions.services.import_preview import (
     preview_final_import,
     preview_initial_import,
 )
+from submissions.services.record_edit_preview import load_record_edit_preview
 from submissions.services.editor_uploads import (
     create_editor_submission,
     discard_submission,
@@ -195,6 +196,14 @@ class EditorialAcceptanceTestCase(TestCase):
         )
         self.preview_root_patcher.start()
         self.addCleanup(self.preview_root_patcher.stop)
+        self.record_edit_preview_root = self.root / "record_edit_previews"
+        self.record_edit_preview_root.mkdir()
+        self.record_edit_preview_root_patcher = patch(
+            "submissions.services.record_edit_preview.record_edit_preview_root",
+            lambda: self.record_edit_preview_root,
+        )
+        self.record_edit_preview_root_patcher.start()
+        self.addCleanup(self.record_edit_preview_root_patcher.stop)
         self.system_state_reports_root = self.root / "system_state_backups"
         self.system_state_restore_root = self.root / "system_state_restore_previews"
         self.storage_cleanup_root = self.root / "storage_cleanup_previews"
@@ -398,7 +407,9 @@ class EditorialAcceptanceTestCase(TestCase):
             "paper_id_filled": submission.paper_id_filled,
             "final_submission_title": submission.final_submission_title,
             "final_submission_authors": submission.final_submission_authors,
-            "upload_date": submission.upload_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "upload_date": timezone.localtime(submission.upload_date).strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            ),
             "extracted_title": submission.extracted_title,
             "extracted_authors": submission.extracted_authors,
             "title_author_source": submission.title_author_source,
@@ -425,6 +436,45 @@ class EditorialAcceptanceTestCase(TestCase):
             data["excluded_from_publication"] = "on"
         data.update(overrides)
         return data
+
+    def preview_and_apply_final_edit(self, submission, data):
+        url = reverse("submissions:final_submission_edit", args=[submission.pk])
+        preview_response = self.client.post(url, data)
+        if preview_response.status_code != 200:
+            from django.contrib.messages import get_messages
+            self.fail(
+                "Edit preview failed: "
+                + " | ".join(str(message) for message in get_messages(preview_response.wsgi_request))
+            )
+        self.assertTemplateUsed(preview_response, "submissions/record_edit_preview.html")
+        preview = preview_response.context["preview"]
+        apply_data = {
+            "action": "apply_edit_preview",
+            "preview_token": preview["token"],
+        }
+        if preview.get("return_url"):
+            apply_data["next"] = preview["return_url"]
+        apply_response = self.client.post(url, apply_data)
+        return preview_response, apply_response
+
+    def preview_and_apply_paper_master_edit(self, paper, data):
+        url = reverse("submissions:initial_paper_edit", args=[paper.pk])
+        preview_response = self.client.post(url, data)
+        if preview_response.status_code != 200:
+            from django.contrib.messages import get_messages
+            self.fail(
+                "Paper edit preview failed: "
+                + " | ".join(str(message) for message in get_messages(preview_response.wsgi_request))
+            )
+        self.assertTemplateUsed(preview_response, "submissions/record_edit_preview.html")
+        apply_response = self.client.post(
+            url,
+            {
+                "action": "apply_edit_preview",
+                "preview_token": preview_response.context["preview"]["token"],
+            },
+        )
+        return preview_response, apply_response
 
     def exception_evidence_token(self, exception_key):
         rebuild_paper_authors()
@@ -1465,7 +1515,19 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
             / "import_previews"
             / "pending-import.xlsx"
         )
-        for path in (generated_report, system_backup, import_workbook):
+        record_edit_upload = (
+            self.root
+            / "data"
+            / "record_edit_previews"
+            / "pending-edit"
+            / "replacement.pdf"
+        )
+        for path in (
+            generated_report,
+            system_backup,
+            import_workbook,
+            record_edit_upload,
+        ):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(path.name.encode("ascii"))
 
@@ -1480,6 +1542,7 @@ class StorageManagementTests(EditorialAcceptanceTestCase):
             self.assertIn(generated_report.resolve(), selected_paths)
             self.assertNotIn(system_backup.resolve(), selected_paths)
             self.assertNotIn(import_workbook.resolve(), selected_paths)
+            self.assertNotIn(record_edit_upload.resolve(), selected_paths)
             result = apply_storage_cleanup(
                 preview["token"],
                 CLEANUP_CONFIRMATION_TEXT,
@@ -1875,6 +1938,13 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             / "temp-token"
             / "corrected_pdf.pdf"
         )
+        temp_record_edit_preview = (
+            self.root
+            / "data"
+            / "record_edit_previews"
+            / "temp-token"
+            / "replacement.pdf"
+        )
         for path, payload in [
             (pdf_path, b"publication pdf"),
             (source_path, b"publication source"),
@@ -1883,6 +1953,7 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             (thumbnail_path, b"thumbnail image"),
             (format_preview, b"format preview"),
             (temp_formatting_preview, b"temporary formatting upload"),
+            (temp_record_edit_preview, b"temporary record edit upload"),
         ]:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
@@ -1941,6 +2012,10 @@ class SystemStateTests(EditorialAcceptanceTestCase):
             self.assertIn("files/media/format_previews/9001-preview.png", names)
             self.assertNotIn(
                 "files/media/formatting_upload_previews/temp-token/corrected_pdf.pdf",
+                names,
+            )
+            self.assertNotIn(
+                "files/project/data/record_edit_previews/temp-token/replacement.pdf",
                 names,
             )
         FinalSubmission.objects.create(final_submission_id="temp", paper_id_filled="TEMP")
@@ -7415,7 +7490,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             "Current row files",
             "Plagiarism data and report",
             "Workflow status summary",
-            "Save Final Submission",
+            "Review changes",
             "Version actions",
         ]
         positions = [content.index(label) for label in ordered_sections]
@@ -7904,8 +7979,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
 
         self.assertNotContains(response, "plagiarism_report_path")
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             {
                 "evidence_token": make_evidence_token(
                     "final-submission-edit",
@@ -7944,8 +8019,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertEqual(submission.single_similarity_score, 1)
         report_path = submission.plagiarism_report_path
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             {
                 "evidence_token": make_evidence_token(
                     "final-submission-edit",
@@ -8909,8 +8984,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             ),
         )
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             {
                 "evidence_token": make_evidence_token(
                     "final-submission-edit",
@@ -8958,8 +9033,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             verification_status="verified",
         )
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             self.final_submission_form_data(
                 submission,
                 final_submission_title="Final Revised Title For Publication",
@@ -9000,6 +9075,200 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("manually verified", submission.verification_message)
         self.assertEqual(publication_readiness_rows(), [])
         self.assertTrue(Path(export_publication_package()).exists())
+
+    def test_record_edit_preview_does_not_mutate_until_confirmed(self):
+        paper = self.make_master_paper("P001", title="Persisted Master Title")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Persisted Final Title",
+            paper_id_verified=True,
+            verification_status="verified",
+        )
+
+        paper_page = self.client.get(
+            reverse("submissions:initial_paper_edit", args=[paper.pk])
+        )
+        paper_preview = self.client.post(
+            reverse("submissions:initial_paper_edit", args=[paper.pk]),
+            {
+                "evidence_token": paper_page.context["evidence_token"],
+                "paper_id": paper.paper_id,
+                "acceptance_status": paper.acceptance_status,
+                "title": "Proposed Master Title",
+                "authors": paper.authors,
+                "notes": paper.notes,
+            },
+        )
+        self.assertTemplateUsed(
+            paper_preview,
+            "submissions/record_edit_preview.html",
+        )
+        paper.refresh_from_db()
+        submission.refresh_from_db()
+        self.assertEqual(paper.title, "Persisted Master Title")
+        self.assertTrue(submission.paper_id_verified)
+
+        final_preview = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                final_submission_title="Proposed Final Title",
+            ),
+        )
+        self.assertTemplateUsed(
+            final_preview,
+            "submissions/record_edit_preview.html",
+        )
+        submission.refresh_from_db()
+        self.assertEqual(submission.final_submission_title, "Persisted Final Title")
+        self.assertTrue(submission.paper_id_verified)
+
+    def test_same_pdf_bytes_are_not_a_change_and_do_not_reset_reviews(self):
+        self.make_master_paper("P001", title="Same PDF")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Same PDF",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            processing_status="processed",
+        )
+        original_path = Path(submission.pdf_file.path)
+        original_bytes = original_path.read_bytes()
+        original_hash = submission.pdf_hash
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                pdf_file=SimpleUploadedFile(
+                    "renamed-but-identical.pdf",
+                    original_bytes,
+                    content_type="application/pdf",
+                ),
+            ),
+        )
+
+        self.assertRedirects(response, reverse("submissions:final_submission_list"))
+        submission.refresh_from_db()
+        self.assertEqual(Path(submission.pdf_file.path).read_bytes(), original_bytes)
+        self.assertEqual(submission.pdf_hash, original_hash)
+        self.assertEqual(submission.processing_status, "processed")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertTrue(submission.title_author_verified)
+
+    def test_changed_pdf_preview_rejects_tampered_upload_without_reset(self):
+        self.make_master_paper("P001", title="Guarded PDF")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Guarded PDF",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            processing_status="processed",
+        )
+        original_bytes = Path(submission.pdf_file.path).read_bytes()
+        preview = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            self.final_submission_form_data(
+                submission,
+                pdf_file=SimpleUploadedFile(
+                    "replacement.pdf",
+                    b"different reviewed bytes",
+                    content_type="application/pdf",
+                ),
+            ),
+        )
+        token = preview.context["preview"]["token"]
+        payload, token_root = load_record_edit_preview(token, "final_submission")
+        Path(payload["file_actions"]["pdf_file"]["upload"]["path"]).write_bytes(
+            b"tampered after preview"
+        )
+
+        response = self.client.post(
+            reverse("submissions:final_submission_edit", args=[submission.pk]),
+            {"action": "apply_edit_preview", "preview_token": token},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertEqual(Path(submission.pdf_file.path).read_bytes(), original_bytes)
+        self.assertEqual(submission.processing_status, "processed")
+        self.assertEqual(submission.title_author_review_status, "review_ok")
+        self.assertFalse(token_root.exists())
+
+    def test_final_authors_change_resets_review_and_author_exception_on_apply(self):
+        self.make_master_paper("P001", title="Author Evidence")
+        submission = self.make_final_submission(
+            paper_id_filled="P001",
+            final_submission_title="Author Evidence",
+            final_submission_authors="Ada Lovelace; Alan Turing",
+            title_author_review_status="review_ok",
+            title_author_verified=True,
+            duplicate_author_review_status="review_ok",
+            duplicate_author_review_notes="Reviewed duplicate names.",
+            duplicate_author_reviewed_at=timezone.now(),
+            author_number_exception_approved=True,
+            author_number_exception_reason="Editorial approval.",
+            author_number_exception_author_count=6,
+            author_number_exception_approved_at=timezone.now(),
+        )
+
+        preview, response = self.preview_and_apply_final_edit(
+            submission,
+            self.final_submission_form_data(
+                submission,
+                final_submission_authors="Ada Lovelace; Grace Hopper",
+            ),
+        )
+
+        self.assertContains(preview, "Title/Author Review will return to Pending")
+        self.assertEqual(response.status_code, 302)
+        submission.refresh_from_db()
+        self.assertEqual(submission.title_author_review_status, "pending")
+        self.assertFalse(submission.title_author_verified)
+        self.assertEqual(submission.duplicate_author_review_status, "pending")
+        self.assertFalse(submission.author_number_exception_approved)
+        event = self.latest_audit_event("final_submission_edit")
+        self.assertEqual(
+            event["user_changes"][0]["label"],
+            "Final Authors",
+        )
+        self.assertTrue(
+            any(
+                item["label"] == "Title/Author review reset"
+                for item in event["reset_effects"]
+            )
+        )
+
+    def test_record_edit_preview_rejects_stale_database_state(self):
+        paper = self.make_master_paper("P001", title="Reviewed Master")
+        page = self.client.get(
+            reverse("submissions:initial_paper_edit", args=[paper.pk])
+        )
+        preview = self.client.post(
+            reverse("submissions:initial_paper_edit", args=[paper.pk]),
+            {
+                "evidence_token": page.context["evidence_token"],
+                "paper_id": paper.paper_id,
+                "acceptance_status": paper.acceptance_status,
+                "title": "Proposed Master",
+                "authors": paper.authors,
+                "notes": paper.notes,
+            },
+        )
+        token = preview.context["preview"]["token"]
+        paper.notes = "A concurrent editorial update."
+        paper.save(update_fields=["notes", "updated_at"])
+
+        response = self.client.post(
+            reverse("submissions:initial_paper_edit", args=[paper.pk]),
+            {"action": "apply_edit_preview", "preview_token": token},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        paper.refresh_from_db()
+        self.assertEqual(paper.title, "Reviewed Master")
+        self.assertEqual(paper.notes, "A concurrent editorial update.")
+        self.assertFalse((self.record_edit_preview_root / token).exists())
 
     def test_manual_create_final_submission_evaluates_paper_id_and_writes_audit(self):
         self.make_master_paper("P001", title="Manual Final Paper")
@@ -9130,8 +9399,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         determine_active_versions()
         _mark_duplicate_submissions()
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[older.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            older,
             self.final_submission_form_data(older, final_submission_id="11"),
         )
 
@@ -9160,8 +9429,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.formatted_source_uploaded_at = timezone.now()
         submission.save()
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             self.final_submission_form_data(
                 submission,
                 pdf_file=SimpleUploadedFile(
@@ -9218,8 +9487,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.formatted_source_uploaded_at = timezone.now()
         submission.save()
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             self.final_submission_form_data(
                 submission,
                 source_file=SimpleUploadedFile(
@@ -9299,7 +9568,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         submission.refresh_from_db()
         self.assertTrue(submission.excluded_from_publication)
         self.assertFalse(submission.paper_id_verified)
-        self.assertFalse(submission.auto_verify_blocked)
+        self.assertTrue(submission.auto_verify_blocked)
         self.assertNotIn(
             "Unverified Paper ID",
             {row["category"] for row in publication_readiness_rows()},
@@ -11591,8 +11860,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(edit_page, f'<a class="btn btn-outline-secondary" href="{organized_url}">Back</a>', html=True)
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             self.final_submission_form_data(
                 submission,
                 next=organized_url,
@@ -11611,8 +11880,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
             extracted_title="Return Fallback",
         )
 
-        response = self.client.post(
-            reverse("submissions:final_submission_edit", args=[submission.pk]),
+        _preview, response = self.preview_and_apply_final_edit(
+            submission,
             self.final_submission_form_data(
                 submission,
                 final_submission_title="Final Submissions Return",

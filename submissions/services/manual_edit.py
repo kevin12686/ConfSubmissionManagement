@@ -154,6 +154,21 @@ def _audit_fields_for_change(changed_fields, pdf_changed, source_changed, report
                 "extracted_title_verified",
             }
         )
+    if "final_submission_authors" in changed_fields:
+        fields.update(
+            {
+                "title_author_review_status",
+                "title_author_verified",
+                "title_author_verified_at",
+                "duplicate_author_review_status",
+                "duplicate_author_review_notes",
+                "duplicate_author_reviewed_at",
+                "author_number_exception_approved",
+                "author_number_exception_reason",
+                "author_number_exception_author_count",
+                "author_number_exception_approved_at",
+            }
+        )
     if changed_fields & PLAGIARISM_FIELDS or report_file:
         fields.update(
             {
@@ -543,6 +558,7 @@ def apply_final_submission_manual_edit(
     report_file=None,
     *,
     expected_evidence_token,
+    request=None,
 ):
     """Apply a FinalSubmission edit with publication-critical reset rules."""
     if _submission is None or not getattr(_submission, "pk", None):
@@ -622,6 +638,16 @@ def apply_final_submission_manual_edit(
         _reset_extracted_metadata_review(obj, "extracted_authors" in changed_fields)
         summary["extracted_metadata_reset"] = True
 
+    if "final_submission_authors" in changed_fields and not (pdf_changed or source_changed):
+        obj.title_author_review_status = "pending"
+        obj.title_author_verified = False
+        obj.title_author_verified_at = None
+        obj.duplicate_author_review_status = "pending"
+        obj.duplicate_author_review_notes = ""
+        obj.duplicate_author_reviewed_at = None
+        reset_author_number_exception(obj)
+        summary["extracted_metadata_reset"] = True
+
     if "final_submission_title" in changed_fields and not pdf_changed:
         _reset_extracted_title_match(
             obj,
@@ -666,6 +692,7 @@ def apply_final_submission_manual_edit(
     audit_success(
         "final_submission_edit",
         "Final submission manually edited.",
+        request=request,
         submission=obj,
         changed_fields=sorted(changed_fields),
         before=audit_before,

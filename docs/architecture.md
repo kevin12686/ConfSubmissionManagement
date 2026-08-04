@@ -90,7 +90,7 @@ Dashboard readiness is derived from `publication_readiness_rows()`, the same ser
   while Author-entered ID is unchanged; Final Title alone never remaps it.
 - Review flags are reset only when dependent data changes.
 - Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
-- Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. `apply_final_submission_manual_edit()` requires an existing record and applies dependency-based reset rules; it must never receive `None` or synthesize an original record.
+- Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. Existing edits first pass through `record_edit_preview.py`, then confirmation delegates to `apply_final_submission_manual_edit()`. The apply service requires an existing record and remains the sole owner of dependency-based reset rules; it must never receive `None` or synthesize an original record.
 - Editorial worklists preserve navigation context when they link into Final Submission Edit. Organized List, Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions pass a return URL that is restricted to the local host. The legacy Publication Candidates URL redirects to Organized List compact mode.
 - Not Publishing List treats unresolved Final Submissions outside Paper Master
   as an attention-first decision queue. Its inline Paper Master search is only
@@ -463,7 +463,15 @@ file. Legacy action aliases are resolved only while reading; the original JSON
 is never rewritten. Archive filenames include microseconds and a random
 identity so repeated operations cannot replace an earlier log.
 
-System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens are still excluded.
+System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens, including `data/record_edit_previews/`, are excluded.
+
+`record_edit_preview.py` owns the common two-step edit boundary for existing
+Paper Master and Final Submission records. It stores validated proposed values
+and staged uploads for two hours, compares files by SHA-256, and revalidates
+signed database evidence plus current-file hashes on apply. It never selects a
+publication version and never applies reset rules itself; confirmed changes
+flow through `paper_master.py` or `manual_edit.py` inside their existing atomic
+transactions.
 
 Clear Database writes `database_clear_request` first. If the audit-clear
 checkbox is selected, it archives the current log, creates a new log with

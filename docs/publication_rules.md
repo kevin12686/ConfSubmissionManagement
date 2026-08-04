@@ -266,10 +266,18 @@ Long-running processing and extraction capture semantic row/file evidence and
 recheck it under lock before persistence. Stale results must not overwrite
 newer files, review decisions, thumbnails, or database state.
 
-Import, Editor Upload, Formatting Upload, restore, cleanup, and material
-Settings changes use preview-before-apply. Confirmation revalidates the
-server-owned preview token, stored file size/hash, and current database
+Import, existing Paper Master/Final Submission record edits, Editor Upload,
+Formatting Upload, restore, cleanup, and material Settings changes use
+preview-before-apply. Confirmation revalidates the server-owned preview token,
+stored file size/hash, current selected-file hash, and current database
 evidence. Temporary previews expire and are not part of System State backup.
+
+Record edit preview compares validated values, not browser input events. A
+field reverted to its persisted value is unchanged. A selected PDF/source/report
+with the same SHA-256 bytes as the current file is also unchanged and must not
+reset review state. Apply delegates to the established Paper Master or Final
+Submission edit service; preview logic must not recreate reset or publication
+selection rules.
 
 GET pages, filters, pagination, detail panels, browser caches, and HTMX
 navigation are read-only. They cannot select publication files or mutate

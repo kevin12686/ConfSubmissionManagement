@@ -10,15 +10,36 @@
         <a class="btn btn-outline-secondary" href="{% url 'submissions:initial_paper_list' %}">Back to Paper Master List</a>
     </div>
 </div>
-<form method="post" class="card">
-    <div class="card-body">
-        {% csrf_token %}
-        {% if evidence_token %}<input type="hidden" name="evidence_token" value="{{ evidence_token }}">{% endif %}
-        {{ form.as_p }}
+<form method="post" {% if paper %}data-cfm-record-edit-form{% endif %}>
+    {% csrf_token %}
+    {% if evidence_token %}<input type="hidden" name="evidence_token" value="{{ evidence_token }}">{% endif %}
+    <div class="vstack gap-3">
+        <section class="card" aria-labelledby="paper-master-identity-heading">
+            <div class="card-header fw-semibold" id="paper-master-identity-heading">Paper identity</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.paper_id %}</div>
+                    <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.acceptance_status %}</div>
+                </div>
+            </div>
+        </section>
+        <section class="card" aria-labelledby="paper-master-content-heading">
+            <div class="card-header fw-semibold" id="paper-master-content-heading">Master metadata</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-xl-6">{% include "submissions/includes/form_field.html" with field=form.title %}</div>
+                    <div class="col-xl-6">{% include "submissions/includes/form_field.html" with field=form.authors %}</div>
+                    <div class="col-12">{% include "submissions/includes/form_field.html" with field=form.notes %}</div>
+                </div>
+            </div>
+        </section>
     </div>
-    <div class="card-footer cfm-action-bar">
-        <button class="btn btn-primary">Save</button>
-        <a class="btn btn-outline-secondary" href="{% url 'submissions:initial_paper_list' %}">Cancel</a>
+    <div class="cfm-sticky-actions cfm-action-bar justify-content-between">
+        <div class="fw-semibold text-muted" data-cfm-change-summary>{% if paper %}No unsaved changes{% else %}New record{% endif %}</div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary" href="{% url 'submissions:initial_paper_list' %}">Cancel</a>
+            <button class="btn btn-primary">{% if paper %}Review changes{% else %}Create Paper Master record{% endif %}</button>
+        </div>
     </div>
 </form>
 {% endblock %}

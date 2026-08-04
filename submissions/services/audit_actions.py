@@ -27,6 +27,16 @@ AUDIT_CATEGORY_LABELS = {
 _ACTION_DEFINITIONS = (
     # Paper data and imports.
     AuditActionDefinition("paper_master_save", "Save Paper Master", "paper_data"),
+    AuditActionDefinition(
+        "paper_master_edit_preview",
+        "Preview Paper Master Edit",
+        "paper_data",
+    ),
+    AuditActionDefinition(
+        "paper_master_edit_cancel",
+        "Cancel Paper Master Edit",
+        "paper_data",
+    ),
     AuditActionDefinition("paper_master_delete", "Delete Paper Master", "paper_data"),
     AuditActionDefinition(
         "paper_master_import_preview",
@@ -74,6 +84,16 @@ _ACTION_DEFINITIONS = (
         "Edit Final Submission",
         "submissions",
         ("final_submission_manual_edit",),
+    ),
+    AuditActionDefinition(
+        "final_submission_edit_preview",
+        "Preview Final Submission Edit",
+        "submissions",
+    ),
+    AuditActionDefinition(
+        "final_submission_edit_cancel",
+        "Cancel Final Submission Edit",
+        "submissions",
     ),
     AuditActionDefinition(
         "final_submission_delete",

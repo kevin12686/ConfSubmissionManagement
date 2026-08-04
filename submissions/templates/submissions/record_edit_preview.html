@@ -1,0 +1,106 @@
+{% extends "submissions/base.html" %}
+{% block title %}Review Record Changes{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">{{ preview.title }}</h1>
+        <div class="cfm-page-subtitle">{{ preview.record_label }} · No database record or managed file has changed yet.</div>
+    </div>
+    <div class="cfm-page-actions">
+        <a class="btn btn-outline-secondary" href="{{ back_url }}">Open current record</a>
+    </div>
+</div>
+
+{% if preview.blocked %}
+    <div class="alert alert-danger cfm-attention">
+        <div class="fw-semibold">This change cannot be applied</div>
+        <div>{{ preview.blocked }}</div>
+    </div>
+{% endif %}
+
+<div class="row g-3 align-items-start">
+    <div class="col-xl-8">
+        <section class="card" aria-labelledby="record-change-heading">
+            <div class="card-header d-flex justify-content-between align-items-center gap-3">
+                <div>
+                    <h2 class="h5 mb-1" id="record-change-heading">User changes</h2>
+                    <div class="small text-muted">Only values that differ after server validation are shown.</div>
+                </div>
+                <div class="fw-semibold text-nowrap">{{ preview.changes|length }} change{{ preview.changes|length|pluralize }}</div>
+            </div>
+            <div class="card-body p-0">
+                <div class="cfm-change-review-list">
+                    {% for change in preview.changes %}
+                        <article class="cfm-change-review-item">
+                            <div class="cfm-change-review-label">
+                                {{ change.label }}
+                                {% if change.kind == "file" %}<span class="small text-muted">File</span>{% endif %}
+                            </div>
+                            <div class="cfm-change-review-values">
+                                <div>
+                                    <div class="small text-muted">Current</div>
+                                    <div class="cfm-change-value">{{ change.old|linebreaksbr }}</div>
+                                    {% if change.old_hash %}<code class="small">SHA256 {{ change.old_hash }}…</code>{% endif %}
+                                </div>
+                                <div class="cfm-change-arrow" aria-hidden="true">→</div>
+                                <div>
+                                    <div class="small text-muted">Proposed</div>
+                                    <div class="cfm-change-value fw-semibold">{{ change.new|linebreaksbr }}</div>
+                                    {% if change.new_hash %}<code class="small">SHA256 {{ change.new_hash }}…</code>{% endif %}
+                                </div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+    </div>
+    <div class="col-xl-4">
+        <section class="card" aria-labelledby="workflow-impact-heading">
+            <div class="card-header">
+                <h2 class="h5 mb-1" id="workflow-impact-heading">Workflow impact</h2>
+                <div class="small text-muted">These effects come from the existing dependency and publication-safety rules.</div>
+            </div>
+            <div class="card-body">
+                {% if preview.impacts %}
+                    <div class="vstack gap-3">
+                        {% for impact in preview.impacts %}
+                            <div class="cfm-impact-item cfm-impact-{{ impact.level }}">
+                                <div class="fw-semibold">{{ impact.label }}</div>
+                                <div class="small mt-1">{{ impact.detail }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="cfm-impact-item cfm-impact-info">
+                        <div class="fw-semibold">No review reset</div>
+                        <div class="small mt-1">These metadata changes do not invalidate existing review evidence.</div>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="cfm-sticky-actions cfm-action-bar justify-content-between">
+    <div class="small text-muted">Apply will abort if this record changed after the preview was created.</div>
+    <div class="d-flex flex-wrap gap-2 justify-content-end">
+        <form method="post" action="{{ apply_url }}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="cancel_edit_preview">
+            <input type="hidden" name="preview_token" value="{{ preview.token }}">
+            {% if preview.return_url %}<input type="hidden" name="next" value="{{ preview.return_url }}">{% endif %}
+            <button class="btn btn-outline-secondary">Cancel preview</button>
+        </form>
+        {% if not preview.blocked %}
+            <form method="post" action="{{ apply_url }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="apply_edit_preview">
+                <input type="hidden" name="preview_token" value="{{ preview.token }}">
+                {% if preview.return_url %}<input type="hidden" name="next" value="{{ preview.return_url }}">{% endif %}
+                <button class="btn btn-primary">Confirm and save changes</button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

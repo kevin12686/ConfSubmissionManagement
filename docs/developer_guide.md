@@ -277,6 +277,15 @@ do not rely on UI state or Master scope filtering alone.
 
 Manual Final Submission create and edit paths are intentionally separate. Create must use `create_final_submission_manual()` so Paper ID evaluation, file paths, initial review state, active/duplicate selection, and audit logging happen atomically. Edit must use `apply_final_submission_manual_edit()` with an existing record; do not pass `None` or create a placeholder original record.
 
+Existing Paper Master and Final Submission edit controllers must create a
+preview through `record_edit_preview.py`; they must not call the apply services
+directly on the first POST. The preview service compares cleaned model values
+and file bytes, while `apply_initial_paper_manual_edit()` and
+`apply_final_submission_manual_edit()` remain authoritative for locking,
+resets, active-version recomputation, and audit success. Revalidate database
+evidence, current-file hashes, and staged upload hashes before apply. Do not
+infer a change from an input event, filename, or datetime formatting loss.
+
 Prefer preview-before-apply for imports, re-uploads, restore, and any setting change that can materially alter current publication candidates.
 
 Final re-import is keyed by Final ID. Keep Official Paper ID resolution in
@@ -465,6 +474,10 @@ make a restore ambiguous.
 Exact-navigation and focused-worklist changes do not alter System State archive
 contents, so they require an app version change but not an archive version
 change.
+
+Record-edit preview tokens are temporary operational state and are excluded
+from System State ZIPs. Adding this preview boundary does not change archive
+version 5; a future persisted archive-field or restore-contract change would.
 
 Before release:
 

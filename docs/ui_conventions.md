@@ -252,6 +252,14 @@ Editor Upload, and manual-override title fields use the same three-row textarea
 pattern as their corresponding authors field. Search fields and Paper ID
 pickers remain single-line controls.
 
+Existing Paper Master and Final Submission forms use the shared record-edit
+pattern. A low-profile field marker appears only while the browser value differs
+from the value loaded with the form; reverting the value removes it. File input
+markers say that a new file is selected because byte equality is decided by the
+server. The primary action is **Review changes**, followed by one integrated
+preview showing User changes and Workflow impact. Do not add page-specific
+confirmation modals or duplicate reset explanations beside individual fields.
+
 ## Expensive Evidence And Request Context
 
 Do not decode, hash, or render evidence for rows that will not be displayed.

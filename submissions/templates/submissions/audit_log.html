@@ -138,12 +138,57 @@
                             data-bs-target="#audit-{{ forloop.counter }}"
                             aria-expanded="false"
                             aria-controls="audit-{{ forloop.counter }}"
-                        >JSON</button>
+                        >Details</button>
                     </td>
                 </tr>
                 <tr class="collapse" id="audit-{{ forloop.counter }}" data-cfm-context-expansion>
                     <td colspan="7">
                         <div class="cfm-json-viewer" data-json-viewer>
+                            {% if event.has_change_summary %}
+                                <div class="cfm-audit-change-summary">
+                                    {% if event.user_changes %}
+                                        <section>
+                                            <h3 class="h6 mb-2">User changes</h3>
+                                            <div class="cfm-audit-diff-list">
+                                                {% for change in event.user_changes %}
+                                                    <div class="cfm-audit-diff-row">
+                                                        <div class="fw-semibold">{{ change.label }}</div>
+                                                        <div><span class="small text-muted">Before</span><div class="cfm-audit-value">{{ change.old|linebreaksbr }}</div></div>
+                                                        <div><span class="small text-muted">After</span><div class="cfm-audit-value">{{ change.new|linebreaksbr }}</div></div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </section>
+                                    {% endif %}
+                                    {% if event.system_changes %}
+                                        <section>
+                                            <h3 class="h6 mb-2">System changes</h3>
+                                            <div class="cfm-audit-diff-list">
+                                                {% for change in event.system_changes %}
+                                                    <div class="cfm-audit-diff-row">
+                                                        <div class="fw-semibold">{{ change.label }}</div>
+                                                        <div><span class="small text-muted">Before</span><div class="cfm-audit-value">{{ change.old|linebreaksbr }}</div></div>
+                                                        <div><span class="small text-muted">After</span><div class="cfm-audit-value">{{ change.new|linebreaksbr }}</div></div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </section>
+                                    {% endif %}
+                                    {% if event.reset_effects or event.file_effects %}
+                                        <section>
+                                            <h3 class="h6 mb-2">Workflow effects</h3>
+                                            <div class="row g-2">
+                                                {% for effect in event.reset_effects %}
+                                                    <div class="col-lg-6"><div class="cfm-audit-effect"><strong>{{ effect.label }}:</strong> {{ effect.value }}</div></div>
+                                                {% endfor %}
+                                                {% for effect in event.file_effects %}
+                                                    <div class="col-lg-6"><div class="cfm-audit-effect"><strong>{{ effect.label }}:</strong> {{ effect.value }}</div></div>
+                                                {% endfor %}
+                                            </div>
+                                        </section>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
                             <div class="cfm-json-viewer-header">
                                 <div>
                                     <div class="fw-semibold">Event JSON</div>

@@ -1,5 +1,5 @@
 {% if field %}
-    <div class="{% if field.field.widget.input_type == 'checkbox' %}form-check{% else %}mb-3{% endif %}">
+    <div class="{% if field.field.widget.input_type == 'checkbox' %}form-check{% else %}mb-3{% endif %}" data-cfm-field-shell>
         {% if field.field.widget.input_type == 'checkbox' %}
             {{ field }}
             <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>

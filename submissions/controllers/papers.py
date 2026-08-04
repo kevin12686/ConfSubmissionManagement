@@ -100,9 +100,11 @@ from submissions.services.title_author_extraction import (
 )
 from submissions.services import reports
 from submissions.services.audit import audit_failure, audit_success
-from submissions.services.paper_master import (
-    apply_initial_paper_manual_edit,
-    delete_initial_paper,
+from submissions.services.paper_master import delete_initial_paper
+from submissions.services.record_edit_preview import (
+    apply_initial_paper_edit_preview,
+    cancel_record_edit_preview,
+    preview_initial_paper_edit,
 )
 from submissions.services.publication_decisions import (
     create_paper_master_with_publication_guard,
@@ -161,18 +163,69 @@ def initial_paper_list(request):
 
 def initial_paper_form(request, pk=None):
     paper = get_object_or_404(InitialPaper, pk=pk) if pk else None
+    action = request.POST.get("action", "") if request.method == "POST" else ""
+    if paper and action in {"apply_edit_preview", "cancel_edit_preview"}:
+        try:
+            if action == "cancel_edit_preview":
+                cancel_record_edit_preview(
+                    request.POST.get("preview_token", ""),
+                    expected_kind="paper_master",
+                    request=request,
+                )
+                messages.info(request, "Paper Master edit canceled. No changes were applied.")
+                return redirect("submissions:initial_paper_edit", pk=paper.pk)
+            paper, summary = apply_initial_paper_edit_preview(
+                request.POST.get("preview_token", ""),
+                request=request,
+            )
+            messages.success(
+                request,
+                "Paper Master changes applied."
+                + (
+                    f" Paper ID review was reset for {summary['affected_final_count']} Final Submission record(s)."
+                    if summary.get("paper_id_review_reset")
+                    else ""
+                ),
+            )
+            return redirect("submissions:initial_paper_list")
+        except (InitialPaper.DoesNotExist, ValueError) as exc:
+            audit_failure(
+                "paper_master_save",
+                exc,
+                "Paper Master edit preview could not be applied.",
+                request=request,
+                object_type="InitialPaper",
+                paper_id=paper.paper_id,
+            )
+            messages.error(request, str(exc))
+            return redirect("submissions:initial_paper_edit", pk=paper.pk)
     form = InitialPaperForm(request.POST or None, instance=paper)
     if request.method == "POST" and form.is_valid():
         try:
             if paper:
-                paper, _summary = apply_initial_paper_manual_edit(
+                preview = preview_initial_paper_edit(
                     paper,
                     form,
-                    expected_evidence_token=request.POST.get(
-                        "evidence_token",
-                        "",
-                    ),
+                    request.POST.get("evidence_token", ""),
                     request=request,
+                )
+                if not preview["has_changes"]:
+                    messages.info(request, "No effective changes to save.")
+                    return redirect("submissions:initial_paper_edit", pk=paper.pk)
+                return render(
+                    request,
+                    "submissions/record_edit_preview.html",
+                    {
+                        "preview": preview,
+                        "apply_url": reverse(
+                            "submissions:initial_paper_edit",
+                            args=[paper.pk],
+                        ),
+                        "back_url": reverse(
+                            "submissions:initial_paper_edit",
+                            args=[paper.pk],
+                        ),
+                    },
                 )
             else:
                 paper, transition = create_paper_master_with_publication_guard(
@@ -198,6 +251,15 @@ def initial_paper_form(request, pk=None):
                     },
                 )
         except ValueError as exc:
+            if paper:
+                audit_failure(
+                    "paper_master_edit_preview",
+                    exc,
+                    "Paper Master edit preview failed.",
+                    request=request,
+                    object_type="InitialPaper",
+                    paper_id=paper.paper_id,
+                )
             messages.error(request, str(exc))
             if paper:
                 return redirect("submissions:initial_paper_edit", pk=paper.pk)

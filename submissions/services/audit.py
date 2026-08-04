@@ -19,6 +19,33 @@ AUDIT_FILENAME = "audit.log"
 AUDIT_ARCHIVE_DIRNAME = "archive"
 DEFAULT_ACTOR = "local_user"
 SENSITIVE_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
+AUDIT_FIELD_LABELS = {
+    "paper_id": "Paper ID",
+    "paper_id_filled": "Official Paper ID",
+    "start2_paper_id_raw": "Author-entered ID",
+    "final_submission_id": "Final ID",
+    "final_submission_title": "Final Title",
+    "final_submission_authors": "Final Authors",
+    "upload_date": "Upload Date",
+    "pdf_file": "Original PDF",
+    "source_file": "Original Source",
+    "plagiarism_report_file": "Plagiarism Report",
+    "similarity_score": "Plagiarism %",
+    "single_similarity_score": "Single %",
+    "acceptance_status": "Accept Status",
+    "title": "Master Title",
+    "authors": "Master Authors",
+    "notes": "Notes",
+    "identity_recalculated": "Paper ID review recalculated",
+    "pdf_reset": "PDF-dependent checks reset",
+    "source_reset": "Source-dependent checks reset",
+    "plagiarism_stale": "Plagiarism report marked old",
+    "active_versions_recalculated": "Active versions recalculated",
+    "corrected_files_archived": "Corrected files archived and unlinked",
+    "extracted_metadata_reset": "Title/Author review reset",
+    "review_status_guarded": "Invalid review status corrected",
+    "not_publishing_changed": "Publication decision changed",
+}
 
 
 def audit_log_root():
@@ -259,7 +286,85 @@ def _parse_audit_line(line):
         sort_keys=True,
         indent=2,
     )
+    event.update(_audit_change_summary(event))
     return event
+
+
+def _audit_field_label(field_name):
+    return AUDIT_FIELD_LABELS.get(
+        field_name,
+        str(field_name or "").replace("_", " ").strip().title(),
+    )
+
+
+def _audit_display_value(value):
+    if value is None or value == "":
+        return "Empty"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2)
+    return str(value)
+
+
+def _meaningful_effects(values):
+    rows = []
+    for key, value in (values or {}).items():
+        if value in (False, None, "", 0, [], {}):
+            continue
+        rows.append(
+            {
+                "field": key,
+                "label": _audit_field_label(key),
+                "value": _audit_display_value(value),
+            }
+        )
+    return rows
+
+
+def _audit_change_summary(event):
+    before = event.get("before") if isinstance(event.get("before"), dict) else {}
+    after = event.get("after") if isinstance(event.get("after"), dict) else {}
+    changed_fields = [str(field) for field in event.get("changed_fields", [])]
+    user_changes = []
+    for field in changed_fields:
+        old = before.get(field)
+        new = after.get(field)
+        if old == new and field not in before and field not in after:
+            continue
+        user_changes.append(
+            {
+                "field": field,
+                "label": _audit_field_label(field),
+                "old": _audit_display_value(old),
+                "new": _audit_display_value(new),
+            }
+        )
+    system_changes = []
+    for field in sorted((set(before) | set(after)) - set(changed_fields)):
+        old = before.get(field)
+        new = after.get(field)
+        if old == new:
+            continue
+        system_changes.append(
+            {
+                "field": field,
+                "label": _audit_field_label(field),
+                "old": _audit_display_value(old),
+                "new": _audit_display_value(new),
+            }
+        )
+    reset_effects = _meaningful_effects(event.get("reset_flags"))
+    file_effects = _meaningful_effects(event.get("file_changes"))
+    return {
+        "user_changes": user_changes,
+        "system_changes": system_changes,
+        "reset_effects": reset_effects,
+        "file_effects": file_effects,
+        "has_change_summary": bool(
+            user_changes or system_changes or reset_effects or file_effects
+        ),
+    }
 
 
 def _audit_event_matches(

@@ -122,6 +122,9 @@ The most important rules are:
 - Paper Master and Final Submission imports are separate preview-before-apply
   workflows. Re-importing a Final preserves its Official Paper ID unless the
   Author-entered ID changed or the existing Official ID is blank.
+- Existing Paper Master and Final Submission record edits also require a
+  server-validated change preview. Only genuinely different values/files are
+  applied, and every resulting review reset is shown before confirmation.
 - Dashboard and final export use the same readiness findings.
 - Review state resets only when its documented evidence changes.
 - State-changing workflows and exports are audited.

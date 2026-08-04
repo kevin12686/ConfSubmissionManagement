@@ -1,0 +1,113 @@
+[data-cfm-record-edit-form] [data-cfm-field-shell] {
+    border-left: 3px solid transparent;
+    padding-left: 0.65rem;
+    position: relative;
+}
+
+[data-cfm-record-edit-form] .cfm-edit-field-changed {
+    border-left-color: var(--cfm-primary);
+}
+
+[data-cfm-record-edit-form] .cfm-edit-field-marker {
+    color: var(--cfm-primary-hover);
+    display: block;
+    font-size: var(--cfm-font-small);
+    font-weight: 700;
+    margin-top: 0.35rem;
+}
+
+.cfm-change-review-item {
+    border-bottom: 1px solid var(--cfm-border);
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(9rem, 0.3fr) minmax(0, 1fr);
+    padding: 1rem 1.25rem;
+}
+
+.cfm-change-review-item:last-child {
+    border-bottom: 0;
+}
+
+.cfm-change-review-label {
+    font-weight: 700;
+}
+
+.cfm-change-review-values {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.cfm-change-value {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.cfm-change-arrow {
+    align-self: center;
+    color: var(--cfm-muted);
+    font-weight: 700;
+}
+
+.cfm-impact-item {
+    border-left: 4px solid var(--cfm-info-border);
+    padding: 0.2rem 0 0.2rem 0.8rem;
+}
+
+.cfm-impact-warning {
+    border-left-color: var(--cfm-warning-border);
+}
+
+.cfm-impact-danger {
+    border-left-color: var(--cfm-danger-border);
+}
+
+.cfm-audit-change-summary {
+    border-bottom: 1px solid var(--cfm-border);
+    display: grid;
+    gap: 1.25rem;
+    padding: 1rem;
+}
+
+.cfm-audit-diff-list {
+    border: 1px solid var(--cfm-border);
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.cfm-audit-diff-row {
+    border-bottom: 1px solid var(--cfm-border);
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(8rem, 0.25fr) minmax(0, 1fr) minmax(0, 1fr);
+    padding: 0.75rem;
+}
+
+.cfm-audit-diff-row:last-child {
+    border-bottom: 0;
+}
+
+.cfm-audit-value {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.cfm-audit-effect {
+    background: var(--cfm-surface-subtle);
+    border-left: 3px solid var(--cfm-warning-border);
+    height: 100%;
+    overflow-wrap: anywhere;
+    padding: 0.55rem 0.7rem;
+}
+
+@media (max-width: 767.98px) {
+    .cfm-change-review-item,
+    .cfm-change-review-values,
+    .cfm-audit-diff-row {
+        grid-template-columns: 1fr;
+    }
+
+    .cfm-change-arrow {
+        display: none;
+    }
+}
