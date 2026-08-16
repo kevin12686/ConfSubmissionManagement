@@ -236,6 +236,11 @@ that guide:
   `url_has_allowed_host_and_scheme()`.
 - Tabler 1.4.0, HTMX 2.0.10, and Tom Select 2.6.2 remain pinned under
   `submissions/static/submissions/vendor/` with their licenses.
+- Server-side verification font assets remain under
+  `submissions/assets/fonts/` with their licenses. Header fallback must use the
+  shared font-run measurement and drawing helpers; do not depend on host fonts,
+  replace unsupported extracted characters, or add source-specific renderer
+  branches.
 - The shared Paper picker is limited to Paper Master selection workflows. Its
   read-only endpoint returns no results for an empty query, caps responses at
   20, and returns Master ID, Title, and Authors. Keep Paper selection validation

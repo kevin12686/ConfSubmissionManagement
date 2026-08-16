@@ -19,6 +19,26 @@ MAX_CONTENT_FRACTION = 0.60
 BLANK_PIXEL_THRESHOLD = 252
 VERIFICATION_FONT_ALIAS = "verification_unicode"
 VERIFICATION_FONT_NAME = "cjk"
+VERIFICATION_MATH_FONT_ALIAS = "verification_math"
+VERIFICATION_MATH_FONT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "assets"
+    / "fonts"
+    / "NotoSansMath-Regular.ttf"
+)
+
+
+@dataclass(frozen=True)
+class _VerificationFontFace:
+    alias: str
+    label: str
+    font: fitz.Font
+
+
+@dataclass(frozen=True)
+class _VerificationTextRun:
+    text: str
+    face: _VerificationFontFace
 
 
 @dataclass(frozen=True)
@@ -245,10 +265,7 @@ def _build_header_layout(
 
 
 def _draw_header(page, layout, page_width):
-    page.insert_font(
-        fontname=VERIFICATION_FONT_ALIAS,
-        fontbuffer=_verification_font().buffer,
-    )
+    _register_verification_fonts(page)
     page.draw_rect(
         fitz.Rect(0, 0, page_width, layout["height"]),
         color=(0.72, 0.76, 0.80),
@@ -271,12 +288,12 @@ def _draw_header(page, layout, page_width):
         fill=(1, 0.95, 0.95),
         width=0.9,
     )
-    page.insert_text(
+    _draw_verification_text(
+        page,
         fitz.Point(badge_rect.x0 + 8, badge_rect.y0 + 13),
         layout["source_label"],
-        fontname=VERIFICATION_FONT_ALIAS,
-        fontsize=BODY_FONT_SIZE,
-        color=(0.58, 0.05, 0.07),
+        BODY_FONT_SIZE,
+        (0.58, 0.05, 0.07),
     )
 
     _draw_lines(
@@ -339,12 +356,12 @@ def _draw_header(page, layout, page_width):
                 fill=badge_fill,
                 width=0.8,
             )
-            page.insert_text(
+            _draw_verification_text(
+                page,
                 fitz.Point(badge_rect.x0 + 5, badge_rect.y0 + 9),
                 f"A{index}",
-                fontname=VERIFICATION_FONT_ALIAS,
-                fontsize=7,
-                color=badge_text,
+                7,
+                badge_text,
             )
             _draw_lines(
                 page,
@@ -365,24 +382,45 @@ def _draw_header(page, layout, page_width):
 
 
 def _draw_section_label(page, label, top):
-    page.insert_text(
+    _draw_verification_text(
+        page,
         fitz.Point(HEADER_PADDING, top + LABEL_FONT_SIZE),
         label,
-        fontname=VERIFICATION_FONT_ALIAS,
-        fontsize=LABEL_FONT_SIZE,
-        color=(0.30, 0.35, 0.41),
+        LABEL_FONT_SIZE,
+        (0.30, 0.35, 0.41),
     )
 
 
 def _draw_lines(page, lines, x, top, font_size, color):
     for index, line in enumerate(lines):
-        page.insert_text(
+        _draw_verification_text(
+            page,
             fitz.Point(x, top + font_size + (index * BODY_LINE_HEIGHT)),
             line,
-            fontname=VERIFICATION_FONT_ALIAS,
+            font_size,
+            color,
+        )
+
+
+def _register_verification_fonts(page):
+    for face in _verification_fonts():
+        page.insert_font(
+            fontname=face.alias,
+            fontbuffer=face.font.buffer,
+        )
+
+
+def _draw_verification_text(page, point, text, font_size, color):
+    x = point.x
+    for run in _verification_text_runs(text):
+        page.insert_text(
+            fitz.Point(x, point.y),
+            run.text,
+            fontname=run.face.alias,
             fontsize=font_size,
             color=color,
         )
+        x += run.face.font.text_length(run.text, fontsize=font_size)
 
 
 def _draw_title_evidence(page, rects, source_offset, source_clip):
@@ -687,22 +725,46 @@ def _split_long_token(token, max_width, font_size):
 
 
 def _text_width(text, font_size):
+    return sum(
+        run.face.font.text_length(run.text, fontsize=font_size)
+        for run in _verification_text_runs(text)
+    )
+
+
+def _verification_text_runs(text):
     text = str(text)
-    font = _verification_font()
+    faces = _verification_fonts()
     unsupported = sorted(
         {
             character
             for character in text
-            if not character.isspace() and not font.has_glyph(ord(character))
+            if not character.isspace()
+            and not any(face.font.has_glyph(ord(character)) for face in faces)
         }
     )
     if unsupported:
         codepoints = ", ".join(f"U+{ord(character):04X}" for character in unsupported)
+        font_labels = ", ".join(face.label for face in faces)
         raise ValueError(
             "Verification evidence cannot represent all header characters with "
-            f"the bundled Unicode font: {codepoints}."
+            f"the bundled verification fonts ({font_labels}): {codepoints}."
         )
-    return font.text_length(text, fontsize=font_size)
+
+    runs = []
+    for character in text:
+        face = faces[0]
+        if not character.isspace():
+            face = next(
+                candidate
+                for candidate in faces
+                if candidate.font.has_glyph(ord(character))
+            )
+        if runs and runs[-1].face.alias == face.alias:
+            previous = runs[-1]
+            runs[-1] = _VerificationTextRun(previous.text + character, previous.face)
+        else:
+            runs.append(_VerificationTextRun(character, face))
+    return tuple(runs)
 
 
 @lru_cache(maxsize=1)
@@ -714,3 +776,29 @@ def _verification_font():
         raise RuntimeError(
             "The bundled Unicode font required for verification evidence is unavailable."
         ) from exc
+
+
+@lru_cache(maxsize=1)
+def _verification_fonts():
+    if not VERIFICATION_MATH_FONT_PATH.is_file():
+        raise RuntimeError(
+            "The bundled math font required for verification evidence is unavailable."
+        )
+    try:
+        math_font = fitz.Font(fontfile=str(VERIFICATION_MATH_FONT_PATH))
+    except Exception as exc:
+        raise RuntimeError(
+            "The bundled math font required for verification evidence is unavailable."
+        ) from exc
+    return (
+        _VerificationFontFace(
+            alias=VERIFICATION_FONT_ALIAS,
+            label="Bundled Unicode",
+            font=_verification_font(),
+        ),
+        _VerificationFontFace(
+            alias=VERIFICATION_MATH_FONT_ALIAS,
+            label="Noto Sans Math",
+            font=math_font,
+        ),
+    )

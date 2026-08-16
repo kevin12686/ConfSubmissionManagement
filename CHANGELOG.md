@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.13.1 - 2026-08-15
+
+### Verification Header Font Fallback
+
+- Added a bundled Noto Sans Math fallback to the shared Title/Author
+  verification renderer so mathematical symbols such as `U+22C6` can appear
+  in evidence headers without aborting image generation.
+- Unified header font selection, width measurement, wrapping, and drawing
+  through one font-run implementation, preventing fallback glyphs from
+  overlapping adjacent primary-font text.
+- Retained fail-closed behavior when neither bundled font supports a header
+  character, and kept Built-in, GROBID, Manual Override, extraction metadata,
+  review resets, publication files, and export rules unchanged.
+- Kept State archive version 5 because the bundled code asset does not alter
+  persisted state or the backup/restore contract.
+
 ## 1.13.0 - 2026-08-04
 
 ### Safe Record Editing And Readable Change History

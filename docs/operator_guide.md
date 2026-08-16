@@ -374,7 +374,10 @@ much visibly blank space exists above the PDF title, places the header in that
 space, and adds only the extra height still required. Small top/bottom padding
 and a safety gap before the first PDF content are always retained. If a logo,
 line, image, or text occupies the top area, the renderer expands rather than
-covering it. The PDF evidence marks title text in yellow with a blue underline
+covering it. Header text uses bundled portable fonts, including a math-symbol
+fallback for characters such as `⋆`; the renderer preserves the extracted
+character instead of replacing it with a similar ASCII symbol. The PDF evidence
+marks title text in yellow with a blue underline
 and gives every parsed author an independent green box and underline. Compare
 the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
 boxes can reveal that one person's name was incorrectly parsed as two authors.

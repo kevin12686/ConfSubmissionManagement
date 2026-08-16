@@ -523,6 +523,12 @@ upper area to measure genuinely blank top space. The dynamically sized header
 uses that space first and shifts the source page down only by the remaining
 required height. A fixed safety gap keeps the header away from the first
 non-white PDF content; uncertain or occupied space is never reused. Title
+header text uses one shared font-run pipeline for measurement, wrapping, and
+drawing. MuPDF's bundled Unicode font remains primary, with the repository's
+OFL-licensed Noto Sans Math asset as a portable symbol fallback. The renderer
+does not substitute or remove extracted characters; if neither bundled font
+contains a glyph, evidence generation still fails closed. The fallback is a
+code asset and is not part of System State archives. Title
 evidence keeps its normalized word-sequence locator. Author evidence uses a
 separate case-sensitive character locator. Internal extracted words and
 punctuation must match; the final extracted word may be a prefix of the PDF

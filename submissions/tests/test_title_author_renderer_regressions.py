@@ -11,6 +11,8 @@ from submissions.services.title_author_verification import (
     _find_author_text_rects,
     _find_text_rects,
     _verification_font,
+    _verification_fonts,
+    _verification_text_runs,
     generate_verification_image,
 )
 
@@ -37,6 +39,78 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
             self.assertIn("Жуков Иван", rendered_text)
         finally:
             document.close()
+
+    def test_math_symbol_header_uses_bundled_fallback_without_overlap(self):
+        self.assertFalse(_verification_font().has_glyph(ord("⋆")))
+        self.assertTrue(
+            any(face.font.has_glyph(ord("⋆")) for face in _verification_fonts()[1:])
+        )
+        self.assertEqual(
+            [
+                (run.text, run.face.alias)
+                for run in _verification_text_runs("Math ⋆")
+            ],
+            [
+                ("Math ", "verification_unicode"),
+                ("⋆", "verification_math"),
+            ],
+        )
+
+        document = fitz.open()
+        try:
+            page = document.new_page(width=420, height=300)
+            layout = _build_header_layout(
+                page.rect.width,
+                "math-paper.pdf",
+                "Absorbing Markov Chains ⋆",
+                ["Plain Author"],
+                "BUILT-IN",
+            )
+
+            _draw_header(page, layout, page.rect.width)
+
+            self.assertIn("Absorbing Markov Chains ⋆", page.get_text())
+            title_line = next(
+                line
+                for block in page.get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                if "Absorbing Markov Chains" in "".join(
+                    span["text"] for span in line["spans"]
+                )
+            )
+            self.assertEqual(len(title_line["spans"]), 2)
+            primary_span, fallback_span = title_line["spans"]
+            self.assertEqual(primary_span["font"], "Droid Sans Fallback Regular")
+            self.assertEqual(fallback_span["font"], "NotoSansMath-Regular")
+            self.assertLessEqual(primary_span["bbox"][2], fallback_span["bbox"][0])
+        finally:
+            document.close()
+
+    def test_verification_image_accepts_math_symbol_in_header(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            pdf_path = root / "source.pdf"
+            target_dir = root / "evidence"
+            document = fitz.open()
+            try:
+                page = document.new_page()
+                page.insert_text((72, 72), "Plain source title", fontsize=16)
+                page.insert_text((72, 110), "Plain Author", fontsize=12)
+                document.save(pdf_path)
+            finally:
+                document.close()
+
+            output_path, missing_authors = generate_verification_image(
+                pdf_path,
+                "Plain source title ⋆",
+                "Plain Author",
+                "BUILT-IN",
+                target_dir,
+                ["Plain Author"],
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(missing_authors, [])
 
     def test_unsupported_header_glyph_fails_before_writing_evidence(self):
         with tempfile.TemporaryDirectory() as temporary_dir:

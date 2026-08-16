@@ -289,6 +289,13 @@ Use Title/Author Review:
 
 Verification image URLs include a file-modification cache buster so a newly generated built-in or GROBID image should replace the previous browser image immediately.
 
+Verification headers use a bundled Unicode font plus a bundled math-symbol
+fallback, so extracted symbols such as `⋆` do not depend on fonts installed on
+the host computer or Docker image. If generation still reports an unsupported
+code point, neither bundled font can represent that exact extracted character;
+do not replace it silently. Review whether the extraction is correct, then use
+Formatting/Re-extraction or Manual Override as appropriate.
+
 Built-in, GROBID, and Manual Override now use the same verification layout. The
 header reuses only confirmed blank space above the PDF title and expands
 upward for the remainder. It always keeps a small safety gap from the first

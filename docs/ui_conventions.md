@@ -324,6 +324,11 @@ The renderer:
 
 - reuses only verified blank space above the source page;
 - extends upward when the header cannot safely fit;
+- measures, wraps, and draws header text through one shared font-run pipeline;
+- uses bundled Unicode text first and bundled Noto Sans Math only for symbols
+  the primary font cannot represent;
+- fails closed rather than replacing or omitting a character unsupported by
+  both bundled fonts;
 - preserves case, punctuation, hyphens, superscripts, and digits;
 - draws only raw character geometry represented by the extraction;
 - allows the last extracted word to be a prefix of a longer PDF word;
