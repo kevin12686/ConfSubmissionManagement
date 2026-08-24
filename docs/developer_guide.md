@@ -241,6 +241,10 @@ that guide:
   shared font-run measurement and drawing helpers; do not depend on host fonts,
   replace unsupported extracted characters, or add source-specific renderer
   branches.
+- Title evidence may use normalized words to locate a candidate sequence, but
+  final evidence rectangles must be built from raw PDF characters represented
+  by the extracted title. Never fall back to whole-word geometry when that
+  would include PDF-only symbols or punctuation.
 - The shared Paper picker is limited to Paper Master selection workflows. Its
   read-only endpoint returns no results for an empty query, caps responses at
   20, and returns Master ID, Title, and Authors. Keep Paper selection validation

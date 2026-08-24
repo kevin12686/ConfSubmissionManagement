@@ -377,7 +377,8 @@ line, image, or text occupies the top area, the renderer expands rather than
 covering it. Header text uses bundled portable fonts, including a math-symbol
 fallback for characters such as `⋆`; the renderer preserves the extracted
 character instead of replacing it with a similar ASCII symbol. The PDF evidence
-marks title text in yellow with a blue underline
+marks only title characters represented by the extracted title in yellow with
+a blue underline
 and gives every parsed author an independent green box and underline. Compare
 the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
 boxes can reveal that one person's name was incorrectly parsed as two authors.
@@ -394,7 +395,14 @@ When the same author has both a complete match and a partial match elsewhere on
 the page, only the complete green evidence is shown. The numbered author legend
 uses the same state colors as the PDF: green for complete/attached metadata,
 orange when only partial evidence exists, and red when no evidence was found.
-This does not change extracted authors, the PDF, or title comparison.
+This does not change extracted authors, the PDF, or title comparison. Title
+location remains tolerant of case, spacing, and punctuation for discovery, but
+its final evidence boundary comes from raw PDF character coordinates. A
+trailing affiliation symbol or other PDF-only punctuation is therefore left
+outside the yellow evidence. If the same symbol is present in the extracted
+title, it is included. If reliable character coordinates are unavailable, the
+renderer leaves the title unmarked rather than drawing a misleading whole-word
+box.
 Hold `Ctrl` while pointing at the verification image to inspect the title
 underline and individual author boundaries with the same magnifier used by
 Formatting Review. Its `3:2` landscape shape preserves horizontal title and

@@ -3,6 +3,21 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.13.2 - 2026-08-24
+
+### Exact Title Verification Evidence
+
+- Kept the existing normalized title locator for finding title text, then
+  changed the shared verification renderer to draw evidence from exact raw PDF
+  character coordinates.
+- Excluded PDF-only trailing or internal punctuation from yellow title
+  evidence while retaining symbols that are actually present in the extracted
+  title.
+- Kept Built-in, GROBID, Manual Override, extracted metadata, title matching,
+  review state, publication files, and export behavior unchanged. State archive
+  version remains 5 because persisted data and restore compatibility did not
+  change.
+
 ## 1.13.1 - 2026-08-15
 
 ### Verification Header Font Fallback

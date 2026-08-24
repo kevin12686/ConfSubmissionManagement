@@ -330,16 +330,22 @@ The renderer:
 - fails closed rather than replacing or omitting a character unsupported by
   both bundled fonts;
 - preserves case, punctuation, hyphens, superscripts, and digits;
-- draws only raw character geometry represented by the extraction;
+- locates title text with normalized word sequences, then draws only raw title
+  character geometry represented by the extraction;
+- excludes PDF-only title punctuation and includes a title symbol only when the
+  same symbol is present in the extracted title;
+- leaves title evidence unmarked when reliable raw character geometry is not
+  available;
+- draws only raw author character geometry represented by the extraction;
 - allows the last extracted word to be a prefix of a longer PDF word;
 - marks alphabetic continuation as an orange partial-word warning;
 - treats numeric or symbolic continuation as normal metadata;
 - prefers complete matches over partial matches;
 - keeps the `A1...AN` legend color consistent with evidence state.
 
-If reliable raw character geometry is unavailable, render no author boundary
-instead of inventing a whole-word box. This affects evidence only; it must not
-rewrite extracted metadata or title comparison.
+If reliable raw character geometry is unavailable, render no title or author
+boundary instead of inventing a whole-word box. This affects evidence only; it
+must not rewrite extracted metadata or title comparison.
 
 Manual Override forms load only when their panel opens. The partial endpoint is
 read-only; the audited POST remains the only mutation path.

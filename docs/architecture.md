@@ -529,8 +529,13 @@ OFL-licensed Noto Sans Math asset as a portable symbol fallback. The renderer
 does not substitute or remove extracted characters; if neither bundled font
 contains a glyph, evidence generation still fails closed. The fallback is a
 code asset and is not part of System State archives. Title
-evidence keeps its normalized word-sequence locator. Author evidence uses a
-separate case-sensitive character locator. Internal extracted words and
+evidence keeps its normalized word-sequence locator for title discovery, then
+maps the located sequence back to raw PDF character coordinates. Only source
+characters represented by the extracted title are drawn; PDF-only punctuation
+is excluded, while a symbol present in both the extraction and PDF is retained.
+Unavailable or inconsistent character geometry produces no title evidence
+rather than a misleading whole-word rectangle. Author evidence uses a separate
+case-sensitive character locator. Internal extracted words and
 punctuation must match; the final extracted word may be a prefix of the PDF
 word so attached affiliations, ORCIDs, separators, and alphabetic continuations
 cannot suppress otherwise visible evidence. Its outline is built solely from

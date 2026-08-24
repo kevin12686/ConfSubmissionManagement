@@ -454,6 +454,107 @@ class TitleAuthorRendererRegressionTests(SimpleTestCase):
         finally:
             document.close()
 
+    def test_title_match_excludes_trailing_symbol_absent_from_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "A Publication Title*", fontsize=12)
+
+            matches = _find_text_rects(
+                page,
+                "A Publication Title",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertLess(matches[-1].x1, source_word[2])
+        finally:
+            document.close()
+
+    def test_title_match_includes_symbol_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "A Publication Title*", fontsize=12)
+
+            matches = _find_text_rects(
+                page,
+                "A Publication Title*",
+                page.rect,
+            )
+            source_word = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertAlmostEqual(matches[-1].x1, source_word[2], delta=0.5)
+        finally:
+            document.close()
+
+    def test_title_match_includes_separate_symbol_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "A Publication Title *", fontsize=12)
+
+            matches = _find_text_rects(
+                page,
+                "A Publication Title *",
+                page.rect,
+            )
+            source_symbol = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertAlmostEqual(matches[-1].x1, source_symbol[2], delta=0.5)
+        finally:
+            document.close()
+
+    def test_title_match_excludes_separate_symbol_absent_from_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "A Publication Title *", fontsize=12)
+
+            matches = _find_text_rects(
+                page,
+                "A Publication Title",
+                page.rect,
+            )
+            source_symbol = page.get_text("words", sort=True)[-1]
+
+            self.assertTrue(matches)
+            self.assertLessEqual(matches[-1].x1, source_symbol[0])
+        finally:
+            document.close()
+
+    def test_title_match_splits_around_pdf_only_internal_punctuation(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "Jean-Luc", fontsize=12)
+
+            matches = _find_text_rects(page, "Jean Luc", page.rect)
+            hyphen = page.search_for("-")[0]
+
+            self.assertEqual(len(matches), 2)
+            self.assertLessEqual(matches[0].x1, hyphen.x0)
+            self.assertGreaterEqual(matches[1].x0, hyphen.x1)
+        finally:
+            document.close()
+
+    def test_title_match_includes_internal_symbols_present_in_extraction(self):
+        document = fitz.open()
+        try:
+            page = document.new_page()
+            page.insert_text((72, 100), "C++ Verification", fontsize=12)
+
+            matches = _find_text_rects(page, "C++ Verification", page.rect)
+            source_word = page.get_text("words", sort=True)[0]
+
+            self.assertTrue(matches)
+            self.assertGreaterEqual(matches[0].x1, source_word[2] - 0.5)
+        finally:
+            document.close()
+
     def test_bundled_font_covers_representative_unicode_scripts(self):
         font = _verification_font()
 

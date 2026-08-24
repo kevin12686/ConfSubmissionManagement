@@ -1,6 +1,8 @@
 import re
 import unicodedata
+from collections import defaultdict
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
@@ -557,6 +559,7 @@ def _find_normalized_text_rects(
         for word in page.get_text("words", clip=clip, sort=True)
         if _normalized_match_text(word[4])
     ]
+    raw_lines = _raw_line_characters(page, clip)
     matches = []
     for start in range(len(words)):
         combined = ""
@@ -565,11 +568,173 @@ def _find_normalized_text_rects(
             combined += _normalized_match_text(word[4])
             matched.append(word)
             if combined == target:
-                matches.extend(_merge_word_rects(matched))
+                matches.extend(
+                    _title_character_match_rects(matched, text, raw_lines)
+                )
                 break
             if not target.startswith(combined):
                 break
     return matches
+
+
+def _title_character_match_rects(words, target_text, raw_lines):
+    """Return only PDF character geometry represented by the extracted title."""
+    word_character_keys = _title_candidate_character_keys(words, raw_lines)
+
+    if not word_character_keys:
+        return []
+
+    source_characters = [
+        (key, raw_lines[key[0]][key[1]])
+        for key in word_character_keys
+    ]
+    source_normalized = "".join(
+        _normalized_match_text(character["c"])
+        for _key, character in source_characters
+    )
+    if source_normalized != _normalized_match_text(target_text):
+        return []
+
+    selected_keys = {
+        key
+        for key, character in source_characters
+        if _normalized_match_text(character["c"])
+    }
+    selected_keys.update(
+        _matching_title_symbol_keys(source_characters, target_text)
+    )
+
+    line_ranges = defaultdict(list)
+    for line_key, character_index in word_character_keys:
+        line_ranges[line_key].append(character_index)
+
+    rects = []
+    for line_key, character_indexes in line_ranges.items():
+        characters = raw_lines[line_key]
+        current = None
+        for character_index in range(min(character_indexes), max(character_indexes) + 1):
+            character = characters[character_index]
+            key = (line_key, character_index)
+            if key in selected_keys:
+                character_rect = fitz.Rect(character["bbox"])
+                if current is None:
+                    current = character_rect
+                else:
+                    current.include_rect(character_rect)
+                continue
+            if str(character.get("c", "")).isspace():
+                continue
+            if current is not None:
+                rects.append(current)
+                current = None
+        if current is not None:
+            rects.append(current)
+    return rects
+
+
+def _title_candidate_character_keys(words, raw_lines):
+    words_by_line = defaultdict(list)
+    for word in words:
+        words_by_line[(word[5], word[6])].append(word)
+
+    keys = []
+    line_keys = list(words_by_line)
+    for line_position, line_key in enumerate(line_keys):
+        characters = raw_lines.get(line_key, [])
+        line_words = words_by_line[line_key]
+        x0 = min(word[0] for word in line_words)
+        x1 = max(word[2] for word in line_words)
+        character_indexes = []
+        for index, character in enumerate(characters):
+            character_rect = fitz.Rect(character["bbox"])
+            character_center_x = (character_rect.x0 + character_rect.x1) / 2
+            if x0 <= character_center_x <= x1:
+                character_indexes.append(index)
+        if not character_indexes:
+            return []
+
+        start = min(character_indexes)
+        end = max(character_indexes)
+        if line_position == 0:
+            start = _extend_title_character_boundary(
+                characters,
+                start,
+                direction=-1,
+                anchor=x0,
+            )
+        if line_position == len(line_keys) - 1:
+            end = _extend_title_character_boundary(
+                characters,
+                end,
+                direction=1,
+                anchor=x1,
+            )
+        keys.extend((line_key, index) for index in range(start, end + 1))
+    return keys
+
+
+def _extend_title_character_boundary(characters, boundary, *, direction, anchor):
+    index = boundary + direction
+    while 0 <= index < len(characters):
+        character = characters[index]
+        value = str(character.get("c", ""))
+        rect = fitz.Rect(character["bbox"])
+        distance = anchor - rect.x1 if direction < 0 else rect.x0 - anchor
+        if _normalized_match_text(value) or distance > max(rect.height, 12):
+            break
+        boundary = index
+        index += direction
+    return boundary
+
+
+def _matching_title_symbol_keys(source_characters, target_text):
+    target_symbols = _title_symbols_by_normalized_offset(target_text)
+    source_symbols = defaultdict(list)
+    normalized_offset = 0
+    for key, character in source_characters:
+        value = str(character.get("c", ""))
+        normalized = _normalized_match_text(value)
+        if normalized:
+            normalized_offset += len(normalized)
+        elif value and not value.isspace() and not _is_combining_character(value):
+            source_symbols[normalized_offset].append((value, key))
+
+    selected = set()
+    for offset, symbols in source_symbols.items():
+        source_values = [value for value, _key in symbols]
+        matcher = SequenceMatcher(
+            None,
+            source_values,
+            target_symbols.get(offset, []),
+            autojunk=False,
+        )
+        for block in matcher.get_matching_blocks():
+            for index in range(block.size):
+                selected.add(symbols[block.a + index][1])
+    return selected
+
+
+def _title_symbols_by_normalized_offset(value):
+    symbols = defaultdict(list)
+    normalized_offset = 0
+    for character in unicodedata.normalize("NFC", str(value or "")):
+        normalized = _normalized_match_text(character)
+        if normalized:
+            normalized_offset += len(normalized)
+        elif (
+            character
+            and not character.isspace()
+            and not _is_combining_character(character)
+        ):
+            symbols[normalized_offset].append(character)
+    return symbols
+
+
+def _is_combining_character(value):
+    return bool(value) and all(
+        unicodedata.category(character).startswith("M")
+        for character in value
+    )
 
 
 def _merge_word_rects(words):
