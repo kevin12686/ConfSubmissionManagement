@@ -492,17 +492,34 @@ and audit event.
 
 ## Versioning
 
+Formatting history is stored in `FormattingRevision`, separate from the
+FinalSubmission compatibility/state mirrors. Each record owns an immutable
+PDF/source pair under `MEDIA_ROOT/formatting_revisions/<submission-pk>/<key>/`.
+The snapshot records selected-file origins and relative live names, allowing
+read-only current-file identification without selecting publication input.
+Only committed corrected uploads add revisions; existing corrected pairs may
+be captured as explicitly labeled baselines. Status/notes updates remain audit
+events. Snapshot copies and live uploads share a compensating file transaction
+with the owning DB transaction. Original-file invalidation captures any
+unrecorded corrected pair before unlinking it.
+
+History is loaded through one submission-scoped partial with verified,
+revision-scoped file endpoints. It is available for inactive/discarded records
+and never enters publication selection, readiness, or review-reset decisions.
+Cleanup protects its files; Clear Database and full restore handle them with
+the existing managed-file transaction.
+
 The app version is defined in `conference_final_manager/settings.py` as `APP_VERSION`.
 
 The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`. Increment the archive version only when backup/restore structure or compatibility changes. Increment the app version for user-visible behavior, workflow, docs, or schema changes.
 
 The footer displays both values so a user can match a System State ZIP to the expected application version.
 
-Archive version 5 matches the schema after removal of obsolete Mapping Table
-metadata. Archive version 4 introduced authoritative Paper Master publication
-decisions. Older archives must be restored with a compatible application before
-upgrading; treating missing decision state or removed fields as equivalent
-would be unsafe.
+Archive version 6 adds revision records and files. The v5 reader validates the
+original v5 payload/count/hash contract and restores an empty history; v6
+requires the revision payload and matching file evidence. Versions earlier
+than v5 remain unsupported. No compatibility branch changes publication
+decisions or silently reconstructs historical approvals.
 
 ## Optional GROBID Fallback
 

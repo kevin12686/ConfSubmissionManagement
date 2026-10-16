@@ -315,6 +315,19 @@ notes as a structured summary between the title comparison and confirmation
 actions. File metadata must not be compressed into an unstructured inline
 sentence; notes occupy a full row and the summary stacks at narrow widths.
 
+## Formatting Revision History
+
+Formatting revision history uses one shared full-width panel at the bottom of
+the expanded review workspace and in Final Submission edit's file section.
+Keep it collapsed by default, load on demand with retryable loading feedback,
+and render unframed revision entries with wrapping filenames and stacked mobile
+columns. Count queries are batched after main-worklist pagination; file reads
+and hashes belong only to the requested history page/download. History uses
+the shared pagination component with `pagination_local=True`, preserving the
+main URL, queue, and unsaved form. Capture-time status is historical metadata;
+`Current files` never implies publication eligibility. Do not add restore or
+version-switch actions to this read-only component.
+
 ## Title/Author Evidence
 
 Built-in, GROBID, and Manual Override use the shared renderer in

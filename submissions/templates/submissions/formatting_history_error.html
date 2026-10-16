@@ -1,0 +1,7 @@
+{% extends "submissions/base.html" %}
+{% block title %}Formatting Revision Unavailable{% endblock %}
+{% block content %}
+<div class="cfm-page-header"><h1 class="h3 cfm-page-title">Formatting revision unavailable</h1></div>
+<div class="alert alert-warning">{{ error }}</div>
+<a class="btn btn-outline-secondary" href="{% url 'submissions:formatting_history' submission.pk %}">Back to revision history</a>
+{% endblock %}

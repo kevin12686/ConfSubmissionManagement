@@ -55,3 +55,4 @@ from .controllers.settings import (
 )
 from .controllers.ui import publication_duplicate_details, workflow_alerts
 from .controllers.lookups import paper_picker_search
+from .controllers.formatting_history import formatting_history, formatting_revision_pdf, formatting_revision_source

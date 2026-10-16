@@ -26,6 +26,13 @@ from submissions.services.file_manager import (
     publication_source_info,
     sanitize_filename_part,
 )
+from submissions.services.formatting_history import (
+    capture_revision,
+    ensure_formatting_baseline,
+    revision_audit_data,
+    revision_files_transaction,
+    track_created_file,
+)
 from submissions.services.import_export import classify_uploaded_file
 from submissions.services.import_preview import (
     _reset_pdf_dependent_state,
@@ -623,6 +630,7 @@ def discard_formatting_review_snapshot(session, token):
     del session, token
 
 
+@revision_files_transaction()
 def save_formatting_review(submission_id, cleaned_data, review_snapshot):
     with transaction.atomic():
         submission = FinalSubmission.objects.select_for_update().get(pk=submission_id)
@@ -923,12 +931,16 @@ def _render_first_page_upper_half(pdf_path, preview_path):
         document.close()
 
 
+@revision_files_transaction()
 def update_formatting_submission(submission, cleaned_data):
+    submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
     previous_status = submission.format_status
     corrected_pdf, corrected_source = _normalize_corrected_uploads(
         cleaned_data.get("corrected_pdf"), cleaned_data.get("corrected_source")
     )
 
+    if corrected_pdf or corrected_source:
+        ensure_formatting_baseline(submission)
     submission.format_status = cleaned_data["format_status"]
     submission.format_notes = cleaned_data.get("format_notes", "")
     has_new_corrected_file = bool(corrected_pdf or corrected_source)
@@ -941,6 +953,7 @@ def update_formatting_submission(submission, cleaned_data):
             "title_author_imported_at": submission.title_author_imported_at,
         }
         submission.formatted_pdf_file.save(corrected_pdf.name, corrected_pdf, save=False)
+        track_created_file(submission.formatted_pdf_file.path)
         submission.formatted_pdf_uploaded_at = timezone.now()
         _reset_pdf_dependent_state(submission)
         submission.extracted_title = previous_extraction["extracted_title"]
@@ -960,6 +973,7 @@ def update_formatting_submission(submission, cleaned_data):
 
     if corrected_source:
         submission.formatted_source_file.save(corrected_source.name, corrected_source, save=False)
+        track_created_file(submission.formatted_source_file.path)
         submission.formatted_source_uploaded_at = timezone.now()
         if not corrected_pdf:
             _reset_source_dependent_state(submission)
@@ -987,6 +1001,16 @@ def update_formatting_submission(submission, cleaned_data):
         submission.source_hash = ""
 
     submission.save()
+    revision = (
+        capture_revision(
+            submission,
+            event_type="upload",
+            changed_files=[kind for kind, upload in (("pdf", corrected_pdf), ("source", corrected_source)) if upload],
+            uploaded_names={kind: upload.name for kind, upload in (("pdf", corrected_pdf), ("source", corrected_source)) if upload},
+        )
+        if has_new_corrected_file
+        else None
+    )
     audit_action = (
         "formatting_upload_apply"
         if has_new_corrected_file
@@ -1014,6 +1038,7 @@ def update_formatting_submission(submission, cleaned_data):
             "format_status": submission.format_status,
             "source_hash": submission.source_hash,
         },
+        extra=revision_audit_data(revision) if revision else {},
     )
     return submission
 

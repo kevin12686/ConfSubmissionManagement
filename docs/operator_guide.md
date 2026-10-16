@@ -458,6 +458,35 @@ page opened. If either file or the submission changes before Save or before a
 corrected-PDF title warning is confirmed, the system rejects the stale action.
 Reload and review the current files rather than confirming an older page.
 
+### Formatting Revision History
+
+Open **Revision history (N)** inside the expanded Formatting workspace or the
+Final Submission edit file section. The same panel works in List, Single, and
+Focus modes; edit also exposes history for inactive/discarded submissions.
+History loads on demand, newest first, with independent top/bottom pagination.
+It does not navigate the main worklist or submit unsaved form changes.
+
+Each successful corrected PDF/source upload saves the complete file pair used
+at that moment. An unchanged counterpart is copied too; missing files are
+recorded explicitly. Status-only and notes-only saves stay in Audit Log and
+do not create file revisions. Notes and Formatting status shown in history
+describe the capture time, not current review approval.
+
+Use **Open PDF** or **Download source** for that exact revision. Downloads
+verify SHA256 and never substitute another file. **Current files** means the
+origins, stored file references, and bytes match this submission's current
+files; it does not mean the submission is active or publication-ready. There
+are no history restore, switch, or delete controls in this release.
+
+After upgrading, run `python manage.py backfill_formatting_revisions` after
+migrations. This can be repeated safely. **Existing files captured** describes
+the current corrected pair at capture time; original upload times are shown
+separately. Prior revisions cannot be reconstructed. Upload and original-file
+replacement also capture an unrecorded corrected pair before replacing it.
+If capture fails, resolve the storage error and retry; do not remove current
+files to bypass capture. History uses additional disk space and remains part
+of backups until an explicit Clear Database or full System State replacement.
+
 ## Plagiarism / CrossCheck Workflow
 
 Go to `/integrations/crosscheck/`.
@@ -571,8 +600,14 @@ Use `/reports/` for exports.
 
 Download a System State ZIP before moving machines, archiving work, performing
 major maintenance, or clearing data. It includes settings, conference records,
-managed files, reports, review artifacts, and active and archived audit logs.
+managed files, Formatting revisions and their files, reports, review artifacts,
+and active and archived audit logs.
 Temporary preview tokens are excluded.
+
+New backups use State archive v6. Version 5 is accepted through an explicit
+validation path; it restores existing files and review state with no revision
+records. Version 6 must contain its revision payload and all referenced history
+files with matching hashes; a damaged v6 archive cannot be treated as v5.
 
 Restore is preview-before-apply and remaps managed paths to the receiving
 installation. Do not continue publishing from a restore that reports an
@@ -596,7 +631,7 @@ Use Settings > Storage Management and review every preview before Apply:
 - Generated reports/exports cleanup selects reproducible downloads and external
   upload packages, including generated publication manifest/warning CSV files.
   It does not select unrelated CSV files placed in the Reports folder.
-- Original and corrected uploads, plagiarism reports, System State backups, and
+- Original and corrected uploads, Formatting revision files, plagiarism reports, System State backups, and
   referenced thumbnails/previews remain protected.
 - Apply skips files that changed, became referenced, or became protected after
   Preview.

@@ -15,6 +15,7 @@ from submissions.services.checks import (
     reset_plagiarism_exceptions,
 )
 from submissions.services.file_manager import resolve_folder, sanitize_filename_part
+from submissions.services.formatting_history import revision_files_transaction
 from submissions.services.import_preview import (
     _archive_and_unlink_corrected_files,
     _clear_title_author_manual_override,
@@ -551,6 +552,7 @@ def create_final_submission_manual(form, report_file=None):
     return obj, summary
 
 
+@revision_files_transaction()
 @transaction.atomic
 def apply_final_submission_manual_edit(
     _submission,

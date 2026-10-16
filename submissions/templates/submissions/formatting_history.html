@@ -1,0 +1,6 @@
+{% extends "submissions/base.html" %}
+{% block title %}Formatting Revision History{% endblock %}
+{% block content %}
+<div class="cfm-page-header"><h1 class="h3 cfm-page-title">Formatting Revision History</h1><a class="btn btn-outline-secondary" href="{% url 'submissions:final_submission_edit' submission.pk %}">Back to submission</a></div>
+{% include "submissions/partials/formatting_history_list.html" %}
+{% endblock %}

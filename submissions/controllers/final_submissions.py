@@ -480,6 +480,7 @@ def final_submission_form(request, pk=None):
     }
     if submission:
         context["publication_pdf"] = publication_pdf_info(submission)
+        context["formatting_revision_count"] = submission.formatting_revisions.count()
         context["publication_source"] = publication_source_info(submission)
         context["evidence_token"] = make_evidence_token(
             "final-submission-edit",

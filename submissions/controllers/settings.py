@@ -34,6 +34,7 @@ from submissions.models import (
     FinalSubmissionPlagiarismState,
     FinalSubmissionPublicationState,
     FinalSubmissionReviewState,
+    FormattingRevision,
     InitialPaper,
     PaperAuthor,
 )
@@ -659,6 +660,7 @@ def clear_database(request):
         "plagiarism_state": FinalSubmissionPlagiarismState.objects.count(),
         "paper_authors": PaperAuthor.objects.count(),
         "final_submissions": FinalSubmission.objects.count(),
+        "formatting_revisions": FormattingRevision.objects.count(),
         "papers": InitialPaper.objects.count(),
     }
     settings_obj = AppSetting.load()

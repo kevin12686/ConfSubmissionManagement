@@ -139,6 +139,7 @@
                     <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.source_file %}</div>
                 </div>
                 <div class="form-text">Uploads here replace original submission files only. Formatting corrections are managed from Formatting Review.</div>
+                {% if submission %}{% include "submissions/partials/formatting_history_panel.html" with history_submission=submission history_count=formatting_revision_count %}{% endif %}
             </div>
         </section>
 

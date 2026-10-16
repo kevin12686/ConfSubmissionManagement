@@ -18,6 +18,7 @@ from submissions.models import (
     AppSetting,
     AuthorLimitWaiver,
     FinalSubmission,
+    FormattingRevision,
     InitialPaper,
     PaperAuthor,
     sync_final_submission_state_records,
@@ -70,6 +71,7 @@ MODEL_SPECS = [
     ("settings", AppSetting),
     ("initial_papers", InitialPaper),
     ("final_submissions", FinalSubmission),
+    ("formatting_revisions", FormattingRevision),
     ("paper_authors", PaperAuthor),
     ("author_limit_waivers", AuthorLimitWaiver),
 ]
@@ -77,6 +79,7 @@ RESTORE_MODEL_ORDER = [
     ("settings", AppSetting),
     ("initial_papers", InitialPaper),
     ("final_submissions", FinalSubmission),
+    ("formatting_revisions", FormattingRevision),
     ("paper_authors", PaperAuthor),
     ("author_limit_waivers", AuthorLimitWaiver),
 ]
@@ -444,6 +447,7 @@ def export_system_state(reason="manual"):
             "files": manifest_files,
             "root_maps": root_maps,
         }
+        _validate_formatting_revision_payload(models_payload, manifest_files)
         with zipfile.ZipFile(
             pending_target,
             "w",
@@ -668,7 +672,7 @@ def _read_snapshot(zip_path):
     except (KeyError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         raise SystemStateError(f"Invalid system state ZIP: {exc}") from exc
     archive_version = manifest.get("state_archive_version", manifest.get("snapshot_version"))
-    if archive_version != STATE_ARCHIVE_VERSION:
+    if archive_version not in (5, STATE_ARCHIVE_VERSION):
         raise SystemStateError("Unsupported system state snapshot version.")
     _validate_snapshot_payload(manifest, state)
     _normalize_legacy_project_restore_paths(manifest)
@@ -732,7 +736,13 @@ def _validate_snapshot_payload(manifest, state):
     models_payload = state.get("models")
     if not isinstance(models_payload, dict):
         raise SystemStateError("System State model payload is missing.")
-    required_keys = {key for key, _model in MODEL_SPECS}
+    specs = [
+        (key, model) for key, model in MODEL_SPECS
+        if archive_version != 5 or model is not FormattingRevision
+    ]
+    if archive_version == 5 and "formatting_revisions" in models_payload:
+        raise SystemStateError("Version 5 snapshots cannot contain formatting revisions.")
+    required_keys = {key for key, _model in specs}
     if not required_keys.issubset(models_payload):
         missing = ", ".join(sorted(required_keys - set(models_payload)))
         raise SystemStateError(
@@ -743,8 +753,8 @@ def _validate_snapshot_payload(manifest, state):
             raise SystemStateError(
                 f"System State model payload for {key} must be a list."
             )
-    _validate_model_payload_types(models_payload)
-    _validate_model_payload_fields(models_payload)
+    _validate_model_payload_types(models_payload, specs)
+    _validate_model_payload_fields(models_payload, specs)
     if len(models_payload["settings"]) != 1:
         raise SystemStateError(
             "System State must contain exactly one Settings record."
@@ -791,6 +801,7 @@ def _validate_snapshot_payload(manifest, state):
         raise SystemStateError(
             "System State file count does not match its manifest."
         )
+    _validate_formatting_revision_payload(models_payload, files)
     file_ids = [entry.get("file_id") for entry in files if isinstance(entry, dict)]
     zip_paths = [entry.get("zip_path") for entry in files if isinstance(entry, dict)]
     if (
@@ -822,8 +833,8 @@ def _validate_snapshot_payload(manifest, state):
         )
 
 
-def _validate_model_payload_types(models_payload):
-    for key, model in MODEL_SPECS:
+def _validate_model_payload_types(models_payload, specs=None):
+    for key, model in specs if specs is not None else MODEL_SPECS:
         seen_primary_keys = set()
         field_map = {
             field.attname: field
@@ -903,8 +914,8 @@ def _validation_is_legacy_choice_only(errors):
     )
 
 
-def _validate_model_payload_fields(models_payload):
-    for key, model in MODEL_SPECS:
+def _validate_model_payload_fields(models_payload, specs=None):
+    for key, model in specs if specs is not None else MODEL_SPECS:
         unique_values = {
             field.attname: set()
             for field in model._meta.concrete_fields
@@ -960,6 +971,52 @@ def _validate_model_payload_fields(models_payload):
                         "case and whitespace normalization."
                     )
                 normalized_paper_ids.add(normalized)
+
+
+def _validate_formatting_revision_payload(models_payload, files):
+    submissions = {int(row["id"]) for row in models_payload["final_submissions"]}
+    entries = {
+        entry.get("restore_rel"): entry
+        for entry in files
+        if isinstance(entry, dict) and entry.get("restore_kind") == "media"
+    }
+    seen = set()
+    for row in models_payload.get("formatting_revisions", []):
+        required = {field.attname for field in FormattingRevision._meta.concrete_fields}
+        if not required.issubset(row):
+            raise SystemStateError("Formatting revision payload is incomplete.")
+        submission_id = int(row["submission_id"])
+        number = int(row["number"])
+        key = row["revision_key"]
+        if submission_id not in submissions or number < 1 or not re.fullmatch(r"[a-f0-9]{32}", key):
+            raise SystemStateError("Formatting revision identity is invalid.")
+        if (submission_id, number) in seen:
+            raise SystemStateError("Formatting revision numbers are duplicated.")
+        seen.add((submission_id, number))
+        if row["event_type"] not in {"baseline", "upload"} or row["changed_files"] not in [[], ["pdf"], ["source"], ["pdf", "source"]]:
+            raise SystemStateError("Formatting revision event is invalid.")
+        for kind in ("pdf", "source"):
+            metadata = row[f"{kind}_metadata"]
+            name = row[f"{kind}_file"]
+            if not isinstance(metadata, dict) or not isinstance(metadata.get("exists"), bool):
+                raise SystemStateError("Formatting revision file metadata is invalid.")
+            live_name = metadata.get("live_name", "")
+            if not isinstance(live_name, str) or Path(live_name).is_absolute() or ".." in Path(live_name).parts:
+                raise SystemStateError("Formatting revision contains a non-portable file reference.")
+            if metadata.get("origin") not in {"original", "corrected", "missing"}:
+                raise SystemStateError("Formatting revision file origin is invalid.")
+            if not metadata["exists"]:
+                if name or metadata.get("sha256") or metadata.get("size") is not None:
+                    raise SystemStateError("Missing formatting revision file has conflicting metadata.")
+                continue
+            parent = Path("formatting_revisions") / str(submission_id) / key
+            entry = entries.get(name)
+            if (
+                not isinstance(name, str) or Path(name).parent != parent
+                or not entry or metadata.get("size") != entry.get("size")
+                or metadata.get("sha256") != entry.get("sha256")
+            ):
+                raise SystemStateError("Formatting revision file is missing or does not match its archived hash/size.")
 
 
 def _validate_restore_path_membership(manifest):
@@ -1298,11 +1355,14 @@ def _artifact_counts(files):
         "format_previews": 0,
         "reports_exports": 0,
         "audit_logs": 0,
+        "formatting_revision_files": 0,
         "other_files": 0,
     }
     for entry in files:
         zip_path = entry.get("zip_path", "")
-        if "/title_author_verification/" in zip_path:
+        if "/formatting_revisions/" in zip_path:
+            counts["formatting_revision_files"] += 1
+        elif "/title_author_verification/" in zip_path:
             counts["title_author_verification_images"] += 1
         elif "/pdf_thumbnails/" in zip_path:
             counts["pdf_thumbnails"] += 1

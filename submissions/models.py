@@ -394,6 +394,34 @@ class FinalSubmission(models.Model):
         )
 
 
+class FormattingRevision(models.Model):
+    submission = models.ForeignKey(
+        FinalSubmission, on_delete=models.CASCADE, related_name="formatting_revisions"
+    )
+    number = models.PositiveIntegerField()
+    revision_key = models.CharField(max_length=32, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    event_type = models.CharField(
+        max_length=20,
+        choices=[("baseline", "Existing files captured"), ("upload", "Corrected files uploaded")],
+    )
+    paper_id = models.CharField(max_length=150, blank=True)
+    final_id = models.CharField(max_length=100)
+    format_status = models.CharField(max_length=30)
+    format_notes = models.TextField(blank=True)
+    changed_files = models.JSONField(default=list, blank=True)
+    pdf_file = models.FileField(max_length=500, blank=True)
+    source_file = models.FileField(max_length=500, blank=True)
+    pdf_metadata = models.JSONField(default=dict)
+    source_metadata = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-number"]
+        constraints = [
+            models.UniqueConstraint(fields=["submission", "number"], name="unique_formatting_revision"),
+        ]
+
+
 class FinalSubmissionIdentityState(models.Model):
     final_submission = models.OneToOneField(
         FinalSubmission, on_delete=models.CASCADE, related_name="identity_state"

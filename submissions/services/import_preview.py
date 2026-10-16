@@ -33,6 +33,7 @@ from submissions.services.import_export import (
 )
 from submissions.services.audit import audit_failure, audit_preview, audit_success
 from submissions.services.final_submission_state import defer_submission_state_sync
+from submissions.services.formatting_history import revision_files_transaction
 from submissions.services.publication_decisions import (
     apply_master_decision_mirror,
     create_paper_master_with_publication_guard,
@@ -887,6 +888,7 @@ def _apply_initial_rows(rows, *, notes_policy="preserve_existing_notes"):
             _reset_paper_id_review_for_paper(paper.paper_id, "Master Title changed; Paper ID review required again.")
 
 
+@revision_files_transaction()
 @transaction.atomic
 @defer_submission_state_sync()
 def _apply_final(payload):
@@ -1059,6 +1061,11 @@ def _reset_source_dependent_state(submission):
 
 
 def _archive_and_unlink_corrected_files(submission):
+    from submissions.services.formatting_history import ensure_formatting_baseline
+
+    ensure_formatting_baseline(
+        FinalSubmission.objects.select_for_update().get(pk=submission.pk)
+    )
     archive_dir = (
         django_settings.MEDIA_ROOT
         / "invalidated_corrected_files"

@@ -40,6 +40,7 @@
                         <dt class="col-sm-5">Files</dt><dd class="col-sm-7">{{ system_state_preview.file_count }}</dd>
                         <dt class="col-sm-5">Review evidence</dt><dd class="col-sm-7">{{ system_state_preview.artifact_counts.title_author_verification_images|default:0 }} extraction images · {{ system_state_preview.artifact_counts.pdf_thumbnails|default:0 }} thumbnails · {{ system_state_preview.artifact_counts.format_previews|default:0 }} format previews</dd>
                         <dt class="col-sm-5">Audit logs</dt><dd class="col-sm-7">{{ system_state_preview.artifact_counts.audit_logs|default:0 }}</dd>
+                        <dt class="col-sm-5">Formatting history files</dt><dd class="col-sm-7">{{ system_state_preview.artifact_counts.formatting_revision_files|default:0 }}</dd>
                     </dl>
                     {% if system_state_preview.missing_files or system_state_preview.corrupt_files %}
                         <div class="alert alert-warning">This snapshot has missing or corrupted files and cannot be restored.</div>

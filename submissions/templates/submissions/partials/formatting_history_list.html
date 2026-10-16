@@ -1,0 +1,42 @@
+<div id="formatting-history-content-{{ submission.pk }}" aria-live="polite">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+        <h3 class="h5 mb-0">Revision history</h3>
+        <span class="text-muted small">Final {{ submission.final_submission_id }} · {{ submission.paper_id_filled }}</span>
+    </div>
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
+    {% for row in rows %}
+        {% with revision=row.revision %}
+        <article class="py-3 border-bottom" aria-label="Revision {{ revision.number }}">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <span class="fw-semibold">Revision {{ revision.number }}</span>
+                {% if row.current %}<span class="badge text-bg-secondary">Current files</span>{% endif %}
+                <span>{{ revision.get_event_type_display }}</span>
+                <time class="text-muted small" datetime="{{ revision.created_at|date:'c' }}">{{ revision.created_at|date:"Y-m-d H:i:s T" }}</time>
+                {% if revision.changed_files %}<span class="small text-muted">Changed: {{ revision.changed_files|join:", "|upper }}</span>{% endif %}
+            </div>
+            <div class="row g-3">
+                {% for file in row.files %}
+                    <div class="col-md-6" style="min-width:0">
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-1"><span class="fw-semibold">{{ file.label }}</span><span class="badge text-bg-secondary">{{ file.metadata.origin|title }}</span>{% if file.kind == 'source' and file.metadata.filename %}<span class="small text-muted">{{ file.type_label }}</span>{% endif %}</div>
+                        <div class="text-break">{{ file.metadata.filename|default:"No file at capture" }}</div>
+                        {% if file.available %}
+                            <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ file.url }}" {% if file.kind == 'pdf' %}target="_blank" rel="noopener"{% endif %}>{% if file.kind == 'pdf' %}Open PDF{% else %}Download source{% endif %}</a>
+                        {% else %}<div class="text-muted small">{% if file.metadata.exists %}History file unavailable{% else %}Missing at capture{% endif %}</div>{% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+            {% if revision.format_notes %}<div class="mt-3 text-break"><div class="small fw-semibold">Notes at capture</div>{{ revision.format_notes|linebreaksbr }}</div>{% endif %}
+            <details class="mt-2 small">
+                <summary>Details</summary>
+                <div class="mt-2 text-break">Paper {{ revision.paper_id }} · Final {{ revision.final_id }}<br>Formatting status at capture: {{ revision.format_status }}</div>
+                {% for file in row.files %}
+                    <div class="mt-2 text-break"><span class="fw-semibold">{{ file.label }}</span> · {{ file.metadata.size|default_if_none:"--" }} bytes<br>SHA256: {{ file.metadata.sha256|default:"Unavailable" }}<br>File upload time: {{ file.metadata.uploaded_at|default:"Unknown" }}</div>
+                {% endfor %}
+            </details>
+        </article>
+        {% endwith %}
+    {% empty %}
+        <div class="cfm-empty">No formatting revisions have been recorded. Existing corrected files can be captured during the upgrade; earlier revisions cannot be reconstructed.</div>
+    {% endfor %}
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
+</div>

@@ -613,6 +613,26 @@ To run temporarily from the verified host mirror, use the bind-rollback
 procedure in the [Docker Guide](docker_guide.md#roll-back-to-the-host-mirror).
 Never add `-v` to `docker compose down`.
 
+### Formatting history missing or unavailable
+
+After upgrading to 1.14.0, apply migrations and run
+`python manage.py backfill_formatting_revisions` using the app environment.
+Capture is idempotent and includes inactive/discarded corrected submissions;
+it does not recover revisions that were never recorded. Check command errors
+and free disk space if a baseline or upload cannot be copied.
+
+History downloads verify their own stored SHA256 and return a readable error
+for missing or changed files. They never substitute a current file. Reopening
+Formatting Review or processing PDFs will not reconstruct historical bytes.
+Recover missing history files from a verified System State backup. If the
+pre-restore safety backup reports incomplete history, recover those exact files
+from the ZIP first; do not substitute a current file or bypass hash checks.
+Current publication safety checks validate current files independently.
+
+New System State archives use v6 and include revision records/files. A v5
+restore legitimately has no recorded history; capture existing corrected files
+afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
+
 ### Need a completely clean conference
 
 Download a System State ZIP first if the current work must be preserved. Then use Settings > Clear Database. This wipes database records and managed files so the app starts a new conference environment.

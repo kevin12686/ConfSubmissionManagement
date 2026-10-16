@@ -262,6 +262,15 @@ selection or readiness.
 
 ## Concurrency And Preview Safety
 
+Formatting revision history is immutable traceability evidence only. Final
+Publication Package, CrossCheck, processing, and readiness continue to select
+the current FinalSubmission Corrected/Original files through the existing
+publication helpers. Historical snapshots never supply missing publication
+files or restore review approvals. Revision capture follows the existing
+corrected-upload reset rules; baseline capture and history GET/download leave
+all review flags and publication pointers unchanged. Missing/corrupt history
+is reported independently and cannot change publication selection.
+
 Long-running processing and extraction capture semantic row/file evidence and
 recheck it under lock before persistence. Stale results must not overwrite
 newer files, review decisions, thumbnails, or database state.

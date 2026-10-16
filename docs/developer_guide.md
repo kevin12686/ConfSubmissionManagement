@@ -108,6 +108,11 @@ Put reusable workflow behavior in services:
 - Paper ID verification: `verification.py`.
 - Title/author extraction and manual override: `title_author_extraction.py`, `builtin_title_author_extractor.py`, and optional `grobid_extractor.py`.
 - Formatting workflow: `formatting.py`.
+- Immutable Formatting snapshots: `formatting_history.py`; these are evidence,
+  never publication input. Use `revision_files_transaction()` around the owning
+  DB transaction so newly created files are compensated on failure. Capture an
+  unrecorded corrected pair before original-file invalidation. Do not add file
+  copies to migrations or create revisions from GET requests.
 - CrossCheck/plagiarism: `crosscheck.py`.
 - Signed multi-editor evidence: `workflow_evidence.py`.
 - Readiness and author checks: `checks.py`.
@@ -474,11 +479,19 @@ Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export c
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
 
-Archive version 5 matches the schema after removal of the unused Mapping Table
-metadata fields. Version 4 introduced authoritative Paper Master publication
-decisions. Do not accept an older archive as equivalent without an explicit
-migration path; either missing decision state or unknown removed fields can
-make a restore ambiguous.
+Archive version 6 adds `FormattingRevision` records and immutable files.
+Version 5 remains accepted through explicit validation of its original model
+set, counts, payload hash, and file hashes before restore; missing revision
+rows mean empty history only for v5. Version 6 requires the revision model key,
+valid parent/sequence identities, and matching snapshot file hashes/sizes.
+Earlier versions remain unsupported. Never relax integrity checks to accept
+an incomplete v6 archive.
+
+Upgrade with migrations followed by `backfill_formatting_revisions`. The
+command captures all existing corrected pairs under per-submission locks,
+is idempotent, reports failures, and leaves review/active state untouched.
+History files live in `MEDIA_ROOT/formatting_revisions/` with exact storage
+references registered in inventory and protected under overlapping roots.
 
 Exact-navigation and focused-worklist changes do not alter System State archive
 contents, so they require an app version change but not an archive version
@@ -486,7 +499,7 @@ change.
 
 Record-edit preview tokens are temporary operational state and are excluded
 from System State ZIPs. Adding this preview boundary does not change archive
-version 5; a future persisted archive-field or restore-contract change would.
+by itself; the Formatting revision model does require archive version 6.
 
 Before release:
 

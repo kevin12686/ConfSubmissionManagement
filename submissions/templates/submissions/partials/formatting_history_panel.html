@@ -1,0 +1,13 @@
+<section class="mt-3 pt-3 border-top" aria-label="Formatting revision history" data-cfm-expansion-owner>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-cfm-history-toggle data-bs-toggle="collapse" data-bs-target="#formatting-history-{{ history_submission.pk }}" aria-expanded="false" aria-controls="formatting-history-{{ history_submission.pk }}">Revision history ({{ history_count|default:0 }})</button>
+    <div id="formatting-history-{{ history_submission.pk }}" class="collapse mt-3" data-cfm-formatting-history data-cfm-context-expansion
+         hx-get="{% url 'submissions:formatting_history' history_submission.pk %}"
+         hx-trigger="cfm:history-open once, cfm:history-retry"
+         hx-target="#formatting-history-content-{{ history_submission.pk }}" hx-swap="outerHTML">
+        <div id="formatting-history-content-{{ history_submission.pk }}" aria-live="polite">
+            <div data-cfm-history-loading class="d-flex align-items-center gap-2 text-muted" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span>Loading revision history...</div>
+            <div data-cfm-history-error class="d-none" role="alert">Revision history could not be loaded. <button type="button" class="btn btn-sm btn-outline-secondary" data-cfm-history-retry>Retry</button></div>
+            <noscript><a href="{% url 'submissions:formatting_history' history_submission.pk %}">Open revision history</a></noscript>
+        </div>
+    </div>
+</section>

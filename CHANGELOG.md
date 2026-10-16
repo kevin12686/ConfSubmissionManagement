@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.14.0 - 2026-10-16
+
+### Formatting Revision History
+
+- Preserve a complete independent PDF/source snapshot after each successful
+  corrected-file upload, with capture time, notes/status, original upload
+  times, file origins, sizes, and SHA256 values.
+- Add a lazy, paginated history panel shared by Formatting Review modes and
+  Final Submission edit, with verified PDF viewing and source downloads.
+- Add idempotent baseline capture for existing corrected files and preserve
+  history through original-file replacement, Discard, and storage cleanup.
+- Keep publication selection, readiness, and review-reset rules unchanged;
+  history has no restore, switch, or delete action.
+- Advance System State to v6 for revision records/files and retain an explicit,
+  integrity-validated v5 restore path with empty revision history.
+
 ## 1.13.2 - 2026-08-24
 
 ### Exact Title Verification Evidence

@@ -7,7 +7,8 @@ from urllib.parse import urlencode
 from django.contrib import messages
 from django.conf import settings as django_settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, OuterRef, Q, QuerySet, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -26,7 +27,7 @@ from submissions.forms import (
     InitialPaperForm,
     SystemStateRestoreForm,
 )
-from submissions.models import AppSetting, FinalSubmission, InitialPaper, PaperAuthor
+from submissions.models import AppSetting, FinalSubmission, FormattingRevision, InitialPaper, PaperAuthor
 from submissions.presentation import ui_label
 from submissions.services.checks import (
     author_count_rows,
@@ -1305,6 +1306,20 @@ def formatting(request):
         )
         all_submissions = page.items
 
+    if isinstance(all_submissions, QuerySet):
+        counts = FormattingRevision.objects.filter(submission_id=OuterRef("pk"))
+        counts = counts.values("submission_id").annotate(total=Count("pk")).values("total")
+        all_submissions = all_submissions.annotate(
+            formatting_revision_count=Coalesce(Subquery(counts), Value(0))
+        )
+    else:
+        revision_counts = dict(
+            FormattingRevision.objects.filter(submission_id__in=[item.pk for item in all_submissions])
+            .values("submission_id").annotate(total=Count("pk"))
+            .values_list("submission_id", "total")
+        )
+        for submission in all_submissions:
+            submission.formatting_revision_count = revision_counts.get(submission.pk, 0)
     file_inspection = FileInspectionContext()
     rows = []
     for submission in all_submissions:

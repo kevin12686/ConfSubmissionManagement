@@ -34,6 +34,9 @@ urlpatterns = [
     path("submissions/<int:pk>/display-source/", views.final_submission_display_source, name="final_submission_display_source"),
     path("submissions/<int:pk>/plagiarism-report/", views.plagiarism_report, name="plagiarism_report"),
     path("submissions/", views.final_submission_list, name="final_submission_list"),
+    path("submissions/<int:pk>/formatting-history/", views.formatting_history, name="formatting_history"),
+    path("submissions/<int:pk>/formatting-history/<int:revision_id>/pdf/", views.formatting_revision_pdf, name="formatting_revision_pdf"),
+    path("submissions/<int:pk>/formatting-history/<int:revision_id>/source/", views.formatting_revision_source, name="formatting_revision_source"),
     path("submissions/editor-upload/", views.editor_upload_form, name="editor_upload"),
     path(
         "submissions/editor-upload/preview/<str:token>/pdf/",

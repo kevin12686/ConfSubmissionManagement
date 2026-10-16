@@ -14,7 +14,7 @@ from django.db import connection
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from submissions.models import AppSetting, FinalSubmission, InitialPaper
+from submissions.models import AppSetting, FinalSubmission, FormattingRevision, InitialPaper
 from submissions.services.file_manager import (
     copy_pdf_to_folder,
     publication_pdf_filename,
@@ -240,6 +240,7 @@ def _managed_roots(settings_obj):
         "corrected": [
             Path(django_settings.MEDIA_ROOT) / "formatted_pdfs",
             Path(django_settings.MEDIA_ROOT) / "formatted_sources",
+            Path(django_settings.MEDIA_ROOT) / "formatting_revisions",
         ],
         "generated_cache": [
             Path(django_settings.MEDIA_ROOT) / key for key in GENERATED_CACHE_DIRS
@@ -273,6 +274,7 @@ def _cleanup_report_export_roots(settings_obj):
 
 def _report_cleanup_protected_roots(settings_obj):
     return [
+        Path(django_settings.MEDIA_ROOT) / "formatting_revisions",
         Path(django_settings.MEDIA_ROOT),
         _configured_folder(settings_obj.plagiarism_reports_folder),
         _configured_folder(settings_obj.extraction_results_folder),
@@ -596,6 +598,26 @@ def _collect_referenced_paths():
                         "path": str(path),
                     }
                 )
+    for revision in FormattingRevision.objects.only(
+        "submission_id", "number", "paper_id", "final_id", "pdf_file", "source_file"
+    ).iterator():
+        for kind in ("pdf", "source"):
+            path = _filefield_path(getattr(revision, f"{kind}_file"))
+            if not path:
+                continue
+            canonical = _canonical_path(path)
+            role = f"Formatting revision {revision.number} {kind}"
+            refs[_path_key(canonical)] = StoragePathRef(canonical, "corrected", role)
+            if not path.exists():
+                missing.append({
+                    "submission_id": revision.submission_id,
+                    "submission_label": f"Final {revision.final_id} / {revision.paper_id}",
+                    "paper_id": revision.paper_id,
+                    "final_submission_id": revision.final_id,
+                    "role": role,
+                    "category": "corrected",
+                    "path": str(path),
+                })
     return refs, missing
 
 
@@ -1208,6 +1230,9 @@ def _clear_debug_folder(folder):
 
 def _assert_safe_debug_folder(folder, settings_obj):
     resolved = folder.resolve()
+    history_root = (Path(django_settings.MEDIA_ROOT) / "formatting_revisions").resolve()
+    if resolved.is_relative_to(history_root) or history_root.is_relative_to(resolved):
+        raise ValueError("Publication PDF debug folder must not overlap formatting revision history.")
     protected_roots = [
         django_settings.BASE_DIR,
         django_settings.BASE_DIR / "data",

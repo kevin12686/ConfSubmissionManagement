@@ -143,6 +143,42 @@ Create Final Submission records and files:
 18. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
 19. Exercise Paper Master List and Final Submission sorting before and after search. Confirm natural ID order (`P2` before `P10`, Final `2` before `10`), pagination preserves the selected sort, Final Submission tabs retain it, and Old Versions tabs match the shared worklist tab design.
 
+### Formatting Revision Acceptance
+
+In a disposable conference, upload a corrected PDF and then source only; open
+Revision history in Formatting List/Single/Focus and Final Submission edit.
+Verify exact independent file pairs, notes/time, newest-first order, local
+top/bottom pagination, retry feedback, and narrow-screen wrapping. Confirm
+history navigation leaves an unsaved Formatting form and its main URL intact.
+Capture existing corrected files twice and confirm one baseline and unchanged
+review state. Invalidate the originals and discard the row; history remains
+viewable/downloadable without selecting it for publication. Remove a history
+file and verify its download fails without falling back. Inject copy, DB, and
+audit failures and verify no partial upload or revision is applied.
+
+Compare final/CrossCheck PDF bytes before and after baseline/history reads.
+Cleanup must retain history even when Reports overlaps media. Verify v6
+backup/restore round-trips revision hashes, links, and review flags; validate
+a v5 restore with empty history, reject a v6 missing its revision payload, and
+verify Clear Database and failed restore rollback cover historical files.
+
+Automated edge coverage in `submissions/tests/test_formatting_history.py` also
+checks all four Original/Corrected PDF/source combinations against final ZIP
+and both CrossCheck scopes. A missing selected corrected file must never fall
+back to an original, history, legacy path, or debug copy. Draft skips the paper
+with an incomplete pair; CrossCheck requires the selected PDF, not a source.
+Exercise a real multi-page PDF re-import followed by Process PDFs and compare
+the exported bytes with the new original, not the most recent revision.
+
+Verify that a second editor's stale save cannot add a revision, and an upload
+interleaved with export aborts the export without retaining a mixed package.
+History-only baseline capture must not invalidate a stable publication read.
+Inject a failure after copying the PDF but before copying the source, and a
+same-size/same-mtime mutation during capture; both must roll back completely.
+Confirm source-only and PDF replacement keep their existing distinct reset
+rules. Editor/Start2 conflicts, discard, multiple-active ambiguity, and Not
+Publishing must retain their existing export behavior even when history exists.
+
 ### Stage 5: Publication Export
 
 20. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.

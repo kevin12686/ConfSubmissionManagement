@@ -36,6 +36,8 @@ one local application:
 - imports the Paper Master scope and Final Submission metadata;
 - tracks Start2 versions, Editor Uploads, corrected files, and publication
   exclusions;
+- retains immutable Formatting revision PDF/source pairs for viewing and
+  download, including through System State backup/restore;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
   plagiarism, author-count, and exception reviews;
 - gives Dashboard, Organized List, Error Report, and final export one shared
@@ -162,6 +164,14 @@ On the new or restored machine:
 System State restores settings, records, managed files, reports, review
 artifacts, and audit logs while remapping managed paths to the receiving
 installation.
+
+Version 1.14.0 adds Formatting revision history. After upgrading, run
+`python manage.py migrate` and `python manage.py backfill_formatting_revisions`
+with the application's Python environment. The idempotent capture command
+preserves current corrected files, including inactive/discarded submissions,
+without changing review state. It cannot reconstruct earlier revisions.
+New backups use State archive v6; validated v5 backups remain restorable with
+no revision records. See the [Operator Guide](docs/operator_guide.md#formatting-revision-history).
 
 ## Development
 
