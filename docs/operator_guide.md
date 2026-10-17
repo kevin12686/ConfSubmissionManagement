@@ -7,7 +7,35 @@ List, Publication Candidates, Final Submissions, Paper ID and Title/Author
 Review, Formatting, Author Count, exceptions, plagiarism reports, revision
 history, Editor Upload previews and the comparison workspace's PDF links.
 
-The reader has page navigation, continuous scrolling, Fit width/Fit page,
+The reader fills the browser viewport, without the work pages' Navbar, footer
+or outer page margins. One compact wrapping toolbar keeps file identity and
+controls above the PDF; the document uses the remaining space as its main
+scrolling area. This does not force browser/OS fullscreen. Existing new-tab
+links leave the original worklist and its position intact.
+
+Each PDF opens in **Fit page + Single page** mode. The page-layout buttons beside
+page navigation switch between Single page (no continuous scrolling) and
+Continuous scrolling. Single page shows only the current page; the wheel,
+page number or Previous/Next move between pages. When zoomed, the wheel first
+scrolls within the page. At its top/bottom, pause and start a fresh wheel gesture
+to turn the page. One continuous gesture turns at most one page, so trackpad
+momentum cannot skip multiple pages. Going back enters the previous page at its
+bottom. Horizontal and modified wheel gestures retain native browser behavior.
+Switching layout keeps the current page and zoom; reopening a reader uses the
+defaults again and does not change any review or file state.
+
+Keyboard controls apply while the PDF area has focus (click the PDF or Tab back
+to it). The reader initially focuses that area only if no control already has
+focus. Left/Right turn pages; Up/Down and Page Up/Down first scroll a zoomed page,
+then require a fresh press at its edge to turn in Single page mode. Holding a
+key may continue panning but cannot repeatedly turn pages. Home goes to the
+first page/top; End goes to the last page/bottom. Continuous mode retains native
+vertical-key scrolling, with Left/Right and Home/End still available. Inputs,
+selects, buttons, text-editing/modifier keys and search shortcuts keep their
+normal behavior. Keyboard and wheel navigation use the same page boundaries
+and backward-bottom/forward-top positioning.
+
+The reader has page navigation, optional continuous scrolling, Fit width/Fit page,
 numeric zoom, rotation, text selection and Find in PDF. Enter advances to the
 next match; Shift+Enter goes to the previous one. Password-protected PDFs ask
 for a password in the reader; it is not saved in application data or audit logs.

@@ -51,8 +51,16 @@ one local application:
 - records state-changing work in an audit log and creates portable System State
   backups.
 
-PDF open links share a local, read-only PDF.js reader with page navigation,
-zoom, text selection/search and rotation. Downloads and publication selection
+PDF open links share a local, read-only, full-window PDF.js reader with page
+navigation, zoom, text selection/search and rotation. A compact toolbar replaces
+the site's navigation and footer only on the reader page. It opens in Fit page
+and Single page mode, with an optional Continuous scrolling switch.
+In Single page mode, the wheel turns pages; zoomed pages scroll internally first,
+then require a fresh wheel gesture at the edge. Trackpad inertia cannot skip pages.
+Keyboard navigation shares the same boundary handling: Left/Right change pages,
+Up/Down and Page Up/Down pan first, and Home/End jump to the first/last page.
+Shortcuts apply in the PDF area, not in inputs or toolbar controls.
+Downloads and publication selection
 remain on their existing endpoints; Open directly is available as a native
 browser fallback. See the [Operator Guide](docs/operator_guide.md#pdf-reader).
 

@@ -1,6 +1,10 @@
 {% extends "submissions/base.html" %}
 {% load static %}
 {% block title %}{{ pdf_source.label }}{% endblock %}
+{% block body_class %}cfm-pdf-reader-page{% endblock %}
+{% block main_class %}cfm-pdf-reader-main{% endblock %}
+{% block site_header %}{% endblock %}
+{% block site_footer %}{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'submissions/vendor/pdfjs-6.4.299/legacy/web/pdf_viewer.css' %}">
 <link rel="stylesheet" href="{% static 'submissions/pdf_viewer.css' %}?v={{ app_version }}">
@@ -8,27 +12,25 @@
 {% block workflow_alerts %}{% endblock %}
 {% block content %}
 <section class="cfm-pdf-reader" data-pdf-reader data-pdf-url="{{ pdf_source.url }}" data-pdf-runtime="{% static 'submissions/vendor/pdfjs-6.4.299/' %}" aria-label="PDF reader">
-    <header class="cfm-pdf-reader-heading">
+    <div class="cfm-pdf-reader-toolbar" role="toolbar" aria-label="PDF controls">
         <div class="cfm-pdf-reader-identity">
-            <h1 class="h4 mb-1">{{ pdf_source.label }}</h1>
+            <h1>{{ pdf_source.label }}</h1>
             <div class="small text-muted text-break">{{ pdf_source.detail }}</div>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-sm btn-outline-secondary" href="{{ pdf_source.url }}" target="_blank" rel="noopener">Open directly</a>
-            <a class="btn btn-sm btn-outline-primary" href="{{ pdf_source.url }}" download>Download PDF</a>
-        </div>
-    </header>
-    <div class="cfm-pdf-reader-toolbar" role="toolbar" aria-label="PDF controls">
         <div class="cfm-pdf-reader-control-group">
-            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-previous aria-label="Previous page" title="Previous page" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-previous aria-label="Previous page" title="Previous page (Left Arrow in PDF)" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
             <label class="cfm-pdf-page-label">Page <input class="form-control form-control-sm" type="number" min="1" value="1" data-pdf-page aria-label="Page number" disabled></label>
             <span class="small" data-pdf-page-count>/ —</span>
-            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-next aria-label="Next page" title="Next page" disabled><span class="cfm-pdf-icon cfm-pdf-icon-next" aria-hidden="true"></span></button>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-next aria-label="Next page" title="Next page (Right Arrow in PDF)" disabled><span class="cfm-pdf-icon cfm-pdf-icon-next" aria-hidden="true"></span></button>
+        </div>
+        <div class="btn-group" role="group" aria-label="Page layout">
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button active" type="button" data-pdf-layout="single" aria-label="Single page" title="Single page (wheel to turn pages)" aria-pressed="true" disabled><span class="cfm-pdf-icon cfm-pdf-icon-single-page" aria-hidden="true"></span></button>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-layout="continuous" aria-label="Continuous scrolling" title="Continuous scrolling" aria-pressed="false" disabled><span class="cfm-pdf-icon cfm-pdf-icon-continuous" aria-hidden="true"></span></button>
         </div>
         <div class="cfm-pdf-reader-control-group">
             <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-zoom="out" aria-label="Zoom out" title="Zoom out" disabled><span class="cfm-pdf-icon cfm-pdf-icon-zoom-out" aria-hidden="true"></span></button>
             <select class="form-select form-select-sm" data-pdf-scale aria-label="Zoom" disabled>
-                <option value="page-width">Fit width</option><option value="page-fit">Fit page</option>
+                <option value="page-fit" selected>Fit page</option><option value="page-width">Fit width</option>
                 <option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option>
                 <option value="custom" data-pdf-custom-scale hidden></option>
             </select>
@@ -40,6 +42,10 @@
             <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-find-step="previous" aria-label="Previous match" title="Previous match" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
             <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-find-step="next" aria-label="Next match" title="Next match" disabled><span class="cfm-pdf-icon cfm-pdf-icon-next" aria-hidden="true"></span></button>
             <span class="small cfm-pdf-match-count" data-pdf-find-count role="status" aria-live="polite"></span>
+        </div>
+        <div class="cfm-pdf-reader-actions">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ pdf_source.url }}" target="_blank" rel="noopener">Open directly</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ pdf_source.url }}" download>Download PDF</a>
         </div>
     </div>
     <div class="cfm-pdf-reader-status" role="status" aria-live="polite" data-pdf-loading><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading PDF…</div>
@@ -59,4 +65,4 @@
     <noscript><div class="alert alert-info mb-0">JavaScript is required for this reader. Use Open directly or Download PDF above.</div></noscript>
 </section>
 {% endblock %}
-{% block extra_js %}<script src="{% static 'submissions/pdf_viewer.js' %}?v={{ app_version }}" defer></script>{% endblock %}
+{% block extra_js %}<script src="{% static 'submissions/pdf_viewer.js' %}?v={{ app_version }}" type="module"></script>{% endblock %}

@@ -2,6 +2,23 @@
 
 ## PDF Reader Cannot Display A File
 
+The dedicated reader intentionally fills the window and omits the work pages'
+Navbar/footer. Close its tab or use browser Back to return to the prior page.
+Fit width and Fit page control the document zoom, not the reader's viewport
+size. On a small window the toolbar wraps and the PDF fills the remaining area.
+The default Single page layout uses wheel gestures to turn pages without
+continuous scrolling. At zoomed-page boundaries, pause briefly and start a new
+wheel gesture; the previous gesture's momentum is intentionally ignored.
+Previous/Next and the page number remain available, as does Continuous scrolling
+in the toolbar. Horizontal/modified gestures are not intercepted. A new reader starts in
+Fit page + Single page; layout/zoom are not saved to conference settings.
+
+Keyboard page navigation works in the PDF area, not while a search/page-number
+input or another control has focus. Click the PDF or Tab back to its region.
+Left/Right turn pages, Home/End jump to first/last, and vertical/page keys pan
+before turning at a boundary in Single page mode. Release a held key before
+crossing another page. Continuous mode keeps native vertical-key scrolling.
+
 Use Open directly to check the same endpoint with the browser's PDF viewer, or
 Download PDF for a local PDF reader. A missing Corrected file is not replaced
 with Original, and an expired/corrupt revision or comparison must be handled

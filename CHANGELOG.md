@@ -3,6 +3,60 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.17.6 - 2026-10-16
+
+### Integrated PDF Keyboard Navigation
+
+- Share page boundaries and entry positioning between wheel and keyboard in
+  one reader navigation module. Left/Right turn pages, vertical/page keys pan
+  first in Single page mode, and Home/End jump to the first/top and last/bottom.
+- Require key release before another page turn; preserve inputs, toolbar,
+  modifiers, search, IME and native continuous-mode vertical scrolling.
+- Focus the PDF initially only when no control already has focus. Leave PDF
+  selection, version binding, review state, publication exports and archive v6
+  unchanged.
+
+## 1.17.5 - 2026-10-16
+
+### Single-Page Wheel Navigation
+
+- Let vertical wheel gestures turn pages in the shared reader's default
+  Fit page/Single page layout, with one turn per gesture and momentum protection.
+- Keep native panning in zoomed pages; require a fresh gesture at the top/bottom
+  before turning, and enter the previous page at its bottom.
+- Leave continuous scrolling, horizontal/modified input, file selection,
+  version binding, review state, publication exports and archive v6 unchanged.
+
+## 1.17.4 - 2026-10-16
+
+### PDF Page Layout Choice
+
+- Open the shared reader in Fit page + Single page mode. Add an integrated
+  Single page / Continuous scrolling control using PDF.js's native modes.
+- Keep page navigation, cross-page search, rotation, zoomed-page panning and
+  current-page/zoom preservation when switching layout. Reopening uses defaults.
+- Reapply native fit presets after single-page navigation so mixed page sizes
+  fit the new viewport; preserve explicit numeric zoom.
+- Avoid redundant same-page navigation on page-input blur, which can otherwise
+  reattach a single-page view during a subsequent PDF-link click.
+- Use direct alpha-mask declarations for toolbar SVG icons to keep them visible
+  in WebKit cached reloads as well as Chromium.
+- Leave file sources, version binding, review state, exports and archive v6
+  unchanged.
+
+## 1.17.3 - 2026-10-16
+
+### Full-Window PDF Reader
+
+- Give every shared PDF reader source a dedicated viewport-filling layout
+  with one compact wrapping toolbar and no work-page Navbar, footer or outer
+  margins. Retain site typography/colors, file identity, direct opening,
+  downloads and all PDF controls.
+- Isolate the site's app-page flex/minimum-height styling from PDF.js's
+  internal pages without overriding its calculated PDF dimensions.
+- Keep ordinary work-page layout, source URLs, version/snapshot binding,
+  publication selection, readiness and archive v6 unchanged.
+
 ## 1.17.2 - 2026-10-16
 
 ### Narrow-Screen Download Actions

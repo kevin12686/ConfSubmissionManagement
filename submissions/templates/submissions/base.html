@@ -1755,7 +1755,8 @@
     </style>
 {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
+{% block site_header %}
 {% with current_url=request.resolver_match.url_name %}
 <header class="cfm-app-header navbar-light">
     <div class="container-fluid cfm-header-identity">
@@ -1837,8 +1838,9 @@
     </nav>
 </header>
 {% endwith %}
+{% endblock %}
 
-<main class="container-fluid py-4">
+<main class="{% block main_class %}container-fluid py-4{% endblock %}">
     <div id="htmx-request-error" class="alert alert-danger border cfm-attention d-none" role="alert">
         The partial page update failed. No workflow state was changed. Retry the action or refresh the page.
     </div>
@@ -1883,12 +1885,12 @@
     {% block content %}{% endblock %}
 </main>
 
-<footer class="border-top bg-white py-3">
+{% block site_footer %}<footer class="border-top bg-white py-3">
     <div class="container-fluid d-flex flex-wrap gap-2 justify-content-between small text-muted">
         <div>{{ app_name }} v{{ app_version }} · State archive v{{ state_archive_version }}</div>
         <div>© {{ copyright_year }} Kevin Hsu</div>
     </div>
-</footer>
+</footer>{% endblock %}
 
 <script src="{% static 'submissions/vendor/htmx-2.0.10.min.js' %}"></script>
 <script src="{% static 'submissions/vendor/tabler-1.4.0.min.js' %}"></script>

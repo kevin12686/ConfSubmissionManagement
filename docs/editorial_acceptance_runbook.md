@@ -11,9 +11,12 @@ Use disposable data, never mutate the operator's live conference for browser QA.
 2. Confirm each reader's source URL is the original endpoint. Original,
    Corrected, report, debug, inactive/discarded row, exact revision and comparison
    Before/After must not be confused or replaced by the active paper's PDF.
-3. Test actual nonblank canvas rendering, text selection/search, next/previous,
-   page input, fit/zoom, rotation, password entry and 320px/desktop layouts.
-   Runtime/data/font requests must stay local; no editing/save UI may appear.
+3. Confirm the reader fills the viewport without site Navbar/footer or outer
+   scrolling, while ordinary work pages keep their normal layout. Test actual
+   nonblank canvas rendering, text selection/search, next/previous, page input,
+   fit/zoom, rotation, password entry, 320px/desktop and short/landscape windows.
+   Resize after loading and verify the PDF fills the space beneath the wrapping
+   toolbar. Runtime/data/font requests must stay local; no editing/save UI may appear.
 4. Test missing Corrected, corrupt PDF, missing/corrupt history, stale comparison
    and missing static modules. Show a readable error and raw direct/download
    links; never silently pick another file. Without JavaScript the raw actions
@@ -25,6 +28,27 @@ Use disposable data, never mutate the operator's live conference for browser QA.
    comparison highlights and lazy/HTMX fragments retain their prior behavior.
 7. For Docker, validate Nginx configuration and module/worker `.mjs` Content-Type
    through the static location; ordinary CSS/WASM MIME types must remain intact.
+8. Reopen a multi-page PDF and confirm Fit page + Single page defaults, one
+   displayed page, and wheel navigation that turns only one page per gesture.
+   Verify a long stream of small trackpad deltas cannot keep flipping, then a
+   new gesture can turn again. Zoom in: native scrolling must reach the edge,
+   and only a fresh gesture there may flip. Going back enters the prior page's
+   bottom; first/last-page bounds, horizontal/modified wheel and toolbar input
+   must remain intact. Switch to Continuous
+   scrolling and back at a middle/last page without losing page or zoom. Test
+   next/previous, page input, cross-page search, internal PDF destinations and
+   panning after zooming in; do not clip off-page content to simulate no scrolling.
+   On mixed portrait/landscape documents, Fit page/Fit width must refit the
+   newly selected page, while an explicit numeric zoom remains unchanged.
+9. In the PDF area, test Left/Right, Up/Down, Page Up/Down and Home/End in both
+   layouts. Zoomed pages must pan first; a held vertical key reaching the edge
+   must not turn until released and pressed again. Held page-turn keys cannot
+   keep skipping pages. Verify backward-bottom/forward-top entry and first/last
+   limits. Mix wheel, key, toolbar, page input, search and internal links; pending
+   positioning must not move a different page or layout. Inputs, selects, buttons,
+   password entry, IME, modified keys and text selection must remain native.
+   Focus loss/window blur must release held keys; loading must not steal an input
+   the user focused before the PDF became ready.
 
 This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
 

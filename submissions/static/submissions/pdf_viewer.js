@@ -11,9 +11,12 @@
         error.textContent = message + " No other file was substituted. Use Open directly or Download PDF to inspect this same file.";
     }
     async function initialize() {
+        const navigationModule = new URL("./pdf_navigation.mjs", import.meta.url);
+        navigationModule.search = new URL(import.meta.url).search;
+        const {installPDFNavigation} = await import(navigationModule.href);
         const runtime = new URL(root.dataset.pdfRuntime, location.origin);
         const pdfjs = await import(new URL("legacy/build/pdf.min.mjs", runtime).href);
-        const {EventBus, PDFViewer, PDFLinkService, PDFFindController} = await import(new URL("legacy/web/pdf_viewer.mjs", runtime).href);
+        const {EventBus, PDFViewer, PDFLinkService, PDFFindController, ScrollMode} = await import(new URL("legacy/web/pdf_viewer.mjs", runtime).href);
         pdfjs.GlobalWorkerOptions.workerSrc = new URL("legacy/build/pdf.worker.min.mjs", runtime).href;
         const eventBus = new EventBus();
         const linkService = new PDFLinkService({eventBus, externalLinkTarget: 2, externalLinkRel: "noopener noreferrer"});
@@ -27,9 +30,30 @@
             imageResourcesPath: new URL("legacy/web/images/", runtime).href,
         });
         linkService.setViewer(viewer);
+        const navigation = installPDFNavigation({container, viewer, singlePageMode: ScrollMode.PAGE});
         const page = query("[data-pdf-page]");
         const scale = query("[data-pdf-scale]");
         const find = query("[data-pdf-find]");
+        const layouts = {single: ScrollMode.PAGE, continuous: ScrollMode.VERTICAL};
+        const layoutButtons = root.querySelectorAll("[data-pdf-layout]");
+        let fitFrame = 0;
+        function scheduleFit() {
+            cancelAnimationFrame(fitFrame);
+            // Let PDF.js finish the page/scroll transition before fitting its new viewport.
+            fitFrame = requestAnimationFrame(() => {
+                fitFrame = 0;
+                if (viewer.pdfDocument && ["page-width", "page-fit"].includes(viewer.currentScaleValue)) {
+                    viewer.currentScaleValue = viewer.currentScaleValue;
+                }
+            });
+        }
+        function syncLayout() {
+            layoutButtons.forEach(button => {
+                const selected = viewer.scrollMode === layouts[button.dataset.pdfLayout];
+                button.classList.toggle("active", selected);
+                button.setAttribute("aria-pressed", String(selected));
+            });
+        }
         function syncPage() {
             page.value = viewer.currentPageNumber;
             query("[data-pdf-previous]").disabled = viewer.currentPageNumber <= 1;
@@ -39,15 +63,24 @@
             root.querySelectorAll(".cfm-pdf-reader-toolbar button, .cfm-pdf-reader-toolbar input, .cfm-pdf-reader-toolbar select").forEach(element => { element.disabled = false; });
             page.max = viewer.pagesCount;
             query("[data-pdf-page-count]").textContent = `/ ${viewer.pagesCount}`;
-            viewer.currentScaleValue = "page-width";
+            viewer.scrollMode = ScrollMode.PAGE;
+            viewer.currentScaleValue = "page-fit";
+            syncLayout();
             syncPage();
+            if (document.activeElement === document.body) container.focus({preventScroll: true});
         });
         eventBus.on("pagerendered", event => {
             loading.hidden = true;
             if (event.error) failed("A PDF page could not be rendered.");
         });
-        eventBus.on("pagechanging", syncPage);
+        eventBus.on("pagechanging", () => {
+            syncPage();
+            if (viewer.scrollMode === ScrollMode.PAGE) scheduleFit();
+        });
+        eventBus.on("scrollmodechanged", syncLayout);
+        eventBus.on("scrollmodechanged", navigation.suspend);
         eventBus.on("scalechanging", event => {
+            navigation.suspend();
             const preset = [...scale.options].find(option => option.value === String(viewer.currentScaleValue));
             if (preset) {
                 scale.value = preset.value;
@@ -60,9 +93,13 @@
         });
         query("[data-pdf-previous]").addEventListener("click", () => viewer.previousPage());
         query("[data-pdf-next]").addEventListener("click", () => viewer.nextPage());
+        layoutButtons.forEach(button => button.addEventListener("click", () => {
+            viewer.scrollMode = layouts[button.dataset.pdfLayout];
+            syncLayout();
+        }));
         page.addEventListener("change", () => {
             const number = Number(page.value);
-            if (Number.isInteger(number) && number >= 1 && number <= viewer.pagesCount) viewer.currentPageNumber = number;
+            if (Number.isInteger(number) && number >= 1 && number <= viewer.pagesCount && number !== viewer.currentPageNumber) viewer.currentPageNumber = number;
             syncPage();
         });
         page.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); page.dispatchEvent(new Event("change")); } });
@@ -91,9 +128,7 @@
         document.addEventListener("keydown", event => {
             if (!find.disabled && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") { event.preventDefault(); find.focus(); find.select(); }
         });
-        const observer = new ResizeObserver(() => {
-            if (viewer.pdfDocument && ["page-width", "page-fit"].includes(viewer.currentScaleValue)) viewer.currentScaleValue = viewer.currentScaleValue;
-        });
+        const observer = new ResizeObserver(scheduleFit);
         observer.observe(container);
         const task = pdfjs.getDocument({
             url: root.dataset.pdfUrl, isEvalSupported: false, enableXfa: false,
@@ -122,7 +157,7 @@
             task.destroy();
             failed("PDF unlocking canceled.");
         });
-        window.addEventListener("pagehide", event => { if (!event.persisted) { observer.disconnect(); task.destroy(); } });
+        window.addEventListener("pagehide", event => { if (!event.persisted) { navigation.destroy(); cancelAnimationFrame(fitFrame); observer.disconnect(); task.destroy(); } });
         const pdfDocument = await task.promise;
         viewer.setDocument(pdfDocument);
         linkService.setDocument(pdfDocument);

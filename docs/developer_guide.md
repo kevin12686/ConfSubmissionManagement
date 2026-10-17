@@ -112,7 +112,42 @@ sync, retain CMaps/fonts/WASM/ICC resources and licenses, and disable PDF
 scripting, annotation editing and form filling. Do not add another canvas/text
 matching implementation, a CDN or application file writes. Browser QA must
 cover actual canvas pixels, selection/search, page/zoom controls, narrow widths,
-load errors, local-only runtime requests and direct/download escape routes.
+short/landscape windows, load errors, local-only runtime requests and
+direct/download escape routes. The reader uses base-template layout blocks to
+omit work-page chrome, not a second copy of shared styles or a fixed-position
+overlay. Keep viewport sizing scoped to reader classes and verify other pages
+retain their Navbar/footer, normal scrolling and workflow alerts. Layout changes
+must not change source URLs, PDF.js loading, file helpers or snapshot binding.
+The reader's Fit page/Single page defaults and optional Continuous scrolling
+use PDF.js's public scale/scroll-mode APIs. Test current-page/zoom preservation,
+cross-page search, first/last-page controls, and zoomed-page panning in both
+modes, including mixed page sizes/orientations. Coalesce native fit-preset
+updates after PDF.js page transitions and on viewport resize; numeric zoom
+must remain unchanged. Do not hide PDF.js page nodes yourself.
+The separate reader-only `pdf_navigation.mjs` owns wheel gesture and held-key state,
+not file loading or PDF geometry. It delegates zoomed-page panning to the browser,
+requires a fresh gesture/keypress at the boundary and uses native page navigation.
+Keyboard and wheel must share boundary/entry positioning, not duplicate it.
+Settle queued entry positioning before interpreting a fresh input so rapid
+opposite-direction keys cannot read the previous page's scroll offset.
+Bind keydown only to the PDF container; do not interfere with controls, modifiers,
+IME, search or native continuous-mode vertical scrolling. Release held-key state
+on keyup/focus loss/blur and unregister listeners at teardown. Initial document
+focus must not steal an already focused input or control.
+Test momentum, direction changes, line/page delta modes, first/last-page bounds,
+modified/horizontal input, cleanup and native fit updates with:
+
+```bash
+node --test submissions/tests/js/pdf_navigation.test.mjs
+```
+
+This uses Node's built-in test runner (Node 20+), without npm packages. Run it
+alongside the Python gate when changing reader navigation behavior; Node is not a
+runtime requirement for the application. Also verify actual wheel input in
+Chromium/WebKit, including zoomed-page top/bottom entry, key repeat, input focus,
+wheel/keyboard interleaving, and continuous mode.
+Avoid re-navigating to an unchanged page number: Enter followed by input blur
+must not reattach a single-page view and swallow the user's next link click.
 
 Keep controllers thin. A controller can validate forms, choose commands, set messages, redirect, and render templates.
 

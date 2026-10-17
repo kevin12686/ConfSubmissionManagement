@@ -345,13 +345,47 @@ Retain target/new-tab semantics, native-open and raw download links. Use the
 shared `PDFFileInput` for the original-PDF form widget. History fragments and
 HTMX worklists require no separate PDF viewer initialization.
 
-The reader extends the existing base and uses site surfaces, type, focus and
-control styles. It is a full-width tool, not an embedded card inside a card.
-Its compact wrapping toolbar separates page navigation, fit/zoom/rotation and
+The reader extends the existing base through its body/main/header/footer layout
+blocks and uses site surfaces, type, focus and control styles. Only this reader
+omits the site header, navigation, footer and main padding. It fills `100dvh`
+(with a `100vh` fallback), not a height calculated by subtracting site chrome.
+Keep the document as the primary scrolling region; flex ancestors and the PDF
+area use `min-height: 0` instead of a fixed minimum that adds outer scrolling.
+This is a full-window page, not a forced browser/OS fullscreen session.
+Its compact wrapping toolbar includes file identity and direct/download
+actions, and separates page navigation, fit/zoom/rotation and
 text search, using PDF.js's bundled toolbar icons. PDF.js owns page geometry,
 text placement, lazy rendering and search highlights; never alter document
 colors or stretch the rendered PDF to fit a placeholder. General workflow
 alerts are omitted only inside this dedicated reader; they stay on work pages.
+Isolate Tabler's `.page` app-layout display/minimum-height rules inside the
+reader so PDF.js's internal `.page` elements retain normal block layout and
+their own calculated dimensions. Do not replace PDF.js page sizes with CSS.
+
+Default to Fit page and Single page on every reader open. The compact page-layout
+segmented control uses the bundled single-page/vertical-scroll icons, native
+tooltips, and `aria-pressed` states reflecting PDF.js's actual scroll mode.
+The shared toolbar icons use direct `mask-image` declarations and alpha mode
+for consistent SVG visibility, including cached reloads in WebKit.
+Use `ScrollMode.PAGE` / `ScrollMode.VERTICAL` through the existing `PDFViewer`;
+do not hide extra pages with CSS or create a second renderer.
+`pdf_navigation.mjs` handles only unmodified, vertical, cancelable wheel
+events inside the document container in Single page mode. Allow native panning
+until the page edge, then require a fresh gesture before turning. Accumulate
+small deltas and keep a gesture lock through momentum; do not lock ordinary
+continuous scrolling, horizontal input, modified input or toolbar controls.
+Keyboard and wheel share boundary checks and post-navigation positioning.
+Scope navigation keydown to the PDF container, not the document. Preserve input,
+button, selection/modifier, IME and toolbar behavior. Left/Right turn pages;
+Up/Down and Page Up/Down retain native panning until a fresh press can turn at
+the edge in Single page mode. Repeated keydowns must not cross pages.
+Home/End jump to first/top and last/bottom. Continuous mode keeps native vertical
+keys. Release held-key state on keyup, window blur or focus leaving the PDF;
+remove all listeners on teardown. Initial PDF focus must not steal control focus.
+Navigation uses the same public next/previous methods as the toolbar and public
+page-number assignment for Home/End; it never selects or reloads a file.
+Keep the current page/zoom when switching modes and keep
+search/internal PDF destinations able to navigate across the document.
 
 Keep the same PDF source visible through its source-kind heading and row/revision
 context. Loading/failure/password feedback stays inline with direct/download

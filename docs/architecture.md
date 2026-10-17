@@ -11,8 +11,20 @@ This works on normal navigation and lazy/HTMX fragments without click handlers
 or per-page initialization.
 
 The local PDF.js 6.4.299 legacy display/worker and viewer components provide
-document parsing, continuous lazy rendering, text selection, internal PDF
-navigation and search. CFM supplies the shared toolbar and site styling.
+document parsing, lazy rendering, text selection, internal PDF
+navigation and search. CFM supplies the shared toolbar and site styling. The
+reader reuses the base template's layout slots to fill the viewport without
+work-page chrome; only its scoped CSS owns viewport sizing and scrolling.
+No alternate PDF loader or endpoint is used for the full-window layout.
+The same viewer defaults to Fit page and native `ScrollMode.PAGE`; its optional
+continuous layout uses `ScrollMode.VERTICAL`. These are transient browser
+display choices, not stored workflow state or a different file source.
+Its shared reader-only navigation module advances via public viewer methods;
+gesture locking prevents trackpad momentum from skipping pages, while zoomed
+pages retain native scrolling before a fresh boundary gesture can turn a page.
+Keyboard input uses the same boundary/positioning functions and scopes keydown
+to the PDF container. Held keys may pan, but need release before another page
+turn; controls, modifiers and input focus remain native.
 Annotation editing, interactive form filling, PDF scripting and XFA execution
 are disabled; application files are never serialized from the viewer.
 Download/direct links still target the original endpoint. No external PDF URL,

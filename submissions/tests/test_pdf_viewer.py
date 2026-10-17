@@ -35,6 +35,15 @@ class Links(HTMLParser):
 
 
 class PDFViewerURLTests(SimpleTestCase):
+    def test_reader_layout_isolates_pdf_pages_from_the_site_page_layout(self):
+        css = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_viewer.css").read_text()
+        page_rule = css.split(".cfm-pdf-reader .pdfViewer .page {", 1)[1].split("}", 1)[0]
+        self.assertIn("box-sizing: content-box;", page_rule)
+        self.assertIn("display: block;", page_rule)
+        self.assertIn("min-height: 0;", page_rule)
+        self.assertNotIn("width:", page_rule)
+        self.assertNotIn("height:", page_rule.replace("min-height: 0;", ""))
+
     def test_proxy_module_mapping_retains_standard_static_mime_types(self):
         config = (Path(__file__).resolve().parents[2] / "docker/nginx/default.conf.template").read_text()
         static = config.split("location ^~ /static/ {", 1)[1].split("location ^~ /media/ {", 1)[0]
@@ -140,6 +149,68 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
         with self.assertNumQueries(0):
             self.assertEqual(pdf_viewer_source(self.pdf_url)["url"], self.pdf_url)
             self.assertTrue(pdf_viewer_url(self.pdf_url))
+
+    def test_full_window_shell_is_shared_by_every_pdf_source_kind(self):
+        for name in PDF_ROUTES:
+            kwargs = {"pk": self.submission.pk}
+            if name == "formatting_revision_pdf":
+                kwargs["revision_id"] = 29
+            elif name == "editor_upload_preview_pdf":
+                kwargs = {"token": "a" * 32}
+            elif name == "formatting_comparison_pdf":
+                kwargs.update(token="a" * 32, side="before")
+            raw = reverse(f"submissions:{name}", kwargs=kwargs)
+            with self.subTest(source=name):
+                response = self.get_reader(raw)
+                self.assertContains(response, '<body class="cfm-pdf-reader-page">')
+                self.assertContains(response, '<main class="cfm-pdf-reader-main">')
+                self.assertContains(response, 'aria-label="PDF controls"', count=1)
+                self.assertContains(response, 'aria-label="PDF pages"', count=1)
+                self.assertNotContains(response, 'aria-label="Primary navigation"')
+                self.assertNotContains(response, "<footer")
+                self.assertNotContains(response, 'id="global-workflow-alerts"')
+                self.assertEqual(response.context["pdf_source"]["url"], raw)
+                raw_links = [link for link in Links(response.content.decode()).links if link.get("href") == raw]
+                self.assertEqual(len(raw_links), 2)
+
+    def test_work_pages_keep_the_normal_site_chrome(self):
+        for name in ("initial_paper_list", "organized_list", "formatting", "export_reports"):
+            with self.subTest(page=name):
+                response = self.client.get(reverse(f"submissions:{name}"))
+                self.assertContains(response, '<main class="container-fluid py-4">')
+                self.assertContains(response, 'aria-label="Primary navigation"')
+                self.assertContains(response, "<footer")
+                self.assertContains(response, 'id="global-workflow-alerts"')
+                self.assertNotContains(response, '<body class="cfm-pdf-reader-page">')
+
+    def test_reader_defaults_to_fit_page_and_native_single_page_layout(self):
+        response = self.get_reader(self.pdf_url)
+        self.assertContains(response, '<option value="page-fit" selected>Fit page</option>')
+        self.assertContains(response, 'aria-label="Page layout"', count=1)
+        self.assertContains(response, 'data-pdf-layout="single" aria-label="Single page"')
+        self.assertContains(response, 'data-pdf-layout="continuous" aria-label="Continuous scrolling"')
+        script = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_viewer.js").read_text()
+        self.assertIn("viewer.scrollMode = ScrollMode.PAGE;", script)
+        self.assertIn('viewer.currentScaleValue = "page-fit";', script)
+        self.assertIn("single: ScrollMode.PAGE, continuous: ScrollMode.VERTICAL", script)
+        self.assertIn('eventBus.on("scrollmodechanged", syncLayout)', script)
+        self.assertIn("number !== viewer.currentPageNumber", script)
+        styles = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_viewer.css").read_text()
+        self.assertIn("mask-mode: alpha;", styles)
+        self.assertIn(".cfm-pdf-icon-single-page { mask-image:", styles)
+        self.assertIn(".cfm-pdf-icon-continuous { mask-image:", styles)
+
+    def test_keyboard_and_wheel_share_a_reader_scoped_module_without_a_different_source(self):
+        response = self.get_reader(self.pdf_url)
+        self.assertContains(response, 'pdf_viewer.js?v=')
+        self.assertContains(response, 'type="module"')
+        script = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_viewer.js").read_text()
+        self.assertIn('new URL("./pdf_navigation.mjs", import.meta.url)', script)
+        self.assertIn("await import(navigationModule.href)", script)
+        self.assertIn("installPDFNavigation({container, viewer, singlePageMode: ScrollMode.PAGE})", script)
+        self.assertIn("navigation.destroy()", script)
+        self.assertIn("if (document.activeElement === document.body) container.focus({preventScroll: true});", script)
+        self.assertEqual(response.context["pdf_source"]["url"], self.pdf_url)
 
     def test_invalid_source_is_400_and_post_is_not_supported(self):
         url = reverse("submissions:pdf_viewer")
