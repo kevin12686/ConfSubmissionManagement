@@ -1,0 +1,95 @@
+{% extends "submissions/base.html" %}
+{% load pdf_viewer %}
+{% load static %}
+{% block title %}PDF Comparison{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'submissions/pdf_comparison.css' %}?v={{ app_version }}">
+<div class="cfm-page-header">
+    <div>
+        <h1 class="h3 cfm-page-title">PDF Comparison</h1>
+        <div class="cfm-page-subtitle">{{ submission.paper_id_filled }} · Final {{ submission.final_submission_id }} · {{ submission.final_submission_title }}</div>
+    </div>
+    <div class="cfm-page-actions"><span class="small text-muted">Read-only</span><a class="btn btn-outline-secondary" href="{{ back_url }}">Back to Formatting Review</a></div>
+</div>
+<div class="cfm-pdf-comparison">
+    <form method="post" class="cfm-comparison-source-form" data-comparison-build>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ back_url }}">
+        <div>
+            <label class="form-label" for="{{ form.baseline.id_for_label }}">Before · {{ form.baseline.label }}</label>
+            {{ form.baseline }}
+            {% for error in form.baseline.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+        <div><div class="form-label">After · Selected publication PDF</div><div class="cfm-comparison-current-file"><span class="badge text-bg-secondary">{{ current_pdf.label }}</span><span class="text-break">{{ current_pdf.filename|default:"No PDF" }}</span></div></div>
+        <button class="btn btn-primary" type="submit">{% if comparison_data %}Rebuild comparison{% else %}Build comparison{% endif %}</button>
+    </form>
+    {% if comparison_error %}<div class="alert alert-warning cfm-alert-stack" role="alert"><strong>Comparison unavailable</strong><div>{{ comparison_error }}</div><div>No files, review flags, or publication decisions were changed.</div></div>{% endif %}
+    {% if comparison_data %}
+        {{ comparison_data|json_script:"pdf-comparison-data" }}
+        <div data-pdf-comparison>
+            <div class="cfm-comparison-toolbar">
+                <div class="btn-group" role="group" aria-label="Comparison view"><button class="btn btn-outline-secondary" type="button" data-comparison-mode="pages" aria-pressed="true">Page comparison</button><button class="btn btn-outline-secondary" type="button" data-comparison-mode="text" aria-pressed="false">Text changes</button></div>
+                <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-comparison-highlights checked><span class="form-check-label">Highlight selected difference</span></label>
+                <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-comparison-link checked><span class="form-check-label">Link matched pages</span></label>
+            </div>
+            <div class="cfm-comparison-notices">
+                {% if comparison_data.identical_bytes %}
+                    <div class="alert alert-info cfm-alert-stack">The two PDFs are byte-identical. This is not a publication approval.</div>
+                {% elif not comparison_data.text_available %}
+                    <div class="alert alert-warning cfm-alert-stack">One or both PDFs have no extractable text. Text comparison is unavailable; use the page images for manual review.</div>
+                {% else %}
+                    <div class="small text-muted">Text findings are review prompts, not proof of corruption or deletion. Tables, figures, equations, reading order, and layout still require visual review.</div>
+                {% endif %}
+                {% if comparison_data.truncated %}<div class="alert alert-warning cfm-alert-stack mt-2">Only the first 300 findings are shown. This comparison is incomplete; review the full PDFs.</div>{% endif %}
+                {% if comparison_data.pairing_limited %}<div class="alert alert-warning cfm-alert-stack mt-2">Exact-text pairing reached its processing limit. Remaining unmatched text is still listed; some apparent additions/removals may be the same text in a different sequence position.</div>{% endif %}
+                <div class="alert alert-warning cfm-alert-stack mt-2" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. The comparison may have expired or its files may have changed. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
+            </div>
+            <div class="cfm-comparison-layout">
+                <aside class="cfm-comparison-findings" aria-label="Comparison findings">
+                    <h2 class="h5">Comparison findings <span class="badge text-bg-secondary">{{ comparison_data.findings|length }}</span></h2>
+                    <label class="form-label" for="comparison-category">Finding type</label>
+                    <select class="form-select mb-3" id="comparison-category" data-comparison-category><option value="all">All findings</option><option value="reference">Reference errors</option><option value="placeholder">Possible unresolved references</option><option value="character">Replacement characters</option><option value="text">Text changes / unmatched</option><option value="sequence">Same text / sequence position</option></select>
+                    <div data-comparison-findings>
+                        <section class="cfm-comparison-finding-group" data-comparison-level="warning">
+                            <h3 class="h6 cfm-comparison-group-heading"><span class="cfm-comparison-level">Warning</span><span class="badge text-bg-warning" data-finding-group-count="attention">{{ comparison_data.attention_count }}</span><span class="cfm-comparison-group-title">Needs a closer look</span></h3>
+                            <div data-finding-group="attention"></div>
+                        </section>
+                        <section class="cfm-comparison-finding-group" data-comparison-level="info">
+                            <h3 class="h6 cfm-comparison-group-heading"><span class="cfm-comparison-level">Info</span><span class="badge text-bg-info" data-finding-group-count="sequence">{{ comparison_data.sequence_count }}</span><span class="cfm-comparison-group-title">Same text / sequence position</span></h3>
+                            <div data-finding-group="sequence"></div>
+                        </section>
+                    </div>
+                    <div class="small text-muted" data-comparison-empty hidden>No findings in this view. This does not confirm that images, tables, or layout are unchanged.</div>
+                    <button class="btn btn-outline-secondary w-100 mt-3" type="button" data-comparison-manual>Browse all pages</button>
+                </aside>
+                <section class="cfm-comparison-workspace" aria-label="Compared PDF pages">
+                    <div class="cfm-comparison-selection">
+                        <div><h2 class="h5 mb-1" data-comparison-heading>Page comparison</h2><div class="small text-muted" data-comparison-location></div></div>
+                        <div class="cfm-comparison-stepper"><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-step="-1">Previous difference</button><span class="small text-muted" data-comparison-position></span><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-step="1">Next difference</button></div>
+                    </div>
+                    <div class="small mb-3" aria-live="polite" data-comparison-description></div>
+                    <div class="cfm-comparison-documents">
+                        <section class="cfm-comparison-document" data-comparison-side="before" aria-label="Before PDF">
+                            <div class="cfm-comparison-document-header"><h3 class="h6 mb-1">Before · {{ comparison_data.before.label }}</h3><div class="text-break small">{{ comparison_data.before.filename }}</div><div class="cfm-comparison-page-controls"><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-page-step="-1" aria-label="Previous baseline page">Previous</button><label class="small">Page <input class="form-control form-control-sm" type="number" min="1" max="{{ comparison_data.before_pages|length }}" value="1" data-comparison-page aria-label="Baseline page"></label><span class="small">/ {{ comparison_data.before_pages|length }}</span><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-page-step="1" aria-label="Next baseline page">Next</button></div><a class="small" href="{{ comparison_data.pdf_urls.before|pdf_viewer_url }}" target="_blank" rel="noopener">Open compared PDF</a></div>
+                            <div class="cfm-comparison-passage"><div class="small" data-comparison-side-position></div><select class="form-select form-select-sm" data-comparison-finding-pages aria-label="Baseline finding pages" hidden></select></div>
+                            <div class="cfm-comparison-page cfm-image-loader cfm-image-magnifier" data-cfm-image-loader data-cfm-image-magnifier data-cfm-image-magnifier-hint="Hold Ctrl to magnify" data-cfm-image-loading-label="Loading baseline page..." data-cfm-image-error-label="Baseline preview unavailable. Retry or rebuild comparison."><img alt="Baseline PDF page"><div class="cfm-comparison-mark-layer" aria-hidden="true"></div></div>
+                            <div class="cfm-comparison-text" data-comparison-text hidden></div>
+                        </section>
+                        <section class="cfm-comparison-document" data-comparison-side="after" aria-label="After PDF">
+                            <div class="cfm-comparison-document-header"><h3 class="h6 mb-1">After · {{ comparison_data.after.label }}</h3><div class="text-break small">{{ comparison_data.after.filename }}</div><div class="cfm-comparison-page-controls"><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-page-step="-1" aria-label="Previous corrected page">Previous</button><label class="small">Page <input class="form-control form-control-sm" type="number" min="1" max="{{ comparison_data.after_pages|length }}" value="1" data-comparison-page aria-label="Corrected page"></label><span class="small">/ {{ comparison_data.after_pages|length }}</span><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-page-step="1" aria-label="Next corrected page">Next</button></div><a class="small" href="{{ comparison_data.pdf_urls.after|pdf_viewer_url }}" target="_blank" rel="noopener">Open compared PDF</a></div>
+                            <div class="cfm-comparison-passage"><div class="small" data-comparison-side-position></div><select class="form-select form-select-sm" data-comparison-finding-pages aria-label="Corrected finding pages" hidden></select></div>
+                            <div class="cfm-comparison-page cfm-image-loader cfm-image-magnifier" data-cfm-image-loader data-cfm-image-magnifier data-cfm-image-magnifier-hint="Hold Ctrl to magnify" data-cfm-image-loading-label="Loading corrected page..." data-cfm-image-error-label="Corrected preview unavailable. Retry or rebuild comparison."><img alt="Corrected PDF page"><div class="cfm-comparison-mark-layer" aria-hidden="true"></div></div>
+                            <div class="cfm-comparison-text" data-comparison-text hidden></div>
+                        </section>
+                    </div>
+                    <div class="small text-muted mt-3" data-comparison-map-status></div>
+                    <details class="small mt-3"><summary>Compared file identities</summary><div class="text-break mt-2">Created: {{ comparison_data.created_at }}<br>Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>Temporary comparison expires after two hours. Publication files and review state are unchanged.</div></details>
+                </section>
+            </div>
+        </div>
+    {% else %}
+        <div class="cfm-empty">Compare the saved PDFs for new reference errors, changed or unmatched text, and replacement characters. Page images provide manual comparison for tables, figures, and layout. No review status is changed.</div>
+    {% endif %}
+</div>
+<script src="{% static 'submissions/pdf_comparison.js' %}?v={{ app_version }}" defer></script>
+{% endblock %}

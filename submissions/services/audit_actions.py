@@ -25,6 +25,7 @@ AUDIT_CATEGORY_LABELS = {
 
 
 _ACTION_DEFINITIONS = (
+    AuditActionDefinition("formatting_pdf_compare", "Compare Formatting PDFs", "formatting"),
     AuditActionDefinition("formatting_revision_capture", "Capture Formatting Baseline", "formatting"),
     AuditActionDefinition("formatting_revision_download", "Open Formatting Revision File", "formatting"),
     AuditActionDefinition("formatting_revision_rollback", "Roll Back Formatting Revision", "formatting"),

@@ -1,0 +1,72 @@
+.cfm-pdf-reader {
+    display: flex;
+    flex-direction: column;
+    height: max(32rem, calc(100dvh - 13rem));
+    min-width: 0;
+}
+.cfm-pdf-reader-heading {
+    align-items: start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem 1.5rem;
+    justify-content: space-between;
+    padding-bottom: .75rem;
+}
+.cfm-pdf-reader-identity { min-width: 0; }
+.cfm-pdf-reader-toolbar {
+    align-items: center;
+    background: var(--cfm-surface);
+    border-block: 1px solid var(--cfm-border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem 1rem;
+    padding: .6rem;
+}
+.cfm-pdf-reader-control-group, .cfm-pdf-reader-search, .cfm-pdf-page-label {
+    align-items: center;
+    display: flex;
+    gap: .4rem;
+    margin: 0;
+    min-width: 0;
+}
+.cfm-pdf-page-label input { width: 4.25rem; }
+.cfm-pdf-reader-control-group select { width: 7.5rem; }
+.cfm-pdf-reader-search { flex: 1 1 19rem; }
+.cfm-pdf-reader-search input { min-width: 6rem; width: 12rem; }
+.cfm-pdf-match-count { min-width: 4rem; }
+.cfm-pdf-icon-button { flex: 0 0 2rem; height: 2rem; padding: .35rem; width: 2rem; }
+.cfm-pdf-icon {
+    background: currentColor;
+    display: block;
+    height: 1.1rem;
+    mask: var(--cfm-pdf-icon) center / contain no-repeat;
+    width: 1.1rem;
+}
+.cfm-pdf-icon-previous { --cfm-pdf-icon: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-pageUp.svg); }
+.cfm-pdf-icon-next { --cfm-pdf-icon: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-pageDown.svg); }
+.cfm-pdf-icon-zoom-in { --cfm-pdf-icon: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-zoomIn.svg); }
+.cfm-pdf-icon-zoom-out { --cfm-pdf-icon: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-zoomOut.svg); }
+.cfm-pdf-icon-rotate { --cfm-pdf-icon: url(vendor/pdfjs-6.4.299/legacy/web/images/secondaryToolbarButton-rotateCw.svg); }
+.cfm-pdf-reader-status { align-items: center; display: flex; gap: .5rem; padding: .65rem; }
+.cfm-pdf-password { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; padding: .75rem; }
+.cfm-pdf-password input { max-width: 16rem; }
+.cfm-pdf-reader [hidden] { display: none !important; }
+.cfm-pdf-reader-pages { flex: 1 1 auto; min-height: 12rem; min-width: 0; position: relative; }
+.cfm-pdf-reader-scroll {
+    background: var(--cfm-surface-strong);
+    border: 1px solid var(--cfm-border);
+    inset: 0;
+    overflow: auto;
+    position: absolute;
+    overscroll-behavior: contain;
+}
+/* PDF.js owns document geometry, text placement and lazy canvas rendering. */
+.cfm-pdf-reader .pdfViewer .page { box-sizing: content-box; }
+.cfm-pdf-reader .textLayer { font-size: initial; }
+@media (max-width: 575px) {
+    .cfm-pdf-reader { height: max(36rem, calc(100dvh - 10rem)); }
+    .cfm-pdf-reader-heading h1 { font-size: 1.15rem; }
+    .cfm-pdf-reader-toolbar { gap: .5rem; padding: .5rem; }
+    .cfm-pdf-reader-search { flex-basis: 100%; flex-wrap: wrap; }
+    .cfm-pdf-reader-search input { flex: 1 1 8rem; width: 8rem; }
+}

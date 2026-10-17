@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Editor Upload{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -37,7 +38,7 @@
             <div>Paper ID review will remain pending, and the new version will require Process PDFs before publication.</div>
         </div>
         <div class="cfm-title-guard-actions">
-            <a class="btn btn-outline-dark" href="{% url 'submissions:editor_upload_preview_pdf' editor_upload_confirmation.token %}" target="_blank" rel="noopener">Open uploaded PDF</a>
+            <a class="btn btn-outline-dark" href="{% pdf_viewer 'submissions:editor_upload_preview_pdf' editor_upload_confirmation.token %}" target="_blank" rel="noopener">Open uploaded PDF</a>
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="replace_editor_upload_pdf">

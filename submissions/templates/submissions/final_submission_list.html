@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Final Submissions{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -123,7 +124,7 @@
 	                        </div>
 	                        {% if item.display_pdf.exists %}
 	                            <div class="small">
-	                                <a href="{{ item.display_pdf.url }}" target="_blank" rel="noopener">{{ item.display_pdf.filename|truncatechars:42 }}</a>
+	                                <a href="{{ item.display_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">{{ item.display_pdf.filename|truncatechars:42 }}</a>
 	                            </div>
 	                        {% else %}
 	                        <div class="small text-warning">{{ ui_labels.file.no_pdf }}</div>
@@ -153,7 +154,7 @@
                         <span class="badge text-bg-danger">Missing P/S</span>
                     {% endif %}
                     {% if item.plagiarism_report_path %}
-                        <div class="small mt-1"><a href="{% url 'submissions:plagiarism_report' item.pk %}" target="_blank" rel="noopener">Open report</a></div>
+                        <div class="small mt-1"><a href="{% pdf_viewer 'submissions:plagiarism_report' item.pk %}" target="_blank" rel="noopener">Open report</a></div>
                         {% if item.plagiarism_report_stale %}
                             <div><span class="badge text-bg-warning">Old report</span></div>
                         {% endif %}

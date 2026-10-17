@@ -1,5 +1,31 @@
 # Editorial Acceptance Runbook
 
+## Shared PDF Reader Acceptance
+
+Use disposable data, never mutate the operator's live conference for browser QA.
+
+1. Open PDFs from Organized List (both views/details), Final Submissions, edit,
+   Formatting (List/Single/Focus), Title/Author, Paper ID, Author Count,
+   exceptions/Error Report, Old Versions, history and Editor Upload preview.
+   Confirm the common reader opens in the requested tab and leaves forms alone.
+2. Confirm each reader's source URL is the original endpoint. Original,
+   Corrected, report, debug, inactive/discarded row, exact revision and comparison
+   Before/After must not be confused or replaced by the active paper's PDF.
+3. Test actual nonblank canvas rendering, text selection/search, next/previous,
+   page input, fit/zoom, rotation, password entry and 320px/desktop layouts.
+   Runtime/data/font requests must stay local; no editing/save UI may appear.
+4. Test missing Corrected, corrupt PDF, missing/corrupt history, stale comparison
+   and missing static modules. Show a readable error and raw direct/download
+   links; never silently pick another file. Without JavaScript the raw actions
+   must remain available.
+5. Compare DB signatures, review flags, readiness and SHA256 bytes before/after
+   reading. Publication ZIP and CrossCheck ZIP must still use the current
+   Corrected/Original helper bytes, not rendered, debug or historical output.
+6. Confirm source/ZIP downloads, thumbnails, verification images, magnifiers,
+   comparison highlights and lazy/HTMX fragments retain their prior behavior.
+7. For Docker, validate Nginx configuration and module/worker `.mjs` Content-Type
+   through the static location; ordinary CSS/WASM MIME types must remain intact.
+
 This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
 
 Use a disposable conference data folder. Complete the automated command
@@ -178,6 +204,51 @@ same-size/same-mtime mutation during capture; both must roll back completely.
 Confirm source-only and PDF replacement keep their existing distinct reset
 rules. Editor/Start2 conflicts, discard, multiple-active ambiguity, and Not
 Publishing must retain their existing export behavior even when history exists.
+
+### Formatting PDF Comparison Acceptance
+
+Upload a corrected PDF in List/Single/Focus and verify it is saved before a
+separate automatic Original comparison POST starts. Confirm title guard warnings
+first; preview/cancel/validation failure must create no comparison receipt.
+Test PDF-in-source-field recognition, source-only and notes/status saves,
+filtered-out saved rows, loading, Warning/Info counts, and explicit Retry.
+Keep the saved card/Single queue position, including after HTMX filter changes.
+Refresh a completed result: no second build. Upload A then B (also with identical
+bytes): A's request/result must never open B as its After side. A later
+source-only revision may reuse a comparison of the same PDF. Interrupt/duplicate
+a request and test missing Original, parse, cache-write and audit failures:
+saved files/revisions/flags must not be rolled back by comparison failure.
+Verify responsive status strips, no auto-navigation/polling, and normal backup,
+cleanup protection and Clear Database coverage of automatic request caches.
+
+Use disposable real PDFs: a corrected Word reference error, removed/moved
+paragraph, changed punctuation/numbers, textless document, rotated page, and
+visually missing table. Open Compare PDF from List/Single/Focus while leaving
+an unsaved Formatting note; the note/input must survive in the original tab.
+Build Original and revision baselines, navigate/filter findings, switch text
+and page views, browse all pages, and verify shared loading, Ctrl magnification,
+responsive stacking, and exact snapshot PDF links. Insert a cover page to prove
+page pairing follows text rather than page numbers. No automatic table/image
+completeness verdict is permitted.
+
+Reflow a two-page document while preserving its second-page header: expect
+one visible same-text record at page 2/2, not separate removal/addition. A real
+title deletion must remain a separate content finding. Then change/remove the
+header, edit footer years/table numbers, remove one repeated sentence, change a
+suffix/punctuation beside a moved passage, and introduce a footer reference
+error; none may be excluded. Cover multi-page findings and capped highlights:
+all actual pages remain selectable, and a missing counterpart says no
+corresponding text while labeling its reference page separately. An older
+method link requires explicit rebuild. Pairing-budget exhaustion preserves
+unmatched findings with a notice rather than a complete/no-differences result.
+
+Reject other submissions' revisions, corrupt/missing PDFs, invalid/expired
+tokens, ambiguous active records, changed scope, and changed files during or
+after build. Test processing limits, same-size file mutation, signed-payload
+corruption, and failed-audit cleanup. Compare existing records, flags, readiness,
+and final/CrossCheck PDF bytes before and after comparison; all must remain
+unchanged. State ZIP excludes comparison staging while retaining history/review
+artifacts. Ordinary cleanup preserves staging; Clear Database removes it.
 
 ### Stage 5: Publication Export
 

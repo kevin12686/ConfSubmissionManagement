@@ -1,12 +1,14 @@
 {% if pagination.total_count %}
+{% if not pagination_local or pagination.has_page_size_choices %}
 <nav class="cfm-worklist-pagination d-flex flex-wrap align-items-center justify-content-between gap-3 my-3"
-     aria-label="{% if pagination_position == 'bottom' %}Bottom{% else %}Top{% endif %} worklist pagination"
+     aria-label="{% if pagination_position == 'bottom' %}Bottom{% else %}Top{% endif %} {{ pagination_label|default:'worklist' }} pagination"
      data-cfm-pagination-position="{% if pagination_position == 'bottom' %}bottom{% else %}top{% endif %}">
     <div class="small text-muted">
         Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }}
     </div>
     <div class="d-flex flex-wrap align-items-center gap-3">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Rows per page">
+        {% if pagination_size_label %}<span class="small text-muted">{{ pagination_size_label }}</span>{% endif %}
+        <div class="btn-group btn-group-sm" role="group" aria-label="{{ pagination_size_label|default:'Rows per page' }}">
             {% for option in pagination.page_size_links %}
                 <a class="btn {% if option.active %}btn-primary{% else %}btn-outline-secondary{% endif %}"
                    href="{{ option.url }}{% if pagination.scroll_anchor and not pagination.hx_target %}#{{ pagination.scroll_anchor }}{% endif %}"
@@ -31,4 +33,5 @@
         {% endif %}
     </div>
 </nav>
+{% endif %}
 {% endif %}

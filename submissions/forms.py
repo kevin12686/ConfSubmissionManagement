@@ -19,6 +19,17 @@ class BootstrapMixin:
                 field.widget.attrs.setdefault("class", "form-control")
 
 
+class PDFComparisonForm(forms.Form):
+    baseline = forms.ChoiceField(label="Compare against", widget=forms.Select(attrs={"class": "form-select"}))
+
+    def __init__(self, submission, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["baseline"].choices = [("original", "Original submission PDF")] + [
+            (f"revision-{revision.pk}", f"Revision {revision.number} - {timezone.localtime(revision.created_at):%Y-%m-%d %H:%M}")
+            for revision in submission.formatting_revisions.exclude(pdf_file="").only("id", "number", "created_at")
+        ]
+
+
 class InitialPaperForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = InitialPaper
@@ -57,6 +68,10 @@ class InitialPaperForm(BootstrapMixin, forms.ModelForm):
         return paper_id
 
 
+class PDFFileInput(forms.ClearableFileInput):
+    template_name = "submissions/widgets/pdf_file_input.html"
+
+
 class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
     plagiarism_report_file = forms.FileField(
         required=False,
@@ -80,6 +95,7 @@ class FinalSubmissionForm(BootstrapMixin, forms.ModelForm):
         ]
         widgets = {
             "upload_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "pdf_file": PDFFileInput(),
             "final_submission_title": forms.Textarea(attrs={"rows": 3}),
             "final_submission_authors": forms.Textarea(attrs={"rows": 3}),
         }

@@ -1,6 +1,8 @@
 {% extends "submissions/base.html" %}
+{% load static pdf_viewer %}
 {% block title %}Formatting Review{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{% static 'submissions/formatting_comparison_status.css' %}?v={{ app_version }}">
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Formatting Review</h1>
@@ -175,6 +177,7 @@
     {% if bound_submission_id %}data-cfm-worklist-active-card="{{ bound_submission_id }}"{% endif %}
 >
 {% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}{% endif %}
+{% include "submissions/partials/formatting_comparison_status.html" with comparison=comparison_fallback show_paper_identity=True %}
 {% if single_out_of_scope %}
     <div class="alert alert-warning border d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span>{{ single_out_of_scope }}</span>
@@ -219,6 +222,7 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
             </div>
         </div>
+        {% include "submissions/partials/formatting_comparison_status.html" with comparison=row.automatic_comparison %}
         <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue" data-cfm-context-expansion{% endif %}>
         <div class="card-body">
             <div class="row g-3">
@@ -251,13 +255,16 @@
                     {% endif %}
                     <div class="d-flex flex-wrap gap-2 mt-2">
                         {% if row.publication_pdf.exists %}
-                            <a class="btn btn-sm btn-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open Publication PDF</a>
+                            <a class="btn btn-sm btn-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open Publication PDF</a>
                         {% endif %}
                         {% if item.pdf_file %}
-                            <a class="btn btn-sm btn-outline-dark" href="{{ item.pdf_file.url }}" target="_blank" rel="noopener">Original PDF</a>
+                            <a class="btn btn-sm btn-outline-dark" href="{{ item.pdf_file.url|pdf_viewer_url }}" target="_blank" rel="noopener">Original PDF</a>
                         {% endif %}
                         {% if item.formatted_pdf_file %}
-                            <a class="btn btn-sm btn-outline-success" href="{{ item.formatted_pdf_file.url }}" target="_blank" rel="noopener">Corrected PDF</a>
+                            <a class="btn btn-sm btn-outline-success" href="{{ item.formatted_pdf_file.url|pdf_viewer_url }}" target="_blank" rel="noopener">Corrected PDF</a>
+                        {% endif %}
+                        {% if item.formatted_pdf_file or item.formatting_revision_count %}
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:formatting_pdf_comparison' item.pk %}?next={{ request.get_full_path|urlencode }}" target="_blank" rel="noopener">Compare PDF</a>
                         {% endif %}
                     </div>
                 </div>
@@ -426,4 +433,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 {% endif %}
+<script src="{% static 'submissions/formatting_comparison_status.js' %}?v={{ app_version }}" defer></script>
 {% endblock %}

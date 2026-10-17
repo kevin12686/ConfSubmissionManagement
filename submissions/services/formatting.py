@@ -3,6 +3,7 @@ import json
 import shutil
 import uuid
 from datetime import datetime, timedelta
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -16,7 +17,7 @@ from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
-from submissions.models import FinalSubmission, InitialPaper
+from submissions.models import FinalSubmission, FormattingRevision, InitialPaper
 from submissions.presentation import ui_label
 from submissions.services.audit import audit_preview, audit_success
 from submissions.services.builtin_title_author_extractor import get_title_author
@@ -78,6 +79,12 @@ FORMATTING_REVIEW_SALT = "submissions.formatting-review.v1"
 
 class FormattingWorkflowError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class FormattingSaveResult:
+    submission: FinalSubmission
+    revision: FormattingRevision | None
 
 
 @transaction.atomic
@@ -317,6 +324,10 @@ def preview_formatting_upload(
 
 
 def apply_formatting_upload_preview(token):
+    return apply_formatting_upload_preview_result(token).submission
+
+
+def apply_formatting_upload_preview_result(token):
     payload, token_root = load_formatting_upload_preview(token)
     opened_files = []
     try:
@@ -338,7 +349,7 @@ def apply_formatting_upload_preview(token):
             cleaned_data["corrected_source"] = File(
                 handle, name=payload["corrected_source"]["original_name"]
             )
-        submission = save_formatting_review(
+        result = save_formatting_review_result(
             payload["submission_id"],
             cleaned_data,
             payload["review_snapshot"],
@@ -350,7 +361,7 @@ def apply_formatting_upload_preview(token):
     finally:
         for handle in opened_files:
             handle.close()
-    return submission
+    return result
 
 
 def load_formatting_upload_preview(token):
@@ -630,12 +641,16 @@ def discard_formatting_review_snapshot(session, token):
     del session, token
 
 
-@revision_files_transaction()
 def save_formatting_review(submission_id, cleaned_data, review_snapshot):
+    return save_formatting_review_result(submission_id, cleaned_data, review_snapshot).submission
+
+
+@revision_files_transaction()
+def save_formatting_review_result(submission_id, cleaned_data, review_snapshot):
     with transaction.atomic():
         submission = FinalSubmission.objects.select_for_update().get(pk=submission_id)
         validate_formatting_review_snapshot(submission, review_snapshot)
-        return update_formatting_submission(submission, cleaned_data)
+        return _update_formatting_submission(submission, cleaned_data)
 
 
 def _formatting_queryset(query=""):
@@ -931,8 +946,12 @@ def _render_first_page_upper_half(pdf_path, preview_path):
         document.close()
 
 
-@revision_files_transaction()
 def update_formatting_submission(submission, cleaned_data):
+    return _update_formatting_submission(submission, cleaned_data).submission
+
+
+@revision_files_transaction()
+def _update_formatting_submission(submission, cleaned_data):
     submission = FinalSubmission.objects.select_for_update().get(pk=submission.pk)
     previous_status = submission.format_status
     corrected_pdf, corrected_source = _normalize_corrected_uploads(
@@ -1040,7 +1059,7 @@ def update_formatting_submission(submission, cleaned_data):
         },
         extra=revision_audit_data(revision) if revision else {},
     )
-    return submission
+    return FormattingSaveResult(submission, revision)
 
 
 def _normalize_corrected_uploads(corrected_pdf, corrected_source):

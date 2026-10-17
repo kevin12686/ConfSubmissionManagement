@@ -1,0 +1,62 @@
+{% extends "submissions/base.html" %}
+{% load static %}
+{% block title %}{{ pdf_source.label }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'submissions/vendor/pdfjs-6.4.299/legacy/web/pdf_viewer.css' %}">
+<link rel="stylesheet" href="{% static 'submissions/pdf_viewer.css' %}?v={{ app_version }}">
+{% endblock %}
+{% block workflow_alerts %}{% endblock %}
+{% block content %}
+<section class="cfm-pdf-reader" data-pdf-reader data-pdf-url="{{ pdf_source.url }}" data-pdf-runtime="{% static 'submissions/vendor/pdfjs-6.4.299/' %}" aria-label="PDF reader">
+    <header class="cfm-pdf-reader-heading">
+        <div class="cfm-pdf-reader-identity">
+            <h1 class="h4 mb-1">{{ pdf_source.label }}</h1>
+            <div class="small text-muted text-break">{{ pdf_source.detail }}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ pdf_source.url }}" target="_blank" rel="noopener">Open directly</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ pdf_source.url }}" download>Download PDF</a>
+        </div>
+    </header>
+    <div class="cfm-pdf-reader-toolbar" role="toolbar" aria-label="PDF controls">
+        <div class="cfm-pdf-reader-control-group">
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-previous aria-label="Previous page" title="Previous page" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
+            <label class="cfm-pdf-page-label">Page <input class="form-control form-control-sm" type="number" min="1" value="1" data-pdf-page aria-label="Page number" disabled></label>
+            <span class="small" data-pdf-page-count>/ —</span>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-next aria-label="Next page" title="Next page" disabled><span class="cfm-pdf-icon cfm-pdf-icon-next" aria-hidden="true"></span></button>
+        </div>
+        <div class="cfm-pdf-reader-control-group">
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-zoom="out" aria-label="Zoom out" title="Zoom out" disabled><span class="cfm-pdf-icon cfm-pdf-icon-zoom-out" aria-hidden="true"></span></button>
+            <select class="form-select form-select-sm" data-pdf-scale aria-label="Zoom" disabled>
+                <option value="page-width">Fit width</option><option value="page-fit">Fit page</option>
+                <option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option>
+                <option value="custom" data-pdf-custom-scale hidden></option>
+            </select>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-zoom="in" aria-label="Zoom in" title="Zoom in" disabled><span class="cfm-pdf-icon cfm-pdf-icon-zoom-in" aria-hidden="true"></span></button>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-rotate aria-label="Rotate clockwise" title="Rotate clockwise" disabled><span class="cfm-pdf-icon cfm-pdf-icon-rotate" aria-hidden="true"></span></button>
+        </div>
+        <div class="cfm-pdf-reader-search" role="search">
+            <input class="form-control form-control-sm" type="search" data-pdf-find placeholder="Find in PDF" aria-label="Find in PDF" disabled>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-find-step="previous" aria-label="Previous match" title="Previous match" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-find-step="next" aria-label="Next match" title="Next match" disabled><span class="cfm-pdf-icon cfm-pdf-icon-next" aria-hidden="true"></span></button>
+            <span class="small cfm-pdf-match-count" data-pdf-find-count role="status" aria-live="polite"></span>
+        </div>
+    </div>
+    <div class="cfm-pdf-reader-status" role="status" aria-live="polite" data-pdf-loading><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading PDF…</div>
+    <div class="alert alert-warning cfm-alert-stack mb-0" role="alert" data-pdf-error hidden></div>
+    <form class="cfm-pdf-password" data-pdf-password-form hidden>
+        <label for="pdf-password">PDF password</label>
+        <input class="form-control" id="pdf-password" type="password" autocomplete="off" required>
+        <button class="btn btn-primary" type="submit">Unlock</button>
+        <button class="btn btn-outline-secondary" type="button" data-pdf-password-cancel>Cancel</button>
+        <span class="small" data-pdf-password-message role="status"></span>
+    </form>
+    <div class="cfm-pdf-reader-pages">
+        <div class="cfm-pdf-reader-scroll" data-pdf-container tabindex="0" aria-label="PDF pages">
+            <div class="pdfViewer" data-pdf-pages></div>
+        </div>
+    </div>
+    <noscript><div class="alert alert-info mb-0">JavaScript is required for this reader. Use Open directly or Download PDF above.</div></noscript>
+</section>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'submissions/pdf_viewer.js' %}?v={{ app_version }}" defer></script>{% endblock %}

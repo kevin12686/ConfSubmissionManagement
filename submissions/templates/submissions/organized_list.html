@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Organized List{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -260,7 +261,7 @@
                 <td>
                     {% if row.publication_pdf.exists %}
                         <div class="cfm-status-line">
-                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open PDF</a>
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% elif submission %}
@@ -307,7 +308,7 @@
                             <span class="badge text-bg-danger">Missing P/S</span>
                         {% endif %}
                         {% if submission.plagiarism_report_path %}
-                            <div class="small mt-1"><a href="{% url 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a></div>
+                            <div class="small mt-1"><a href="{% pdf_viewer 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a></div>
                             {% if submission.plagiarism_report_stale %}
                                 <div><span class="badge text-bg-warning">Old report</span></div>
                             {% endif %}
@@ -355,10 +356,10 @@
                                 </div>
                                 <div class="d-flex flex-wrap gap-2">
                                     {% if row.publication_pdf.exists %}
-                                        <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open publication PDF</a>
+                                        <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open publication PDF</a>
                                     {% endif %}
                                     {% if submission.plagiarism_report_path %}
-                                        <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a>
+                                        <a class="btn btn-sm btn-outline-dark" href="{% pdf_viewer 'submissions:plagiarism_report' submission.pk %}" target="_blank" rel="noopener">Open report</a>
                                     {% endif %}
                                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:exceptions_center' %}">Exceptions Center</a>
                                 </div>
@@ -604,7 +605,7 @@
                                     {% if row.publication_pdf.exists %}
                                         <div class="small text-break mb-2">{{ row.publication_pdf.filename }}</div>
                                         <div class="d-flex flex-wrap gap-2">
-                                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open PDF</a>
                                             <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" download>Download PDF</a>
                                         </div>
                                     {% endif %}
@@ -630,7 +631,7 @@
                                     </div>
                                     {% if row.debug_pdf.exists %}
                                         <div class="small text-break mb-2">{{ row.debug_pdf.filename }}</div>
-                                        <a class="btn btn-sm btn-outline-secondary" href="{{ row.debug_pdf.url }}" target="_blank" rel="noopener">Open debug PDF</a>
+                                        <a class="btn btn-sm btn-outline-secondary" href="{{ row.debug_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open debug PDF</a>
                                     {% else %}
                                         <div class="small text-muted">Not synced. Use Settings &gt; Sync Debug PDFs if needed.</div>
                                     {% endif %}
@@ -721,7 +722,7 @@
                 <td class="cfm-title-cell">{{ item.extracted_title|default:item.final_submission_title|default:"Missing" }}</td>
                 <td>{{ item.extracted_authors|default:"Missing" }}</td>
                 <td>{{ item.page_count|default:"--" }}</td>
-                <td><div class="cfm-status-line">{% if row.publication_pdf.exists %}<a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">PDF</a><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>{% endif %}{% if row.publication_source.exists %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.publication_source.url }}">Source</a>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_source }}</span>{% endif %}</div></td>
+                <td><div class="cfm-status-line">{% if row.publication_pdf.exists %}<a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">PDF</a><span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>{% endif %}{% if row.publication_source.exists %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.publication_source.url }}">Source</a>{% else %}<span class="badge text-bg-danger">{{ ui_labels.file.no_source }}</span>{% endif %}</div></td>
                 <td><span class="badge text-bg-{% if item.format_status == 'review_ok' %}success{% elif item.format_status == 'needs_edit' %}danger{% else %}warning{% endif %}">{{ item.get_format_status_display }}</span></td>
                 <td><a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></td>
             </tr>

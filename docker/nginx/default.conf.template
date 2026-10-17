@@ -60,6 +60,10 @@ server {
 
     location ^~ /static/ {
         alias /app/staticfiles/;
+        include /etc/nginx/mime.types;
+        types {
+            application/javascript mjs;
+        }
         autoindex off;
         access_log off;
         add_header Cache-Control "public, no-cache, must-revalidate";

@@ -169,6 +169,14 @@ Supported page sizes are `25`, `50`, `100`, `200`, and `all`; the default is
 25. Pagination uses `submissions/application/pagination.py` and renders the
 shared component above and below the rows.
 
+Local child lists such as Formatting revision history omit both pagination
+bars when their total fits the smallest supported page size. The threshold is
+derived from `PAGE_SIZE_OPTIONS`, not the currently selected size: a longer
+history shown as All/50 still needs controls to return to 25. Longer child
+lists retain both bars with scope-specific labels (`revision history`,
+`Revisions per page`) so their controls are not confused with the parent
+worklist. Main worklist top/bottom controls remain unchanged.
+
 Top pagination preserves its visible viewport position when the user changes
 page or page size, so a table or card-list header that is already visible does
 not move unnecessarily. Bottom pagination returns immediately to the refreshed
@@ -324,9 +332,77 @@ and render unframed revision entries with wrapping filenames and stacked mobile
 columns. Count queries are batched after main-worklist pagination; file reads
 and hashes belong only to the requested history page/download. History uses
 the shared pagination component with `pagination_local=True`, preserving the
-main URL, queue, and unsaved form. Capture-time status is historical metadata;
+main URL, queue, and unsaved form. Small histories have no redundant pagination
+bars; larger histories identify their own pagination scope. Capture-time status is historical metadata;
 `Current files` never implies publication eligibility. Do not add restore or
 version-switch actions to this read-only component.
+
+## Shared PDF Reader
+
+General PDF open links use the server-rendered `/pdf-viewer/?file=...` shell
+through one template filter/tag, not per-page JavaScript click interception.
+Retain target/new-tab semantics, native-open and raw download links. Use the
+shared `PDFFileInput` for the original-PDF form widget. History fragments and
+HTMX worklists require no separate PDF viewer initialization.
+
+The reader extends the existing base and uses site surfaces, type, focus and
+control styles. It is a full-width tool, not an embedded card inside a card.
+Its compact wrapping toolbar separates page navigation, fit/zoom/rotation and
+text search, using PDF.js's bundled toolbar icons. PDF.js owns page geometry,
+text placement, lazy rendering and search highlights; never alter document
+colors or stretch the rendered PDF to fit a placeholder. General workflow
+alerts are omitted only inside this dedicated reader; they stay on work pages.
+
+Keep the same PDF source visible through its source-kind heading and row/revision
+context. Loading/failure/password feedback stays inline with direct/download
+actions available even if the runtime cannot load. The reader has no save,
+review approval or editable annotation/form controls. Preview images,
+verification evidence and comparison overlays keep their established renderers.
+
+## Formatting PDF Comparison Workspace
+
+After a saved corrected PDF, show the shared comparison-status strip inside
+the review card between its header and collapsible body, not as an unrelated
+alert/card/toast. Identify the saved revision and Original-to-Corrected baseline,
+then show loading, Warning/Info counts, Open comparison, or Retry. When the
+list filter removes that saved paper, reuse the same strip above the queue with
+Paper ID/Final ID so the operation remains identifiable. Save retains the
+current position/Single queue; do not auto-open/navigate. AJAX updates must not
+touch unsaved forms. Initialize the component on full-page/HTMX loads with one
+in-flight request per signed receipt, no polling. Keep failures explicitly
+separate from upload success and never show a green publication approval.
+When reusing a result after an HTMX filter change, refresh its return link from
+the current panel context rather than retaining the previous worklist URL.
+
+Compare PDF is a contextual link beside saved Formatting PDFs, shared by all
+review modes. Open the separate workspace in a new tab so upload inputs and
+unsaved notes in the review card remain untouched. Reuse site typography,
+controls, surfaces, and the shared image loader/Ctrl magnifier; do not add a
+second document-viewer framework or embed the comparison inside narrow cards.
+Before/After identify source, filename, and page independently. Findings use
+advisory language, filter locally, and navigate the complete comparison rather
+than the main worklist. Matching text can link pages; an uncertain match must
+leave the other page unchanged. Small screens stack the documents and retain
+independent page selectors. Hide highlights while an image is loading, preserve
+its natural page aspect ratio, and never show an empty image as a successful
+preview. Figures/tables/layout remain manual checks, with no Review OK action
+or green completeness badge in this workspace.
+
+Group content/pattern findings and same-text/sequence-position records in the
+same finding navigator, with separate displayed counts. Content/pattern groups
+use the existing Warning amber tokens; same-text groups use the existing Info
+blue tokens, with explicit Warning/Info text and standard count badges.
+Category headings are unfilled, non-interactive text with a bottom divider and
+space before the indented findings. Do not reuse item-style filled surfaces or
+left borders on these headings. Clickable findings retain restrained
+hover/selected surfaces and category-colored left borders; selection has a
+separate outline and text emphasis, while keyboard focus uses
+the standard primary outline. Do not recolor PDF difference overlays to imply
+severity. Do not hide same-text records or label them safe/unchanged layout.
+List actual passage pages independently on Before/After; a side without text
+says **No corresponding text** and labels its viewer as a reference page.
+Multi-page passages use side-specific finding-page selectors. Changing those
+selectors retains the selected finding; ordinary page browsing clears it.
 
 ## Title/Author Evidence
 
@@ -451,7 +527,9 @@ GET.
   prevents duplicate submission while the server prepares the file, and
   re-enables only the controls it temporarily disabled after the matching
   completion cookie arrives. Do not add page-specific download-button reset
-  scripts.
+  scripts. These same forms constrain their width and wrap long button labels
+  within the available space, including narrow screens and export-blocker
+  panels; never let a download action widen the whole page.
 
 ## Review Checklist
 

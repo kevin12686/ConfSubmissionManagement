@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Exceptions{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -89,10 +90,10 @@
                         <div class="col-12">
                             <div class="d-flex flex-wrap gap-2">
                                 {% if row.publication_pdf.exists %}
-                                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open publication PDF</a>
+                                    <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open publication PDF</a>
                                 {% endif %}
                                 {% if row.submission.plagiarism_report_path %}
-                                    <a class="btn btn-sm btn-outline-dark" href="{% url 'submissions:plagiarism_report' row.submission.pk %}" target="_blank" rel="noopener">Open report</a>
+                                    <a class="btn btn-sm btn-outline-dark" href="{% pdf_viewer 'submissions:plagiarism_report' row.submission.pk %}" target="_blank" rel="noopener">Open report</a>
                                 {% endif %}
                             </div>
                         </div>

@@ -517,6 +517,15 @@
         .btn:not(.btn-link):not(:disabled):not(.disabled) {
             box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
         }
+        form[data-cfm-download-form="true"] {
+            min-width: 0;
+            max-width: 100%;
+        }
+        form[data-cfm-download-form="true"] .btn {
+            max-width: 100%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
         .btn-outline-warning {
             --bs-btn-color: var(--cfm-warning-text);
             --bs-btn-bg: var(--cfm-warning-bg);
@@ -1744,6 +1753,7 @@
             scroll-margin-top: 1rem;
         }
     </style>
+{% block extra_head %}{% endblock %}
 </head>
 <body>
 {% with current_url=request.resolver_match.url_name %}
@@ -1832,10 +1842,10 @@
     <div id="htmx-request-error" class="alert alert-danger border cfm-attention d-none" role="alert">
         The partial page update failed. No workflow state was changed. Retry the action or refresh the page.
     </div>
-    <div id="global-workflow-alerts"
+    {% block workflow_alerts %}<div id="global-workflow-alerts"
          hx-get="{% url 'submissions:workflow_alerts' %}"
          hx-trigger="load"
-         hx-swap="outerHTML"></div>
+         hx-swap="outerHTML"></div>{% endblock %}
     {% if messages %}
         <div class="toast-container position-fixed cfm-toast-container" aria-live="polite" aria-atomic="true">
             {% for message in messages %}
@@ -2084,5 +2094,6 @@ document.body.addEventListener("htmx:afterSwap", function (event) {
     initializeUploadZones(event.target);
 });
 </script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

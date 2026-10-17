@@ -56,6 +56,7 @@ PATH_TEXT_FIELDS = {
     "plagiarism_report_path",
 }
 TEMP_SNAPSHOT_EXCLUDED_DIRS = {
+    "formatting_comparison_previews",
     "formatting_upload_previews",
     "import_previews",
     "record_edit_previews",

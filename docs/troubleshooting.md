@@ -1,5 +1,26 @@
 # Troubleshooting
 
+## PDF Reader Cannot Display A File
+
+Use Open directly to check the same endpoint with the browser's PDF viewer, or
+Download PDF for a local PDF reader. A missing Corrected file is not replaced
+with Original, and an expired/corrupt revision or comparison must be handled
+through its owning workflow. Rebuilding the reader page cannot repair a missing
+file or reapprove a review. Live publication links resolve again when fetched;
+they are not permanent historical snapshots.
+
+If the runtime fails to load after an update, refresh the page and check that
+all pinned PDF.js static files were deployed/collected, including the module
+worker, CMaps, fonts, WASM/ICC resources and viewer CSS/images. The display,
+worker and viewer versions must match. Static `.mjs` files need a JavaScript
+MIME type and `.wasm` files need `application/wasm`; use the supported
+Django/WhiteNoise setup or the Nginx template's explicit `.mjs` mapping. No npm install or CDN is needed on the
+operator's machine. Direct opening remains available when JavaScript is off.
+
+Search uses the PDF's text layer; scans may have no searchable text. Rendering
+in PDF.js is not proof that figures, references, fonts or layout are unchanged;
+inspect the full PDF and use the read-only comparison workspace as appropriate.
+
 Use this guide when the local app behaves unexpectedly.
 
 For normal task order, use the [Operator Guide](operator_guide.md). For the
@@ -632,6 +653,47 @@ Current publication safety checks validate current files independently.
 New System State archives use v6 and include revision records/files. A v5
 restore legitimately has no recorded history; capture existing corrected files
 afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
+
+### PDF comparison unavailable or unexpectedly noisy
+
+A saved Formatting PDF now starts an Original comparison through the returned
+page, not as part of saving the upload. If comparison fails, the corrected PDF,
+revision history, and normal upload resets remain saved. Use Retry comparison
+for network/extraction/storage problems. An already-running message means a
+duplicate build was not started; Retry can check it again without polling.
+Leaving the page can interrupt comparison; a subsequent page load reuses a
+completed result or starts the still-pending latest receipt. An expired receipt
+or newer PDF upload cannot be retried as if it were the old version: open manual
+Compare PDF for the current files. Missing Original is reported, never replaced
+with a previous revision. Title guard previews/cancelled uploads do not trigger
+comparison, and source-only/status/notes changes create no new request.
+
+Compare PDF uses saved files only; save an upload before comparing. Rebuild
+after two hours or when a PDF, baseline, active version, or publication scope
+changes. A missing selected corrected PDF never falls back to Original. Recover
+missing/corrupt revision files from a verified backup; comparison does not
+repair files or create revisions. Temporary comparison data is deliberately
+absent after System State restore.
+
+Textless/password-protected or over-limit PDFs may require manual comparison.
+Text findings can also reflect reflow, ligatures, equations, or extraction order;
+check the page image and do not treat an unmatched passage or a replacement
+character as proof of missing/corrupt content. A no-findings result does not
+validate figures or tables. Comparisons stop at 64 MiB, 100 pages, or 30,000
+tokens per PDF and explicitly warn when the 300-finding display cap is reached.
+Ordinary cleanup protects open comparison folders even if Reports overlaps
+them; their normal expiry and Clear Database remain responsible for removal.
+
+If repagination splits the same page header into apparent removal/addition,
+rebuild an older-method comparison. The current method retains headers/footers
+but groups uniquely paired exact passages as **Same text / sequence position**.
+Repeated or ambiguous text intentionally stays unmatched. Check both actual
+locations and context; matching text is not a layout or meaning approval.
+**No corresponding text** means the other viewer is only a labeled reference,
+not evidence that a passage exists there. Multi-page findings have a page
+selector for each side. A pairing-limit notice means remaining text was kept
+unpaired, not dropped. Even a textless baseline permits corrected-file pattern
+prompts, but cannot establish that those patterns are new.
 
 ### Need a completely clean conference
 

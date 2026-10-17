@@ -22,6 +22,14 @@ be reflected here. For task-oriented guides, start from the
 Generated copies, legacy path fields, browser state, and compatibility caches
 must not replace these sources of truth.
 
+The shared PDF.js reader is a display layer only. It loads the exact existing
+endpoint supplied by the originating page; it cannot choose another submission,
+fallback file, revision or comparison side. Download and native-open actions
+use that same endpoint, with all its existing selection/integrity/expiry rules.
+Reader URL validation does not fetch or proxy the PDF. No PDF.js output,
+annotations, browser rendering or search result can enter publication files,
+readiness, processing, review state, manifests or ZIP assembly.
+
 ## Publication Scope
 
 Paper Master defines which Paper IDs belong to the conference and owns the
@@ -270,6 +278,27 @@ files or restore review approvals. Revision capture follows the existing
 corrected-upload reset rules; baseline capture and history GET/download leave
 all review flags and publication pointers unchanged. Missing/corrupt history
 is reported independently and cannot change publication selection.
+
+Formatting PDF comparison is advisory and read-only. Its After input comes
+only from `publication_pdf_info()` for the exact active Master Publishing
+submission; its Before input is that row's Original or a verified revision.
+Temporary snapshots and difference findings are never publication sources,
+readiness conditions, or evidence that can approve/reset a review. Builds
+and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
+corrected files or historical baselines never trigger a substitute. A comparison
+with no findings is not proof of intact figures, tables, equations, or layout.
+Header/footer text stays in comparison. Exact same-text reconciliation retains
+both occurrences and all unpaired remainder, does not waive a content change,
+and cannot affect readiness. Reference-page navigation is not a text match.
+
+Automatic Original comparison starts separately after a successful Formatting
+PDF save, never within its transaction. A signed request binds the exact saved
+revision, corrected file identity/upload time, and SHA256. Builds and cached
+result access reject later PDF revisions or changed publication candidates;
+they do not substitute a newer file. Source-only/status/notes changes do not
+request a new PDF comparison. Comparison failure never rolls back the upload,
+restores a prior version, changes review flags, or creates/waives a publication
+blocker. Normal upload-dependent reset rules still apply exactly as before.
 
 Long-running processing and extraction capture semantic row/file evidence and
 recheck it under lock before persistence. Stale results must not overwrite

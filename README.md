@@ -38,6 +38,10 @@ one local application:
   exclusions;
 - retains immutable Formatting revision PDF/source pairs for viewing and
   download, including through System State backup/restore;
+- compares saved Original/revision PDFs with the selected publication PDF for
+  text changes and reference-error prompts, with visible same-text reflow
+  records and read-only page images (headers/footers are not excluded), and
+  automatically starts an Original comparison after a saved Formatting PDF upload;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
   plagiarism, author-count, and exception reviews;
 - gives Dashboard, Organized List, Error Report, and final export one shared
@@ -46,6 +50,11 @@ one local application:
   package;
 - records state-changing work in an audit log and creates portable System State
   backups.
+
+PDF open links share a local, read-only PDF.js reader with page navigation,
+zoom, text selection/search and rotation. Downloads and publication selection
+remain on their existing endpoints; Open directly is available as a native
+browser fallback. See the [Operator Guide](docs/operator_guide.md#pdf-reader).
 
 The application is designed for editors working on a trusted local machine. It
 has no login system, cloud database, or hardened public deployment mode.

@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Publication Candidates{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -33,7 +34,7 @@
                 <td>
                     {% if row.publication_pdf.exists %}
                         <div class="cfm-status-line">
-                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url }}" target="_blank" rel="noopener">Open PDF</a>
+                            <a class="btn btn-sm btn-outline-dark" href="{{ row.publication_pdf.url|pdf_viewer_url }}" target="_blank" rel="noopener">Open PDF</a>
                             <span class="badge text-bg-{% if row.publication_pdf.source == 'corrected' %}success{% else %}secondary{% endif %}">{{ row.publication_pdf.label }}</span>
                         </div>
                     {% else %}

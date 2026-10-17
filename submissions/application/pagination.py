@@ -27,6 +27,10 @@ class WorklistPage:
     indicator_id: str
     scroll_anchor: str
 
+    @property
+    def has_page_size_choices(self):
+        return self.total_count > min(PAGE_SIZE_OPTIONS)
+
 
 def paginate_worklist(
     request,

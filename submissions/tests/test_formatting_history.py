@@ -167,6 +167,20 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         Path(self.submission.formatted_pdf_file.path).unlink()
         self.assertFalse(publication_pdf_info(self.submission)["exists"])
 
+    def test_small_history_omits_redundant_controls_for_full_and_lazy_pages(self):
+        self.upload(pdf=b"history")
+        before = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        url = reverse("submissions:formatting_history", args=[self.submission.pk])
+        for headers in ({}, {"HTTP_HX_REQUEST": "true"}):
+            with self.subTest(headers=headers):
+                response = self.client.get(url, **headers)
+                self.assertContains(response, "Revision 1")
+                self.assertNotContains(response, "cfm-worklist-pagination")
+                self.assertNotContains(response, "Rows per page")
+                self.assertNotContains(response, "Revisions per page")
+                self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), before)
+
     def test_history_read_and_pagination_are_local_and_read_only(self):
         self.upload(pdf=b"history")
         for number in range(2, 28):
@@ -175,7 +189,19 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         response = self.client.get(reverse("submissions:formatting_history", args=[self.submission.pk]), HTTP_HX_REQUEST="true")
         self.assertContains(response, "Showing 1-25 of 27", count=2)
         self.assertContains(response, 'hx-push-url="false"')
+        self.assertContains(response, 'aria-label="Top revision history pagination"', count=1)
+        self.assertContains(response, 'aria-label="Bottom revision history pagination"', count=1)
+        self.assertContains(response, 'aria-label="Revisions per page"', count=2)
+        self.assertNotContains(response, 'aria-label="Rows per page"')
         self.assertEqual(len(response.context["rows"]), 25)
+        second = self.client.get(reverse("submissions:formatting_history", args=[self.submission.pk]), {"page": 2}, HTTP_HX_REQUEST="true")
+        self.assertContains(second, "Showing 26-27 of 27", count=2)
+        self.assertEqual([row["revision"].number for row in second.context["rows"]], [2, 1])
+        for size in ("50", "all"):
+            complete = self.client.get(reverse("submissions:formatting_history", args=[self.submission.pk]), {"page_size": size}, HTTP_HX_REQUEST="true")
+            self.assertContains(complete, 'aria-label="Revisions per page"', count=2)
+            self.assertContains(complete, "page_size=25")
+            self.assertEqual(len(complete.context["rows"]), 27)
         self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), before)
         for params in ({"filter": "all"}, {"mode": "focus", "submission": self.submission.pk}):
             page = self.client.get(reverse("submissions:formatting"), params)

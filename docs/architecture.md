@@ -1,5 +1,29 @@
 # Architecture Notes
 
+## PDF Browsing Boundary
+
+`submissions/services/pdf_viewer.py` builds presentation URLs and validates
+the reader's allowlisted local PDF sources. `controllers/pdf_viewer.py` renders
+a GET-only shell without opening, proxying, hashing or selecting the file.
+Templates use the shared `pdf_viewer_url` filter / `pdf_viewer` URL tag;
+`PDFFileInput` uses the same presentation path for the original-PDF widget.
+This works on normal navigation and lazy/HTMX fragments without click handlers
+or per-page initialization.
+
+The local PDF.js 6.4.299 legacy display/worker and viewer components provide
+document parsing, continuous lazy rendering, text selection, internal PDF
+navigation and search. CFM supplies the shared toolbar and site styling.
+Annotation editing, interactive form filling, PDF scripting and XFA execution
+are disabled; application files are never serialized from the viewer.
+Download/direct links still target the original endpoint. No external PDF URL,
+general application URL or arbitrary filesystem path is accepted.
+
+Publication and row-scoped helpers, file endpoints, immutable revision checks
+and comparison snapshot validation remain authoritative. The browser cannot
+change active versions, review state, readiness or export bytes. Existing
+images and comparison overlays remain on their prior renderer. The new reader
+has no model or stored workflow state, so System State v6 remains unchanged.
+
 Conference Final Manager is a local Django application with SQLite storage and local file management. The application is intentionally no-login and single-machine.
 
 This document explains system boundaries and safety rationale. The canonical
@@ -15,6 +39,47 @@ belong in the audience-specific guides listed on the
 - Application commands wrap state-changing workflows and return result objects.
 - Services contain domain logic for imports, verification, PDF processing, formatting, title/author extraction, CrossCheck/plagiarism integration, exceptions, reports, storage cleanup, and backup/restore.
 - Templates stay server-rendered Django pages using locally pinned Tabler 1.4.0 with Bootstrap-compatible markup; there is no React or separate frontend build.
+
+Formatting comparison is a separate read-only service/controller/workspace,
+not a branch of PDF processing or Formatting save. It uses PyMuPDF plus the
+standard-library sequence matcher to compare exact saved file bytes. The
+current publication helper selects After; Before is the same submission's
+Original or a hash-verified Formatting revision. No FinalSubmission or mirrored
+state is written. The build checks scope/files again before retaining signed,
+two-hour snapshots in `data/formatting_comparison_previews/<token>/`. Snapshot
+PDF/image access rechecks current scope, live file identities/hashes, and the
+requested copy's SHA256. This workspace reuses image loading/magnification and
+never uses generated images as publication inputs. Missing/changed documents
+fail explicitly. Comparison data is excluded from archives, protected from
+normal Reports cleanup, and covered by full Clear Database. Archive v6 remains
+unchanged because neither model state nor retained artifact contracts change.
+
+The primary sequence diff retains every extracted token, including headers and
+footers. A bounded second pass pairs globally unique exact unmatched spans,
+consumes occurrences one-to-one, and leaves changed/ambiguous remainder visible.
+Whole-word boundaries prevent pairing a matching prefix inside a changed word.
+Token accounting must balance aligned, paired, and remaining tokens on each
+side. Same-text pairs remain visible evidence rather than a completeness result.
+Actual passage pages and navigation-only reference pages are separate fields.
+Comparison payload method v2 rejects v1 results with a rebuild prompt; this
+temporary payload version is independent of System State archive v6.
+
+Automatic upload comparison orchestration belongs to
+`automatic_pdf_comparison.py`, not the Formatting transaction. A typed
+`FormattingSaveResult` carries the exact newly captured revision; compatibility
+entry points still return FinalSubmission. The controller retains a signed
+two-hour request in the session (up to 20, one per submission). It contains
+revision ID/key, saved corrected SHA256, and file identity, not an instruction
+to look up the latest row later. After redirect, the shared status component
+uses GET to read cached status and a separate CSRF-protected POST to build a
+pending latest-upload comparison. No worker threads, polling, or GET builds
+are introduced. Other receipts require an explicit Retry if not already built.
+`formatting_comparison_previews/requests/<revision-key>/` holds signed cached
+result references and a portable Django OS file lock. A completed result is
+revalidated and reused; process exit releases the lock. A failed comparison
+cannot compensate/rollback the already committed upload. Newer PDF revisions,
+scope/file changes, or expired evidence reject the old request, never substitute
+a newer PDF. Later source-only revisions do not change the compared PDF.
 
 Core route groups:
 

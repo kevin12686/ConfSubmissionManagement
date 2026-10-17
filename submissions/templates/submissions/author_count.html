@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load pdf_viewer %}
 {% block title %}Author Count{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
@@ -50,7 +51,7 @@
                     {% for paper in row.paper_links %}
                         {% if not forloop.first %}<span class="text-muted">,</span>{% endif %}
                         {% if paper.exists %}
-                            <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.paper_id }}</a>
+                            <a href="{{ paper.url|pdf_viewer_url }}" target="_blank" rel="noopener">{{ paper.paper_id }}</a>
                         {% else %}
                             <span class="text-muted">{{ paper.paper_id }}</span>
                             <span class="badge text-bg-danger">{{ ui_labels.file.no_pdf }}</span>

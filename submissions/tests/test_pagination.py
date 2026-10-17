@@ -11,6 +11,7 @@ from django.test import (
     override_settings,
 )
 from django.test.utils import CaptureQueriesContext
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from submissions.application.pagination import paginate_worklist
@@ -100,6 +101,41 @@ class WorklistPaginationTests(SimpleTestCase):
         )
 
         self.assertEqual(page.scroll_anchor, "paper-master-worklist")
+
+    def render_pagination(self, page, *, local=False, position="top"):
+        return render_to_string("submissions/partials/worklist_pagination.html", {
+            "pagination": page, "pagination_local": local,
+            "pagination_position": position,
+        })
+
+    def test_small_child_lists_hide_both_bars_without_removing_parent_controls(self):
+        for count in (0, 1, 24, 25):
+            page = paginate_worklist(self.factory.get("/history/"), self.items[:count])
+            for position in ("top", "bottom"):
+                with self.subTest(count=count, position=position):
+                    local = self.render_pagination(page, local=True, position=position)
+                    self.assertNotIn("<nav", local)
+                    main = self.render_pagination(page, position=position)
+                    self.assertEqual('aria-label="Rows per page"' in main, count > 0)
+
+    def test_long_child_lists_keep_controls_for_large_page_sizes_and_all(self):
+        for size in ("25", "50", "all"):
+            page = paginate_worklist(self.factory.get(f"/history/?page_size={size}"), self.items[:26])
+            for position in ("top", "bottom"):
+                with self.subTest(size=size, position=position):
+                    html = self.render_pagination(page, local=True, position=position)
+                    self.assertIn('aria-label="Rows per page"', html)
+                    self.assertIn("page_size=25", html)
+                    self.assertIn("page_size=all", html)
+        self.assertTrue(page.is_all)
+        self.assertEqual(len(page.items), 26)
+
+    def test_child_control_threshold_follows_shared_page_size_options(self):
+        with patch("submissions.application.pagination.PAGE_SIZE_OPTIONS", (10, 25, 50)):
+            small = paginate_worklist(self.factory.get("/history/"), self.items[:10])
+            large = paginate_worklist(self.factory.get("/history/"), self.items[:11])
+            self.assertFalse(small.has_page_size_choices)
+            self.assertTrue(large.has_page_size_choices)
 
 
 class WorklistPaginationViewTests(TestCase):

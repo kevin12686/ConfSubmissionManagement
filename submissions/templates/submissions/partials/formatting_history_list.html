@@ -1,9 +1,10 @@
+{% load pdf_viewer %}
 <div id="formatting-history-content-{{ submission.pk }}" aria-live="polite">
     <div class="d-flex flex-wrap justify-content-between gap-2">
         <h3 class="h5 mb-0">Revision history</h3>
         <span class="text-muted small">Final {{ submission.final_submission_id }} · {{ submission.paper_id_filled }}</span>
     </div>
-    {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" %}
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="top" pagination_label="revision history" pagination_size_label="Revisions per page" %}
     {% for row in rows %}
         {% with revision=row.revision %}
         <article class="py-3 border-bottom" aria-label="Revision {{ revision.number }}">
@@ -20,7 +21,7 @@
                         <div class="d-flex align-items-center flex-wrap gap-2 mb-1"><span class="fw-semibold">{{ file.label }}</span><span class="badge text-bg-secondary">{{ file.metadata.origin|title }}</span>{% if file.kind == 'source' and file.metadata.filename %}<span class="small text-muted">{{ file.type_label }}</span>{% endif %}</div>
                         <div class="text-break">{{ file.metadata.filename|default:"No file at capture" }}</div>
                         {% if file.available %}
-                            <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ file.url }}" {% if file.kind == 'pdf' %}target="_blank" rel="noopener"{% endif %}>{% if file.kind == 'pdf' %}Open PDF{% else %}Download source{% endif %}</a>
+                            <a class="btn btn-sm btn-outline-secondary mt-2" href="{% if file.kind == 'pdf' %}{{ file.url|pdf_viewer_url }}{% else %}{{ file.url }}{% endif %}" {% if file.kind == 'pdf' %}target="_blank" rel="noopener"{% endif %}>{% if file.kind == 'pdf' %}Open PDF{% else %}Download source{% endif %}</a>
                         {% else %}<div class="text-muted small">{% if file.metadata.exists %}History file unavailable{% else %}Missing at capture{% endif %}</div>{% endif %}
                     </div>
                 {% endfor %}
@@ -38,5 +39,5 @@
     {% empty %}
         <div class="cfm-empty">No formatting revisions have been recorded. Existing corrected files can be captured during the upgrade; earlier revisions cannot be reconstructed.</div>
     {% endfor %}
-    {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}
+    {% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" pagination_label="revision history" pagination_size_label="Revisions per page" %}
 </div>

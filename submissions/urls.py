@@ -6,6 +6,7 @@ from . import views
 app_name = "submissions"
 
 urlpatterns = [
+    path("pdf-viewer/", views.pdf_viewer, name="pdf_viewer"),
     path("health/ready/", views.readiness, name="readiness"),
     path("ui/paper-picker/", views.paper_picker_search, name="paper_picker_search"),
     path("ui/workflow-alerts/", views.workflow_alerts, name="workflow_alerts"),
@@ -55,6 +56,10 @@ urlpatterns = [
         name="title_author_manual_override_form",
     ),
     path("reviews/formatting/", views.formatting, name="formatting"),
+    path("reviews/formatting/<int:pk>/compare/", views.formatting_pdf_comparison, name="formatting_pdf_comparison"),
+    path("reviews/formatting/<int:pk>/upload-comparison/", views.formatting_upload_comparison, name="formatting_upload_comparison"),
+    path("reviews/formatting/<int:pk>/compare/<str:token>/<str:side>/<int:page_number>.png", views.formatting_comparison_page, name="formatting_comparison_page"),
+    path("reviews/formatting/<int:pk>/compare/<str:token>/<str:side>/pdf/", views.formatting_comparison_pdf, name="formatting_comparison_pdf"),
     path(
         "reviews/formatting/<int:pk>/preview/",
         views.formatting_preview,

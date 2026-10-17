@@ -76,7 +76,7 @@ from submissions.services.system_state import (
 from submissions.services.formatting import (
     FORMAT_FILTER_OPTIONS,
     FormattingWorkflowError,
-    apply_formatting_upload_preview,
+    apply_formatting_upload_preview_result,
     cancel_formatting_upload_preview,
     corrected_source_type_label,
     create_formatting_review_queue,
@@ -89,8 +89,9 @@ from submissions.services.formatting import (
     load_formatting_review_snapshot,
     original_source_type_label,
     preview_formatting_upload,
-    save_formatting_review,
+    save_formatting_review_result,
 )
+from submissions.services.automatic_pdf_comparison import remember_upload_comparison, upload_comparison_entries
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
     publication_pdf_info,
@@ -1118,15 +1119,8 @@ def formatting(request):
         if action == "confirm_formatting_upload":
             token = request.POST.get("preview_token", "")
             try:
-                submission = apply_formatting_upload_preview(token)
-                messages.success(request, _formatting_success_message(submission, mode))
-                return _formatting_redirect_after_save(
-                    request,
-                    current_filter,
-                    q,
-                    mode,
-                    queue_token=queue_token,
-                )
+                result = apply_formatting_upload_preview_result(token)
+                return _formatting_saved_response(request, result, current_filter, q, mode, queue_token)
             except Exception as exc:
                 audit_failure("formatting_upload_apply", exc, "Formatting upload confirmation failed.", request=request)
                 messages.error(request, str(exc))
@@ -1198,21 +1192,14 @@ def formatting(request):
                             "return_to": request.POST.get("return_to", ""),
                         }
                     elif preview.get("token"):
-                        apply_formatting_upload_preview(preview["token"])
+                        result = apply_formatting_upload_preview_result(preview["token"])
                         discard_formatting_review_snapshot(
                             request.session,
                             snapshot_token,
                         )
-                        messages.success(request, _formatting_success_message(submission, mode))
-                        return _formatting_redirect_after_save(
-                            request,
-                            current_filter,
-                            q,
-                            mode,
-                            queue_token=queue_token,
-                        )
+                        return _formatting_saved_response(request, result, current_filter, q, mode, queue_token)
                     else:
-                        save_formatting_review(
+                        result = save_formatting_review_result(
                             submission.pk,
                             form.cleaned_data,
                             review_snapshot,
@@ -1221,14 +1208,7 @@ def formatting(request):
                             request.session,
                             snapshot_token,
                         )
-                        messages.success(request, _formatting_success_message(submission, mode))
-                        return _formatting_redirect_after_save(
-                            request,
-                            current_filter,
-                            q,
-                            mode,
-                            queue_token=queue_token,
-                        )
+                        return _formatting_saved_response(request, result, current_filter, q, mode, queue_token)
                 except Exception as exc:
                     audit_failure("formatting_review_update", exc, "Formatting update failed.", request=request, submission=submission)
                     messages.error(request, f"Formatting update failed: {exc}")
@@ -1321,6 +1301,8 @@ def formatting(request):
         for submission in all_submissions:
             submission.formatting_revision_count = revision_counts.get(submission.pk, 0)
     file_inspection = FileInspectionContext()
+    comparison_entries = upload_comparison_entries(request.session)
+    comparisons_by_id = {entry["submission_id"]: entry for entry in comparison_entries}
     rows = []
     for submission in all_submissions:
         publication_pdf = publication_pdf_info(
@@ -1334,6 +1316,7 @@ def formatting(request):
         rows.append(
             {
                 "submission": submission,
+                "automatic_comparison": comparisons_by_id.get(submission.pk),
                 "form": (
                     bound_form
                     if bound_submission_id == submission.pk
@@ -1390,6 +1373,11 @@ def formatting(request):
             "focused_context": focused_context,
             "focused_submission": focused_submission,
             "pagination": page,
+            "comparison_fallback": (
+                comparison_entries[0] if mode == "list" and comparison_entries
+                and comparison_entries[0]["submission_id"] not in {row["submission"].pk for row in rows}
+                else None
+            ),
         },
     )
 
@@ -1417,6 +1405,20 @@ def _formatting_success_message(submission, mode):
             "Review this paper, then go next when ready."
         )
     return f"Formatting record updated for {submission.final_submission_id}."
+
+
+def _formatting_saved_response(request, result, current_filter, q, mode, queue_token):
+    try:
+        remember_upload_comparison(request.session, result)
+    except Exception as exc:
+        logger.exception("Formatting saved but automatic comparison could not be prepared")
+        try:
+            audit_failure("formatting_pdf_compare", exc, "Formatting files saved; automatic comparison could not be prepared.", request=request, submission=result.submission)
+        except Exception:
+            logger.exception("Could not audit comparison preparation failure")
+        messages.warning(request, "Formatting files saved, but automatic comparison could not be prepared. Use Compare PDF to retry manually.")
+    messages.success(request, _formatting_success_message(result.submission, mode))
+    return _formatting_redirect_after_save(request, current_filter, q, mode, queue_token=queue_token)
 
 
 def _formatting_redirect_after_save(

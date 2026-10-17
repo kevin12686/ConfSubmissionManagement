@@ -1,5 +1,6 @@
 from .controllers.dashboard import dashboard, dashboard_summary
 from .controllers.health import readiness
+from .controllers.pdf_viewer import pdf_viewer
 from .controllers.papers import (
     import_initial_papers_view,
     initial_paper_delete,
@@ -56,3 +57,4 @@ from .controllers.settings import (
 from .controllers.ui import publication_duplicate_details, workflow_alerts
 from .controllers.lookups import paper_picker_search
 from .controllers.formatting_history import formatting_history, formatting_revision_pdf, formatting_revision_source
+from .controllers.pdf_comparison import formatting_pdf_comparison, formatting_comparison_page, formatting_comparison_pdf, formatting_upload_comparison

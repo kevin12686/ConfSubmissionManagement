@@ -3,6 +3,125 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.17.2 - 2026-10-16
+
+### Narrow-Screen Download Actions
+
+- Constrain shared download forms and wrap their long button labels so Export
+  Reports and blocked-package actions do not widen narrow screens.
+- Keep download requests, publication selection, readiness and archive v6
+  unchanged.
+
+## 1.17.1 - 2026-10-16
+
+### Local History Pagination
+
+- Hide redundant top/bottom pagination bars for child lists that fit the
+  smallest supported page size, including revision history in Formatting,
+  Final Submission edit and the standalone history page.
+- Label larger histories' pagination and page-size controls explicitly as
+  revision history rather than the parent worklist. Retain both bars even
+  when All or a larger page size is selected.
+- Keep main worklist pagination, query/filter/slicing behavior, publication
+  selection and review state unchanged. State archive stays v6.
+
+## 1.17.0 - 2026-10-16
+
+### Shared Read-Only PDF Reader
+
+- Route PDF browsing links through one CFM-styled PDF.js reader, including
+  publication/submission files, Original/Corrected uploads, revision history,
+  reports, uploaded previews, debug PDFs and comparison snapshots.
+- Add continuous lazy page rendering, text selection/search, page navigation,
+  fit/zoom, rotation and password entry. Keep direct opening and PDF downloads
+  on the exact original endpoint. No PDF editing, form filling or scripting is
+  enabled.
+- Vendor the pinned PDF.js 6.4.299 runtime, worker, fonts and decoders locally;
+  no CDN, external PDF processing service or runtime npm install is required.
+- Validate local PDF source URLs without fetching/proxying files or performing
+  publication selection. Preserve missing-file, history-integrity and stale
+  comparison failures rather than choosing a substitute.
+- Keep publication scope, file priority, readiness, reset rules, ZIPs, review
+  images and comparison algorithms unchanged. No migration or archive version
+  change is needed; State archive remains v6.
+
+## 1.16.0 - 2026-10-16
+
+### Automatic Original / Corrected PDF Comparison
+
+- After a successful Formatting corrected-PDF save (including confirmed title
+  guards), queue a signed request bound to that exact revision, file identity,
+  upload time, and PDF SHA256. Keep the existing save/reset behavior unchanged.
+- Show comparison progress, Warning/Info counts, an Open comparison link, and
+  Retry in the saved card, including when collapsed. Identify the latest saved
+  paper separately when the current list filter no longer contains it.
+- Build through a separate CSRF-protected POST after returning to the review
+  page; GET only reads status. Do not auto-navigate, poll, create background
+  workers, or run comparisons in the upload transaction.
+- Reuse valid results under a portable file lock, reject newer PDF uploads and
+  changed scope/files, and never substitute another baseline or submission.
+- Preserve uploaded files/revisions and review state when comparison fails.
+  Source-only/status/notes changes create no new comparison request. Manual
+  Original/revision comparisons remain available.
+- Keep request/result caches temporary, out of backups, and covered by Clear
+  Database. No database migration or State archive v6 change is required.
+
+## 1.15.3 - 2026-10-16
+
+### Finding Group Hierarchy
+
+- Separate static Warning/Info category headings from clickable findings using
+  unfilled headings, bottom dividers, spacing, and indented finding lists.
+- Preserve category colors, item selection/focus states, comparison logic,
+  publication behavior, and State archive v6 unchanged.
+
+## 1.15.2 - 2026-10-16
+
+### Comparison Finding Presentation
+
+- Present content/pattern findings as Warning and same-text/sequence-position
+  records as Info, using the site's existing amber/blue color tokens and badges.
+- Keep selection distinct through an outline and emphasis rather than changing
+  classification color. Preserve PDF difference overlays, comparison results,
+  navigation, publication rules, review state, and State archive v6 unchanged.
+
+## 1.15.1 - 2026-10-16
+
+### Reflow-Aware Read-Only PDF Comparison
+
+- Retain all header/footer/body text while pairing unique exact unmatched
+  passages one-to-one into visible same-text/sequence-position records.
+  Repeated, partial-word, changed, or uncertain text remains a content finding.
+- Track all actual passage pages separately from optional reference pages;
+  provide passage-page navigation without inventing counterpart text locations.
+- Separate content/pattern findings from same-text records within the existing
+  workspace. Neither group approves publication or proves unchanged layout.
+- Check token accounting, retain unpaired text when pairing reaches its bound,
+  scan patterns even with a textless baseline, and require explicit rebuild for
+  comparisons produced by the older method.
+- Keep publication selection, files, flags, readiness, exports, models, and State
+  archive v6 unchanged.
+
+## 1.15.0 - 2026-10-16
+
+### Read-Only Formatting PDF Comparison
+
+- Add Compare PDF in Formatting Review List/Single/Focus, opening a separate
+  workspace without submitting or discarding unsaved Formatting inputs.
+- Compare the row's Original or an integrity-verified Formatting revision with
+  its current publication-helper PDF; identify added/changed/unmatched text,
+  newly occurring Word reference errors, possible unresolved references, and
+  replacement characters without claiming content completeness.
+- Render hash-verified full-page snapshots with selected-region highlights,
+  text-linked or independent page navigation, and the shared loading/magnifier
+  components. Figures, tables, equations, and layout remain manual checks.
+- Audit comparison builds and reject stale scope/files, corrupt snapshots,
+  expired tokens, cross-submission revisions, and excessive document sizes.
+- Keep comparisons temporary and out of System State backups; preserve them
+  during ordinary cleanup and remove them through expiry or Clear Database.
+- Keep publication files, readiness, flags, exports, database schema, and State
+  archive v6 unchanged. No QPDF/Poppler or other new runtime dependency is added.
+
 ## 1.14.0 - 2026-10-16
 
 ### Formatting Revision History

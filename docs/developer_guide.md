@@ -96,6 +96,24 @@ alternative text, and README link consistent, then run the documentation gate.
 
 ## Where Logic Belongs
 
+PDF browsing is presentation-only. Use the `pdf_viewer_url` template filter for
+an existing PDF URL, or `{% pdf_viewer 'submissions:route_name' ... %}` for a
+named PDF endpoint. Load `pdf_viewer` in each template/partial that uses it.
+Do not wrap source/ZIP downloads, images or comparison-workspace URLs. Keep
+ordinary PDF download links raw. New PDF endpoints must be explicitly added to
+the reader allowlist, with tests proving their original file selection and
+failure behavior remain unchanged. Do not teach the viewer how to resolve
+publication files, access filesystem paths or proxy remote PDFs.
+
+The shared reader uses pinned local PDF.js display, worker and viewer assets
+under `static/submissions/vendor/pdfjs-6.4.299/`. License/provenance and upgrade
+instructions are in that folder's `CFM-NOTICE.md`. Keep all three versions in
+sync, retain CMaps/fonts/WASM/ICC resources and licenses, and disable PDF
+scripting, annotation editing and form filling. Do not add another canvas/text
+matching implementation, a CDN or application file writes. Browser QA must
+cover actual canvas pixels, selection/search, page/zoom controls, narrow widths,
+load errors, local-only runtime requests and direct/download escape routes.
+
 Keep controllers thin. A controller can validate forms, choose commands, set messages, redirect, and render templates.
 
 Put reusable workflow behavior in services:
@@ -113,6 +131,33 @@ Put reusable workflow behavior in services:
   DB transaction so newly created files are compensated on failure. Capture an
   unrecorded corrected pair before original-file invalidation. Do not add file
   copies to migrations or create revisions from GET requests.
+- Read-only Formatting PDF comparison: `pdf_comparison.py`. Keep source
+  selection on the publication helper, revision reads on the verified history
+  reader, and parsing/rendering on PyMuPDF. Builds use audited POSTs;
+  GETs only validate/read an existing signed snapshot. Never call processing,
+  extraction, Formatting save, author-cache rebuild, or workflow recomputation
+  from comparison. Difference results cannot feed readiness or review flags.
+  Keep headers/footers in extraction and scanning. Exact-span reconciliation
+  must consume globally unique occurrences one-to-one, preserve unmatched
+  remainder, and balance token coverage before display limits. Never substitute
+  a navigation reference page for an actual text location. Update the temporary
+  comparison method version when its result contract changes; do not reuse an
+  old signed result under a new algorithm. Regression coverage must include
+  repagination, repeated/deleted passages, partial-word and numeric edits,
+  multi-page findings, and byte-identical publication/CrossCheck output.
+- Automatic post-upload comparison: `automatic_pdf_comparison.py`, with the
+  shared `formatting_comparison_status` partial/CSS/JS. Prepare a signed receipt
+  only after a successful save returns its exact `FormattingSaveResult`;
+  never infer the saved event with a later latest-revision query. Preserve the
+  legacy save/apply return contracts through their thin wrappers. Do not run
+  extraction/comparison in the save transaction or turn comparison exceptions
+  into upload failures. GET reads status only; build/retry is CSRF-protected
+  POST, bound to the saved revision and current publication bytes. Revalidate
+  that binding on cached-result access and prohibit fallback to newer files.
+  Deduplicate builds under Django's portable file lock and reuse verified
+  signed results. No polling or background thread is needed. Test stale and
+  concurrent uploads, interrupted/repeated requests, storage/audit failures,
+  title guard confirm/cancel, and List/Single/Focus/HTMX behavior.
 - CrossCheck/plagiarism: `crosscheck.py`.
 - Signed multi-editor evidence: `workflow_evidence.py`.
 - Readiness and author checks: `checks.py`.
@@ -352,6 +397,14 @@ Use app-managed file helpers instead of ad hoc path logic.
 - Do not delete old uploads for traceability.
 - Do not expose editable path text fields for user-managed files when upload/link UI is safer.
 - System State backup must include referenced review artifacts, including title/author verification images, PDF thumbnails, and format previews.
+- `data/formatting_comparison_previews/` contains expiring signed comparison
+  payloads and independent PDF copies, not review artifacts. Exclude it from
+  System State, protect it from ordinary overlapping Reports cleanup, and
+  include it in Clear Database. No migration/archive version change is needed
+  for this ephemeral feature. Its audit events are backed up normally.
+  Automatic request caches and OS lock files are beneath its `requests/`
+  subtree; they share that exclusion/protection/clear policy. A lock is held by
+  an open descriptor, not by the mere existence of `request.lock`.
 - System State restore must remap files into the current project `data/` tree and must not preserve old machine-specific absolute paths.
 
 Process PDFs is not a read-only page-count operation. It recalculates active

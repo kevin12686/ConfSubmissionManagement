@@ -1,0 +1,17 @@
+{% if comparison %}
+<div class="cfm-formatting-comparison-status" data-upload-comparison data-comparison-url="{% url 'submissions:formatting_upload_comparison' comparison.submission_id %}" data-comparison-token="{{ comparison.token }}" data-comparison-autostart="{{ comparison.autostart|yesno:'true,false' }}" data-comparison-return="{{ request.get_full_path }}" data-comparison-csrf="{{ csrf_token }}">
+    <div class="cfm-formatting-comparison-identity">
+        <span class="fw-semibold">PDF comparison{% if show_paper_identity %} · {{ comparison.paper_id }} / Final {{ comparison.final_id }}{% endif %}</span>
+        <span class="small text-muted">Saved revision {{ comparison.revision_number }} · Original → Corrected</span>
+    </div>
+    <div class="cfm-formatting-comparison-actions" role="status" aria-live="polite">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true" data-upload-comparison-spinner></span>
+        <span class="small" data-upload-comparison-message>Files saved. Checking comparison…</span>
+        <span class="badge text-bg-warning" data-upload-comparison-warning hidden></span>
+        <span class="badge text-bg-info" data-upload-comparison-info hidden></span>
+        <a class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" data-upload-comparison-open hidden>Open comparison</a>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-upload-comparison-retry hidden>Retry comparison</button>
+    </div>
+    <div class="small text-muted cfm-formatting-comparison-note" data-upload-comparison-note>Figures, tables and layout still require visual review.</div>
+</div>
+{% endif %}

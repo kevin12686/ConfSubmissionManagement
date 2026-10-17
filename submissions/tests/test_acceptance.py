@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from datetime import date, timedelta
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 from unittest.mock import patch
@@ -64,6 +65,7 @@ from submissions.services.checks import (
     split_authors,
 )
 from submissions.services.file_manager import publication_pdf_info, publication_source_info
+from submissions.services.pdf_viewer import pdf_viewer_url
 from submissions.services.file_inspection import (
     FileChangedDuringInspection,
     FileInspectionContext,
@@ -176,6 +178,17 @@ from submissions.services.audit import (
     read_audit_log,
     write_audit_event,
 )
+
+
+class DownloadFormCounter(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.count = 0
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "form" and dict(attrs).get("data-cfm-download-form") == "true":
+            self.count += 1
 
 
 class EditorialAcceptanceTestCase(TestCase):
@@ -4751,11 +4764,11 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         self.assertNotEqual(link_by_paper_id["P010"]["url"], reverse("submissions:publication_pdf", args=[inactive_old.pk]))
 
         response = self.client.get(reverse("submissions:author_count"))
-        self.assertContains(response, reverse("submissions:publication_pdf", args=[corrected.pk]))
-        self.assertContains(response, reverse("submissions:publication_pdf", args=[active_final.pk]))
-        self.assertContains(response, reverse("submissions:publication_pdf", args=[original.pk]))
+        self.assertContains(response, pdf_viewer_url(reverse("submissions:publication_pdf", args=[corrected.pk])))
+        self.assertContains(response, pdf_viewer_url(reverse("submissions:publication_pdf", args=[active_final.pk])))
+        self.assertContains(response, pdf_viewer_url(reverse("submissions:publication_pdf", args=[original.pk])))
         self.assertContains(response, "No PDF")
-        self.assertNotContains(response, reverse("submissions:publication_pdf", args=[inactive_old.pk]))
+        self.assertNotContains(response, pdf_viewer_url(reverse("submissions:publication_pdf", args=[inactive_old.pk])))
 
     def test_unclassified_final_blocks_until_marked_not_publishing(self):
         self.make_master_paper("P001", "Ready Paper", "Ada")
@@ -6629,16 +6642,25 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, 'id="advanced-excel-exports"')
         self.assertContains(response, "Raw Active Submission Data")
         self.assertContains(response, "Raw Old Version Data")
-        self.assertContains(
-            response,
-            'data-cfm-download-form="true"',
-            count=4,
-        )
+        self.assertEqual(DownloadFormCounter(response.content.decode()).count, 4)
         self.assertContains(response, "cfm_download_")
         self.assertNotContains(response, "Readiness Issues Excel")
         self.assertNotContains(response, "Author Count Excel")
         self.assertNotContains(response, "Audit / Backup")
         self.assertNotContains(response, "System State Backup")
+
+    def test_download_actions_share_width_constraints_without_changing_requests(self):
+        response = self.client.get(reverse("submissions:export_reports"))
+        html = response.content.decode()
+        forms_rule = html.split('form[data-cfm-download-form="true"] {', 1)[1].split("}", 1)[0]
+        buttons_rule = html.split('form[data-cfm-download-form="true"] .btn {', 1)[1].split("}", 1)[0]
+        self.assertIn("min-width: 0;", forms_rule)
+        self.assertIn("max-width: 100%;", forms_rule)
+        self.assertIn("max-width: 100%;", buttons_rule)
+        self.assertIn("white-space: normal;", buttons_rule)
+        self.assertIn("overflow-wrap: anywhere;", buttons_rule)
+        for action in ("publication_package", "editorial_workbook", "active", "old"):
+            self.assertContains(response, f'name="action" value="{action}"')
 
     def test_draft_package_structural_blockers_render_full_issue_panel(self):
         self.make_master_paper("P001", "Ambiguous Draft", "Ada")
@@ -7562,7 +7584,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         pdf_url = reverse("submissions:final_submission_display_pdf", args=[submission.pk])
         source_url = reverse("submissions:final_submission_display_source", args=[submission.pk])
         self.assertContains(page, "Original or Corrected files")
-        self.assertContains(page, pdf_url)
+        self.assertContains(page, pdf_viewer_url(pdf_url))
         self.assertContains(page, source_url)
         self.assertContains(page, "corrected.pdf")
         self.assertContains(page, "corrected.docx")
@@ -7633,8 +7655,8 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
 
         page = self.client.get(reverse("submissions:final_submission_list"))
-        self.assertContains(page, reverse("submissions:final_submission_display_pdf", args=[replaced.pk]))
-        self.assertContains(page, reverse("submissions:final_submission_display_pdf", args=[active.pk]))
+        self.assertContains(page, pdf_viewer_url(reverse("submissions:final_submission_display_pdf", args=[replaced.pk])))
+        self.assertContains(page, pdf_viewer_url(reverse("submissions:final_submission_display_pdf", args=[active.pk])))
         self.assertContains(page, "replaced-original.pdf")
         self.assertNotContains(page, "replaced-current.pdf")
         self.assertContains(page, "active-current.pdf")
@@ -11824,7 +11846,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "Original Submission Files")
         self.assertContains(response, "Open PDF")
         self.assertContains(response, "Download Source")
-        self.assertContains(response, reverse("submissions:publication_pdf", args=[submission.pk]))
+        self.assertContains(response, pdf_viewer_url(reverse("submissions:publication_pdf", args=[submission.pk])))
         self.assertContains(response, reverse("submissions:publication_source", args=[submission.pk]))
         self.assertContains(response, "10_file_Submit_PDF.pdf")
         self.assertContains(response, "10_file_Submit_Source.zip")
@@ -12539,11 +12561,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertContains(blocked, "Missing Final Submission")
         self.assertContains(blocked, "Unclassified Final Not In Master")
         self.assertContains(blocked, "Download Draft Package Anyway")
-        self.assertContains(
-            blocked,
-            'data-cfm-download-form="true"',
-            count=6,
-        )
+        self.assertEqual(DownloadFormCounter(blocked.content.decode()).count, 6)
 
         draft = self.client.post(
             reverse("submissions:export_reports"),

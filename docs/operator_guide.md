@@ -1,5 +1,44 @@
 # Operator Guide
 
+## PDF Reader
+
+PDF open links use the shared reader at `/pdf-viewer/`. This includes Organized
+List, Publication Candidates, Final Submissions, Paper ID and Title/Author
+Review, Formatting, Author Count, exceptions, plagiarism reports, revision
+history, Editor Upload previews and the comparison workspace's PDF links.
+
+The reader has page navigation, continuous scrolling, Fit width/Fit page,
+numeric zoom, rotation, text selection and Find in PDF. Enter advances to the
+next match; Shift+Enter goes to the previous one. Password-protected PDFs ask
+for a password in the reader; it is not saved in application data or audit logs.
+There are no PDF editing or form-filling controls. Existing annotations can be
+displayed without changing the PDF.
+
+Open directly uses the browser's native PDF handling, useful for printing or
+checking a rendering discrepancy. Download PDF requests the same underlying
+file endpoint; it does not export a modified PDF.js document. Live publication
+links continue to follow the current publication helper when fetched again.
+Historical revisions and compared snapshots keep their existing identity and
+integrity/expiry checks. The reader does not pin a live publication file into a
+new permanent snapshot or label a historical file as publication-approved.
+
+Loading, missing/corrupt files, expired comparisons and rendering failures are
+shown explicitly. No other version is substituted. JavaScript-disabled or
+unsupported browsers can use Open directly or Download PDF. PDF.js and its
+fonts/decoders are bundled locally, and PDF contents are not sent to a CDN or
+external service. Textless/scanned PDFs remain readable but need OCR outside
+this reader before text search can find their content.
+
+Verification images, Formatting first-page previews, Process PDFs thumbnails
+and comparison difference overlays keep their existing renderers/magnifiers;
+they are not replaced with PDF.js and do not become new review evidence.
+
+Revision history has its own pagination only when there are more than 25
+revisions. Its Revisions per page controls affect that history alone, not the
+main Formatting worklist. Smaller histories do not repeat the main list's
+pagination controls. This applies in Formatting Review, Final Submission edit
+and the standalone history page.
+
 This guide is for editors running the local system to prepare final submissions for publication.
 
 It explains what to do and what result to expect. For the authoritative rules
@@ -486,6 +525,99 @@ replacement also capture an unrecorded corrected pair before replacing it.
 If capture fails, resolve the storage error and retry; do not remove current
 files to bypass capture. History uses additional disk space and remains part
 of backups until an explicit Clear Database or full System State replacement.
+
+### Compare Original / Corrected PDFs
+
+After a corrected PDF is successfully saved in Formatting Review, the page
+automatically compares that exact saved upload against its Original submission
+PDF. Title guard warnings must be confirmed first. The card shows progress,
+Warning/Info counts, **Open comparison**, and **Retry comparison** when needed;
+this status remains visible with Review paper collapsed. If the current list
+filter excludes the saved paper, an identified status row remains above the
+list. Save still stays at the current card/Single queue position, never opens a
+new tab automatically, and never advances to the next paper.
+
+Comparison is a separate browser-triggered request after save. A comparison
+failure does not undo the upload or its normal review resets: the status says
+the files remain saved. No worker or polling runs in the background; leaving
+the page may interrupt the comparison. On refresh, a valid cached result is
+reused. Only the latest upload receipt auto-starts if still pending; older
+receipts can be explicitly retried. Source-only/status/notes changes create no
+new PDF-comparison request. Start2 imports and Editor Upload are not included.
+
+For manual comparison, choose **Compare PDF** beside the PDF links. It opens
+separately, leaving the current List/Single/Focus workspace and unsaved inputs
+untouched. Both automatic and manual comparisons include saved files only,
+not a file still selected in an upload input. Manual comparison may select an
+Original or revision baseline; automatic comparison always uses Original.
+
+Automatic requests bind the revision ID/key, corrected filename/upload time and
+SHA256, and original file identity. A newer PDF upload (even identical bytes),
+inactive/discarded submission, or changed publication scope invalidates the old
+request instead of comparing a newer version. A later source-only revision
+does not invalidate a comparison of the same PDF. Missing Original is an error,
+not permission to use a revision or another submission. Request/result caches
+expire after two hours; use manual Compare PDF when a request has expired.
+
+Choose Original submission PDF or a recorded revision and build the comparison.
+The After side is always the current publication-helper PDF for this exact
+active Publishing submission, normally Corrected. It never reads a debug copy,
+another submission, or a history file as publication input. A missing selected
+file is an error, not permission to fall back.
+
+Findings include new occurrences of common Word reference/bookmark errors,
+possible unresolved references (`??` / `[?]`), replacement characters, and
+added/changed/unmatched text. Counts are findings, not affected-paper counts;
+one passage may have both a pattern finding and a text change. Existing error
+occurrences are not reported as new just because they moved to another page.
+Whitespace differences are ignored, but case, punctuation, numbers, and actual
+words are retained. Unmatched text may have moved or extracted in a different
+order; it is not proof of deletion. Extraction anomalies are not proof of
+visible corruption.
+
+Headers and footers are not excluded. A second pass pairs unmatched continuous
+exact token sequences only when a three-token seed is unique in each complete
+document, the span contains at least two alphabetic PDF words, and the pair
+covers whole words without reusing any occurrence. Partial exact spans may be
+paired, but their changed remainder stays visible. Repeated or uncertain spans
+remain unpaired. Paired spans appear once under **Same text / sequence
+position**, separate from **Needs a closer look**, with both locations and
+context still available. The navigator marks these groups as blue **Info** and
+amber **Warning**, respectively; an outline identifies the selected item
+independently of classification. These are advisory display levels, not export
+blockers or approvals. This means the text sequence matches, not that layout,
+reading order, or meaning is unchanged. No fuzzy matching or region exclusion
+is used to make differences disappear.
+
+Select a finding to view both passages and their highlighted page regions.
+Switch to Text changes for the extracted passages. Browse all pages for manual
+table, figure, equation, and layout checks; no automatic completeness verdict
+is provided. Page linking uses confidently matched text rather than equal page
+numbers; unpaired pages remain independently selectable. Each side can open
+the exact compared PDF. Ctrl magnification and loading/retry behavior match
+the existing review images.
+
+Finding labels list all actual passage pages. A side with no corresponding text
+is explicitly labeled as such; its displayed PDF page is a reference page,
+selected from a reliable page match or left manually selected. It is never
+reported as the passage location. Multi-page findings offer a finding-page
+selector on each side; manual page navigation clears the old finding selection.
+
+Comparisons expire after two hours and reject changed publication scope,
+selected file identities/bytes, missing baselines, or damaged snapshots. Build
+a new comparison rather than reusing a stale result. Limits are 64 MiB, 100
+pages, and 30,000 tokens per PDF; the first 300 findings and limited passage
+regions are explicitly labeled when capped. Textless PDFs support visual
+comparison, plus pattern prompts in any extractable corrected text; without
+baseline text those patterns cannot be classified as newly introduced.
+Exact pairing also has a bounded processing budget: if reached, remaining
+unmatched text stays listed and a pairing-limit notice appears. Old-method
+comparison links require an explicit rebuild and are not silently reinterpreted.
+No comparison changes Review OK, review flags, exceptions,
+publication selection, or export eligibility. Temporary comparisons are not
+backups or retained review evidence; the build itself is recorded in Audit Log.
+Expired staging folders are removed when another comparison is built; there
+is no background polling or deletion timer.
 
 ## Plagiarism / CrossCheck Workflow
 

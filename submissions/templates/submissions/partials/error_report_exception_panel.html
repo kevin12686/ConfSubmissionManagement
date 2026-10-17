@@ -1,3 +1,4 @@
+{% load pdf_viewer %}
 <tr class="collapse{% if row.exception_panel_open %} show{% endif %}"
     id="{{ row.exception_panel_id }}"
     data-cfm-context-expansion>
@@ -22,13 +23,13 @@
                 <div class="d-flex flex-wrap gap-2">
                     {% if row.exception.publication_pdf.exists %}
                         <a class="btn btn-sm btn-outline-dark"
-                           href="{{ row.exception.publication_pdf.url }}"
+                           href="{{ row.exception.publication_pdf.url|pdf_viewer_url }}"
                            target="_blank"
                            rel="noopener">Open publication PDF</a>
                     {% endif %}
                     {% if row.exception.submission.plagiarism_report_path %}
                         <a class="btn btn-sm btn-outline-dark"
-                           href="{% url 'submissions:plagiarism_report' row.exception.submission.pk %}"
+                           href="{% pdf_viewer 'submissions:plagiarism_report' row.exception.submission.pk %}"
                            target="_blank"
                            rel="noopener">Open report</a>
                     {% endif %}

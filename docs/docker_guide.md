@@ -1,5 +1,20 @@
 # Docker Guide
 
+## PDF Reader Static Assets
+
+The shared PDF.js reader runs locally in the browser. The image collects its
+pinned `.mjs` display/worker/viewer modules, CMaps, fonts, WASM decoders and ICC
+resources through the existing `collectstatic` step. There is no Node service
+or runtime npm install. Nginx's static location includes the standard MIME map
+and explicitly adds `.mjs` as `application/javascript`, retaining CSS, font and
+WASM types. Do not remove this module mapping or apply it to media downloads.
+
+After an update, verify a PDF opens in the shared reader, including module
+worker loading, not just that the HTML page returns 200. Missing static assets
+or incorrect module MIME types produce a visible reader failure; Open directly
+and Download PDF continue to use the original PDF endpoint. Publication file
+selection and export never depend on PDF.js or its static cache.
+
 Use this guide to create, update, back up, migrate, or recover a Docker
 conference instance.
 
