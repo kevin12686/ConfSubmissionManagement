@@ -432,10 +432,9 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
         cleaned_data = super().clean()
         from submissions.services.crosscheck_client import normalize_service_url
 
+        url = cleaned_data.get("crosscheck_service_url", "").strip()
         try:
-            cleaned_data["crosscheck_service_url"] = normalize_service_url(
-                cleaned_data.get("crosscheck_service_url") or self.instance.crosscheck_service_url
-            )
+            cleaned_data["crosscheck_service_url"] = normalize_service_url(url) if url else ""
         except ValueError as exc:
             self.add_error("crosscheck_service_url", str(exc))
         minutes = cleaned_data.get("crosscheck_service_wait_minutes")
@@ -445,6 +444,8 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             self.add_error("crosscheck_service_wait_minutes", "Use 1 to 1440 minutes.")
         cleaned_data["crosscheck_service_wait_minutes"] = minutes
         enabled = cleaned_data.get("crosscheck_service_enabled")
+        if enabled and not url:
+            self.add_error("crosscheck_service_url", "Enter the CrossCheck service URL before enabling it.")
         binding_changed = any(cleaned_data.get(name) != getattr(self.instance, name) for name in (
             "conference_name", "crosscheck_service_url", "crosscheck_service_folder"))
         if enabled and (binding_changed or self.instance.crosscheck_service_conference != cleaned_data.get("conference_name")):

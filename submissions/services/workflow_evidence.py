@@ -86,6 +86,8 @@ def app_setting_evidence(settings_obj):
     state = {}
     for field in settings_obj._meta.concrete_fields:
         value = getattr(settings_obj, field.attname)
+        if isinstance(field, models.DecimalField) and value is not None:
+            value = format(Decimal(str(value)).quantize(Decimal(1).scaleb(-field.decimal_places)), "f")
         state[field.attname] = value
     return state
 

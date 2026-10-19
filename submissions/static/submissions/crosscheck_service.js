@@ -5,6 +5,24 @@
         const status = connection.querySelector('[data-connection-status]');
         const url = document.getElementById('id_crosscheck_service_url');
         const folder = document.getElementById('id_crosscheck_service_folder');
+        const credentialsForm = document.getElementById('crosscheck-secrets');
+        const credentialInputs = ['cc-web-user', 'cc-web-password', 'cc-ieee-user', 'cc-ieee-password']
+            .map(id => document.getElementById(id));
+        const credentialsStatus = document.querySelector('[data-crosscheck-credentials-status]');
+        const accountSummary = document.querySelector('[data-crosscheck-account-summary]');
+        let generation = 0;
+
+        function invalidateConnection() {
+            generation++;
+            status.textContent = 'Not checked';
+            status.className = 'text-muted';
+        }
+
+        function enteredConfiguration() {
+            const body = new FormData(credentialsForm);
+            body.set('url', url.value.trim());
+            return body;
+        }
         const folderPicker = window.TomSelect ? new window.TomSelect(folder, {
             create: false,
             maxItems: 1,
@@ -16,16 +34,57 @@
             },
         }) : null;
         if (folderPicker) folderPicker.wrapper.classList.add('cfm-paper-picker', 'cfm-folder-picker');
-        url.addEventListener('input', () => { status.textContent = 'Not checked'; status.className = 'text-muted'; });
+        url.addEventListener('input', () => {
+            credentialsForm.elements.url.value = url.value;
+            credentialsStatus.textContent = '';
+            accountSummary.textContent = 'Saved credentials apply only to their service URL; environment overrides take precedence.';
+            invalidateConnection();
+        });
+        credentialInputs.forEach(input => input.addEventListener('input', invalidateConnection));
+        credentialsForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const body = enteredConfiguration();
+            if (event.submitter?.name === 'remove') body.set('remove', '1');
+            const requestedGeneration = generation;
+            const buttons = document.querySelectorAll('button[form="crosscheck-secrets"]');
+            buttons.forEach(control => { control.disabled = true; });
+            credentialsStatus.textContent = 'Updating local credentials…';
+            credentialsStatus.className = 'small mt-2 text-muted';
+            try {
+                const response = await fetch(credentialsForm.action, {method: 'POST', body, headers: {Accept: 'application/json'}});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Credential update failed.');
+                if (requestedGeneration !== generation) {
+                    credentialsStatus.textContent = 'Credentials saved for the submitted address and values. Your newer edits are not saved.';
+                    credentialsStatus.className = 'small mt-2 text-warning';
+                    return;
+                }
+                credentialInputs.forEach(input => { input.value = ''; });
+                accountSummary.textContent = `${data.account_label} · ${data.login_label}`;
+                credentialsStatus.textContent = data.message;
+                credentialsStatus.className = 'small mt-2 text-success';
+                invalidateConnection();
+            } catch (error) {
+                credentialsStatus.textContent = error.message;
+                credentialsStatus.className = 'small mt-2 text-danger';
+            } finally {
+                buttons.forEach(control => { control.disabled = false; });
+            }
+        });
         button.addEventListener('click', async () => {
+            const body = enteredConfiguration();
+            if (!body.get('url')) {
+                status.textContent = 'Enter the CrossCheck service URL.';
+                status.className = 'text-danger';
+                return;
+            }
+            const requestedGeneration = generation;
             button.disabled = true;
             status.textContent = 'Checking service and IEEE folders…';
-            const body = new FormData();
-            body.set('url', url.value);
-            body.set('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
             try {
                 const response = await fetch(connection.dataset.crosscheckConnection, {method: 'POST', body});
                 const data = await response.json();
+                if (requestedGeneration !== generation) return;
                 if (!response.ok || !data.available) throw new Error(data.message || 'Connection failed.');
                 const selectedFolder = folder.value;
                 if (folderPicker) {
@@ -43,7 +102,9 @@
                 if (folder.value && !data.folders.includes(folder.value)) {
                     status.textContent += ' · Selected folder is unavailable'; status.className = 'text-warning';
                 }
-            } catch (error) { status.textContent = error.message; status.className = 'text-danger'; }
+            } catch (error) {
+                if (requestedGeneration === generation) { status.textContent = error.message; status.className = 'text-danger'; }
+            }
             finally { button.disabled = false; }
         });
     }

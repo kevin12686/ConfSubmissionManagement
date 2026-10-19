@@ -667,19 +667,29 @@ Go to `/integrations/crosscheck/`.
 The Automatic service tab uses the optional service configured under Settings
 > Plagiarism / CrossCheck. Set its base URL, load the exact conference folder,
 confirm its association with the Conference name, and enable the integration.
+New configurations leave the URL blank; no localhost address is assumed.
+Existing saved addresses are retained. If the service requires login, expand
+Optional account settings and enter its service-login username/password before
+using Test connection / load folders.
 The searchable folder selector shows complete names, wrapping long options and
 the selected folder so similarly named conferences can be distinguished.
 Folder confirmation prevents routing papers into the wrong conference: confirm
 when first enabling the service or changing the conference name, service URL
 or folder. Unchanged settings do not require confirmation again. The checkbox
 does not submit papers or change any review flags.
-By default the service's saved IEEE account is used; no credentials are needed.
+By default the service's saved IEEE account is used; no IEEE override is needed.
 Optional service login/IEEE overrides are write-only, stored on this machine in
 `data/secrets/crosscheck.json`, and excluded from audit and System State ZIPs.
 Loading folders with an IEEE override updates the account saved on the service.
-Save the service URL before saving optional credentials. Blank fields retain
-existing local secrets; Remove local credentials restores the service default
-unless environment overrides are configured.
+Test connection uses entered credentials without saving them locally. Use Save
+optional credentials to persist them for the entered URL; this works before
+enabling/saving the integration and stays on the page, retaining the URL and
+folder edits. Then save Settings to enable and bind the destination. Blank
+credential fields retain saved values only for the same service URL; a different
+URL does not inherit another host's local credentials. Remove local credentials
+removes the local override, but environment overrides still take precedence.
+Only one service URL's local credentials are stored at a time; explicitly
+saving credentials for another URL replaces the previous local set.
 
 1. Preview all publication PDFs or only papers missing either P/S value.
 2. Review conference/folder, Paper IDs, Final IDs, Corrected/Original source,

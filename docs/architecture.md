@@ -619,6 +619,14 @@ decisions or silently reconstructs historical approvals.
 `crosscheck_client.py` owns HTTP, streamed multipart bodies, bounded downloads,
 same-origin endpoints, and write-only local credentials. `crosscheck_service.py`
 owns preview/start/recovery/result validation/apply. Controllers remain thin.
+The service URL defaults to blank. Connection checks accept request-scoped
+credential overrides; they never persist those values or enable the service.
+The separate credential command validates Settings evidence and stores local
+secrets for the explicitly entered URL without saving other Settings. Validation
+alone does not create a Settings record. Environment overrides retain precedence
+and saved local credentials cannot cross URL boundaries.
+Settings evidence canonicalizes decimal values, making unsaved model defaults
+and identical persisted defaults equivalent without ignoring real changes.
 `CrossCheckServiceJob` and `CrossCheckServiceJobItem` retain batch identity and
 per-paper outcomes. `crosscheck.py` remains authoritative for publication PDF
 selection, scope, exported bytes, durable provenance and percent parsing.

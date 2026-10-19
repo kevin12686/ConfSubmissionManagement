@@ -16,7 +16,7 @@ def _locked_settings():
 
 @transaction.atomic
 def validate_settings_evidence(expected_evidence_token):
-    current = _locked_settings()
+    current = AppSetting.objects.select_for_update().filter(pk=1).first() or AppSetting(pk=1)
     require_evidence_token(
         expected_evidence_token,
         "app-settings-edit",

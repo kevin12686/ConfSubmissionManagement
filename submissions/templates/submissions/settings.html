@@ -201,23 +201,14 @@
                         </div>
                         <div class="col-lg-6">
                         {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_url %}
-                        <div class="d-flex flex-wrap gap-2 align-items-center mb-3" data-crosscheck-connection="{% url 'submissions:crosscheck_service_connection' %}">
-                            <button class="btn btn-outline-primary btn-sm" type="button">Test connection / load folders</button>
-                            <span class="text-muted" role="status" data-connection-status>Not checked</span>
-                        </div>
                         </div>
                         <div class="col-lg-6">
                         {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_wait_minutes %}
                         </div>
-                        <div class="col-12">
-                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_folder %}
-                        <div class="small text-muted mb-2">Select an exact folder from the service. The conference name and destination are shown again before upload.</div>
-                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_confirm_folder %}
-                        </div>
                         </div>
                         <details class="mt-3">
                             <summary>Optional account settings</summary>
-                            <div class="small mt-2">{{ crosscheck_account_label }} · {{ crosscheck_login_label }}</div>
+                            <div class="small mt-2" data-crosscheck-account-summary>{{ crosscheck_account_label }} · {{ crosscheck_login_label }}</div>
                             <p class="small mt-2">By default, the service uses its saved IEEE account. Leave these fields empty to use that default. Optional overrides are stored only on this machine and excluded from audit and System State backups. Loading folders with an IEEE override also updates the service's saved account.</p>
                             <div class="row g-3">
                                 <div class="col-md-6"><label class="form-label" for="cc-web-user">Service login username</label><input class="form-control" id="cc-web-user" name="web_username" form="crosscheck-secrets" autocomplete="off"></div>
@@ -229,8 +220,16 @@
                                 <button type="submit" form="crosscheck-secrets" class="btn btn-sm btn-outline-primary">Save optional credentials</button>
                                 <button type="submit" form="crosscheck-secrets" class="btn btn-sm btn-outline-danger" name="remove" value="1">Remove local credentials</button>
                             </div>
-                            <div class="small mt-2">Save the service URL first. Blank password fields keep existing local secrets. Environment overrides take precedence.</div>
+                            <div class="small mt-2">Test connection uses the credentials entered here. Save optional credentials to keep them for the service URL above; this does not enable the integration or save other settings. Local credentials belong to one URL; saving another URL replaces them. Blank fields keep saved credentials for the same URL. Environment overrides take precedence.</div>
+                            <div class="small mt-2" role="status" data-crosscheck-credentials-status></div>
                         </details>
+                        <div class="d-flex flex-wrap gap-2 align-items-center my-3" data-crosscheck-connection="{% url 'submissions:crosscheck_service_connection' %}">
+                            <button class="btn btn-outline-primary btn-sm" type="button">Test connection / load folders</button>
+                            <span class="text-muted" role="status" data-connection-status>Not checked</span>
+                        </div>
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_folder %}
+                        <div class="small text-muted mb-2">Select an exact folder from the service. The conference name and destination are shown again before upload.</div>
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_confirm_folder %}
                     </section>
                 </div>
             </div>
@@ -274,6 +273,7 @@
 
 <form id="crosscheck-secrets" method="post" action="{% url 'submissions:crosscheck_service_credentials' %}">
     {% csrf_token %}<input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
+    <input type="hidden" name="url" value="{{ form.crosscheck_service_url.value|default:'' }}">
 </form>
 <script src="{% static 'submissions/crosscheck_service.js' %}?v={{ app_version }}" defer></script>
 <form id="reset-folder-settings" method="post">

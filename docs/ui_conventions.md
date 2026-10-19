@@ -269,6 +269,12 @@ truncate conference names or rely on native datalist popups for long names.
 Keep the enable checkbox on its own row so Service base URL and Report wait
 minutes align. Explain folder confirmation beside the checkbox, not in a
 separate warning panel.
+Leave unconfigured service addresses blank. Place optional account inputs before
+the explicit connection/folder-loading action so authenticated setup follows the
+same flow as unauthenticated setup. Credential save/remove stays within Settings,
+preserves unsaved destination edits and uses the existing inline status styles.
+Invalidate connection status on address/credential edits; late responses must not
+populate folders for obsolete inputs or erase newer credential edits.
 In batch result cells, stack the status, optional message and report link with
 explicit spacing so the action cannot run into the status text.
 Show the batch auto-update countdown as inline secondary text in the progress

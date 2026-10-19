@@ -10,7 +10,9 @@ from django.views.decorators.http import require_POST
 
 from submissions.models import AppSetting, CrossCheckServiceJob
 from submissions.services.audit import audit_failure, audit_success
-from submissions.services.crosscheck_client import CrossCheckClient, save_service_secrets
+from submissions.services.crosscheck_client import (
+    CREDENTIAL_FIELDS, CrossCheckClient, read_service_secrets, save_service_secrets,
+)
 from submissions.services.crosscheck_service import (
     _result_archive, apply_service_results, cancel_service_preview, job_evidence_token,
     preview_service_job, refresh_service_job, start_service_job, stop_service_job,
@@ -21,8 +23,8 @@ from submissions.services.crosscheck_service import (
 @require_POST
 def crosscheck_service_connection(request):
     try:
-        url = request.POST.get("url") or AppSetting.read().crosscheck_service_url
-        result = CrossCheckClient(url).folders()
+        url = request.POST.get("url", AppSetting.read().crosscheck_service_url)
+        result = CrossCheckClient(url, credentials=_entered_credentials(request)).folders()
         audit_success("crosscheck_service_connection", "CrossCheck service folders loaded.")
         return JsonResponse({"available": True, "label": "Ready", "folders": result["folders"], "username": result.get("username", "Service default")})
     except (ValueError, OSError) as exc:
@@ -37,13 +39,25 @@ def crosscheck_service_credentials(request):
         # changed in another browser while this form was open.
         from submissions.services.settings_workflow import validate_settings_evidence
         current = validate_settings_evidence(request.POST.get("evidence_token", ""))
-        values = {key: request.POST.get(key, "").strip() if key.endswith("username") else request.POST.get(key, "")
-                  for key in ("web_username", "web_password", "ieee_username", "ieee_password")}
-        save_service_secrets(current.crosscheck_service_url, values, remove=request.POST.get("remove") == "1")
-        messages.success(request, "Optional CrossCheck credentials updated for the saved service URL.")
+        url = request.POST.get("url", current.crosscheck_service_url)
+        save_service_secrets(url, _entered_credentials(request), remove=request.POST.get("remove") == "1")
+        message = "Optional CrossCheck credentials updated for this service URL."
+        if request.headers.get("Accept") == "application/json":
+            secrets = read_service_secrets(url)
+            return JsonResponse({"message": message,
+                "account_label": "IEEE override configured" if secrets.get("ieee_username") else "Using service default IEEE account",
+                "login_label": "Service login configured" if secrets.get("web_username") else "Service login not configured"})
+        messages.success(request, message)
     except (ValueError, OSError) as exc:
+        if request.headers.get("Accept") == "application/json":
+            return JsonResponse({"message": str(exc)}, status=400)
         messages.error(request, str(exc))
     return redirect("submissions:settings")
+
+
+def _entered_credentials(request):
+    return {key: request.POST.get(key, "").strip() if key.endswith("username") else request.POST.get(key, "")
+            for key in CREDENTIAL_FIELDS}
 
 
 @require_POST

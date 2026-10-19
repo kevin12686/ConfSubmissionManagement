@@ -193,6 +193,15 @@ rollback on DB/audit failure. Save/restore a v7 archive and verify jobs/items,
 reports and evidence remain usable with no secret in the ZIP. Clear Database
 must remove jobs/items/evidence/local secrets. GET/filter actions are read-only.
 
+Begin connection setup with a blank URL and verify no request is sent. Enter a
+test service requiring WebLogin, supply unsaved credentials and load folders;
+test wrong/missing credentials as well. Save credentials without leaving the
+page or saving/enabling other Settings. Change the address/login while a check
+is pending and confirm the obsolete response is ignored. Saved credentials must
+not cross service URLs; environment overrides still win. Verify passwords are
+absent from responses, audit and backups, and existing saved addresses survive
+the blank-default migration.
+
 13. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
 14. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
 15. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again. In Organized List, type reasons into two exception sections for the same paper, submit only one section, and confirm the complete paper row refreshes while the other unsaved reason remains. Confirm only the clicked exception was stored, the panel stays open, and a stale evidence warning reloads the current backend value without applying the old decision.

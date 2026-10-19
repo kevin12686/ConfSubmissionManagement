@@ -28,7 +28,7 @@ from submissions.services.crosscheck import (
     _sha256_path, _assert_crosscheck_scope_unambiguous, prepare_crosscheck_upload,
 )
 from submissions.services.crosscheck_client import CrossCheckClient, CrossCheckServiceError
-from submissions.services.crosscheck_client import read_service_secrets
+from submissions.services.crosscheck_client import normalize_service_url, read_service_secrets
 from submissions.services.final_submission_state import bulk_update_submissions
 from submissions.services.publication_read import PublicationReadContext
 from submissions.services.workflow_evidence import (
@@ -55,6 +55,7 @@ def _configuration(job=None):
     config = AppSetting.read()
     if not config.crosscheck_service_enabled:
         raise ValueError("Enable automatic CrossCheck in Settings first.")
+    normalize_service_url(config.crosscheck_service_url)
     if not config.crosscheck_service_folder.strip():
         raise ValueError("Select the conference CrossCheck folder in Settings first.")
     if config.crosscheck_service_conference != config.conference_name:

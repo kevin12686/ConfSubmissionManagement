@@ -448,6 +448,13 @@ change requires confirming the binding again. IEEE credentials are optional;
 the service's default account is used unless a local/environment override exists.
 Service WebLogin and IEEE credentials are separate accounts. A service 401
 requires its WebLogin credentials, not an IEEE password.
+Expand Optional account settings and enter that service login before testing;
+the connection check uses the current fields, even before Settings is saved.
+Use Save optional credentials to keep them for the entered URL without leaving
+the page, then select/confirm the folder and save Settings. Testing alone does
+not save credentials. New configurations leave the address blank; clearing it
+does not secretly test the previous address. Environment credentials take
+precedence over entered/local values, including after Remove local credentials.
 
 Inside Docker, `127.0.0.1` points at the CFM container. Use a reachable private
 service address or the host-gateway setup in the Docker Guide. System State
@@ -641,7 +648,7 @@ The ZIP was created by a different state archive version. Use the matching app v
 ### Restored record times show the restore time
 
 Versions before 1.18.5 could replace automatic creation/update times during
-restore on Master, Final, Settings and CrossCheck job records. Current restores
+restore on records such as Master, Final and CrossCheck jobs. Current restores
 preserve these archived times and CrossCheck batch age. Formatting revision
 capture times were already retained. The application cannot infer
 times already lost by an earlier restore; recover them from an original backup

@@ -670,7 +670,7 @@ class AppSetting(models.Model):
     grobid_api_url = models.CharField(max_length=500, default="http://localhost:8070")
     grobid_timeout_seconds = models.PositiveIntegerField(default=20)
     crosscheck_service_enabled = models.BooleanField(default=False)
-    crosscheck_service_url = models.CharField(max_length=500, default="http://127.0.0.1:18765")
+    crosscheck_service_url = models.CharField(max_length=500, blank=True, default="")
     crosscheck_service_folder = models.CharField(max_length=500, blank=True)
     crosscheck_service_conference = models.CharField(max_length=255, blank=True)
     crosscheck_service_wait_minutes = models.PositiveIntegerField(default=15)

@@ -11,6 +11,8 @@ from urllib import error, parse, request
 
 from django.conf import settings
 
+CREDENTIAL_FIELDS = ("web_username", "web_password", "ieee_username", "ieee_password")
+
 
 class CrossCheckServiceError(ValueError):
     def __init__(self, message, *, http_status=None):
@@ -20,6 +22,8 @@ class CrossCheckServiceError(ValueError):
 
 def normalize_service_url(value):
     value = str(value or "").strip().rstrip("/")
+    if not value:
+        raise ValueError("Enter the CrossCheck service URL.")
     parsed = parse.urlsplit(value)
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname
             or parsed.username or parsed.password or parsed.query or parsed.fragment):
@@ -33,10 +37,11 @@ def secrets_path():
 
 def read_service_secrets(url):
     path = secrets_path()
-    saved = json.loads(path.read_text()) if path.exists() else {}
-    if saved.get("url") != normalize_service_url(url):
+    normalized = normalize_service_url(url) if str(url or "").strip() else ""
+    saved = json.loads(path.read_text()) if normalized and path.exists() else {}
+    if not normalized or saved.get("url") != normalized:
         saved = {}
-    for key in ("web_username", "web_password", "ieee_username", "ieee_password"):
+    for key in CREDENTIAL_FIELDS:
         saved[key] = os.environ.get("SMS_CROSSCHECK_" + key.upper()) or saved.get(key, "")
     return saved
 
@@ -49,7 +54,7 @@ def save_service_secrets(url, values, *, remove=False):
     current = json.loads(previous) if previous and not remove else {}
     if current.get("url") != normalize_service_url(url):
         current = {}
-    for key in ("web_username", "web_password", "ieee_username", "ieee_password"):
+    for key in CREDENTIAL_FIELDS:
         if values.get(key):
             current[key] = values[key]
     for prefix in ("web", "ieee"):
@@ -88,9 +93,12 @@ class _NoRedirect(request.HTTPRedirectHandler):
 
 
 class CrossCheckClient:
-    def __init__(self, url):
+    def __init__(self, url, *, credentials=None):
         self.url = normalize_service_url(url)
         self.credentials = read_service_secrets(url)
+        for key in CREDENTIAL_FIELDS:
+            if credentials and credentials.get(key) and not os.environ.get("SMS_CROSSCHECK_" + key.upper()):
+                self.credentials[key] = credentials[key]
         for prefix in ("web", "ieee"):
             if bool(self.credentials.get(prefix + "_username")) != bool(self.credentials.get(prefix + "_password")):
                 raise CrossCheckServiceError("Optional account configuration requires both username and password.")

@@ -34,6 +34,7 @@ class CrossCheckServiceTests(TestCase):
         config = AppSetting.load()
         config.conference_name = "DSA 2026"
         config.crosscheck_service_enabled = True
+        config.crosscheck_service_url = "http://qa-crosscheck:18765"
         config.crosscheck_service_folder = "DSA 2026 folder"
         config.crosscheck_service_conference = config.conference_name
         config.save()

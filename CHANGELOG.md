@@ -3,6 +3,21 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.18.6 - 2026-10-18
+
+- Test CrossCheck connections with entered service-login/IEEE credentials before
+  saving settings. Persist optional credentials separately for the entered URL
+  without leaving the page or enabling the integration. Keep credentials
+  host-bound and out of audit/System State; environment overrides still win.
+- Start new CrossCheck configurations with a blank service address. Explicit
+  configuration is required to enable/send; existing saved addresses are kept.
+- Reject stale connection responses after address/login edits and preserve newer
+  inputs when a credential-save response arrives late. Publication file and
+  result-apply rules are unchanged; State archive remains v7.
+- Normalize decimal fields in Settings review evidence so background creation
+  of identical defaults cannot invalidate a first-use form. Actual Settings
+  changes still reject stale evidence.
+
 ## 1.18.5 - 2026-10-18
 
 - Preserve archived automatic creation/update timestamps during System State

@@ -568,6 +568,11 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   missing selected Corrected files, mixed valid/stale batches, late-item and
   audit failures, expired evidence, tampered inputs/results, and cross-job file
   URLs. Use mocked transport; never submit conference PDFs to test the service.
+- CrossCheck connection setup must cover blank addresses, authenticated folder
+  requests with unsaved credentials, explicit credential persistence without
+  changing Settings, environment precedence, URL isolation, stale evidence and
+  late browser responses. Run `node --test submissions/tests/js/*.test.mjs` for
+  connection setup, polling and the shared reader; never log test passwords.
 - Archive compatibility must preserve current publication bytes, revision pairs,
   thumbnails and review state. Incomplete model payloads are rejected; corrupt
   file previews must report the defect and must not be applicable.

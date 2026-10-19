@@ -53,6 +53,11 @@ one local application:
 - records state-changing work in an audit log and creates portable System State
   backups.
 
+Automatic CrossCheck has no prefilled service address. In Settings, enter the
+URL and any required service login before testing the connection. Optional
+credentials can be saved for that URL without enabling the integration or
+saving the rest of Settings; existing configured addresses are preserved.
+
 PDF open links share a local, read-only, full-window PDF.js reader with page
 navigation, zoom, text selection/search and rotation. A compact toolbar replaces
 the site's navigation and footer only on the reader page. It opens in Fit page
