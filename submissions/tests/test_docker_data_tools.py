@@ -441,6 +441,12 @@ class DockerRebuildCompatibilityTests(TestCase):
 
 
 class DockerUnifiedUpdateTests(TestCase):
+    def test_crosscheck_passwords_are_retained_and_redacted(self):
+        for key in ("SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD"):
+            self.assertIn(key, docker_instance_tools.ENV_KEYS)
+            self.assertIn(key, docker_instance_tools.SENSITIVE_ENV_KEYS)
+            self.assertEqual(update_docker_instances.display_env_value(key, "private-value"), "***")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

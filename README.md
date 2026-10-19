@@ -48,6 +48,8 @@ one local application:
   definition of publication readiness;
 - exports editorial workbooks, CrossCheck packages, and the final publication
   package;
+- optionally sends previewed publication PDFs to a local CrossCheck Service,
+  tracks jobs, and previews version-bound scores/reports before applying;
 - records state-changing work in an audit log and creates portable System State
   backups.
 
@@ -60,6 +62,8 @@ then require a fresh wheel gesture at the edge. Trackpad inertia cannot skip pag
 Keyboard navigation shares the same boundary handling: Left/Right change pages,
 Up/Down and Page Up/Down pan first, and Home/End jump to the first/last page.
 Shortcuts apply in the PDF area, not in inputs or toolbar controls.
+The collapsible left thumbnail sidebar lists every page, scrolls independently,
+and follows the current page. Thumbnails are drawn lazily from the same loaded PDF.
 Downloads and publication selection
 remain on their existing endpoints; Open directly is available as a native
 browser fallback. See the [Operator Guide](docs/operator_guide.md#pdf-reader).
@@ -180,15 +184,19 @@ On the new or restored machine:
 
 System State restores settings, records, managed files, reports, review
 artifacts, and audit logs while remapping managed paths to the receiving
-installation.
+installation. Archived record timestamps are preserved; restoring a backup
+does not renew an expired CrossCheck upload preview.
 
 Version 1.14.0 adds Formatting revision history. After upgrading, run
 `python manage.py migrate` and `python manage.py backfill_formatting_revisions`
 with the application's Python environment. The idempotent capture command
 preserves current corrected files, including inactive/discarded submissions,
 without changing review state. It cannot reconstruct earlier revisions.
-New backups use State archive v6; validated v5 backups remain restorable with
-no revision records. See the [Operator Guide](docs/operator_guide.md#formatting-revision-history).
+New backups use State archive v7, including automatic CrossCheck jobs and their
+evidence. Validated v5/v6 backups remain restorable; older archives have no
+automatic job history, and v5 has no revision records. Optional service secrets
+stay on the receiving machine and are excluded from System State ZIPs. See the
+[Operator Guide](docs/operator_guide.md#plagiarism-crosscheck-workflow).
 
 ## Development
 

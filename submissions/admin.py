@@ -2,6 +2,8 @@ from django.contrib import admin
 
 from .models import (
     AppSetting,
+    CrossCheckServiceJob,
+    CrossCheckServiceJobItem,
     AuthorLimitWaiver,
     FinalSubmission,
     FinalSubmissionFileState,
@@ -164,6 +166,7 @@ class AuthorLimitWaiverAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
 @admin.register(AppSetting)
 class AppSettingAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     fieldsets = (
+        ("CrossCheck service", {"fields": ("crosscheck_service_enabled", "crosscheck_service_url", "crosscheck_service_folder", "crosscheck_service_conference", "crosscheck_service_wait_minutes")}),
         (
             "Conference",
             {
@@ -210,3 +213,13 @@ class AppSettingAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(CrossCheckServiceJob)
+class CrossCheckServiceJobAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
+    list_display = ("token", "status", "folder", "created_at")
+
+
+@admin.register(CrossCheckServiceJobItem)
+class CrossCheckServiceJobItemAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
+    list_display = ("paper_id", "final_submission_id", "status")

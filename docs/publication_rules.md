@@ -270,6 +270,17 @@ selection or readiness.
 
 ## Concurrency And Preview Safety
 
+Automatic CrossCheck uses the same publication PDF selection and durable
+Final/PDF-hash provenance as manual CrossCheck export. Prepared inputs are named
+`PaperID.pdf`, with the conference batch token supplied separately as service
+postfix. Each source is checked again before submission and result apply.
+Job completion is not proof that a report exists. Only explicit confirmed
+uploads with downloaded reports, valid P/S scores and matching archive manifest
+may be applied after result preview. Stale, partial, unconfirmed or missing
+results must not clear prior values, waive exceptions, change review decisions,
+or substitute another active version. Local job evidence is never a publication
+PDF source. Final Publication Package selection remains Corrected -> Original.
+
 Formatting revision history is immutable traceability evidence only. Final
 Publication Package, CrossCheck, processing, and readiness continue to select
 the current FinalSubmission Corrected/Original files through the existing

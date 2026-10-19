@@ -222,6 +222,23 @@ Per-project results are recorded in
 
 ## Safety Checklist
 
+For the optional CrossCheck Service, Compose defines
+`host.docker.internal:host-gateway`. Use `http://host.docker.internal:18765`
+when the service runs on the Docker host and listens on an interface reachable
+from Docker. A host-loopback-only service may need its private bind address
+changed. `127.0.0.1` in Settings points to the CFM container. A service on another
+machine needs its reachable private address. CFM needs no additional public port.
+
+Each CFM instance keeps its own folder binding and job history. A shared
+CrossCheck service permits one job at a time; a busy response does not retry.
+Optional `SMS_CROSSCHECK_WEB_USERNAME/PASSWORD` and
+`SMS_CROSSCHECK_IEEE_USERNAME/PASSWORD` override UI secrets when nonempty.
+Usually leave them blank to use the service's default IEEE account. UI secrets
+live in the conference volume under `data/secrets/`; System State excludes them,
+but raw Docker backups include them. Protect env files and raw mirrors as
+credentials. Service WebLogin uses HTTP Basic when enabled; a 401 identifies
+unsupported or rejected authentication.
+
 - Run every disruptive command with `--dry-run` first when supported.
 - Confirm project name, endpoint, and `SMS_DATA_DIR` before applying.
 - Keep `SMS_DEBUG=0` for normal operation.

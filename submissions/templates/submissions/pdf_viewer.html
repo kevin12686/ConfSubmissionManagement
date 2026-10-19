@@ -14,8 +14,11 @@
 <section class="cfm-pdf-reader" data-pdf-reader data-pdf-url="{{ pdf_source.url }}" data-pdf-runtime="{% static 'submissions/vendor/pdfjs-6.4.299/' %}" aria-label="PDF reader">
     <div class="cfm-pdf-reader-toolbar" role="toolbar" aria-label="PDF controls">
         <div class="cfm-pdf-reader-identity">
-            <h1>{{ pdf_source.label }}</h1>
-            <div class="small text-muted text-break">{{ pdf_source.detail }}</div>
+            <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-sidebar-toggle aria-label="Page thumbnails" title="Page thumbnails" aria-controls="pdf-page-sidebar" aria-expanded="false" disabled><span class="cfm-pdf-icon cfm-pdf-icon-thumbnails" aria-hidden="true"></span></button>
+            <div class="cfm-pdf-reader-context">
+                <h1>{{ pdf_source.label }}</h1>
+                <div class="small text-muted text-break">{{ pdf_source.detail }}</div>
+            </div>
         </div>
         <div class="cfm-pdf-reader-control-group">
             <button class="btn btn-sm btn-outline-secondary cfm-pdf-icon-button" type="button" data-pdf-previous aria-label="Previous page" title="Previous page (Left Arrow in PDF)" disabled><span class="cfm-pdf-icon cfm-pdf-icon-previous" aria-hidden="true"></span></button>
@@ -57,9 +60,15 @@
         <button class="btn btn-outline-secondary" type="button" data-pdf-password-cancel>Cancel</button>
         <span class="small" data-pdf-password-message role="status"></span>
     </form>
-    <div class="cfm-pdf-reader-pages">
-        <div class="cfm-pdf-reader-scroll" data-pdf-container tabindex="0" aria-label="PDF pages">
-            <div class="pdfViewer" data-pdf-pages></div>
+    <div class="cfm-pdf-reader-workspace">
+        <aside class="cfm-pdf-sidebar" id="pdf-page-sidebar" data-pdf-sidebar aria-label="Page thumbnails" hidden>
+            <h2 class="cfm-pdf-sidebar-heading">Pages</h2>
+            <nav class="cfm-pdf-thumbnails" data-pdf-thumbnails aria-label="Choose PDF page"></nav>
+        </aside>
+        <div class="cfm-pdf-reader-pages">
+            <div class="cfm-pdf-reader-scroll" data-pdf-container tabindex="0" aria-label="PDF pages">
+                <div class="pdfViewer" data-pdf-pages></div>
+            </div>
         </div>
     </div>
     <noscript><div class="alert alert-info mb-0">JavaScript is required for this reader. Use Open directly or Download PDF above.</div></noscript>

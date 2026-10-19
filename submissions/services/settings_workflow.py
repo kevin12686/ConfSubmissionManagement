@@ -34,9 +34,14 @@ def apply_app_settings_form(form, *, expected_evidence_token):
         app_setting_evidence(current),
     )
     before = app_setting_evidence(current)
+    previous_binding = (current.conference_name, current.crosscheck_service_url, current.crosscheck_service_folder)
     for field_name in form.fields:
-        if field_name in form.cleaned_data:
+        if field_name in form.cleaned_data and field_name != "crosscheck_confirm_folder":
             setattr(current, field_name, form.cleaned_data[field_name])
+    if form.cleaned_data.get("crosscheck_confirm_folder"):
+        current.crosscheck_service_conference = current.conference_name
+    elif previous_binding != (current.conference_name, current.crosscheck_service_url, current.crosscheck_service_folder):
+        current.crosscheck_service_conference = ""
     current.full_clean()
     current.save()
     return current, before

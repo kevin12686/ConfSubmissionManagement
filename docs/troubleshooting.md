@@ -19,6 +19,14 @@ Left/Right turn pages, Home/End jump to first/last, and vertical/page keys pan
 before turning at a boundary in Single page mode. Release a held key before
 crossing another page. Continuous mode keeps native vertical-key scrolling.
 
+The page-thumbnail sidebar starts closed on narrow windows. Use the thumbnail
+icon at the toolbar's left to open it; its list scrolls separately from the PDF.
+Unseen thumbnails are not all rendered in advance. `Preview unavailable` affects
+only that page's thumbnail: the button still navigates, and closing/reopening
+the panel retries failures. The main reader's missing/corrupt/stale-file rules
+remain authoritative. Browser thumbnails do not use or regenerate DB review
+images, and they are not publication evidence.
+
 Use Open directly to check the same endpoint with the browser's PDF viewer, or
 Download PDF for a local PDF reader. A missing Corrected file is not replaced
 with Original, and an expired/corrupt revision or comparison must be handled
@@ -432,6 +440,39 @@ explicit reason; leaving the reason blank applies no change.
 
 ## Plagiarism / CrossCheck
 
+### Automatic service is unavailable or uses the wrong folder
+
+Test connection/load folders in Settings. Check the saved base URL and confirm
+the exact folder belongs to the displayed conference. A Conference name or URL
+change requires confirming the binding again. IEEE credentials are optional;
+the service's default account is used unless a local/environment override exists.
+Service WebLogin and IEEE credentials are separate accounts. A service 401
+requires its WebLogin credentials, not an IEEE password.
+
+Inside Docker, `127.0.0.1` points at the CFM container. Use a reachable private
+service address or the host-gateway setup in the Docker Guide. System State
+does not carry local credentials; configure them on the receiving machine.
+
+### Batch is uncertain, partial, or timed out
+
+Use Check progress to recover the existing remote job by folder/token. Do not
+upload the same batch again after a connection timeout. A busy-service 409 means
+the request was rejected; a later explicit start is allowed. Browser polling
+stops on connection failure and resumes through Check progress. Results remain
+on the service for its configured retention period (currently seven days), so
+retrieve them before expiry.
+
+The service checks Unprocessed once after its wait period and may include
+per-file IEEE error details in the evidence ZIP. A completed job can contain
+no reports. Inspect batch_results.csv and the original website messages; a PDF
+with too little text may never produce a report. No automatic re-upload occurs.
+Reports produced after the service's final check need service-side retrieval;
+the current API has no resume-download endpoint. Keep existing scores unchanged.
+
+If a publication PDF/active Final changed, the old result is stale. Prepare a new
+batch for the current publication PDF. If only existing plagiarism data changed
+after result preview, use Refresh result preview and review it before applying.
+
 ### CrossCheck result import has no report
 
 Reports are optional. The CSV imports `filename`, `plagiarism_percent`, and `single_percent`. Upload report PDFs separately if they exist.
@@ -596,6 +637,16 @@ If they are missing after a System State restore, the ZIP may have been created 
 ### System State restore says unsupported version
 
 The ZIP was created by a different state archive version. Use the matching app version shown in the footer and in the ZIP manifest.
+
+### Restored record times show the restore time
+
+Versions before 1.18.5 could replace automatic creation/update times during
+restore on Master, Final, Settings and CrossCheck job records. Current restores
+preserve these archived times and CrossCheck batch age. Formatting revision
+capture times were already retained. The application cannot infer
+times already lost by an earlier restore; recover them from an original backup
+if needed. Publication files and review decisions are not selected by these
+automatic timestamps, and expired upload previews must be prepared again.
 
 ### Restored paths point to the wrong computer
 

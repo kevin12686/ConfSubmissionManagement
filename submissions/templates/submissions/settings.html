@@ -1,5 +1,9 @@
 {% extends "submissions/base.html" %}
+{% load static %}
 {% block title %}Settings{% endblock %}
+{% block extra_head %}
+<link href="{% static 'submissions/crosscheck_service.css' %}?v={{ app_version }}" rel="stylesheet">
+{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div>
@@ -179,25 +183,55 @@
             </div>
         </div>
 
-        <div class="col-xl-6">
-            <div class="card h-100">
-                <div class="card-header fw-semibold">Plagiarism Thresholds</div>
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header fw-semibold">Plagiarism / CrossCheck</div>
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.plagiarism_percent_threshold %}</div>
                         <div class="col-md-6">{% include "submissions/includes/form_field.html" with field=form.single_similarity_threshold %}</div>
                     </div>
                     <div class="small text-muted">Scores greater than these thresholds are highlighted in reports and publication readiness checks.</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-6">
-            <div class="card h-100">
-                <div class="card-header fw-semibold">Folder Policy</div>
-                <div class="card-body small">
-                    <p class="mb-2">Recommended folder paths are relative project paths under <code>data/</code>. Relative paths resolve from the project root.</p>
-                    <p class="mb-0">Absolute paths are allowed, but avoid temporary system folders.</p>
+                    <hr>
+                    <section id="crosscheck-service">
+                        <h2 class="h5">Automatic CrossCheck service</h2>
+                        <div class="row g-3">
+                        <div class="col-12">
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_enabled %}
+                        </div>
+                        <div class="col-lg-6">
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_url %}
+                        <div class="d-flex flex-wrap gap-2 align-items-center mb-3" data-crosscheck-connection="{% url 'submissions:crosscheck_service_connection' %}">
+                            <button class="btn btn-outline-primary btn-sm" type="button">Test connection / load folders</button>
+                            <span class="text-muted" role="status" data-connection-status>Not checked</span>
+                        </div>
+                        </div>
+                        <div class="col-lg-6">
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_wait_minutes %}
+                        </div>
+                        <div class="col-12">
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_service_folder %}
+                        <div class="small text-muted mb-2">Select an exact folder from the service. The conference name and destination are shown again before upload.</div>
+                        {% include "submissions/includes/form_field.html" with field=form.crosscheck_confirm_folder %}
+                        </div>
+                        </div>
+                        <details class="mt-3">
+                            <summary>Optional account settings</summary>
+                            <div class="small mt-2">{{ crosscheck_account_label }} · {{ crosscheck_login_label }}</div>
+                            <p class="small mt-2">By default, the service uses its saved IEEE account. Leave these fields empty to use that default. Optional overrides are stored only on this machine and excluded from audit and System State backups. Loading folders with an IEEE override also updates the service's saved account.</p>
+                            <div class="row g-3">
+                                <div class="col-md-6"><label class="form-label" for="cc-web-user">Service login username</label><input class="form-control" id="cc-web-user" name="web_username" form="crosscheck-secrets" autocomplete="off"></div>
+                                <div class="col-md-6"><label class="form-label" for="cc-web-password">Service login password</label><input class="form-control" id="cc-web-password" name="web_password" type="password" form="crosscheck-secrets" autocomplete="new-password"></div>
+                                <div class="col-md-6"><label class="form-label" for="cc-ieee-user">IEEE username override</label><input class="form-control" id="cc-ieee-user" name="ieee_username" form="crosscheck-secrets" autocomplete="off"></div>
+                                <div class="col-md-6"><label class="form-label" for="cc-ieee-password">IEEE password override</label><input class="form-control" id="cc-ieee-password" name="ieee_password" type="password" form="crosscheck-secrets" autocomplete="new-password"></div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 mt-3">
+                                <button type="submit" form="crosscheck-secrets" class="btn btn-sm btn-outline-primary">Save optional credentials</button>
+                                <button type="submit" form="crosscheck-secrets" class="btn btn-sm btn-outline-danger" name="remove" value="1">Remove local credentials</button>
+                            </div>
+                            <div class="small mt-2">Save the service URL first. Blank password fields keep existing local secrets. Environment overrides take precedence.</div>
+                        </details>
+                    </section>
                 </div>
             </div>
         </div>
@@ -209,6 +243,7 @@
                     <button class="btn btn-sm btn-outline-secondary" type="submit" form="reset-folder-settings" name="action" value="reset_folders">Reset folders to defaults</button>
                 </div>
                 <div class="card-body">
+                    <p class="small">Use project-relative paths under <code>data/</code> for portable storage. Absolute paths are supported; temporary system folders should be avoided.</p>
                     <div class="row g-3">
                         <div class="col-lg-6">
                             {% include "submissions/includes/form_field.html" with field=form.publication_pdf_debug_folder %}
@@ -237,6 +272,10 @@
     </div>
 </form>
 
+<form id="crosscheck-secrets" method="post" action="{% url 'submissions:crosscheck_service_credentials' %}">
+    {% csrf_token %}<input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">
+</form>
+<script src="{% static 'submissions/crosscheck_service.js' %}?v={{ app_version }}" defer></script>
 <form id="reset-folder-settings" method="post">
     {% csrf_token %}
     <input type="hidden" name="evidence_token" value="{{ settings_evidence_token }}">

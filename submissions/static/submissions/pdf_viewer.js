@@ -14,6 +14,9 @@
         const navigationModule = new URL("./pdf_navigation.mjs", import.meta.url);
         navigationModule.search = new URL(import.meta.url).search;
         const {installPDFNavigation} = await import(navigationModule.href);
+        const thumbnailsModule = new URL("./pdf_thumbnails.mjs", import.meta.url);
+        thumbnailsModule.search = new URL(import.meta.url).search;
+        const {installPDFThumbnails} = await import(thumbnailsModule.href);
         const runtime = new URL(root.dataset.pdfRuntime, location.origin);
         const pdfjs = await import(new URL("legacy/build/pdf.min.mjs", runtime).href);
         const {EventBus, PDFViewer, PDFLinkService, PDFFindController, ScrollMode} = await import(new URL("legacy/web/pdf_viewer.mjs", runtime).href);
@@ -31,6 +34,11 @@
         });
         linkService.setViewer(viewer);
         const navigation = installPDFNavigation({container, viewer, singlePageMode: ScrollMode.PAGE});
+        const thumbnails = installPDFThumbnails({
+            sidebar: query("[data-pdf-sidebar]"), list: query("[data-pdf-thumbnails]"),
+            toggle: query("[data-pdf-sidebar-toggle]"), container, viewer,
+            annotationMode: pdfjs.AnnotationMode.DISABLE,
+        });
         const page = query("[data-pdf-page]");
         const scale = query("[data-pdf-scale]");
         const find = query("[data-pdf-find]");
@@ -75,10 +83,12 @@
         });
         eventBus.on("pagechanging", () => {
             syncPage();
+            thumbnails.setCurrentPage(viewer.currentPageNumber);
             if (viewer.scrollMode === ScrollMode.PAGE) scheduleFit();
         });
         eventBus.on("scrollmodechanged", syncLayout);
         eventBus.on("scrollmodechanged", navigation.suspend);
+        eventBus.on("rotationchanging", event => thumbnails.setRotation(event.pagesRotation));
         eventBus.on("scalechanging", event => {
             navigation.suspend();
             const preset = [...scale.options].find(option => option.value === String(viewer.currentScaleValue));
@@ -157,10 +167,11 @@
             task.destroy();
             failed("PDF unlocking canceled.");
         });
-        window.addEventListener("pagehide", event => { if (!event.persisted) { navigation.destroy(); cancelAnimationFrame(fitFrame); observer.disconnect(); task.destroy(); } });
+        window.addEventListener("pagehide", event => { if (!event.persisted) { thumbnails.destroy(); navigation.destroy(); cancelAnimationFrame(fitFrame); observer.disconnect(); task.destroy(); } });
         const pdfDocument = await task.promise;
         viewer.setDocument(pdfDocument);
         linkService.setDocument(pdfDocument);
+        thumbnails.setDocument(pdfDocument);
         root.dataset.pdfState = "loaded";
     }
     initialize().catch(exception => {

@@ -21,6 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from docker_instance_tools import (  # noqa: E402
     DockerCommandError,
     GATEWAY_VERSION,
+    SENSITIVE_ENV_KEYS,
     GatewayOperationStatus,
     compose_command,
     compose_env,
@@ -138,7 +139,7 @@ def rebuild_instance(
     if instance.get("mount_type") == "volume":
         print(f"  SMS_DATA_VOLUME={instance.get('volume_name', '')}")
     for key in sorted(env_values):
-        display_value = "***" if key == "SMS_SECRET_KEY" else env_values[key]
+        display_value = "***" if key in SENSITIVE_ENV_KEYS else env_values[key]
         print(f"  {key}={display_value}")
     print(f"  build:   {shlex.join(build_command)}")
     print(f"  cutover: {shlex.join(web_command)}")

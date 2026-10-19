@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.db.models.functions import Lower, Trim
 from django.utils import timezone
@@ -667,6 +669,11 @@ class AppSetting(models.Model):
     grobid_enabled = models.BooleanField(default=False)
     grobid_api_url = models.CharField(max_length=500, default="http://localhost:8070")
     grobid_timeout_seconds = models.PositiveIntegerField(default=20)
+    crosscheck_service_enabled = models.BooleanField(default=False)
+    crosscheck_service_url = models.CharField(max_length=500, default="http://127.0.0.1:18765")
+    crosscheck_service_folder = models.CharField(max_length=500, blank=True)
+    crosscheck_service_conference = models.CharField(max_length=255, blank=True)
+    crosscheck_service_wait_minutes = models.PositiveIntegerField(default=15)
     plagiarism_percent_threshold = models.DecimalField(
         max_digits=5, decimal_places=2, default=35
     )
@@ -688,3 +695,48 @@ class AppSetting(models.Model):
     @classmethod
     def read(cls):
         return cls.objects.filter(pk=1).first() or cls(pk=1)
+
+
+class CrossCheckServiceJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    token = models.CharField(max_length=320, unique=True)
+    batch_day = models.DateField()
+    batch_number = models.PositiveIntegerField()
+    conference_name = models.CharField(max_length=255)
+    service_url = models.CharField(max_length=500)
+    folder = models.CharField(max_length=500)
+    scope = models.CharField(max_length=30)
+    wait_minutes = models.PositiveIntegerField(default=15)
+    status = models.CharField(max_length=30, default="preview")
+    remote_id = models.CharField(max_length=100, blank=True)
+    message = models.TextField(blank=True)
+    progress = models.JSONField(default=dict, blank=True)
+    archive_sha256 = models.CharField(max_length=64, blank=True)
+    skipped = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    imported_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["batch_day", "batch_number"], name="crosscheck_daily_batch")]
+
+
+class CrossCheckServiceJobItem(models.Model):
+    job = models.ForeignKey(CrossCheckServiceJob, on_delete=models.CASCADE, related_name="items")
+    paper_id = models.CharField(max_length=150)
+    final_submission_id = models.CharField(max_length=150)
+    pdf_sha256 = models.CharField(max_length=64)
+    source = models.CharField(max_length=30)
+    status = models.CharField(max_length=40, default="prepared")
+    message = models.TextField(blank=True)
+    document_id = models.CharField(max_length=150, blank=True)
+    plagiarism_percent = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    single_percent = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    report_member = models.CharField(max_length=500, blank=True)
+    report_sha256 = models.CharField(max_length=64, blank=True)
+    import_evidence = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["paper_id"]
+        constraints = [models.UniqueConstraint(fields=["job", "paper_id"], name="crosscheck_job_paper")]

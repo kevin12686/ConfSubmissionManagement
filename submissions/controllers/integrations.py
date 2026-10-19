@@ -123,6 +123,14 @@ DEFAULT_FOLDER_SETTINGS = {
 }
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
 def integration(request):
+    from submissions.models import CrossCheckServiceJob
+    from submissions.application.pagination import paginate_worklist
+    from django.db.models import Count
+    config = AppSetting.read()
+    job_page = paginate_worklist(
+        request, CrossCheckServiceJob.objects.annotate(item_count=Count("items")).order_by("-created_at", "pk"),
+        scroll_anchor="crosscheck-batches",
+    )
     crosscheck_export_result = None
     crosscheck_result = None
     report_upload_result = None
@@ -182,6 +190,14 @@ def integration(request):
         request,
         "submissions/integration.html",
         {
+            "crosscheck_config": config,
+            "service_jobs": job_page.items,
+            "job_page": job_page,
+            "crosscheck_tab": "automatic" if request.method != "POST" and (
+                request.GET.get("tab") == "automatic" or (
+                    config.crosscheck_service_enabled and request.GET.get("tab") != "manual"
+                )
+            ) else "manual",
             "crosscheck_export_form": crosscheck_export_form,
             "crosscheck_export_result": crosscheck_export_result,
             "crosscheck_result_form": crosscheck_result_form,

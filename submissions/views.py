@@ -58,3 +58,7 @@ from .controllers.ui import publication_duplicate_details, workflow_alerts
 from .controllers.lookups import paper_picker_search
 from .controllers.formatting_history import formatting_history, formatting_revision_pdf, formatting_revision_source
 from .controllers.pdf_comparison import formatting_pdf_comparison, formatting_comparison_page, formatting_comparison_pdf, formatting_upload_comparison
+from .controllers.crosscheck_service import (
+    crosscheck_service_connection, crosscheck_service_credentials, crosscheck_service_preview,
+    crosscheck_service_job, crosscheck_service_archive, crosscheck_service_report, crosscheck_service_input_pdf,
+)

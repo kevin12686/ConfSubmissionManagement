@@ -8,6 +8,8 @@ services:
       com.conferencefinalmanager.host-data-dir: "${SMS_DATA_DIR:-./data}"
     expose:
       - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DJANGO_HOST: 0.0.0.0
       DJANGO_PORT: 8000
@@ -21,6 +23,10 @@ services:
       SMS_WEB_WORKERS: ${SMS_WEB_WORKERS:-1}
       SMS_WEB_THREADS: ${SMS_WEB_THREADS:-4}
       SMS_WEB_TIMEOUT: ${SMS_WEB_TIMEOUT:-300}
+      SMS_CROSSCHECK_WEB_USERNAME: ${SMS_CROSSCHECK_WEB_USERNAME:-}
+      SMS_CROSSCHECK_WEB_PASSWORD: ${SMS_CROSSCHECK_WEB_PASSWORD:-}
+      SMS_CROSSCHECK_IEEE_USERNAME: ${SMS_CROSSCHECK_IEEE_USERNAME:-}
+      SMS_CROSSCHECK_IEEE_PASSWORD: ${SMS_CROSSCHECK_IEEE_PASSWORD:-}
     volumes:
       - .:/app
       - sms_data:/app/data

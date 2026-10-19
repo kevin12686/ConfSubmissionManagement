@@ -19,6 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from docker_instance_tools import (  # noqa: E402
     BACKUP_DIR_LABEL,
     ENV_KEYS,
+    SENSITIVE_ENV_KEYS,
     DockerCommandError,
     compose_command,
     compose_env,
@@ -48,7 +49,7 @@ PROXY_RECREATE_KEYS = {
     "SMS_PORT",
     "SMS_PROXY_MAX_BODY_SIZE",
 }
-SENSITIVE_KEYS = {"SMS_SECRET_KEY"}
+SENSITIVE_KEYS = SENSITIVE_ENV_KEYS
 
 
 def main() -> int:

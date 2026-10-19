@@ -4,10 +4,51 @@
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Plagiarism / CrossCheck</h1>
-        <div class="cfm-page-subtitle">Prepare current publication PDFs, import P/S scores, and attach optional CrossCheck reports.</div>
+        <div class="cfm-page-subtitle">Check current publication PDFs and review version-bound scores and reports.</div>
     </div>
 </div>
 
+<nav class="nav nav-tabs cfm-tabs mb-3" aria-label="CrossCheck workflow">
+    <a class="nav-link {% if crosscheck_tab == 'automatic' %}active{% endif %}" href="?tab=automatic">Automatic service</a>
+    <a class="nav-link {% if crosscheck_tab == 'manual' %}active{% endif %}" href="?tab=manual">Manual workflow</a>
+</nav>
+{% if crosscheck_tab == 'automatic' %}
+<section class="mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <h2 class="h4">Publication PDF batch</h2>
+            {% if crosscheck_config.crosscheck_service_enabled %}
+            <div>{{ crosscheck_config.conference_name }}</div>
+            <div class="text-muted cfm-wrap-anywhere">{{ crosscheck_config.crosscheck_service_folder }}</div>
+            <div class="small mt-2">Review selected papers before sending. Results require confirmation before scores and reports are applied.</div>
+            {% else %}
+            <p>Automatic CrossCheck is disabled. Configure the service and conference folder in <a href="{% url 'submissions:settings' %}#crosscheck-service">Settings</a>.</p>
+            {% endif %}
+        </div>
+        {% if crosscheck_config.crosscheck_service_enabled %}
+        <form method="post" action="{% url 'submissions:crosscheck_service_preview' %}" class="d-flex flex-wrap gap-2">
+            {% csrf_token %}
+            <button class="btn btn-primary" name="scope" value="missing_results">Preview missing results</button>
+            <button class="btn btn-outline-primary" name="scope" value="all">Preview all publication PDFs</button>
+        </form>
+        {% endif %}
+    </div>
+</section>
+<section id="crosscheck-batches">
+<h2 class="h4">Batch history</h2>
+{% include "submissions/partials/worklist_pagination.html" with pagination=job_page pagination_label="batches" %}
+<div class="table-responsive">
+    <table class="table cfm-table align-middle">
+        <thead><tr><th>Batch</th><th>Created</th><th>Status</th><th>Papers</th></tr></thead>
+        <tbody>{% for job in service_jobs %}<tr>
+            <td class="text-break"><a href="{% url 'submissions:crosscheck_service_job' job.pk %}">{{ job.token }}</a></td>
+            <td>{{ job.created_at|date:"Y-m-d H:i" }}</td><td>{{ job.status|title }}</td><td>{{ job.item_count }}</td>
+        </tr>{% empty %}<tr><td colspan="4">No automatic batches yet.</td></tr>{% endfor %}</tbody>
+    </table>
+</div>
+{% include "submissions/partials/worklist_pagination.html" with pagination=job_page pagination_label="batches" pagination_position="bottom" %}
+</section>
+{% else %}
 <div class="row g-3">
     <div class="col-xl-4">
         <div class="card h-100">
@@ -111,5 +152,6 @@
         </div>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:organized_list' %}?filter=plagiarism_issues">Review Plagiarism Issues</a>
     </div>
+{% endif %}
 {% endif %}
 {% endblock %}

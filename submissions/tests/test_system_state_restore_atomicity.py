@@ -175,6 +175,18 @@ class SystemStateRestoreAtomicityTests(TransactionTestCase):
         self._assert_current_state_preserved(managed_file, current_only)
         self.assertTrue((self.preview_root / token / "snapshot.zip").exists())
 
+    def test_timestamp_restore_failure_rolls_back_inserted_rows_and_keeps_live_files(self):
+        from submissions.services.publication_read import publication_database_signature
+
+        token, managed_file, current_only = self._prepare_restore()
+        before = publication_database_signature()
+        with patch.object(InitialPaper.objects, "bulk_update", side_effect=RuntimeError("timestamp write failed")):
+            with self.assertRaisesMessage(RuntimeError, "timestamp write failed"):
+                apply_system_state_restore(token, CONFIRMATION_TEXT)
+        self.assertEqual(publication_database_signature(), before)
+        self._assert_current_state_preserved(managed_file, current_only)
+        self.assertTrue((self.preview_root / token / "snapshot.zip").exists())
+
     def test_partial_file_promotion_failure_restores_quarantined_live_files(self):
         token, managed_file, current_only = self._prepare_restore()
         from submissions.services import system_state

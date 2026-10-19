@@ -233,11 +233,11 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         self.assertFalse(report.exists())
         self.assertEqual(self.read_revision(FormattingRevision.objects.get(), "source"), b"zip")
 
-    def test_v6_backup_restore_preserves_revision_files_and_flags(self):
+    def test_current_backup_restore_preserves_revision_files_and_flags(self):
         self.upload(pdf=b"preserved", source=b"paired")
         before = FinalSubmission.objects.values().get(pk=self.submission.pk)
         snapshot = export_system_state()
-        self.assertEqual(snapshot["manifest"]["state_archive_version"], 6)
+        self.assertEqual(snapshot["manifest"]["state_archive_version"], 7)
         upload = SimpleUploadedFile("state.zip", snapshot["path"].read_bytes())
         preview = preview_system_state_restore(upload)
         self.assertEqual(preview["artifact_counts"]["formatting_revision_files"], 2)
@@ -254,6 +254,10 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         with zipfile.ZipFile(snapshot["path"]) as archive:
             entries = {name: archive.read(name) for name in archive.namelist()}
         manifest, state = (json.loads(entries[name]) for name in ("manifest.json", "state.json"))
+        if version < 7:
+            for key in ("crosscheck_service_jobs", "crosscheck_service_items"):
+                state["models"].pop(key)
+                manifest["record_counts"].pop(key)
         if omit_revisions:
             state["models"].pop("formatting_revisions")
             manifest["record_counts"].pop("formatting_revisions")
@@ -282,6 +286,34 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         self.assertEqual(FinalSubmission.objects.get(pk=self.submission.pk).paper_id_verified, before["paper_id_verified"])
         with self.assertRaisesRegex(SystemStateError, "incomplete"):
             preview_system_state_restore(self.rewritten_snapshot(omit_revisions=True))
+
+    def test_v6_restore_keeps_revision_pair_and_current_publication_binding(self):
+        from submissions.models import CrossCheckServiceJob
+        from submissions.services.file_manager import publication_pdf_info, publication_source_info
+
+        self.upload(pdf=b"v6 publication pdf", source=b"v6 publication source")
+        self.mark_submission_publication_ready(self.submission)
+        self.submission.current_file_path = ""
+        self.submission.source_current_file_path = ""
+        thumbnails = self.media_root.resolve() / "pdf_thumbnails/v6"
+        thumbnails.mkdir(parents=True)
+        (thumbnails / "page-1.png").write_bytes(b"v6 thumbnail")
+        self.submission.thumbnail_folder = str(thumbnails)
+        self.submission.save()
+        before = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        revision_before = FormattingRevision.objects.values().get()
+        preview = preview_system_state_restore(self.rewritten_snapshot(version=6))
+        apply_system_state_restore(preview["token"], CONFIRMATION_TEXT)
+        self.submission.refresh_from_db()
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), before)
+        revision = FormattingRevision.objects.get()
+        self.assertEqual(FormattingRevision.objects.values().get(), revision_before)
+        self.assertEqual(self.read_revision(revision, "pdf"), b"v6 publication pdf")
+        self.assertEqual(self.read_revision(revision, "source"), b"v6 publication source")
+        self.assertEqual(Path(publication_pdf_info(self.submission)["path"]).read_bytes(), b"v6 publication pdf")
+        self.assertEqual(Path(publication_source_info(self.submission)["path"]).read_bytes(), b"v6 publication source")
+        self.assertEqual((Path(self.submission.thumbnail_folder) / "page-1.png").read_bytes(), b"v6 thumbnail")
+        self.assertFalse(CrossCheckServiceJob.objects.exists())
 
     def test_final_and_crosscheck_exports_use_live_bytes_and_readiness_is_unchanged(self):
         from submissions.services.checks import publication_readiness_rows

@@ -340,6 +340,12 @@ class ProcessFormattingIssueForm(BootstrapMixin, forms.Form):
 
 
 class AppSettingForm(BootstrapMixin, forms.ModelForm):
+    crosscheck_confirm_folder = forms.BooleanField(
+        required=False,
+        label="Confirm this folder belongs to this conference",
+        help_text="Required when first enabling the service or changing the conference name, service URL or folder. Unchanged settings do not need confirmation again.",
+    )
+
     class Meta:
         model = AppSetting
         fields = [
@@ -358,6 +364,10 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "grobid_enabled",
             "grobid_api_url",
             "grobid_timeout_seconds",
+            "crosscheck_service_enabled",
+            "crosscheck_service_url",
+            "crosscheck_service_folder",
+            "crosscheck_service_wait_minutes",
             "plagiarism_percent_threshold",
             "single_similarity_threshold",
         ]
@@ -401,12 +411,47 @@ class AppSettingForm(BootstrapMixin, forms.ModelForm):
             "Base URL for the trusted local GROBID service, for example http://localhost:8070."
         )
         self.fields["grobid_timeout_seconds"].label = "GROBID timeout seconds"
+        self.fields["crosscheck_service_enabled"].label = "Enable automatic CrossCheck"
+        self.fields["crosscheck_service_url"].label = "Service base URL"
+        self.fields["crosscheck_service_url"].required = False
+        self.fields["crosscheck_service_folder"].label = "Conference folder"
+        selected_folder = self["crosscheck_service_folder"].value() or ""
+        folder_choices = [("", "Select a conference folder")]
+        if selected_folder:
+            folder_choices.append((selected_folder, selected_folder))
+        self.fields["crosscheck_service_folder"].widget = forms.Select(
+            choices=folder_choices, attrs={"class": "form-select"}
+        )
+        self.fields["crosscheck_service_wait_minutes"].label = "Report wait minutes"
+        self.fields["crosscheck_service_wait_minutes"].required = False
         self.fields["plagiarism_percent_threshold"].label = "Plagiarism % threshold"
         self.fields["single_similarity_threshold"].label = "Single % threshold"
         self._apply_bootstrap()
 
     def clean(self):
         cleaned_data = super().clean()
+        from submissions.services.crosscheck_client import normalize_service_url
+
+        try:
+            cleaned_data["crosscheck_service_url"] = normalize_service_url(
+                cleaned_data.get("crosscheck_service_url") or self.instance.crosscheck_service_url
+            )
+        except ValueError as exc:
+            self.add_error("crosscheck_service_url", str(exc))
+        minutes = cleaned_data.get("crosscheck_service_wait_minutes")
+        if minutes is None:
+            minutes = 15
+        if not 1 <= minutes <= 1440:
+            self.add_error("crosscheck_service_wait_minutes", "Use 1 to 1440 minutes.")
+        cleaned_data["crosscheck_service_wait_minutes"] = minutes
+        enabled = cleaned_data.get("crosscheck_service_enabled")
+        binding_changed = any(cleaned_data.get(name) != getattr(self.instance, name) for name in (
+            "conference_name", "crosscheck_service_url", "crosscheck_service_folder"))
+        if enabled and (binding_changed or self.instance.crosscheck_service_conference != cleaned_data.get("conference_name")):
+            if not cleaned_data.get("crosscheck_confirm_folder"):
+                self.add_error("crosscheck_confirm_folder", "Confirm the selected folder belongs to this conference.")
+        if enabled and not cleaned_data.get("crosscheck_service_folder"):
+            self.add_error("crosscheck_service_folder", "Load and select the conference folder.")
         base_dir = Path(django_settings.BASE_DIR).resolve(strict=False)
         data_root = (base_dir / "data").resolve(strict=False)
         audit_root = (data_root / "logs").resolve(strict=False)

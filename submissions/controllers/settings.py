@@ -27,6 +27,8 @@ from submissions.forms import (
 )
 from submissions.models import (
     AppSetting,
+    CrossCheckServiceJob,
+    CrossCheckServiceJobItem,
     AuthorLimitWaiver,
     FinalSubmission,
     FinalSubmissionFileState,
@@ -435,6 +437,14 @@ def app_settings(request):
         "label": "Not checked",
         "message": "GROBID health is checked after Settings opens.",
     }
+    from submissions.services.crosscheck_client import read_service_secrets
+    try:
+        cc_secrets = read_service_secrets(AppSetting.read().crosscheck_service_url)
+        cc_account_label = "IEEE override configured" if cc_secrets.get("ieee_username") else "Using service default IEEE account"
+        cc_login_label = "Service login configured" if cc_secrets.get("web_username") else "Service login not configured"
+    except (ValueError, OSError):
+        cc_account_label = "Local credential file needs attention"
+        cc_login_label = "Re-enter or remove optional credentials"
     return render(
         request,
         "submissions/settings.html",
@@ -447,6 +457,8 @@ def app_settings(request):
             "active_version_change_report": active_version_change_report,
             "active_version_rule_preview": active_version_rule_preview,
             "grobid_status": grobid_status,
+            "crosscheck_account_label": cc_account_label,
+            "crosscheck_login_label": cc_login_label,
             "settings_evidence_token": make_evidence_token(
                 "app-settings-edit",
                 app_setting_evidence(AppSetting.read()),
@@ -651,6 +663,8 @@ def clear_database(request):
         return redirect("submissions:settings")
 
     counts = {
+        "crosscheck_service_jobs": CrossCheckServiceJob.objects.count(),
+        "crosscheck_service_items": CrossCheckServiceJobItem.objects.count(),
         "settings": AppSetting.objects.count(),
         "author_limit_waivers": AuthorLimitWaiver.objects.count(),
         "identity_state": FinalSubmissionIdentityState.objects.count(),
@@ -671,6 +685,7 @@ def clear_database(request):
             DEFAULT_FOLDER_SETTINGS.values(),
         )
         with transaction.atomic():
+            CrossCheckServiceJob.objects.all().delete()
             PaperAuthor.objects.all().delete()
             AuthorLimitWaiver.objects.all().delete()
             FinalSubmissionIdentityState.objects.all().delete()

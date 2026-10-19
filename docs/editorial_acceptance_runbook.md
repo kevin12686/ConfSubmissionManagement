@@ -50,6 +50,17 @@ Use disposable data, never mutate the operator's live conference for browser QA.
    Focus loss/window blur must release held keys; loading must not steal an input
    the user focused before the PDF became ready.
 
+10. Open a long, mixed-orientation PDF. Desktop starts with the page sidebar open;
+    narrow screens start closed. Check all page numbers, lazy nonblank thumbnail
+    canvases, independent sidebar scrolling, same-document jumps and current-page
+    markers following wheel, key, page input and search navigation. Rotate and
+    reopen quickly: no stale thumbnail may survive canceled rendering. Test
+    sidebar keyboard focus/Enter/Space/Escape and mobile selection auto-close.
+    Main PDF width, zoom preservation, normal site pages and source/download
+    URLs must remain unchanged. A thumbnail failure must not block the main PDF;
+    closing/reopening retries. Compare DB signatures and selected/revision file
+    bytes before and after; thumbnails must not create managed media files.
+
 This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
 
 Use a disposable conference data folder. Complete the automated command
@@ -170,6 +181,18 @@ Create Final Submission records and files:
 
 ### Stage 4: CrossCheck, Counts, Exceptions, And Navigation
 
+For automatic CrossCheck, use a mocked service or an explicitly authorized test
+folder with one full-text paper. Confirm Corrected/Original input bytes match
+manual/final export selection, `PaperID.pdf` filenames, separate conference
+postfix, and sequential daily tokens. Default IEEE credentials must be omitted.
+Exercise 409, uncertain POST recovery without re-upload, partial/unconfirmed
+results, Unprocessed fallback, malformed/foreign manifest, changed active Final,
+changed PDF and changed score after preview. Apply only after confirmation and
+check P/S mirror, report bytes, exception staleness, unchanged review flags and
+rollback on DB/audit failure. Save/restore a v7 archive and verify jobs/items,
+reports and evidence remain usable with no secret in the ZIP. Clear Database
+must remove jobs/items/evidence/local secrets. GET/filter actions are read-only.
+
 13. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
 14. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
 15. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again. In Organized List, type reasons into two exception sections for the same paper, submit only one section, and confirm the complete paper row refreshes while the other unsaved reason remains. Confirm only the clicked exception was stored, the panel stays open, and a stale evidence warning reloads the current backend value without applying the old decision.
@@ -284,7 +307,7 @@ artifacts. Ordinary cleanup preserves staging; Clear Database removes it.
 ### Stage 6: Audit, Backup, And Recovery
 
 22. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
-23. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return. Point Reports temporarily at a shared external test folder and confirm Clear Database preserves it. Simulate a database-reset failure and confirm staged publication files are restored with the records.
+23. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return. Compare archived automatic creation/update times, including revision dates and CrossCheck batch times; an expired CrossCheck upload preview must remain expired after restore. Point Reports temporarily at a shared external test folder and confirm Clear Database preserves it. Simulate a database-reset failure and confirm staged publication files are restored with the records.
 
 ### Stage 7: Responsive And Accessibility Pass
 

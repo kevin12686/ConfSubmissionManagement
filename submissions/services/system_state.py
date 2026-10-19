@@ -16,6 +16,8 @@ from django.utils.dateparse import parse_datetime
 
 from submissions.models import (
     AppSetting,
+    CrossCheckServiceJob,
+    CrossCheckServiceJobItem,
     AuthorLimitWaiver,
     FinalSubmission,
     FormattingRevision,
@@ -56,6 +58,7 @@ PATH_TEXT_FIELDS = {
     "plagiarism_report_path",
 }
 TEMP_SNAPSHOT_EXCLUDED_DIRS = {
+    "secrets",
     "formatting_comparison_previews",
     "formatting_upload_previews",
     "import_previews",
@@ -65,6 +68,7 @@ TEMP_SNAPSHOT_EXCLUDED_DIRS = {
     "system_state_backups",
 }
 RESTORE_PRESERVED_CHILDREN = {
+    "secrets",
     "system_state_backups",
     "system_state_restore_previews",
 }
@@ -75,6 +79,8 @@ MODEL_SPECS = [
     ("formatting_revisions", FormattingRevision),
     ("paper_authors", PaperAuthor),
     ("author_limit_waivers", AuthorLimitWaiver),
+    ("crosscheck_service_jobs", CrossCheckServiceJob),
+    ("crosscheck_service_items", CrossCheckServiceJobItem),
 ]
 RESTORE_MODEL_ORDER = [
     ("settings", AppSetting),
@@ -83,6 +89,8 @@ RESTORE_MODEL_ORDER = [
     ("formatting_revisions", FormattingRevision),
     ("paper_authors", PaperAuthor),
     ("author_limit_waivers", AuthorLimitWaiver),
+    ("crosscheck_service_jobs", CrossCheckServiceJob),
+    ("crosscheck_service_items", CrossCheckServiceJobItem),
 ]
 
 
@@ -116,6 +124,8 @@ def _now_stamp():
 
 def _field_value(obj, field, path_aliases=None, root_aliases=None):
     value = field.value_from_object(obj)
+    if isinstance(value, uuid.UUID):
+        return str(value)
     if isinstance(field, models.FileField):
         return value.name if value else ""
     if field.name in FOLDER_SETTING_FIELDS:
@@ -264,6 +274,8 @@ def _managed_roots(settings_obj):
     add("media", django_settings.MEDIA_ROOT, "media")
     add("project", audit_log_root(), "audit_logs")
     add("project", django_settings.BASE_DIR / "data" / "crosscheck_upload", "crosscheck_upload")
+    add("project", django_settings.BASE_DIR / "data" / "crosscheck_provenance", "crosscheck_provenance")
+    add("project", django_settings.BASE_DIR / "data" / "crosscheck_service", "crosscheck_service")
     for field_name in DEFAULT_FOLDER_SETTINGS:
         add("project", getattr(settings_obj, field_name), field_name)
     return roots
@@ -449,6 +461,7 @@ def export_system_state(reason="manual"):
             "root_maps": root_maps,
         }
         _validate_formatting_revision_payload(models_payload, manifest_files)
+        _validate_crosscheck_payload(models_payload, manifest_files)
         with zipfile.ZipFile(
             pending_target,
             "w",
@@ -608,6 +621,7 @@ def apply_system_state_restore(token, confirmation):
                 _clear_database_rows()
                 _restore_models(state, path_map, root_map)
                 file_transaction.activate()
+                _resign_restored_crosscheck_provenance()
                 audit_success(
                     "system_state_restore_apply",
                     "System state restore applied.",
@@ -673,7 +687,7 @@ def _read_snapshot(zip_path):
     except (KeyError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         raise SystemStateError(f"Invalid system state ZIP: {exc}") from exc
     archive_version = manifest.get("state_archive_version", manifest.get("snapshot_version"))
-    if archive_version not in (5, STATE_ARCHIVE_VERSION):
+    if archive_version not in (5, 6, STATE_ARCHIVE_VERSION):
         raise SystemStateError("Unsupported system state snapshot version.")
     _validate_snapshot_payload(manifest, state)
     _normalize_legacy_project_restore_paths(manifest)
@@ -739,10 +753,13 @@ def _validate_snapshot_payload(manifest, state):
         raise SystemStateError("System State model payload is missing.")
     specs = [
         (key, model) for key, model in MODEL_SPECS
-        if archive_version != 5 or model is not FormattingRevision
+        if (archive_version != 5 or model is not FormattingRevision)
+        and (archive_version >= 7 or model not in (CrossCheckServiceJob, CrossCheckServiceJobItem))
     ]
     if archive_version == 5 and "formatting_revisions" in models_payload:
         raise SystemStateError("Version 5 snapshots cannot contain formatting revisions.")
+    if archive_version < 7 and any(key in models_payload for key in ("crosscheck_service_jobs", "crosscheck_service_items")):
+        raise SystemStateError("Older snapshots cannot contain automatic CrossCheck records.")
     required_keys = {key for key, _model in specs}
     if not required_keys.issubset(models_payload):
         missing = ", ".join(sorted(required_keys - set(models_payload)))
@@ -803,6 +820,7 @@ def _validate_snapshot_payload(manifest, state):
             "System State file count does not match its manifest."
         )
     _validate_formatting_revision_payload(models_payload, files)
+    _validate_crosscheck_payload(models_payload, files)
     file_ids = [entry.get("file_id") for entry in files if isinstance(entry, dict)]
     zip_paths = [entry.get("zip_path") for entry in files if isinstance(entry, dict)]
     if (
@@ -1037,6 +1055,9 @@ def _validate_restore_path_membership(manifest):
                 f"Unsupported snapshot restore kind: {kind}"
             )
         target = _safe_restore_target(entry)
+        secret_root = Path(django_settings.BASE_DIR) / "data" / "secrets"
+        if target == secret_root or _is_relative_to(target, secret_root):
+            raise SystemStateError("System State cannot restore local service secrets.")
         if not any(
             target != root and _is_relative_to(target, root)
             for root in roots_by_kind[kind]
@@ -1082,6 +1103,7 @@ def _settings_summary(state):
 
 
 def _clear_database_rows():
+    CrossCheckServiceJob.objects.all().delete()
     PaperAuthor.objects.all().delete()
     FinalSubmission.objects.all().delete()
     InitialPaper.objects.all().delete()
@@ -1096,6 +1118,8 @@ def _restore_managed_folders(settings_obj, state, manifest):
         media_root,
         _validate_project_restore_root(data_root / "logs"),
         _validate_project_restore_root(data_root / "crosscheck_upload"),
+        _validate_project_restore_root(data_root / "crosscheck_provenance"),
+        _validate_project_restore_root(data_root / "crosscheck_service"),
         _validate_project_restore_root(data_root / "restored_external"),
     }
 
@@ -1461,6 +1485,11 @@ def _restore_models(state, path_map, root_map):
     models_payload = state.get("models", {})
     for key, model in RESTORE_MODEL_ORDER:
         objs = []
+        automatic_time_fields = [
+            field for field in model._meta.fields
+            if getattr(field, "auto_now", False) or getattr(field, "auto_now_add", False)
+        ]
+        preserved_times = []
         for raw_row in models_payload.get(key, []):
             row = {}
             for field in model._meta.fields:
@@ -1489,11 +1518,65 @@ def _restore_models(state, path_map, root_map):
                         f"in: {', '.join(sorted(invalid_errors))}."
                     ) from exc
             objs.append(obj)
+            preserved_times.append({
+                field.attname: row[field.attname]
+                for field in automatic_time_fields if field.attname in row
+            })
         if objs:
             model.objects.bulk_create(objs)
+            # bulk_create still invokes DateTimeField.pre_save. Restore the
+            # validated snapshot times without firing save hooks or review resets.
+            if automatic_time_fields:
+                for obj, values in zip(objs, preserved_times):
+                    for name, value in values.items():
+                        setattr(obj, name, value)
+                model.objects.bulk_update(objs, [field.name for field in automatic_time_fields])
     if not AppSetting.objects.exists():
         AppSetting.load()
     sync_final_submission_state_records()
+
+
+def _resign_restored_crosscheck_provenance():
+    # Archive checksums validate the transferred provenance. Its HMAC belongs
+    # to the receiving installation, whose SECRET_KEY may differ.
+    from submissions.services.crosscheck import _provenance_signature
+    provenance_root = Path(django_settings.BASE_DIR) / "data" / "crosscheck_provenance"
+    if provenance_root.exists():
+        for path in provenance_root.glob("*/*.json"):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (payload.get("status") == "complete" and payload.get("token") == path.parent.name
+                    and payload.get("scope") == path.stem and payload.get("schema_version") == 1):
+                payload["signature"] = _provenance_signature(payload)
+                path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _validate_crosscheck_payload(models_payload, files):
+    jobs = models_payload.get("crosscheck_service_jobs", [])
+    items = models_payload.get("crosscheck_service_items", [])
+    by_id = {str(row["id"]): row for row in jobs}
+    entries = {entry.get("restore_rel"): entry for entry in files if entry.get("restore_kind") == "project"}
+    seen = set()
+    for item in items:
+        job = by_id.get(str(item.get("job_id")))
+        key = (str(item.get("job_id")), item.get("paper_id"))
+        if not job or key in seen or not re.fullmatch(r"[A-Za-z0-9]+", str(item.get("paper_id", ""))):
+            raise SystemStateError("Invalid CrossCheck job/item identity in archive.")
+        seen.add(key)
+        if job.get("status") not in {"failed", "cancelled"}:
+            path = f"data/crosscheck_service/{job['id']}/inputs/{item['paper_id']}.pdf"
+            entry = entries.get(path)
+            if not entry or entry.get("sha256") != item.get("pdf_sha256"):
+                raise SystemStateError("CrossCheck prepared PDF evidence is missing or changed.")
+    for job in jobs:
+        if job.get("status") not in {"failed", "cancelled"}:
+            provenance = f"data/crosscheck_provenance/{job['token']}/{job['scope']}.json"
+            if provenance not in entries:
+                raise SystemStateError("CrossCheck batch provenance is missing from the archive.")
+        if job.get("archive_sha256"):
+            path = f"data/crosscheck_service/{job['id']}/results.zip"
+            entry = entries.get(path)
+            if not entry or entry.get("sha256") != job["archive_sha256"]:
+                raise SystemStateError("CrossCheck result ZIP evidence is missing or changed.")
 
 
 def _deserialize_value(field, value, path_map, root_map):

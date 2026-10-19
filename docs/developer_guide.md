@@ -149,6 +149,26 @@ wheel/keyboard interleaving, and continuous mode.
 Avoid re-navigating to an unchanged page number: Enter followed by input blur
 must not reattach a single-page view and swallow the user's next link click.
 
+`pdf_thumbnails.mjs` owns the reader's collapsible sidebar. Pass the exact
+already loaded `PDFDocumentProxy`; never call `getDocument`, fetch a second PDF,
+select a file or clean up a page proxy shared with the main viewer. Use native
+page render/getViewport APIs, serial rendering, near-visible IntersectionObserver
+requests and a 24-canvas cache target (retain current/near-visible pages).
+Cancel/invalidate work on close/rotation
+or teardown; late promises must not install stale pixels. Page/rotation events
+come from the existing viewer, and clicks use its public page-number property.
+Test lazy rendering, cache eviction, failure/retry, cancellation, focus, mobile
+selection and one-document binding with:
+
+```bash
+node --test submissions/tests/js/pdf_thumbnails.test.mjs
+```
+
+Browser QA must also check actual thumbnail canvas pixels, independent scrolling,
+search/keyboard synchronization, mobile overlay/auto-close, resize/native fitting,
+rotation and unchanged raw endpoints/download bytes. Never persist browser
+thumbnails to database workflow state or managed media.
+
 Keep controllers thin. A controller can validate forms, choose commands, set messages, redirect, and render templates.
 
 Put reusable workflow behavior in services:
@@ -194,6 +214,15 @@ Put reusable workflow behavior in services:
   concurrent uploads, interrupted/repeated requests, storage/audit failures,
   title guard confirm/cancel, and List/Single/Focus/HTMX behavior.
 - CrossCheck/plagiarism: `crosscheck.py`.
+- Automatic CrossCheck HTTP: `crosscheck_client.py`; preview/job/result apply:
+  `crosscheck_service.py`. Reuse the manual export's publication bytes and
+  signed provenance. Never select PDFs from debug/current paths or infer
+  success from a job's completed status. External POST timeouts are uncertain
+  submissions and must not be retried automatically.
+  Batch countdown/polling UI uses one timer and at most one automatic request
+  in flight. Check timing, visibility pauses, errors and completion reload with
+  `node --test submissions/tests/js/crosscheck_polling.test.mjs` (Node 20+);
+  these tests do not contact the service.
 - Signed multi-editor evidence: `workflow_evidence.py`.
 - Readiness and author checks: `checks.py`.
 - Exceptions: `exceptions.py`.
@@ -534,6 +563,17 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   the fresh reference check between cleanup preview and apply.
 - Audit logging for state-changing workflows.
 - Editor Upload, discard, and Not Publishing behavior.
+- Automatic CrossCheck version binding: identical PDF bytes on a replacement
+  Final must not receive an earlier Final's results. Cover scope changes,
+  missing selected Corrected files, mixed valid/stale batches, late-item and
+  audit failures, expired evidence, tampered inputs/results, and cross-job file
+  URLs. Use mocked transport; never submit conference PDFs to test the service.
+- Archive compatibility must preserve current publication bytes, revision pairs,
+  thumbnails and review state. Incomplete model payloads are rejected; corrupt
+  file previews must report the defect and must not be applicable.
+- Compare archived automatic creation/update fields with restored records;
+  `bulk_create()` still calls field `pre_save()` and must not reset chronology
+  or renew a CrossCheck upload preview's two-hour age limit.
 - Multi-editor long-running Process PDFs/extraction races, including generated
   file output as well as database fields.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
@@ -567,7 +607,13 @@ Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export c
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
 
-Archive version 6 adds `FormattingRevision` records and immutable files.
+Archive version 7 adds automatic CrossCheck job/item models and managed evidence.
+The explicit v5/v6 readers validate their original model sets and restore no
+automatic job history. Secrets under `data/secrets/` must never enter System
+State, audit, or model serialization. Clear Database removes those local files;
+restore preserves receiving-machine secrets. Batch provenance restored from a
+validated archive must be signed for the receiving installation before reuse.
+Archive version 6 added `FormattingRevision` records and immutable files.
 Version 5 remains accepted through explicit validation of its original model
 set, counts, payload hash, and file hashes before restore; missing revision
 rows mean empty history only for v5. Version 6 requires the revision model key,

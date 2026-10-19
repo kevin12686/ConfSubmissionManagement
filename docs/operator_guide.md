@@ -24,6 +24,19 @@ bottom. Horizontal and modified wheel gestures retain native browser behavior.
 Switching layout keeps the current page and zoom; reopening a reader uses the
 defaults again and does not change any review or file state.
 
+The thumbnail button at the left of the toolbar opens/closes the page sidebar.
+On desktop it starts open; below 900px it starts closed and overlays only the
+reader area when opened, leaving the document width unchanged. The sidebar
+lists all page numbers and scrolls independently. Click a thumbnail to jump to
+that page; mobile closes the panel after selection. The current page is marked
+and kept visible as you navigate by wheel, keyboard, page number or search.
+Sidebar Up/Down and Home/End move thumbnail focus; Enter/Space selects the page,
+and Escape closes the sidebar. Thumbnails load near the visible part of the list,
+not all at once. A failed thumbnail shows `Preview unavailable`; navigation and
+the main PDF remain available. Reopen the panel to retry failed thumbnails.
+These previews come from the already loaded PDF, not DB thumbnails or a new
+file-selection endpoint, and are never saved as publication/review evidence.
+
 Keyboard controls apply while the PDF area has focus (click the PDF or Tab back
 to it). The reader initially focuses that area only if no control already has
 focus. Left/Right turn pages; Up/Down and Page Up/Down first scroll a zoomed page,
@@ -651,6 +664,54 @@ is no background polling or deletion timer.
 
 Go to `/integrations/crosscheck/`.
 
+The Automatic service tab uses the optional service configured under Settings
+> Plagiarism / CrossCheck. Set its base URL, load the exact conference folder,
+confirm its association with the Conference name, and enable the integration.
+The searchable folder selector shows complete names, wrapping long options and
+the selected folder so similarly named conferences can be distinguished.
+Folder confirmation prevents routing papers into the wrong conference: confirm
+when first enabling the service or changing the conference name, service URL
+or folder. Unchanged settings do not require confirmation again. The checkbox
+does not submit papers or change any review flags.
+By default the service's saved IEEE account is used; no credentials are needed.
+Optional service login/IEEE overrides are write-only, stored on this machine in
+`data/secrets/crosscheck.json`, and excluded from audit and System State ZIPs.
+Loading folders with an IEEE override updates the account saved on the service.
+Save the service URL before saving optional credentials. Blank fields retain
+existing local secrets; Remove local credentials restores the service default
+unless environment overrides are configured.
+
+1. Preview all publication PDFs or only papers missing either P/S value.
+2. Review conference/folder, Paper IDs, Final IDs, Corrected/Original source,
+   and PDF hashes, then confirm the upload.
+3. Keep the batch page open to check progress every 15 seconds, or return later
+   and use Check progress. The service continues while the browser is closed.
+   A visible countdown shows the next check, switches to Checking progress
+   during a request, and pauses while the tab is hidden. Returning starts a
+   fresh 15-second countdown. A failed check pauses automatic updates until
+   you use Check progress; retrieved results refresh the page, not your scores.
+4. Review the retrieved per-paper scores and report availability. Confirm and
+   apply available results. A completed service job may still contain failures.
+
+Batch tokens are `ConferenceName_CFM_MONDDYYYY_N`, using the conference's
+Settings timezone and a reserved daily sequence. Non-ASCII letters, spaces and
+punctuation become underscores; consecutive underscores collapse. Uploads are
+named only `PaperID.pdf`; the service appends `_<token>`. Automatic Paper IDs
+must contain ASCII letters/numbers. Previews expire after two hours, and used
+batch numbers are not recycled. Cancelled/failed previews remain in history.
+
+Each applied result rechecks the active Final and publication PDF SHA-256.
+Changes to the candidate/PDF make returned results stale. Changes to existing
+plagiarism data after the result preview also prevent overwriting it; use
+Refresh result preview to review those changes again. Other checks/reviews
+keep their existing state. Changed scores can make P/S exceptions stale;
+a newly applied report replaces the report link and preserves old report files.
+Partial, timed-out and unconfirmed rows do not clear previous scores/reports.
+Download result evidence ZIP retains service manifests, reports, screenshots,
+and logs. This evidence is separate from the Final Publication Package.
+
+The Manual workflow tab retains the existing fallback:
+
 1. Enter a token and export the plagiarism upload ZIP.
 2. Upload the PDFs to the outside plagiarism tool.
 3. Import the result CSV with `filename`, `plagiarism_percent`, and `single_percent`.
@@ -764,10 +825,20 @@ managed files, Formatting revisions and their files, reports, review artifacts,
 and active and archived audit logs.
 Temporary preview tokens are excluded.
 
-New backups use State archive v6. Version 5 is accepted through an explicit
-validation path; it restores existing files and review state with no revision
-records. Version 6 must contain its revision payload and all referenced history
-files with matching hashes; a damaged v6 archive cannot be treated as v5.
+New backups use State archive v7, including automatic CrossCheck job/item
+records, prepared PDFs, result ZIPs and batch provenance. Local service secrets
+are excluded and existing receiving-machine secrets are preserved during restore.
+Check the service URL/folder after moving machines before resuming a job.
+Versions 5 and 6 are accepted through explicit validation paths. Version 5
+restores existing files and review state without revision records.
+Version 6 must contain its revision payload and all referenced history
+files with matching hashes; older snapshots restore without automatic jobs.
+A damaged newer archive cannot be treated as an older version.
+
+Archived record creation/update times are retained, including revision capture
+times and CrossCheck batch age. Restore does not renew an expired upload
+preview. This cannot recover original times already overwritten by a restore
+performed with an earlier app; use an original backup if those times are needed.
 
 Restore is preview-before-apply and remaps managed paths to the receiving
 installation. Do not continue publishing from a restore that reports an

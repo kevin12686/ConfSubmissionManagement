@@ -255,6 +255,26 @@ record requires it.
 
 ## Metadata Forms
 
+Plagiarism / CrossCheck uses Automatic service and Manual workflow tabs within
+one integration page. A batch detail page holds upload preview, progress and
+result preview in the same paper table. Settings groups its thresholds,
+service status, exact folder and optional accounts together. Credentials remain
+collapsed and write-only; service default IEEE account needs no form input.
+Connection checks and folder loading are explicit actions, and job polling runs
+only while its progress page is visible. Existing site typography, surfaces,
+responsive tables and persistent inline state apply to these pages.
+The conference-folder selector uses the existing Tom Select library in a
+full-width field. Both options and the selected name wrap completely; do not
+truncate conference names or rely on native datalist popups for long names.
+Keep the enable checkbox on its own row so Service base URL and Report wait
+minutes align. Explain folder confirmation beside the checkbox, not in a
+separate warning panel.
+In batch result cells, stack the status, optional message and report link with
+explicit spacing so the action cannot run into the status text.
+Show the batch auto-update countdown as inline secondary text in the progress
+section, not a separate card. Distinguish countdown, request in progress and
+paused states; do not announce every second through an ARIA live region.
+
 Paper titles and author lists are multiline metadata. Editable Master, Final,
 Editor Upload, and manual-override title fields use the same three-row textarea
 pattern as their corresponding authors field. Search fields and Paper ID
@@ -386,6 +406,19 @@ Navigation uses the same public next/previous methods as the toolbar and public
 page-number assignment for Home/End; it never selects or reloads a file.
 Keep the current page/zoom when switching modes and keep
 search/internal PDF destinations able to navigate across the document.
+
+Keep thumbnail navigation inside this reader: one toolbar icon with
+`aria-expanded`/`aria-controls`, one left sidebar and one independent list scroll.
+Desktop (900px+) starts open; narrow screens start collapsed and use a reader-only
+overlay that closes on selection. Do not squeeze the PDF into a narrow mobile
+column, add another page/card, or move the outer document when revealing a
+thumbnail. Use a fixed preview slot, page number, current-page border and roving
+tab stop. Arrow/Home/End move thumbnail focus; native Enter/Space selects, and
+Escape closes. Preserve focus while the operator browses the sidebar. Render
+near-visible previews serially, show loading/failure inside each slot, and use
+the same PDFDocumentProxy and rotation as the main view. Never show a broken
+image or let a thumbnail failure replace the main PDF. Sidebar resizing must
+trigger existing native fit behavior; explicit numeric zoom stays unchanged.
 
 Keep the same PDF source visible through its source-kind heading and row/revision
 context. Loading/failure/password feedback stays inline with direct/download

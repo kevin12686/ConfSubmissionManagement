@@ -1,0 +1,29 @@
+.cfm-folder-picker {
+    min-width: 0;
+    width: 100%;
+}
+
+.cfm-folder-picker .ts-control {
+    align-items: start;
+    flex-wrap: wrap;
+}
+
+.cfm-folder-picker .ts-control .item,
+.cfm-folder-picker .ts-dropdown .option {
+    line-height: 1.5;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    word-break: normal;
+}
+
+.cfm-folder-picker .ts-control .item {
+    flex: 0 1 100%;
+    min-width: 0;
+    padding-right: 1rem;
+}
+
+.cfm-folder-picker .ts-control > input {
+    min-width: 0;
+    max-width: 100%;
+}

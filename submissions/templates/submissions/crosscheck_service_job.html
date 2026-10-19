@@ -1,0 +1,78 @@
+{% extends "submissions/base.html" %}
+{% load static %}
+{% load pdf_viewer %}
+{% block title %}CrossCheck Batch{% endblock %}
+{% block content %}
+<div class="cfm-page-header">
+    <div><h1 class="h3 cfm-page-title">CrossCheck batch</h1><div class="cfm-page-subtitle text-break">{{ job.token }}</div></div>
+    <a class="btn btn-outline-secondary" href="{% url 'submissions:integration' %}">Back to CrossCheck</a>
+</div>
+<section class="border-bottom pb-3 mb-3">
+    <div class="row g-3">
+        <div class="col-lg-4"><div class="small text-muted">Conference</div><div>{{ job.conference_name }}</div></div>
+        <div class="col-lg-8"><div class="small text-muted">CrossCheck folder</div><div class="text-break">{{ job.folder }}</div></div>
+        <div class="col-md-4"><div class="small text-muted">Scope</div><div>{% if job.scope == 'all' %}All publication PDFs{% else %}Missing results only{% endif %}</div></div>
+        <div class="col-md-4"><div class="small text-muted">Status</div><strong>{{ job.status|title }}</strong></div>
+        <div class="col-md-4"><div class="small text-muted">Report wait limit</div><div>{{ job.wait_minutes }} minutes</div></div>
+    </div>
+</section>
+{% if job.status == 'preview' %}
+<div class="alert alert-info cfm-alert-stack">
+    <strong>Review publication PDFs before sending</strong>
+    <div>Each Paper ID below is bound to this Final Submission and PDF SHA-256. The service receives PaperID.pdf with the batch token as its postfix.</div>
+    <form method="post" class="d-flex flex-wrap gap-2">
+        {% csrf_token %}<input type="hidden" name="evidence_token" value="{{ job_evidence_token }}">
+        <button class="btn btn-primary" name="action" value="start">Confirm and start CrossCheck</button>
+        <button class="btn btn-outline-secondary" name="action" value="cancel">Cancel batch</button>
+    </form>
+</div>
+{% elif is_running %}
+<section class="mb-3" data-crosscheck-job data-status="{% if poll_enabled %}{{ job.status }}{% endif %}">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <p class="mb-0" data-job-message>{{ job.message }}</p>
+        <form method="post" data-job-refresh>{% csrf_token %}<button class="btn btn-outline-primary" name="action" value="refresh">Check progress</button></form>
+        {% if job.remote_id %}<form method="post">{% csrf_token %}<button class="btn btn-outline-danger" name="action" value="stop">Stop and keep partial results</button></form>{% endif %}
+    </div>
+    <p class="small mt-2 mb-0" data-job-countdown hidden></p>
+    <p class="small mt-2 mb-0">You can leave and return to this batch. An interrupted submission is recovered by its existing token; files are never automatically re-uploaded.</p>
+</section>
+{% else %}<p>{{ job.message }}</p>{% endif %}
+{% if progress_rows %}
+<dl class="d-flex flex-wrap gap-4 mb-3" data-job-progress>
+    {% for row in progress_rows %}<div><dt class="small text-muted">{{ row.label }}</dt><dd class="mb-0">{{ row.value }}</dd></div>{% endfor %}
+</dl>
+{% endif %}
+{% if job.remote_id %}<div class="small mb-3 text-break">Service job: <code>{{ job.remote_id }}</code></div>{% endif %}
+<div class="table-responsive">
+    <table class="table cfm-table align-middle">
+        <thead><tr><th>Paper ID</th><th>Final ID / source</th><th>Result</th><th>Plagiarism %</th><th>Single %</th><th>Evidence</th></tr></thead>
+        <tbody>{% for item in items %}
+            <tr>
+                <td><a href="{% pdf_viewer 'submissions:crosscheck_service_input_pdf' job.pk item.pk %}" target="_blank" rel="noopener">{{ item.paper_id }}</a></td><td>{{ item.final_submission_id }}<div class="small">{{ item.source|title }}</div></td>
+                <td>
+                    <div class="d-flex flex-column align-items-start gap-2">
+                        <span>{{ item.status_label }}</span>
+                        {% if item.message %}<div class="small text-break">{{ item.message }}</div>{% endif %}
+                        {% if item.report_sha256 %}<a href="{% pdf_viewer 'submissions:crosscheck_service_report' job.pk item.pk %}" target="_blank" rel="noopener">Open report</a>{% endif %}
+                    </div>
+                </td>
+                <td>{% if item.plagiarism_percent != None %}{{ item.plagiarism_percent|floatformat:0 }}%<div class="small text-muted">Previous: {{ item.import_evidence.similarity_score|floatformat:0|default:'Missing' }}</div>{% else %}--{% endif %}</td>
+                <td>{% if item.single_percent != None %}{{ item.single_percent|floatformat:0 }}%<div class="small text-muted">Previous: {{ item.import_evidence.single_similarity_score|floatformat:0|default:'Missing' }}</div>{% else %}--{% endif %}</td>
+                <td><details><summary>PDF SHA-256</summary><code class="text-break">{{ item.pdf_sha256 }}</code>{% if item.document_id %}<div class="small text-break mt-2">Document: {{ item.document_id }}</div>{% endif %}</details></td>
+            </tr>
+        {% endfor %}</tbody>
+    </table>
+</div>
+{% if job.skipped %}<details class="mt-3"><summary>{{ job.skipped|length }} skipped papers</summary><ul>{% for row in job.skipped %}<li>{{ row.paper_id }} / {{ row.final_submission_id }}: {{ row.reason }}</li>{% endfor %}</ul></details>{% endif %}
+{% if job.archive_sha256 %}
+<div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+    <a class="btn btn-outline-primary" href="{% url 'submissions:crosscheck_service_archive' job.pk %}">Download result evidence ZIP</a>
+    {% if job.status == 'ready' or job.status == 'partial' %}<form method="post">{% csrf_token %}<button class="btn btn-outline-secondary" name="action" value="repreview">Refresh result preview</button></form>{% endif %}
+    {% if can_apply %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="evidence_token" value="{{ job_evidence_token }}"><button class="btn btn-primary" name="action" value="apply">Confirm and apply available results</button></form>
+    {% endif %}
+</div>
+{% if can_apply %}<p class="small mt-2">Only confirmed, downloaded results for the same active publication PDF are applied. Changed scores can make existing exceptions stale.</p>{% endif %}
+{% endif %}
+{% endblock %}
+{% block extra_js %}{{ block.super }}<script src="{% static 'submissions/crosscheck_service.js' %}?v={{ app_version }}" defer></script>{% endblock %}

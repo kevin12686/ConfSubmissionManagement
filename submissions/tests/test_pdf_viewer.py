@@ -59,6 +59,8 @@ class PDFViewerURLTests(SimpleTestCase):
                 kwargs = {"token": "a" * 32}
             elif name == "formatting_comparison_pdf":
                 kwargs.update(token="a" * 32, side="before")
+            elif name in {"crosscheck_service_report", "crosscheck_service_input_pdf"}:
+                kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "item_id": 1}
             raw = reverse(f"submissions:{name}", kwargs=kwargs)
             with self.subTest(name=name):
                 wrapped = pdf_viewer_url(raw)
@@ -159,6 +161,8 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
                 kwargs = {"token": "a" * 32}
             elif name == "formatting_comparison_pdf":
                 kwargs.update(token="a" * 32, side="before")
+            elif name in {"crosscheck_service_report", "crosscheck_service_input_pdf"}:
+                kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "item_id": 1}
             raw = reverse(f"submissions:{name}", kwargs=kwargs)
             with self.subTest(source=name):
                 response = self.get_reader(raw)
@@ -217,6 +221,22 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
         for raw in ("https://example.org/paper.pdf", "/settings/", "/media/source.zip", ""):
             self.assertEqual(self.client.get(url, {"file": raw}).status_code, 400)
         self.assertEqual(self.client.post(url, {"file": self.pdf_url}).status_code, 405)
+
+    def test_thumbnail_sidebar_uses_the_same_loaded_document_not_another_file_endpoint(self):
+        response = self.get_reader(self.pdf_url)
+        self.assertContains(response, 'data-pdf-sidebar-toggle')
+        self.assertContains(response, 'aria-controls="pdf-page-sidebar"')
+        self.assertContains(response, 'data-pdf-thumbnails aria-label="Choose PDF page"')
+        script = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_viewer.js").read_text()
+        self.assertIn("thumbnails.setDocument(pdfDocument)", script)
+        self.assertIn("thumbnails.setCurrentPage(viewer.currentPageNumber)", script)
+        self.assertIn('eventBus.on("rotationchanging", event => thumbnails.setRotation(event.pagesRotation))', script)
+        self.assertIn("thumbnails.destroy()", script)
+        module = (Path(__file__).resolve().parents[1] / "static/submissions/pdf_thumbnails.mjs").read_text()
+        self.assertNotIn("getDocument(", module)
+        self.assertNotIn("fetch(", module)
+        self.assertNotIn(".cleanup(", module)
+        self.assertEqual(response.context["pdf_source"]["url"], self.pdf_url)
 
     def test_missing_selected_corrected_does_not_fall_back_to_original(self):
         Path(self.submission.formatted_pdf_file.path).unlink()

@@ -3,6 +3,76 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.18.5 - 2026-10-18
+
+- Preserve archived automatic creation/update timestamps during System State
+  restore, including Master/Final record dates and CrossCheck batch age.
+  Restoring an expired upload preview no longer renews its two-hour limit;
+  already-preserved Formatting revision times remain unchanged.
+- Extend version-safety regression coverage for CrossCheck result binding,
+  mixed stale/valid batches, atomic failures, corrupted evidence and v6/v7
+  restore. Publication selection and archive schema remain unchanged (v7).
+
+## 1.18.4 - 2026-10-18
+
+### PDF Page Thumbnail Sidebar
+
+- Add an integrated, independently scrolling thumbnail sidebar to the shared
+  reader, with same-document page jumps, current-page tracking and keyboard focus.
+- Draw near-visible thumbnails serially from the loaded PDF, keep a bounded
+  browser cache, and cancel stale work on close/rotation/teardown. Thumbnail
+  failures remain local and do not replace or block the main PDF.
+- Start open on desktop and collapsed on narrow screens; mobile uses a
+  reader-only overlay and closes after selection. Preserve existing native fit,
+  numeric zoom, navigation, file/version binding and publication rules.
+- No schema change; State archive remains v7.
+
+## 1.18.3 - 2026-10-18
+
+### CrossCheck Progress Countdown
+
+- Show a live 15-second countdown beside batch progress, with explicit checking,
+  hidden-tab pause and error-pause states. Resume with a fresh countdown when
+  the tab becomes visible; keep one progress request in flight at a time.
+- Preserve manual result apply and publication/version checks. State archive
+  remains v7.
+
+## 1.18.2 - 2026-10-18
+
+### CrossCheck Settings Alignment
+
+- Align Service base URL and Report wait minutes below a shared enable row.
+- Separate batch result status, messages and Open report links into spaced lines.
+- Explain when conference-folder confirmation is required, without changing
+  confirmation rules or publication behavior. State archive remains v7.
+
+## 1.18.1 - 2026-10-18
+
+### Readable CrossCheck Folder Selection
+
+- Show complete conference folder names in a full-width searchable selector,
+  wrapping both dropdown options and the selected name without truncation.
+- Preserve exact folder values, existing settings and publication selection.
+  State archive remains v7.
+
+## 1.18.0 - 2026-10-18
+
+### Automatic CrossCheck Service
+
+- Integrate an optional local CrossCheck service into Settings and the existing
+  Plagiarism / CrossCheck page, with Automatic service / Manual workflow tabs.
+- Preview version-bound publication PDFs before upload; use PaperID.pdf and a
+  conference/date/daily-sequence postfix. Track jobs and recover uncertain
+  submissions without automatic re-upload. Review per-paper results before apply.
+- Validate result manifests, explicit upload/download outcomes, report bytes,
+  current active Final/PDF hash and concurrent plagiarism edits. Retain partial
+  results without clearing previous scores. Preserve existing review rules.
+- Keep optional credentials write-only and outside DB/audit/System State.
+  Use the service default IEEE account when no override is configured.
+- Use State archive v7 for jobs/items/evidence and durable provenance; retain
+  explicit v5/v6 readers. Protect evidence from ordinary cleanup and include
+  jobs/evidence/local secrets in Clear Database.
+
 ## 1.17.6 - 2026-10-16
 
 ### Integrated PDF Keyboard Navigation

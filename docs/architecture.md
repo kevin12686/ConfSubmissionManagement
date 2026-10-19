@@ -25,6 +25,11 @@ pages retain native scrolling before a fresh boundary gesture can turn a page.
 Keyboard input uses the same boundary/positioning functions and scopes keydown
 to the PDF container. Held keys may pan, but need release before another page
 turn; controls, modifiers and input focus remain native.
+The collapsible thumbnail sidebar uses that exact loaded PDFDocumentProxy and
+native page rendering. It never loads another PDF or reads DB thumbnail folders.
+Serial, near-visible rendering and a bounded in-browser canvas cache keep long
+documents manageable. Sidebar page clicks/selection and rotation synchronize
+through the existing viewer; no file/version selection is introduced.
 Annotation editing, interactive form filling, PDF scripting and XFA execution
 are disabled; application files are never serialized from the viewer.
 Download/direct links still target the original endpoint. No external PDF URL,
@@ -34,7 +39,8 @@ Publication and row-scoped helpers, file endpoints, immutable revision checks
 and comparison snapshot validation remain authoritative. The browser cannot
 change active versions, review state, readiness or export bytes. Existing
 images and comparison overlays remain on their prior renderer. The new reader
-has no model or stored workflow state, so System State v6 remains unchanged.
+has no model or stored workflow state; the thumbnail UI does not change System
+State v7 or add archived preview files.
 
 Conference Final Manager is a local Django application with SQLite storage and local file management. The application is intentionally no-login and single-machine.
 
@@ -74,7 +80,7 @@ Token accounting must balance aligned, paired, and remaining tokens on each
 side. Same-text pairs remain visible evidence rather than a completeness result.
 Actual passage pages and navigation-only reference pages are separate fields.
 Comparison payload method v2 rejects v1 results with a rebuild prompt; this
-temporary payload version is independent of System State archive v6.
+temporary payload version is independent of System State archive v7.
 
 Automatic upload comparison orchestration belongs to
 `automatic_pdf_comparison.py`, not the Formatting transaction. A typed
@@ -542,6 +548,13 @@ identity so repeated operations cannot replace an earlier log.
 
 System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens, including `data/record_edit_previews/`, are excluded.
 
+Model restore preserves validated archived creation/update timestamps after
+bulk insertion; Django's automatic timestamp hooks must not replace them with
+the restore time. This keeps record chronology and CrossCheck preview age
+intact; revision times stored with an ordinary default were already retained.
+The correction does not change archive schema, publication sources,
+review flags or reset dependencies.
+
 `record_edit_preview.py` owns the common two-step edit boundary for existing
 Paper Master and Final Submission records. It stores validated proposed values
 and staged uploads for two hours, compares files by SHA-256, and revalidates
@@ -592,11 +605,39 @@ The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`
 
 The footer displays both values so a user can match a System State ZIP to the expected application version.
 
-Archive version 6 adds revision records and files. The v5 reader validates the
+Archive version 7 adds automatic CrossCheck jobs/items, prepared publication
+PDFs, result evidence ZIPs and durable batch provenance. Local service secrets
+are excluded; raw Docker backups still contain the machine's secret file.
+Archive version 6 added revision records and files. The v5 reader validates the
 original v5 payload/count/hash contract and restores an empty history; v6
 requires the revision payload and matching file evidence. Versions earlier
 than v5 remain unsupported. No compatibility branch changes publication
 decisions or silently reconstructs historical approvals.
+
+## Automatic CrossCheck Service
+
+`crosscheck_client.py` owns HTTP, streamed multipart bodies, bounded downloads,
+same-origin endpoints, and write-only local credentials. `crosscheck_service.py`
+owns preview/start/recovery/result validation/apply. Controllers remain thin.
+`CrossCheckServiceJob` and `CrossCheckServiceJobItem` retain batch identity and
+per-paper outcomes. `crosscheck.py` remains authoritative for publication PDF
+selection, scope, exported bytes, durable provenance and percent parsing.
+
+The preview snapshots the existing manual export bytes as `PaperID.pdf`.
+Immediately before sending, it verifies the prepared bytes and rechecks the
+current publication candidate. A committed submitting state precedes the
+external POST; uncertain responses are recovered by folder/token from service
+job history, never by automatic re-upload. Service 409 allows a later explicit
+retry because the request was rejected as busy. Browser-visible POST polling
+updates only this job; GETs never perform network calls or workflow writes.
+
+Result archives validate member paths/counts/sizes, duplicate identities,
+original/uploaded filename mappings, explicit upload confirmation, per-file
+download status, scores and PDF signatures. Partial/unconfirmed results remain
+visible but cannot update a submission. Apply rechecks provenance and existing
+plagiarism evidence under a DB transaction, writes operation-unique reports,
+syncs the plagiarism mirror, and compensates new files if the transaction fails.
+Publication helpers, readiness and review-reset rules are unchanged.
 
 ## Optional GROBID Fallback
 

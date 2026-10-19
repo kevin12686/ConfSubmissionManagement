@@ -11,6 +11,8 @@ PDF_ROUTES = {
     "publication_debug_pdf": "Publication debug PDF",
     "final_submission_display_pdf": "Submission PDF",
     "plagiarism_report": "Plagiarism report",
+    "crosscheck_service_report": "CrossCheck result report",
+    "crosscheck_service_input_pdf": "CrossCheck submitted PDF",
     "formatting_revision_pdf": "Formatting revision PDF",
     "editor_upload_preview_pdf": "Uploaded PDF preview",
     "formatting_comparison_pdf": "Compared PDF",
@@ -42,6 +44,8 @@ def pdf_viewer_source(value):
     detail = f"Submission record {match.kwargs['pk']}" if "pk" in match.kwargs else "Pending Editor Upload"
     if match.url_name == "formatting_revision_pdf":
         detail += f" · Revision record {match.kwargs['revision_id']}"
+    elif match.url_name in {"crosscheck_service_report", "crosscheck_service_input_pdf"}:
+        detail = f"CrossCheck batch {match.kwargs['pk']} · Item {match.kwargs['item_id']}"
     elif match.url_name == "formatting_comparison_pdf":
         side = match.kwargs["side"]
         if side not in {"before", "after"}:

@@ -256,6 +256,7 @@ def _managed_roots(settings_obj):
             _configured_folder(settings_obj.reports_folder),
             _configured_folder(settings_obj.plagiarism_reports_folder),
             django_settings.BASE_DIR / "data" / "system_state_backups",
+            django_settings.BASE_DIR / "data" / "crosscheck_service",
         ],
     }
 
@@ -285,6 +286,8 @@ def _report_cleanup_protected_roots(settings_obj):
         django_settings.BASE_DIR / "data" / "system_state_backups",
         django_settings.BASE_DIR / "data" / "system_state_restore_previews",
         django_settings.BASE_DIR / "data" / "crosscheck_provenance",
+        django_settings.BASE_DIR / "data" / "crosscheck_service",
+        django_settings.BASE_DIR / "data" / "secrets",
         django_settings.BASE_DIR / "data" / "restored_external",
         django_settings.BASE_DIR / "data" / "restored_external_folders",
     ]
@@ -306,6 +309,9 @@ def _application_data_clear_candidates(
         Path(django_settings.MEDIA_ROOT),
         Path("data") / "media",
         Path("data") / "crosscheck_upload",
+        Path("data") / "crosscheck_provenance",
+        Path("data") / "crosscheck_service",
+        Path("data") / "secrets",
         Path("data") / "publication_pdf_debug",
         Path("data") / "import_previews",
         Path("data") / "record_edit_previews",
