@@ -740,3 +740,50 @@ class CrossCheckServiceJobItem(models.Model):
     class Meta:
         ordering = ["paper_id"]
         constraints = [models.UniqueConstraint(fields=["job", "paper_id"], name="crosscheck_job_paper")]
+
+
+class CrossCheckServiceAttempt(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(CrossCheckServiceJob, on_delete=models.CASCADE, related_name="attempts")
+    number = models.PositiveIntegerField()
+    kind = models.CharField(max_length=30, default="upload")
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.RESTRICT, related_name="retries")
+    remote_id = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=30, default="preview")
+    eligible_paper_ids = models.JSONField(default=list, blank=True)
+    remote_file_count = models.PositiveIntegerField(null=True, blank=True)
+    wait_minutes = models.PositiveIntegerField(default=15)
+    progress = models.JSONField(default=dict, blank=True)
+    availability = models.JSONField(default=dict, blank=True)
+    message = models.TextField(blank=True)
+    archive_sha256 = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "number"], name="crosscheck_attempt_number"),
+            models.CheckConstraint(condition=models.Q(number__gte=1), name="crosscheck_attempt_positive"),
+            models.UniqueConstraint(fields=["job"], condition=models.Q(status__in=["submitting", "uncertain", "running"]),
+                                    name="crosscheck_one_active_attempt"),
+        ]
+
+
+class CrossCheckServiceResult(models.Model):
+    attempt = models.ForeignKey(CrossCheckServiceAttempt, on_delete=models.CASCADE, related_name="results")
+    item = models.ForeignKey(CrossCheckServiceJobItem, on_delete=models.CASCADE, related_name="results")
+    status = models.CharField(max_length=40)
+    upload_confirmed = models.BooleanField(default=False)
+    message = models.TextField(blank=True)
+    document_id = models.CharField(max_length=150, blank=True)
+    plagiarism_percent = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    single_percent = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    report_member = models.CharField(max_length=500, blank=True)
+    report_sha256 = models.CharField(max_length=64, blank=True)
+    import_evidence = models.JSONField(default=dict, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["attempt__number", "item__paper_id"]
+        constraints = [models.UniqueConstraint(fields=["attempt", "item"], name="crosscheck_attempt_result")]

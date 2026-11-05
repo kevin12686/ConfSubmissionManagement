@@ -49,7 +49,8 @@ one local application:
 - exports editorial workbooks, CrossCheck packages, and the final publication
   package;
 - optionally sends previewed publication PDFs to a local CrossCheck Service,
-  tracks jobs, and previews version-bound scores/reports before applying;
+  tracks batches and retry-download executions, and previews version-bound
+  scores/reports before applying; retries never upload PDFs or replay applied results;
 - records state-changing work in an audit log and creates portable System State
   backups.
 
@@ -197,8 +198,10 @@ Version 1.14.0 adds Formatting revision history. After upgrading, run
 with the application's Python environment. The idempotent capture command
 preserves current corrected files, including inactive/discarded submissions,
 without changing review state. It cannot reconstruct earlier revisions.
-New backups use State archive v7, including automatic CrossCheck jobs and their
-evidence. Validated v5/v6 backups remain restorable; older archives have no
+New backups use State archive v8, including automatic CrossCheck batches,
+per-execution ZIPs and per-paper result history. Validated v5/v6/v7 backups
+remain restorable; v7 jobs are captured as their original execution without
+changing publication files or review state. Earlier archives have no
 automatic job history, and v5 has no revision records. Optional service secrets
 stay on the receiving machine and are excluded from System State ZIPs. See the
 [Operator Guide](docs/operator_guide.md#plagiarism-crosscheck-workflow).

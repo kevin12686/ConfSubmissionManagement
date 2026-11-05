@@ -145,14 +145,23 @@
             const response = await fetch(location.href, {method: 'POST', body, headers: {Accept: 'application/json'}});
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Progress check failed.');
-            if (data.status !== 'running') {
+            const panel = job.querySelector('[data-job-panel]');
+            if (panel && typeof data.panel_html === 'string') {
+                const openDetails = new Set([...panel.querySelectorAll('details[id][open]')].map(el => el.id));
+                const position = {left: window.scrollX, top: window.scrollY, behavior: 'instant'};
+                panel.innerHTML = data.panel_html;
+                panel.querySelectorAll('details[id]').forEach(el => { el.open = openDetails.has(el.id); });
+                window.htmx?.process(panel);
+                window.scrollTo(position);
+            }
+            job.querySelector('[data-job-message]').textContent = data.message || 'Progress updated.';
+            if (!data.poll_enabled) {
                 stopped = true;
-                countdown.textContent = 'Updating batch page…';
-                location.reload();
+                countdown.textContent = 'Progress updated. Review available results or retry remaining downloads.';
+                const stop = job.querySelector('[data-job-stop]');
+                if (stop) stop.hidden = true;
                 return;
             }
-            const p = data.progress;
-            job.querySelector('[data-job-message]').textContent = `Uploads confirmed: ${p.succeeded || 0} · Reports ready: ${p.ready || 0} · Downloaded: ${p.downloaded || 0}`;
         } catch (error) {
             stopped = true;
             countdown.textContent = 'Auto-update paused. Use Check progress to resume.';

@@ -237,7 +237,7 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         self.upload(pdf=b"preserved", source=b"paired")
         before = FinalSubmission.objects.values().get(pk=self.submission.pk)
         snapshot = export_system_state()
-        self.assertEqual(snapshot["manifest"]["state_archive_version"], 7)
+        self.assertEqual(snapshot["manifest"]["state_archive_version"], 8)
         upload = SimpleUploadedFile("state.zip", snapshot["path"].read_bytes())
         preview = preview_system_state_restore(upload)
         self.assertEqual(preview["artifact_counts"]["formatting_revision_files"], 2)
@@ -254,6 +254,10 @@ class FormattingHistoryTests(EditorialAcceptanceTestCase):
         with zipfile.ZipFile(snapshot["path"]) as archive:
             entries = {name: archive.read(name) for name in archive.namelist()}
         manifest, state = (json.loads(entries[name]) for name in ("manifest.json", "state.json"))
+        if version < 8:
+            for key in ("crosscheck_service_attempts", "crosscheck_service_results"):
+                state["models"].pop(key)
+                manifest["record_counts"].pop(key)
         if version < 7:
             for key in ("crosscheck_service_jobs", "crosscheck_service_items"):
                 state["models"].pop(key)

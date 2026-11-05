@@ -189,9 +189,16 @@ Exercise 409, uncertain POST recovery without re-upload, partial/unconfirmed
 results, Unprocessed fallback, malformed/foreign manifest, changed active Final,
 changed PDF and changed score after preview. Apply only after confirmation and
 check P/S mirror, report bytes, exception staleness, unchanged review flags and
-rollback on DB/audit failure. Save/restore a v7 archive and verify jobs/items,
-reports and evidence remain usable with no secret in the ZIP. Clear Database
-must remove jobs/items/evidence/local secrets. GET/filter actions are read-only.
+rollback on DB/audit failure. Retry only confirmed missing reports, without
+re-uploading PDFs. Apply first results before retrying, then verify the retry
+applies only new results; also apply while a retry waits. Test busy responses,
+uncertain recovery, exact source/parent, changed Final/PDF, corrupt later ZIP,
+duplicate submits and applied-result preservation after manual edits. Verify
+cumulative counts, inline retry input retention and scoped PDF/ZIP links on
+desktop/mobile. Save/restore v8 and verify all history and ZIP hashes remain
+usable with no secret. Restore v7 through its explicit adapter; incomplete v8
+history must fail. Clear Database removes all history/evidence/local secrets.
+GET/filter actions are read-only.
 
 Begin connection setup with a blank URL and verify no request is sent. Enter a
 test service requiring WebLogin, supply unsaved credentials and load folders;

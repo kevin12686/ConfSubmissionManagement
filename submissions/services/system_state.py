@@ -18,6 +18,8 @@ from submissions.models import (
     AppSetting,
     CrossCheckServiceJob,
     CrossCheckServiceJobItem,
+    CrossCheckServiceAttempt,
+    CrossCheckServiceResult,
     AuthorLimitWaiver,
     FinalSubmission,
     FormattingRevision,
@@ -81,6 +83,8 @@ MODEL_SPECS = [
     ("author_limit_waivers", AuthorLimitWaiver),
     ("crosscheck_service_jobs", CrossCheckServiceJob),
     ("crosscheck_service_items", CrossCheckServiceJobItem),
+    ("crosscheck_service_attempts", CrossCheckServiceAttempt),
+    ("crosscheck_service_results", CrossCheckServiceResult),
 ]
 RESTORE_MODEL_ORDER = [
     ("settings", AppSetting),
@@ -91,6 +95,8 @@ RESTORE_MODEL_ORDER = [
     ("author_limit_waivers", AuthorLimitWaiver),
     ("crosscheck_service_jobs", CrossCheckServiceJob),
     ("crosscheck_service_items", CrossCheckServiceJobItem),
+    ("crosscheck_service_attempts", CrossCheckServiceAttempt),
+    ("crosscheck_service_results", CrossCheckServiceResult),
 ]
 
 
@@ -687,7 +693,7 @@ def _read_snapshot(zip_path):
     except (KeyError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         raise SystemStateError(f"Invalid system state ZIP: {exc}") from exc
     archive_version = manifest.get("state_archive_version", manifest.get("snapshot_version"))
-    if archive_version not in (5, 6, STATE_ARCHIVE_VERSION):
+    if archive_version not in (5, 6, 7, STATE_ARCHIVE_VERSION):
         raise SystemStateError("Unsupported system state snapshot version.")
     _validate_snapshot_payload(manifest, state)
     _normalize_legacy_project_restore_paths(manifest)
@@ -755,11 +761,14 @@ def _validate_snapshot_payload(manifest, state):
         (key, model) for key, model in MODEL_SPECS
         if (archive_version != 5 or model is not FormattingRevision)
         and (archive_version >= 7 or model not in (CrossCheckServiceJob, CrossCheckServiceJobItem))
+        and (archive_version >= 8 or model not in (CrossCheckServiceAttempt, CrossCheckServiceResult))
     ]
     if archive_version == 5 and "formatting_revisions" in models_payload:
         raise SystemStateError("Version 5 snapshots cannot contain formatting revisions.")
     if archive_version < 7 and any(key in models_payload for key in ("crosscheck_service_jobs", "crosscheck_service_items")):
         raise SystemStateError("Older snapshots cannot contain automatic CrossCheck records.")
+    if archive_version < 8 and any(key in models_payload for key in ("crosscheck_service_attempts", "crosscheck_service_results")):
+        raise SystemStateError("Older snapshots cannot contain CrossCheck execution history.")
     required_keys = {key for key, _model in specs}
     if not required_keys.issubset(models_payload):
         missing = ", ".join(sorted(required_keys - set(models_payload)))
@@ -1501,7 +1510,8 @@ def _restore_models(state, path_map, root_map):
                 row[payload_key] = _deserialize_value(field, value, path_map, root_map)
             obj = model(**row)
             try:
-                obj.full_clean(validate_unique=False)
+                self_relations = [field.name for field in model._meta.fields if field.is_relation and field.related_model is model]
+                obj.full_clean(validate_unique=False, exclude=self_relations)
             except ValidationError as exc:
                 invalid_errors = []
                 for field_name, errors in exc.error_dict.items():
@@ -1533,6 +1543,10 @@ def _restore_models(state, path_map, root_map):
                 model.objects.bulk_update(objs, [field.name for field in automatic_time_fields])
     if not AppSetting.objects.exists():
         AppSetting.load()
+    if state.get("state_archive_version", state.get("snapshot_version", 0)) < 8:
+        from django.apps import apps
+        from submissions.legacy_crosscheck_history import capture_v7_crosscheck_history
+        capture_v7_crosscheck_history(apps)
     sync_final_submission_state_records()
 
 
@@ -1577,6 +1591,86 @@ def _validate_crosscheck_payload(models_payload, files):
             entry = entries.get(path)
             if not entry or entry.get("sha256") != job["archive_sha256"]:
                 raise SystemStateError("CrossCheck result ZIP evidence is missing or changed.")
+    if "crosscheck_service_attempts" in models_payload:
+        _validate_crosscheck_history(models_payload, entries)
+
+
+def _validate_crosscheck_history(payload, entries):
+    jobs = {str(row["id"]): row for row in payload["crosscheck_service_jobs"]}
+    items = {row["id"]: row for row in payload["crosscheck_service_items"]}
+    attempts = {str(row["id"]): row for row in payload["crosscheck_service_attempts"]}
+    seen, active, originals = set(), set(), {}
+    for identity, attempt in attempts.items():
+        job_id = str(attempt.get("job_id"))
+        job = jobs.get(job_id)
+        number = attempt.get("number")
+        key = (job_id, number)
+        allowed = attempt.get("eligible_paper_ids")
+        paper_ids = {item["paper_id"] for item in items.values() if str(item["job_id"]) == job_id}
+        if (not job or key in seen or type(number) is not int or number < 1
+                or not isinstance(allowed, list) or any(not isinstance(value, str) for value in allowed)
+                or len(allowed) != len(set(allowed)) or not set(allowed).issubset(paper_ids)):
+            raise SystemStateError("Invalid CrossCheck execution identity or paper scope.")
+        seen.add(key)
+        if number == 1:
+            if (attempt.get("kind") != "upload" or attempt.get("parent_id")
+                    or set(allowed) != paper_ids or attempt.get("remote_id", "") != job.get("remote_id", "")
+                    or attempt.get("archive_sha256", "") != job.get("archive_sha256", "")):
+                raise SystemStateError("Original CrossCheck execution differs from its batch.")
+            originals[job_id] = attempt
+        else:
+            parent = attempts.get(str(attempt.get("parent_id")))
+            if (attempt.get("kind") != "retry_download" or not parent
+                    or str(parent.get("job_id")) != job_id or parent["number"] >= number):
+                raise SystemStateError("Invalid CrossCheck retry parent or sequence.")
+        if attempt.get("status") in {"submitting", "uncertain", "running"}:
+            if job_id in active:
+                raise SystemStateError("Multiple active CrossCheck executions in one batch.")
+            active.add(job_id)
+        remote_id = attempt.get("remote_id", "")
+        if remote_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", remote_id):
+            raise SystemStateError("Invalid remote CrossCheck execution ID.")
+        count = attempt.get("remote_file_count")
+        if count is not None and (type(count) is not int or count < 0 or count > len(allowed)):
+            raise SystemStateError("Invalid CrossCheck execution file count.")
+        if attempt.get("archive_sha256"):
+            path = (f"data/crosscheck_service/{job_id}/results.zip" if number == 1 else
+                    f"data/crosscheck_service/{job_id}/attempts/{identity}/results.zip")
+            entry = entries.get(path)
+            if not entry or entry.get("sha256") != attempt["archive_sha256"]:
+                raise SystemStateError("CrossCheck execution ZIP is missing or changed.")
+    if set(originals) != set(jobs):
+        raise SystemStateError("CrossCheck original execution history is incomplete.")
+    seen_results, by_item = set(), {}
+    for result in payload["crosscheck_service_results"]:
+        attempt = attempts.get(str(result.get("attempt_id")))
+        item = items.get(result.get("item_id"))
+        key = (str(result.get("attempt_id")), result.get("item_id"))
+        if (not attempt or not item or key in seen_results or str(item["job_id"]) != str(attempt["job_id"])
+                or item["paper_id"] not in attempt["eligible_paper_ids"] or not attempt.get("archive_sha256")):
+            raise SystemStateError("Invalid CrossCheck execution/result ownership.")
+        seen_results.add(key)
+        by_item.setdefault(item["id"], []).append(result)
+        report_hash = result.get("report_sha256", "")
+        if report_hash:
+            job = jobs[str(item["job_id"])]
+            name = f"reports/{item['paper_id']}_{job['token']}.pdf"
+            if (not re.fullmatch(r"[0-9a-f]{64}", report_hash) or not result.get("upload_confirmed")
+                    or result.get("report_member") not in {name, name + ".pdf"}):
+                raise SystemStateError("Invalid CrossCheck report evidence.")
+            for field in ("plagiarism_percent", "single_percent"):
+                value = result.get(field)
+                if value is None or not Decimal(str(value)).is_finite() or not 0 <= Decimal(str(value)) <= 100:
+                    raise SystemStateError("Invalid CrossCheck report score.")
+        if result.get("status") == "applied" and (not result.get("applied_at") or not report_hash):
+            raise SystemStateError("Applied CrossCheck result lacks its evidence or timestamp.")
+    for item in items.values():
+        if not item.get("report_sha256"):
+            continue
+        matching = [result for result in by_item.get(item["id"], [])
+                    if result.get("report_sha256") == item["report_sha256"]]
+        if not matching or (item.get("status") == "applied" and not any(result.get("applied_at") for result in matching)):
+            raise SystemStateError("CrossCheck paper result lacks matching execution history.")
 
 
 def _deserialize_value(field, value, path_map, root_map):

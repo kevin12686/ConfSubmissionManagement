@@ -61,4 +61,5 @@ from .controllers.pdf_comparison import formatting_pdf_comparison, formatting_co
 from .controllers.crosscheck_service import (
     crosscheck_service_connection, crosscheck_service_credentials, crosscheck_service_preview,
     crosscheck_service_job, crosscheck_service_archive, crosscheck_service_report, crosscheck_service_input_pdf,
+    crosscheck_service_attempt_archive, crosscheck_service_result_report,
 )

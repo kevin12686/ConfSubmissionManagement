@@ -42,7 +42,7 @@
         <thead><tr><th>Batch</th><th>Created</th><th>Status</th><th>Papers</th></tr></thead>
         <tbody>{% for job in service_jobs %}<tr>
             <td class="text-break"><a href="{% url 'submissions:crosscheck_service_job' job.pk %}">{{ job.token }}</a></td>
-            <td>{{ job.created_at|date:"Y-m-d H:i" }}</td><td>{{ job.status|title }}</td><td>{{ job.item_count }}</td>
+            <td>{{ job.created_at|date:"Y-m-d H:i" }}</td><td>{{ job.display_status }}</td><td>{{ job.item_count }}<div class="small text-muted">{{ job.applied_count }} applied · {{ job.ready_count }} ready</div></td>
         </tr>{% empty %}<tr><td colspan="4">No automatic batches yet.</td></tr>{% endfor %}</tbody>
     </table>
 </div>

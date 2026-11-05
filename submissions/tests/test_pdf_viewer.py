@@ -61,6 +61,8 @@ class PDFViewerURLTests(SimpleTestCase):
                 kwargs.update(token="a" * 32, side="before")
             elif name in {"crosscheck_service_report", "crosscheck_service_input_pdf"}:
                 kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "item_id": 1}
+            elif name == "crosscheck_service_result_report":
+                kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "result_id": 1}
             raw = reverse(f"submissions:{name}", kwargs=kwargs)
             with self.subTest(name=name):
                 wrapped = pdf_viewer_url(raw)
@@ -163,6 +165,8 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
                 kwargs.update(token="a" * 32, side="before")
             elif name in {"crosscheck_service_report", "crosscheck_service_input_pdf"}:
                 kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "item_id": 1}
+            elif name == "crosscheck_service_result_report":
+                kwargs = {"pk": "11111111-1111-4111-8111-111111111111", "result_id": 1}
             raw = reverse(f"submissions:{name}", kwargs=kwargs)
             with self.subTest(source=name):
                 response = self.get_reader(raw)

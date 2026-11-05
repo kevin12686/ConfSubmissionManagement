@@ -699,9 +699,30 @@ saving credentials for another URL replaces the previous local set.
    A visible countdown shows the next check, switches to Checking progress
    during a request, and pauses while the tab is hidden. Returning starts a
    fresh 15-second countdown. A failed check pauses automatic updates until
-   you use Check progress; retrieved results refresh the page, not your scores.
+   you use Check progress. While running, the batch shows the service's phase,
+   confirmed-upload and ready/downloaded-report counts. Individual submitted
+   rows remain Awaiting results until the final ZIP provides per-paper evidence;
+   an aggregate upload count is not treated as per-paper confirmation.
+   Retrieved results update the batch panel, not your
+   scores, scroll position or retry-form inputs.
 4. Review the retrieved per-paper scores and report availability. Confirm and
    apply available results. A completed service job may still contain failures.
+5. If reports remain missing, use Check progress to refresh availability, then
+   Retry remaining downloads. Confirm the wait limit. This starts one new
+   execution of the original confirmed uploads without uploading any PDF again.
+   Earlier ZIPs and applied results remain unchanged. Results retrieved by a
+   retry require the same explicit confirmation before application.
+6. Open Execution history for each run's outcomes, report links and evidence ZIP.
+   Summary counts are unique papers, not retry attempts. A partially applied
+   batch is not Completed until all its papers have been applied.
+
+Retries require a retained source job and a service supporting retry-download.
+Busy services and unconfirmed uploads cannot be retried. There is no automatic
+retry loop. On a lost response, use Check progress to recover the existing
+execution by original/parent job identity; do not submit again. If publication
+versions changed, old reports cannot apply to newer Finals, even with identical
+PDF bytes. When only some remaining papers changed, explicitly acknowledge
+that those reports remain history only; when all changed, prepare a new batch.
 
 Batch tokens are `ConferenceName_CFM_MONDDYYYY_N`, using the conference's
 Settings timezone and a reserved daily sequence. Non-ASCII letters, spaces and
@@ -717,8 +738,10 @@ Refresh result preview to review those changes again. Other checks/reviews
 keep their existing state. Changed scores can make P/S exceptions stale;
 a newly applied report replaces the report link and preserves old report files.
 Partial, timed-out and unconfirmed rows do not clear previous scores/reports.
-Download result evidence ZIP retains service manifests, reports, screenshots,
-and logs. This evidence is separate from the Final Publication Package.
+Each execution ZIP retains service manifests, reports, screenshots and logs.
+This evidence is separate from the Final Publication Package. Rechecking a
+finished execution never replaces its ZIP. Already applied papers are skipped,
+including after restore or later manual score/report changes.
 
 The Manual workflow tab retains the existing fallback:
 
@@ -835,11 +858,14 @@ managed files, Formatting revisions and their files, reports, review artifacts,
 and active and archived audit logs.
 Temporary preview tokens are excluded.
 
-New backups use State archive v7, including automatic CrossCheck job/item
-records, prepared PDFs, result ZIPs and batch provenance. Local service secrets
+New backups use State archive v8, including automatic CrossCheck batches,
+executions, per-paper results, prepared PDFs, immutable ZIPs and provenance. Local service secrets
 are excluded and existing receiving-machine secrets are preserved during restore.
 Check the service URL/folder after moving machines before resuming a job.
-Versions 5 and 6 are accepted through explicit validation paths. Version 5
+Versions 5, 6 and 7 are accepted through explicit validation paths. Version 7
+captures each existing job as its original execution, with no file movement or
+review reset. Version 8 requires the execution/result payloads and matching
+evidence; it cannot silently restore an incomplete history. Version 5
 restores existing files and review state without revision records.
 Version 6 must contain its revision payload and all referenced history
 files with matching hashes; older snapshots restore without automatic jobs.

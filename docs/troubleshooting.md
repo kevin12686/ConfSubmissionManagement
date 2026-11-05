@@ -473,8 +473,15 @@ The service checks Unprocessed once after its wait period and may include
 per-file IEEE error details in the evidence ZIP. A completed job can contain
 no reports. Inspect batch_results.csv and the original website messages; a PDF
 with too little text may never produce a report. No automatic re-upload occurs.
-Reports produced after the service's final check need service-side retrieval;
-the current API has no resume-download endpoint. Keep existing scores unchanged.
+For late reports, use Check progress, then Retry remaining downloads and confirm
+the wait limit. The retry-download API creates a new execution for confirmed
+uploads still lacking reports; it does not upload manuscripts again. An older
+API without retry support must be upgraded. If busy, wait and check again.
+An expired/deleted source job cannot be recovered by guessing another job.
+Execution history preserves earlier ZIPs and report links. A retry may also end
+without a report, particularly for blank/very short PDFs or website errors.
+No unlimited background retry occurs. Newly retrieved results still require
+confirmation; already applied results can never be replayed by this batch.
 
 If a publication PDF/active Final changed, the old result is stale. Prepare a new
 batch for the current publication PDF. If only existing plagiarism data changed

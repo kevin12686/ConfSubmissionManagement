@@ -3,6 +3,28 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.19.1 - 2026-11-04
+
+- Show confirmed upload/report counts and execution phase while CrossCheck runs.
+  Submitted rows say Awaiting results rather than incorrectly Awaiting upload
+  until the result ZIP arrives. This is presentation-only; publication selection,
+  result confirmation and State archive v8 are unchanged.
+
+## 1.19.0 - 2026-11-04
+
+- Retry missing CrossCheck report downloads within the original batch, with an
+  explicit wait limit and confirmation. Reuse confirmed uploads, folder/token
+  and manuscript identities; never re-upload PDFs or replay applied results.
+- Retain each execution ZIP and paper result independently. Show cumulative
+  paper counts and execution history, with scoped report/ZIP downloads.
+  Progress updates preserve expanded history, scroll and retry-form inputs.
+- Recheck active Final identity, publication PDF hash, retained archive/report
+  hashes and current plagiarism evidence before applying newly available results.
+  Uncertain requests are recovered by exact lineage, not repeated automatically.
+- Add execution/result models and metadata-only capture for existing batches.
+  State archive v8 includes this history; explicit v5/v6/v7 restore paths preserve
+  existing files, approvals and timestamps. Publication selection is unchanged.
+
 ## 1.18.6 - 2026-10-18
 
 - Test CrossCheck connections with entered service-login/IEEE credentials before

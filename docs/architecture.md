@@ -40,7 +40,7 @@ and comparison snapshot validation remain authoritative. The browser cannot
 change active versions, review state, readiness or export bytes. Existing
 images and comparison overlays remain on their prior renderer. The new reader
 has no model or stored workflow state; the thumbnail UI does not change System
-State v7 or add archived preview files.
+State v8 or add archived preview files.
 
 Conference Final Manager is a local Django application with SQLite storage and local file management. The application is intentionally no-login and single-machine.
 
@@ -80,7 +80,7 @@ Token accounting must balance aligned, paired, and remaining tokens on each
 side. Same-text pairs remain visible evidence rather than a completeness result.
 Actual passage pages and navigation-only reference pages are separate fields.
 Comparison payload method v2 rejects v1 results with a rebuild prompt; this
-temporary payload version is independent of System State archive v7.
+temporary payload version is independent of System State archive v8.
 
 Automatic upload comparison orchestration belongs to
 `automatic_pdf_comparison.py`, not the Formatting transaction. A typed
@@ -605,13 +605,17 @@ The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`
 
 The footer displays both values so a user can match a System State ZIP to the expected application version.
 
-Archive version 7 adds automatic CrossCheck jobs/items, prepared publication
+Archive version 8 adds CrossCheck execution/result records and immutable
+per-execution ZIPs. Version 7 adds automatic CrossCheck jobs/items, prepared publication
 PDFs, result evidence ZIPs and durable batch provenance. Local service secrets
 are excluded; raw Docker backups still contain the machine's secret file.
 Archive version 6 added revision records and files. The v5 reader validates the
 original v5 payload/count/hash contract and restores an empty history; v6
 requires the revision payload and matching file evidence. Versions earlier
-than v5 remain unsupported. No compatibility branch changes publication
+than v5 remain unsupported. The explicit v7 reader validates its original
+payload first, then captures one original execution/result set from legacy
+metadata without moving files or changing applied state. V8 requires both new
+model groups, valid ownership/parent sequences and matching ZIP hashes. No compatibility branch changes publication
 decisions or silently reconstructs historical approvals.
 
 ## Automatic CrossCheck Service
@@ -628,7 +632,12 @@ and saved local credentials cannot cross URL boundaries.
 Settings evidence canonicalizes decimal values, making unsaved model defaults
 and identical persisted defaults equivalent without ignoring real changes.
 `CrossCheckServiceJob` and `CrossCheckServiceJobItem` retain batch identity and
-per-paper outcomes. `crosscheck.py` remains authoritative for publication PDF
+the cumulative per-paper outcome. `CrossCheckServiceAttempt` retains each
+upload/retry execution and its immutable ZIP; `CrossCheckServiceResult` binds
+each report, score and apply evidence to its owning attempt and paper. The
+metadata-only migration captures existing jobs without copying files or touching
+Final state. `crosscheck_service_history.py` owns shared parsing, archive paths,
+lineage checks and batch presentation. `crosscheck.py` remains authoritative for publication PDF
 selection, scope, exported bytes, durable provenance and percent parsing.
 
 The preview snapshots the existing manual export bytes as `PaperID.pdf`.
@@ -646,6 +655,16 @@ visible but cannot update a submission. Apply rechecks provenance and existing
 plagiarism evidence under a DB transaction, writes operation-unique reports,
 syncs the plagiarism mirror, and compensates new files if the transaction fails.
 Publication helpers, readiness and review-reset rules are unchanged.
+
+Retry-download commits a submitting attempt before the external POST and uses
+the original remote source, exact parent, folder/token and captured eligible
+confirmed uploads. No PDF upload or daily sequence allocation occurs. A lost
+response is recovered from remote history by exact lineage; definitive rejection
+allows a later explicit retry. The first ZIP remains at the legacy root path;
+later ZIPs live in `attempts/<attempt-uuid>/results.zip`. Applying resolves the
+report's owning ZIP, never assumes it is in the first ZIP. Applied records remain
+untouched even after manual edits or restore. Browser progress replaces only
+the result panel, not retry controls or inputs.
 
 ## Optional GROBID Fallback
 

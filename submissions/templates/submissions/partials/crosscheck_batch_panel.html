@@ -1,0 +1,66 @@
+{% load pdf_viewer %}
+<section class="mb-4" aria-label="Batch results">
+    {% if active_attempt %}
+    <div class="border-bottom pb-3 mb-3" aria-label="Service execution progress">
+        <div class="fw-semibold mb-1">{% if active_attempt.kind == 'retry_download' %}Retry downloads{% else %}Upload and download{% endif %}{% if active_attempt.progress.phase %} · {{ active_attempt.progress.phase|title }}{% endif %}</div>
+        <div class="d-flex flex-wrap gap-3 small">
+            {% if active_attempt.kind == 'upload' %}<span>Uploads confirmed: {{ active_attempt.progress.succeeded|default:0 }} / {{ counts.total }}</span>{% endif %}
+            <span>Reports ready: {{ active_attempt.progress.ready|default:0 }}</span>
+            <span>Reports downloaded: {{ active_attempt.progress.downloaded|default:0 }}</span>
+        </div>
+    </div>
+    {% endif %}
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <h2 class="h4 mb-0">{{ display_status }}</h2>
+        <div class="d-flex flex-wrap gap-2">
+            {% if job.status == 'preview' %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="evidence_token" value="{{ job_evidence_token }}"><button class="btn btn-primary" name="action" value="start">Confirm and start CrossCheck</button></form>
+            <form method="post">{% csrf_token %}<input type="hidden" name="evidence_token" value="{{ job_evidence_token }}"><button class="btn btn-outline-secondary" name="action" value="cancel">Cancel preview</button></form>
+            {% else %}
+            {% if can_apply %}<form method="post">{% csrf_token %}<input type="hidden" name="evidence_token" value="{{ job_evidence_token }}"><button class="btn btn-primary" name="action" value="apply">Confirm and apply available results</button></form>{% endif %}
+            {% if can_repreview %}<form method="post">{% csrf_token %}<button class="btn btn-outline-secondary" name="action" value="repreview">Refresh result preview</button></form>{% endif %}
+            {% if can_retry %}<a class="btn btn-outline-primary" href="?retry=1#crosscheck-retry" hx-get="?retry=1" hx-select="#crosscheck-retry" hx-target="#crosscheck-retry" hx-swap="outerHTML scroll:top" hx-push-url="false">Retry remaining downloads</a>{% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md"><div class="small text-muted">Papers</div><strong>{{ counts.total }}</strong></div>
+        <div class="col-6 col-md"><div class="small text-muted">Applied</div><strong>{{ counts.applied }}</strong></div>
+        <div class="col-6 col-md"><div class="small text-muted">Ready to apply</div><strong>{{ counts.ready }}</strong></div>
+        <div class="col-6 col-md"><div class="small text-muted">Awaiting report</div><strong>{{ counts.waiting }}</strong></div>
+        <div class="col-6 col-md"><div class="small text-muted">Needs attention</div><strong>{{ counts.attention }}</strong></div>
+    </div>
+    {% if counts.ready %}<p>Only available, unchanged publication results will be applied. Previously applied results are never applied again.</p>{% endif %}
+    {% if not is_running and availability.remaining and not can_retry %}<p class="small">Reports remain unavailable. Use Check progress to update retry availability; the service may be busy.</p>{% endif %}
+    {% if job.archive_sha256 and not availability.supported %}<p class="small">Retry availability has not been confirmed. Use Check progress; older services may require an API upgrade.</p>{% endif %}
+    <div class="table-responsive">
+        <table class="table cfm-table align-middle">
+            <thead><tr><th>Paper ID</th><th>Final ID / PDF</th><th>Result</th><th>P%</th><th>S%</th><th>Report</th></tr></thead>
+            <tbody>{% for item in items %}<tr>
+                <td><a href="{% pdf_viewer 'submissions:crosscheck_service_input_pdf' job.pk item.pk %}" target="_blank" rel="noopener">{{ item.paper_id }}</a></td>
+                <td>{{ item.final_submission_id }}<div class="small text-muted">{{ item.source|title }}</div></td>
+                <td><span class="badge text-bg-{{ item.status_level }}">{{ item.status_label }}</span>{% if item.message %}<div class="small mt-1 cfm-wrap-anywhere">{{ item.message }}</div>{% endif %}</td>
+                <td>{{ item.plagiarism_percent|default_if_none:"--" }}</td><td>{{ item.single_percent|default_if_none:"--" }}</td>
+                <td>{% if item.report_result %}<a href="{% pdf_viewer 'submissions:crosscheck_service_result_report' job.pk item.report_result.pk %}" target="_blank" rel="noopener">Open report</a><div class="small text-muted">Run {{ item.report_result.attempt.number }}</div>{% else %}--{% endif %}</td>
+            </tr>{% endfor %}</tbody>
+        </table>
+    </div>
+</section>
+<details id="crosscheck-execution-history" class="border-top pt-3 mb-3">
+    <summary class="fw-semibold">Execution history ({{ attempts|length }})</summary>
+    {% for execution in attempts %}
+    <section class="border-bottom py-3">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+            <h3 class="h6 mb-0">{{ execution.label }} <span class="badge text-bg-secondary">{{ execution.status|title }}</span></h3>
+            {% if execution.archive_sha256 %}<a href="{% url 'submissions:crosscheck_service_attempt_archive' job.pk execution.pk %}">Download this execution ZIP</a>{% endif %}
+        </div>
+        <div class="small">{{ execution.created_at|date:"Y-m-d H:i:s T" }} · {{ execution.wait_minutes }} minute wait · {{ execution.result_count }} retained report(s)</div>
+        {% if execution.message %}<p class="small mt-2 mb-2 cfm-wrap-anywhere">{{ execution.message }}</p>{% endif %}
+        {% for result in execution.results.all %}
+        <div class="small mt-2"><div class="d-flex flex-wrap gap-2"><strong>{{ result.item.paper_id }}</strong><span>{{ result.status_label }}</span>{% if result.report_sha256 %}<a href="{% pdf_viewer 'submissions:crosscheck_service_result_report' job.pk result.pk %}" target="_blank" rel="noopener">Open report</a>{% endif %}</div>{% if result.message %}<div class="text-muted cfm-wrap-anywhere">{{ result.message }}</div>{% endif %}</div>
+        {% endfor %}
+        <details id="crosscheck-execution-{{ execution.pk }}" class="small mt-2"><summary>Technical details</summary><dl class="mt-2 mb-0 cfm-wrap-anywhere"><dt>Remote job</dt><dd>{{ execution.remote_id|default:"Not assigned" }}</dd><dt>Parent execution</dt><dd>{{ execution.parent_id|default:"None" }}</dd><dt>ZIP SHA256</dt><dd>{{ execution.archive_sha256|default:"Not retrieved" }}</dd></dl></details>
+    </section>
+    {% endfor %}
+</details>
+{% if job.skipped %}<details id="crosscheck-skipped" class="mt-3"><summary>Skipped papers ({{ job.skipped|length }})</summary><ul class="mt-2">{% for row in job.skipped %}<li>{{ row.paper_id }} / {{ row.final_submission_id }}: {{ row.reason }}</li>{% endfor %}</ul></details>{% endif %}

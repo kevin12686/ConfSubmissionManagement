@@ -25,6 +25,16 @@ AUDIT_CATEGORY_LABELS = {
 
 
 _ACTION_DEFINITIONS = (
+    *(AuditActionDefinition("crosscheck_service_" + code, label, "plagiarism") for code, label in (
+        ("connection", "Check CrossCheck Service"), ("credentials", "Update CrossCheck Credentials"),
+        ("preview", "Preview CrossCheck Batch"),
+        ("submit", "Submit CrossCheck Batch"), ("started", "CrossCheck Batch Accepted"),
+        ("recover", "Recover CrossCheck Execution"), ("failed", "CrossCheck Execution Ended"),
+        ("progress_check", "Check CrossCheck Progress"), ("results_retrieved", "Retain CrossCheck Execution Results"),
+        ("retry_download", "Retry CrossCheck Downloads"), ("result_preview", "Refresh CrossCheck Result Preview"),
+        ("item_apply", "Apply CrossCheck Paper Result"), ("result_apply", "Apply CrossCheck Batch Results"),
+        ("stop", "Stop CrossCheck Execution"), ("preview_cancelled", "Cancel CrossCheck Preview"),
+    )),
     AuditActionDefinition("formatting_pdf_compare", "Compare Formatting PDFs", "formatting"),
     AuditActionDefinition("formatting_revision_capture", "Capture Formatting Baseline", "formatting"),
     AuditActionDefinition("formatting_revision_download", "Open Formatting Revision File", "formatting"),

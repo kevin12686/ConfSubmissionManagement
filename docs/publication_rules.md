@@ -281,6 +281,16 @@ results must not clear prior values, waive exceptions, change review decisions,
 or substitute another active version. Local job evidence is never a publication
 PDF source. Final Publication Package selection remains Corrected -> Original.
 
+Retry-downloads reuse only the original confirmed uploads still missing reports;
+they do not upload PDFs, allocate a new batch token or change publication files.
+Each execution retains its own ZIP and immutable paper-result evidence.
+Only unapplied results can be confirmed. Apply rechecks the exact active Final
+identity, current publication PDF hash, original provenance, current plagiarism
+evidence and owning ZIP/report hash. A known original manuscript ID must match
+the retry report's manuscript ID. Already applied results cannot be replayed
+or overwritten by a retry, result re-preview or restored history. Old-version
+reports never migrate to a newer Final even when its PDF bytes are identical.
+
 Formatting revision history is immutable traceability evidence only. Final
 Publication Package, CrossCheck, processing, and readiness continue to select
 the current FinalSubmission Corrected/Original files through the existing

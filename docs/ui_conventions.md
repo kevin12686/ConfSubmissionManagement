@@ -281,6 +281,14 @@ Show the batch auto-update countdown as inline secondary text in the progress
 section, not a separate card. Distinguish countdown, request in progress and
 paused states; do not announce every second through an ARIA live region.
 
+Keep retries inside the original batch page: one cumulative paper table and an
+expandable execution history, not a second upload page or one batch per retry.
+Summary counts distinguish applied, ready, awaiting report and attention papers;
+they count each paper once. Reveal wait/confirmation controls on request above
+the results. Poll only the results panel, preserve open details/scroll, process
+its HTMX controls and never replace a form the user is editing. Stopped/failed
+polling requires an explicit progress check, not an automatic retry POST.
+
 Paper titles and author lists are multiline metadata. Editable Master, Final,
 Editor Upload, and manual-override title fields use the same three-row textarea
 pattern as their corresponding authors field. Search fields and Paper ID

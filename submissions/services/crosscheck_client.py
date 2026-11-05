@@ -181,3 +181,9 @@ class CrossCheckClient:
                 if total > 2 * 1024 ** 3:
                     raise CrossCheckServiceError("Service result ZIP exceeds the 2 GB safety limit.")
                 output.write(chunk)
+
+    def retry_download(self, remote_id, wait_minutes):
+        payload = {"wait_minutes": wait_minutes}
+        if self.credentials.get("ieee_username"):
+            payload.update(username=self.credentials["ieee_username"], password=self.credentials["ieee_password"])
+        return self.json(f"/api/jobs/{remote_id}/retry-download", method="POST", payload=payload)

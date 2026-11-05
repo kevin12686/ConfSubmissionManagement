@@ -29,6 +29,8 @@ from submissions.models import (
     AppSetting,
     CrossCheckServiceJob,
     CrossCheckServiceJobItem,
+    CrossCheckServiceAttempt,
+    CrossCheckServiceResult,
     AuthorLimitWaiver,
     FinalSubmission,
     FinalSubmissionFileState,
@@ -665,6 +667,8 @@ def clear_database(request):
     counts = {
         "crosscheck_service_jobs": CrossCheckServiceJob.objects.count(),
         "crosscheck_service_items": CrossCheckServiceJobItem.objects.count(),
+        "crosscheck_service_attempts": CrossCheckServiceAttempt.objects.count(),
+        "crosscheck_service_results": CrossCheckServiceResult.objects.count(),
         "settings": AppSetting.objects.count(),
         "author_limit_waivers": AuthorLimitWaiver.objects.count(),
         "identity_state": FinalSubmissionIdentityState.objects.count(),

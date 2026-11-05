@@ -568,6 +568,10 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
   missing selected Corrected files, mixed valid/stale batches, late-item and
   audit failures, expired evidence, tampered inputs/results, and cross-job file
   URLs. Use mocked transport; never submit conference PDFs to test the service.
+- Retry-download coverage must include partial/repeated retries, no replay of
+  applied results, apply during retry, old-API/busy responses, uncertain-request
+  lineage recovery, changed Final/PDF scope, corrupt later ZIPs, atomic DB/audit
+  failures and v7/v8 restore. JSON retry requests must not contain PDF uploads.
 - CrossCheck connection setup must cover blank addresses, authenticated folder
   requests with unsaved credentials, explicit credential persistence without
   changing Settings, environment precedence, URL isolation, stale evidence and
@@ -612,6 +616,12 @@ Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export c
 
 Increment `STATE_ARCHIVE_VERSION` only when System State ZIP structure or restore compatibility changes.
 
+Archive version 8 adds CrossCheck attempt/result models and per-execution
+immutable ZIPs. Restore validates parent ownership/order, captured paper scope,
+matching archive hashes and applied-result evidence. The metadata-only migration
+and explicit v7 restore adapter capture legacy jobs as their original execution;
+they must not move files, renew timestamps or reset reviews. A v8 archive missing
+either model group is invalid, never treated as v7.
 Archive version 7 adds automatic CrossCheck job/item models and managed evidence.
 The explicit v5/v6 readers validate their original model sets and restore no
 automatic job history. Secrets under `data/secrets/` must never enter System

@@ -4,6 +4,8 @@ from .models import (
     AppSetting,
     CrossCheckServiceJob,
     CrossCheckServiceJobItem,
+    CrossCheckServiceAttempt,
+    CrossCheckServiceResult,
     AuthorLimitWaiver,
     FinalSubmission,
     FinalSubmissionFileState,
@@ -223,3 +225,13 @@ class CrossCheckServiceJobAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
 @admin.register(CrossCheckServiceJobItem)
 class CrossCheckServiceJobItemAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
     list_display = ("paper_id", "final_submission_id", "status")
+
+
+@admin.register(CrossCheckServiceAttempt)
+class CrossCheckServiceAttemptAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
+    list_display = ("job", "number", "kind", "status", "remote_id", "created_at")
+
+
+@admin.register(CrossCheckServiceResult)
+class CrossCheckServiceResultAdmin(WorkflowReadOnlyAdmin, admin.ModelAdmin):
+    list_display = ("item", "attempt", "status", "applied_at")

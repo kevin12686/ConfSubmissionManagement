@@ -21,6 +21,7 @@ from submissions.services.crosscheck_service import (
     parse_service_archive, preview_service_job, refresh_service_job, start_service_job,
 )
 from submissions.services.storage_inventory import preview_storage_cleanup
+from submissions.services.crosscheck_service_history import initial_attempt, record_attempt_results
 
 
 class CrossCheckServiceTests(TestCase):
@@ -62,7 +63,7 @@ class CrossCheckServiceTests(TestCase):
     def remote(self, job):
         return {"id": "remote123", "settings": {"folder": job.folder, "postfix": "_" + job.token, "file_count": job.items.count()}}
 
-    def archive(self, job, *, status="downloaded", upload="success", extra=None):
+    def archive(self, job, *, status="downloaded", upload="success", extra=None, outcomes=None, paper_ids=None):
         path = job_root(job) / "fixture.zip"
         def table(fields, rows, delimiter=","):
             buf = io.StringIO()
@@ -72,14 +73,18 @@ class CrossCheckServiceTests(TestCase):
             return buf.getvalue()
         manifests, uploads, batches, scores, reports = [], [], [], [], []
         for item in job.items.all():
+            if paper_ids is not None and item.paper_id not in paper_ids:
+                continue
+            outcome = (outcomes or {}).get(item.paper_id, {})
+            item_status, item_upload = outcome.get("status", status), outcome.get("upload", upload)
             original = f"{item.paper_id}.pdf"
             filename = f"{item.paper_id}_{job.token}.pdf"
             manifests.append({"original_name": original, "upload_name": filename})
-            uploads.append({"OriginalFile": original, "UploadedFile": filename, "Status": upload})
-            batches.append({"OriginalFile": original, "UploadedFile": filename, "DocumentID": "doc" + item.paper_id, "Status": status})
-            if status == "downloaded":
-                scores.append({"FileName": filename, "TotalSimilarity": "42%", "SingleSimilarity": "<1%", "Download": "True"})
-                reports.append(("reports/" + filename + ".pdf", b"%PDF-report bytes"))
+            uploads.append({"OriginalFile": original, "UploadedFile": filename, "Status": item_upload})
+            batches.append({"OriginalFile": original, "UploadedFile": filename, "DocumentID": "doc" + item.paper_id, "Status": item_status})
+            if item_status == "downloaded":
+                scores.append({"FileName": filename, "TotalSimilarity": outcome.get("p", "42%"), "SingleSimilarity": outcome.get("s", "<1%"), "Download": "True"})
+                reports.append(("reports/" + filename + ".pdf", outcome.get("report", b"%PDF-report bytes")))
         with zipfile.ZipFile(path, "w") as z:
             z.writestr(".info/upload_manifest.json", json.dumps(manifests))
             z.writestr(".info/upload_results.csv", table(["OriginalFile", "UploadedFile", "Status"], uploads))
@@ -108,15 +113,13 @@ class CrossCheckServiceTests(TestCase):
 
     def ready(self, job, **kwargs):
         path = self.archive(job, **kwargs)
-        for item, values in parse_service_archive(job, path):
-            for key, value in values.items():
-                setattr(item, key, value)
-            item.save()
-        target = job_root(job) / "results.zip"
-        path.replace(target)
-        job.archive_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
-        job.status = "ready"
+        execution = initial_attempt(job)
+        execution.remote_id = job.remote_id = "remote123"
+        execution.status = job.status = "running"
+        execution.save()
         job.save()
+        record_attempt_results(job, execution, path, parse_service_archive(job, path))
+        job.refresh_from_db()
 
     def test_token_and_snapshot_are_publication_bytes_and_preview_is_read_only(self):
         self.assertEqual(batch_prefix("DSA / 2026!", date(2026, 10, 18)), "DSA_2026_CFM_OCT182026_")
@@ -233,7 +236,8 @@ class CrossCheckServiceTests(TestCase):
         for kwargs in ({"status": "wait_timeout"}, {"upload": "unconfirmed"}):
             job = self.preview()
             self.ready(job, **kwargs)
-            apply_service_results(job.pk, job_evidence_token(job))
+            with self.assertRaisesRegex(ValueError, "No unapplied results"):
+                apply_service_results(job.pk, job_evidence_token(job))
             self.submission.refresh_from_db()
             self.assertEqual(self.submission.similarity_score, 8)
             self.assertEqual(self.submission.plagiarism_report_path, "")
@@ -281,8 +285,8 @@ class CrossCheckServiceTests(TestCase):
         self.ready(job)
         item.refresh_from_db()
         page = self.client.get(reverse("submissions:crosscheck_service_job", args=[job.pk]))
-        self.assertContains(page, "<span>Ready to apply</span>", html=True)
-        self.assertContains(page, 'class="d-flex flex-column align-items-start gap-2"')
+        self.assertContains(page, '<span class="badge text-bg-primary">Ready to apply</span>', html=True)
+        self.assertContains(page, 'aria-label="Batch results"')
         self.assertContains(page, "Open report")
         response = self.client.get(reverse("submissions:crosscheck_service_report", args=[job.pk, item.pk]))
         self.assertEqual(b"".join(response.streaming_content), b"%PDF-report bytes")
@@ -322,7 +326,7 @@ class CrossCheckServiceTests(TestCase):
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
             self.assertFalse(any("/secrets/" in name for name in archive.namelist()))
             state = json.loads(archive.read("state.json"))
-            self.assertEqual(state["state_archive_version"], 7)
+            self.assertEqual(state["state_archive_version"], 8)
             self.assertEqual(len(state["models"]["crosscheck_service_jobs"]), 1)
             self.assertNotIn("secret-not-in-archive", archive.read("state.json").decode())
         with override_settings(SECRET_KEY="receiving-machine-key"):
@@ -357,6 +361,9 @@ class CrossCheckServiceTests(TestCase):
         job.status = "running"
         job.remote_id = "remote123"
         job.save()
+        execution = initial_attempt(job)
+        execution.status, execution.remote_id = "running", "remote123"
+        execution.save()
         path = self.archive(job)
         client = Mock()
         remote = self.remote(job)
@@ -572,7 +579,7 @@ class CrossCheckServiceTests(TestCase):
         self.assertEqual(self.client.get(reverse("submissions:crosscheck_service_input_pdf", args=[job.pk, item.pk])).status_code, 404)
         self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), before)
 
-    def test_v7_restore_rejects_missing_job_payload_and_corrupt_evidence_without_changes(self):
+    def test_v8_restore_rejects_missing_job_payload_and_corrupt_evidence_without_changes(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         from submissions.services.system_state import (
             CONFIRMATION_TEXT, SystemStateError, _model_payload_sha256,

@@ -126,11 +126,22 @@ def integration(request):
     from submissions.models import CrossCheckServiceJob
     from submissions.application.pagination import paginate_worklist
     from django.db.models import Count
+    from submissions.services.crosscheck_service_history import ACTIVE_ATTEMPT_STATES, batch_status_label
     config = AppSetting.read()
     job_page = paginate_worklist(
-        request, CrossCheckServiceJob.objects.annotate(item_count=Count("items")).order_by("-created_at", "pk"),
+        request, CrossCheckServiceJob.objects.annotate(
+            item_count=Count("items"), applied_count=Count("items", filter=Q(items__status="applied")),
+            ready_count=Count("items", filter=Q(items__status="downloaded")),
+            waiting_count=Count("items", filter=Q(items__status__in=["prepared", "wait_timeout", "waiting", "unavailable", "download_failed"])),
+        ).prefetch_related("attempts").order_by("-created_at", "pk"),
         scroll_anchor="crosscheck-batches",
     )
+    for batch in job_page.items:
+        counts = {"total": batch.item_count, "applied": batch.applied_count, "ready": batch.ready_count,
+                  "waiting": batch.waiting_count,
+                  "attention": batch.item_count - batch.applied_count - batch.ready_count - batch.waiting_count}
+        active = next((run for run in batch.attempts.all() if run.status in ACTIVE_ATTEMPT_STATES), None)
+        batch.display_status = batch_status_label(batch, counts, active)
     crosscheck_export_result = None
     crosscheck_result = None
     report_upload_result = None
