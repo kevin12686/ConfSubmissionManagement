@@ -9,11 +9,11 @@
         query("[data-upload-comparison-open]").hidden = !complete;
         for (const kind of ["warning", "info"]) {
             const badge = query(`[data-upload-comparison-${kind}]`);
-            badge.hidden = !complete;
+            badge.hidden = !complete || (kind === "info" && !result.info_count);
             badge.textContent = `${kind === "warning" ? "Warning" : "Info"} ${result[`${kind}_count`] || 0}`;
         }
         query("[data-upload-comparison-message]").textContent = complete
-            ? (result.limited ? "Comparison limited; review the full PDFs." : !result.text_available ? "Text comparison unavailable; inspect both PDFs." : "Text comparison completed.")
+            ? (result.limited ? "Comparison limited; review the full PDFs." : !result.text_available ? "Text comparison unavailable; inspect both PDFs." : result.uncertain_count ? `${result.uncertain_count} text/formula region(s) could not be read reliably. Open comparison to check both PDFs.` : "Text comparison completed.")
             : result.state === "loading" ? "Files saved. Comparing Original → Corrected…"
                 : `Files saved. ${result.message}`;
         if (complete) {

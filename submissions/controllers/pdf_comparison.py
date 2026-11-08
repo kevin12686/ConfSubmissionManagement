@@ -36,8 +36,9 @@ def formatting_upload_comparison(request, pk):
         )
         if payload:
             result = {
-                "state": "complete", "warning_count": payload["result"]["attention_count"],
-                "info_count": payload["result"]["sequence_count"],
+                "state": "complete", "warning_count": payload["result"]["total_attention_count"],
+                "info_count": payload["result"]["info_count"],
+                "uncertain_count": payload["result"]["uncertain_count"],
                 "limited": payload["result"]["truncated"] or payload["result"]["pairing_limited"],
                 "text_available": payload["result"]["text_available"],
                 "url": reverse("submissions:formatting_pdf_comparison", args=[pk]) + "?" + urlencode({

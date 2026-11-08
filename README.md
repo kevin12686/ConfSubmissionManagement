@@ -39,8 +39,11 @@ one local application:
 - retains immutable Formatting revision PDF/source pairs for viewing and
   download, including through System State backup/restore;
 - compares saved Original/revision PDFs with the selected publication PDF for
-  text changes and reference-error prompts, with visible same-text reflow
-  records and read-only page images (headers/footers are not excluded), and
+  added, removed and changed text and reference-error prompts, without
+  highlighting exact matched reflow; unreliable text/formula regions remain
+  visible for manual verification, and non-drawing zero-width-space information
+  stays inspectable. Read-only page images remain available
+  (headers/footers are not excluded), and
   automatically starts an Original comparison after a saved Formatting PDF upload;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
   plagiarism, author-count, and exception reviews;

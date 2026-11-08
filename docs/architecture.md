@@ -69,17 +69,40 @@ PDF/image access rechecks current scope, live file identities/hashes, and the
 requested copy's SHA256. This workspace reuses image loading/magnification and
 never uses generated images as publication inputs. Missing/changed documents
 fail explicitly. Comparison data is excluded from archives, protected from
-normal Reports cleanup, and covered by full Clear Database. Archive v6 remains
+normal Reports cleanup, and covered by full Clear Database. Archive v8 remains
 unchanged because neither model state nor retained artifact contracts change.
 
-The primary sequence diff retains every extracted token, including headers and
-footers. A bounded second pass pairs globally unique exact unmatched spans,
+Ruled-table detection runs in a bounded, read-only subprocess because PyMuPDF's
+detector mutates global rendering settings. Cell geometry and read-only font
+evidence return to the web process; worker failure stops comparison rather than
+claiming success.
+Native text runs retain glyph coordinates and every token, including headers
+and footers, without interleaving columns by y coordinate. Detected ruled-table
+cells use spatial row/column order rather than PDF painting order.
+A bounded second pass pairs globally unique exact unmatched spans,
 consumes occurrences one-to-one, and leaves changed/ambiguous remainder visible.
 Whole-word boundaries prevent pairing a matching prefix inside a changed word.
 Token accounting must balance aligned, paired, and remaining tokens on each
-side. Same-text pairs remain visible evidence rather than a completeness result.
+side. Same-text pairs are accounted for but not emitted as content findings.
+Glyph refinement is presentation-only; coverage uses complete source tokens.
+Finding totals are calculated before the display cap.
 Actual passage pages and navigation-only reference pages are separate fields.
-Comparison payload method v2 rejects v1 results with a rebuild prompt; this
+`pdf_text_evidence.py` inspects used font codes through pypdf's structured
+content/CMap parser inside the isolated comparison worker. Standard fonts and
+explicit supported encodings do not require ToUnicode. Partial/invalid maps,
+unresolved resource identities, and contradictory glyph ink remain uncertain.
+Font aliases come from the same embedded font, not a font-name heuristic.
+Missing used codes make the corresponding font regions on that page uncertain;
+this can conservatively include prose using the same font. Glyph contradictions
+extend to their same-font line region. Uncertain tokens cannot align or seed
+moved-text reconciliation (except byte-identical PDFs).
+No guessed Unicode recovery, OCR approval or approximate visual equality is used.
+Raw text, font identity, reasons and source positions accompany uncertain
+findings. Only mapped U+200B with empty glyph ink is normalized, with separate
+counts/locations/raw contexts. Other controls and visible whitespace glyphs stay
+in the comparison. Coverage counts normalized tokens plus an explicit control
+inventory. Uncertainty is advisory Warning; normalization records are Info.
+Comparison payload method v4 rejects earlier results with a rebuild prompt; this
 temporary payload version is independent of System State archive v8.
 
 Automatic upload comparison orchestration belongs to

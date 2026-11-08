@@ -445,7 +445,7 @@ verification evidence and comparison overlays keep their established renderers.
 After a saved corrected PDF, show the shared comparison-status strip inside
 the review card between its header and collapsible body, not as an unrelated
 alert/card/toast. Identify the saved revision and Original-to-Corrected baseline,
-then show loading, Warning/Info counts, Open comparison, or Retry. When the
+then show loading, content-warning counts, Open comparison, or Retry. When the
 list filter removes that saved paper, reuse the same strip above the queue with
 Paper ID/Final ID so the operation remains identifiable. Save retains the
 current position/Single queue; do not auto-open/navigate. AJAX updates must not
@@ -469,17 +469,25 @@ its natural page aspect ratio, and never show an empty image as a successful
 preview. Figures/tables/layout remain manual checks, with no Review OK action
 or green completeness badge in this workspace.
 
-Group content/pattern findings and same-text/sequence-position records in the
-same finding navigator, with separate displayed counts. Content/pattern groups
-use the existing Warning amber tokens; same-text groups use the existing Info
-blue tokens, with explicit Warning/Info text and standard count badges.
+Show content/pattern findings in one navigator using the existing Warning amber
+tokens, with Added / Changed / Removed and error-pattern filters. Exact matched
+reflow has no finding, highlight or Info badge. Total and displayed counts must
+be distinct when capped; a limited result must never look complete.
+Use the same navigator for **Check text / formula** (Warning) and **Formatting
+information** (neutral Info), with independent totals above the workspace.
+Uncertain regions use amber dashed outlines, not a confirmed insertion/deletion
+color. Raw extracted text, font identity and the inspection reason belong in
+Extraction details. Render raw U+200B visibly as `[U+200B]` there; its information
+record has no content-change overlay. A zero content count alongside uncertainty
+must still direct the editor to check both PDFs. Automatic upload status must
+also say that text/formula verification is needed.
 Category headings are unfilled, non-interactive text with a bottom divider and
 space before the indented findings. Do not reuse item-style filled surfaces or
 left borders on these headings. Clickable findings retain restrained
 hover/selected surfaces and category-colored left borders; selection has a
 separate outline and text emphasis, while keyboard focus uses
 the standard primary outline. Do not recolor PDF difference overlays to imply
-severity. Do not hide same-text records or label them safe/unchanged layout.
+severity. Do not label matching text as safe/unchanged layout.
 List actual passage pages independently on Before/After; a side without text
 says **No corresponding text** and labels its viewer as a reference page.
 Multi-page passages use side-specific finding-page selectors. Changing those

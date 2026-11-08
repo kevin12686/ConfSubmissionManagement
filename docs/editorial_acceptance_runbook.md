@@ -274,7 +274,15 @@ Upload a corrected PDF in List/Single/Focus and verify it is saved before a
 separate automatic Original comparison POST starts. Confirm title guard warnings
 first; preview/cancel/validation failure must create no comparison receipt.
 Test PDF-in-source-field recognition, source-only and notes/status saves,
-filtered-out saved rows, loading, Warning/Info counts, and explicit Retry.
+filtered-out saved rows, loading, content-warning counts, and explicit Retry.
+
+Compare native-run PDFs with shifted/reordered columns and repagination:
+exact matched text must not be highlighted. Insert/delete words and punctuation,
+remove one repeated occurrence, and swap ruled-table values while preserving
+PDF painting order; actual changes must remain. Check Added/Changed/Removed
+filters, glyph-sized highlights, total/display caps and older-method rebuilds.
+Equation encodings may differ despite identical appearance: verify the page,
+never waive such differences automatically or treat this as visual approval.
 Keep the saved card/Single queue position, including after HTMX filter changes.
 Refresh a completed result: no second build. Upload A then B (also with identical
 bytes): A's request/result must never open B as its After side. A later
@@ -310,7 +318,14 @@ tokens, ambiguous active records, changed scope, and changed files during or
 after build. Test processing limits, same-size file mutation, signed-payload
 corruption, and failed-audit cleanup. Compare existing records, flags, readiness,
 and final/CrossCheck PDF bytes before and after comparison; all must remain
-unchanged. State ZIP excludes comparison staging while retaining history/review
+unchanged. Also test partial/invalid font maps, identical extracted strings with
+unreliable mappings, removed formulas, and visible glyphs mapped to controls.
+These must remain Warning regions, not clean or automatically approved results.
+Non-drawing U+200B-only differences should be Info with raw context and counts;
+real edits beside them, other control characters, operators and numeric changes
+must remain visible. Check all three groups/filters, evidence text contrast,
+Ctrl magnification and narrow-screen stacking without horizontal overflow.
+State ZIP excludes comparison staging while retaining history/review
 artifacts. Ordinary cleanup preserves staging; Clear Database removes it.
 
 ### Stage 5: Publication Export

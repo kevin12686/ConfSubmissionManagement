@@ -3,6 +3,35 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.20.1 - 2026-11-08
+
+- Distinguish text changes from text/formula regions with unreliable character
+  mappings. Inspect used font codes and glyph ink; unknown text cannot act as
+  an equality or page-pairing anchor. Keep these regions as visible warnings,
+  not approvals or hidden differences.
+- Normalize only non-drawing U+200B characters without detected mapping issues;
+  retain their counts, locations and raw contexts as formatting information.
+  Other controls and visible glyphs remain in comparison.
+- Integrate separate counts, filters, amber verification outlines and extraction
+  details into the existing comparison workspace and automatic-upload status.
+- Comparison method v4 requires rebuilding previous temporary comparisons.
+  Publication selection, saved PDFs, review flags and archive v8 are unchanged.
+
+## 1.20.0 - 2026-11-08
+
+- Read PDF text in native text-run order rather than interleaving columns
+  by global coordinates; order detected ruled-table cells spatially.
+  Isolate table detection from the web process's rendering settings.
+  Account for exact moved spans one-to-one without listing them as changes.
+- Highlight added/removed punctuation and refine single-token changes at
+  glyph coordinates. Keep numbers, repeated occurrences, headers and footers.
+- Integrate Added / Changed / Removed filters, remove same-text Info noise,
+  and distinguish total from displayed findings. Text-layer encoding differences
+  (especially equations) still require visual review, not automatic approval.
+- Temporary comparison method v3 requires rebuilding older results.
+  Publication selection, revision binding, review state, exports and State
+  archive v8 are unchanged.
+
 ## 1.19.1 - 2026-11-04
 
 - Show confirmed upload/report counts and execution phase while CrossCheck runs.

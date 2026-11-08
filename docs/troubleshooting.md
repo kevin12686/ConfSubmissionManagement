@@ -738,6 +738,15 @@ afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
 
 ### PDF comparison unavailable or unexpectedly noisy
 
+**Check text / formula** means the PDF's character mapping or glyph evidence is
+unreliable, not that a formula was changed or approved. Open the marked regions
+and Extraction details. A glyph can render as a subscript while extracting as
+punctuation. The system does not guess a replacement or ignore the formula.
+Real changes within uncertain regions still need visual verification. Zero-width
+U+200B characters are informational only when their glyph ink is empty and no
+mapping issue is detected; the raw contexts and counts remain available. Other
+controls are not blanket-removed. Older comparison methods require rebuilding.
+
 A saved Formatting PDF now starts an Original comparison through the returned
 page, not as part of saving the upload. If comparison fails, the corrected PDF,
 revision history, and normal upload resets remain saved. Use Retry comparison
@@ -758,7 +767,8 @@ repair files or create revisions. Temporary comparison data is deliberately
 absent after System State restore.
 
 Textless/password-protected or over-limit PDFs may require manual comparison.
-Text findings can also reflect reflow, ligatures, equations, or extraction order;
+Exact matched reflow is not highlighted. Unmatched text can still reflect
+ligatures, equations, ambiguous repetition, or unreliable extraction order;
 check the page image and do not treat an unmatched passage or a replacement
 character as proof of missing/corrupt content. A no-findings result does not
 validate figures or tables. Comparisons stop at 64 MiB, 100 pages, or 30,000
@@ -768,7 +778,7 @@ them; their normal expiry and Clear Database remain responsible for removal.
 
 If repagination splits the same page header into apparent removal/addition,
 rebuild an older-method comparison. The current method retains headers/footers
-but groups uniquely paired exact passages as **Same text / sequence position**.
+and accounts for uniquely paired exact passages without highlighting them.
 Repeated or ambiguous text intentionally stays unmatched. Check both actual
 locations and context; matching text is not a layout or meaning approval.
 **No corresponding text** means the other viewer is only a labeled reference,

@@ -194,8 +194,25 @@ Put reusable workflow behavior in services:
   from comparison. Difference results cannot feed readiness or review flags.
   Keep headers/footers in extraction and scanning. Exact-span reconciliation
   must consume globally unique occurrences one-to-one, preserve unmatched
-  remainder, and balance token coverage before display limits. Never substitute
-  a navigation reference page for an actual text location. Update the temporary
+  remainder, and balance token coverage before display limits. Exact moved text
+  contributes to coverage but not
+  highlights or counts. Read native glyph runs, order detected ruled-table cells
+  spatially, and keep display glyph refinement separate from token accounting.
+  Keep evidence inspection isolated in `pdf_comparison_worker.py`: table detection uses mutable
+  global state. Test timeout failure, rotated cells and unchanged parent rendering
+  settings; never silently skip failed table detection.
+  `pdf_text_evidence.py` uses structured PDF operations and bounded CMap records
+  to inspect actually used font codes. Unknown or unsupported evidence must
+  remain a warning, including when raw extracted strings happen to match.
+  Preserve raw text, font aliases, positions and reasons. Do not infer Unicode
+  from font names, the other PDF, OCR or approximate raster similarity.
+  A used missing code makes that font's page regions uncertain; do not guess
+  which fallback Unicode character a PDF extractor will return.
+  Only non-drawing U+200B with no detected mapping issue may be normalized;
+  retain an explicit inventory. Test visible glyphs mapped to controls, other
+  zero-width controls, malformed/partial maps, forms, sub/superscripts and real
+  text changes beside uncertain formulas. Never feed these findings to readiness.
+  Never substitute a navigation reference page for an actual text location. Update the temporary
   comparison method version when its result contract changes; do not reuse an
   old signed result under a new algorithm. Regression coverage must include
   repagination, repeated/deleted passages, partial-word and numeric edits,

@@ -572,7 +572,7 @@ of backups until an explicit Clear Database or full System State replacement.
 After a corrected PDF is successfully saved in Formatting Review, the page
 automatically compares that exact saved upload against its Original submission
 PDF. Title guard warnings must be confirmed first. The card shows progress,
-Warning/Info counts, **Open comparison**, and **Retry comparison** when needed;
+content-warning counts, **Open comparison**, and **Retry comparison** when needed;
 this status remains visible with Review paper collapsed. If the current list
 filter excludes the saved paper, an identified status row remains above the
 list. Save still stays at the current card/Single queue position, never opens a
@@ -608,7 +608,7 @@ file is an error, not permission to fall back.
 
 Findings include new occurrences of common Word reference/bookmark errors,
 possible unresolved references (`??` / `[?]`), replacement characters, and
-added/changed/unmatched text. Counts are findings, not affected-paper counts;
+added/changed/removed text. Counts are findings, not affected-paper counts;
 one passage may have both a pattern finding and a text change. Existing error
 occurrences are not reported as new just because they moved to another page.
 Whitespace differences are ignored, but case, punctuation, numbers, and actual
@@ -616,19 +616,36 @@ words are retained. Unmatched text may have moved or extracted in a different
 order; it is not proof of deletion. Extraction anomalies are not proof of
 visible corruption.
 
-Headers and footers are not excluded. A second pass pairs unmatched continuous
-exact token sequences only when a three-token seed is unique in each complete
-document, the span contains at least two alphabetic PDF words, and the pair
-covers whole words without reusing any occurrence. Partial exact spans may be
-paired, but their changed remainder stays visible. Repeated or uncertain spans
-remain unpaired. Paired spans appear once under **Same text / sequence
-position**, separate from **Needs a closer look**, with both locations and
-context still available. The navigator marks these groups as blue **Info** and
-amber **Warning**, respectively; an outline identifies the selected item
-independently of classification. These are advisory display levels, not export
-blockers or approvals. This means the text sequence matches, not that layout,
-reading order, or meaning is unchanged. No fuzzy matching or region exclusion
-is used to make differences disappear.
+Headers and footers are not excluded. Native text-run order avoids interleaving
+page columns; detected ruled-table cells use row/column order. A bounded second
+pass pairs globally unique exact spans one-to-one. Matched moved text does not
+produce a finding or highlight; changed remainder and unmatched repeated or
+ambiguous text stay visible. No fuzzy matching, word-count cancellation or
+header/footer exclusion is used to make differences disappear.
+
+Use Added / Changed / Removed text or error-pattern filters in the same
+navigator. Additions highlight After, removals highlight Before. Glyph
+coordinates keep punctuation changes from marking whole author names. Numeric
+values remain whole values; single-word edits can highlight only changed
+characters. Context is shown separately. Warning styling is advisory, never
+an export blocker or approval. Text-layer encoding differences, particularly
+equation fonts, can produce findings even when rendered glyphs look the same.
+
+The workspace separates **Text changes**, **Check text / formula** warnings,
+and **Formatting information**. The top summary counts all three independently;
+zero text changes does not mean there are no regions to verify. Amber dashed
+outlines mean the text cannot be read reliably, not that the region is unchanged.
+These regions can also contain real additions/removals. Compare both saved PDF
+images and open Extraction details for the raw text, fonts and reason. No text
+is guessed from context, and no formula is silently excluded or auto-approved.
+An unavailable/ambiguous mapping remains a verification warning even when both
+PDFs extract the same characters. Byte-identical files are separately identified.
+
+Non-drawing U+200B zero-width spaces without detected mapping issues are removed
+only from comparison text. Their counts, pages and raw contexts remain under
+Formatting information, with `[U+200B]` visible in Extraction details. This is a
+normalization inventory, not a count of deleted words. Other controls, ordinary
+spaces, and any glyph that still draws are not deleted by this rule.
 
 Select a finding to view both passages and their highlighted page regions.
 Switch to Text changes for the extracted passages. Browse all pages for manual
@@ -647,8 +664,9 @@ selector on each side; manual page navigation clears the old finding selection.
 Comparisons expire after two hours and reject changed publication scope,
 selected file identities/bytes, missing baselines, or damaged snapshots. Build
 a new comparison rather than reusing a stale result. Limits are 64 MiB, 100
-pages, and 30,000 tokens per PDF; the first 300 findings and limited passage
-regions are explicitly labeled when capped. Textless PDFs support visual
+pages, and 30,000 tokens per PDF; up to 300 findings and limited passage
+regions are shown. Total and displayed counts are separate; matched reflow
+does not consume the display allowance. Textless PDFs support visual
 comparison, plus pattern prompts in any extractable corrected text; without
 baseline text those patterns cannot be classified as newly introduced.
 Exact pairing also has a bounded processing budget: if reached, remaining

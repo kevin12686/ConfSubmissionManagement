@@ -92,6 +92,42 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertTrue(result["text_available"])
         self.assertFalse(result["identical_bytes"])
 
+    def test_uncertain_text_is_presented_without_changing_publication_state_or_bytes(self):
+        from submissions.tests.test_pdf_comparison_evidence import coded_pdf
+        original = coded_pdf("Removed words. Formula Q!", missing="!")
+        corrected = coded_pdf("Formula Q!", missing="!")
+        self.submission.pdf_file.save("equation-before.pdf", ContentFile(original))
+        self.submission.formatted_pdf_file.save("equation-after.pdf", ContentFile(corrected))
+        self.mark_submission_publication_ready(self.submission)
+        before = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        readiness = publication_readiness_rows(strict_hash=True)
+        payload = create_pdf_comparison(self.submission.pk)
+        response = self.client.get(self.url, {"comparison": payload["token"]})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Check text / formula")
+        data = response.context["comparison_data"]
+        self.assertGreater(data["uncertain_count"], 0)
+        self.assertIn("Removed words", " ".join(row["before_raw"] for row in data["findings"]))
+        for side, expected in (("before", original), ("after", corrected)):
+            download = self.client.get(data["pdf_urls"][side])
+            self.assertEqual(b"".join(download.streaming_content), expected)
+            download.close()
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), before)
+        self.assertEqual(publication_readiness_rows(strict_hash=True), readiness)
+
+    def test_normalized_controls_are_information_not_a_clean_result_or_hidden_warning(self):
+        from submissions.tests.test_pdf_comparison_evidence import coded_pdf
+        self.submission.pdf_file.save("controls.pdf", ContentFile(coded_pdf("old :", replacements={32: "\u200b"})))
+        self.submission.formatted_pdf_file.save("without-word.pdf", ContentFile(coded_pdf(":")))
+        payload = create_pdf_comparison(self.submission.pk)
+        response = self.client.get(self.url, {"comparison": payload["token"]})
+        data = response.context["comparison_data"]
+        self.assertEqual(data["info_count"], 1)
+        self.assertEqual(data["content_count"], 1)
+        self.assertEqual(data["total_attention_count"], 1)
+        self.assertContains(response, 'value="formatting"')
+        self.assertContains(response, 'value="removed"')
+
     def assert_text_accounted_for(self, before, after, result):
         self.assertFalse(result["truncated"])
         a, b = _extract(before)["tokens"], _extract(after)["tokens"]
@@ -123,17 +159,13 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         before, after = reflow_pair()
         result = compare_pdf_bytes(before, after)
         self.assertEqual(result["attention_count"], 1)
-        self.assertEqual(result["sequence_count"], 1)
-        change, same = result["findings"]
+        self.assertEqual(result["sequence_count"], 0)
+        change, = result["findings"]
         self.assertEqual(change["before_text"], "(Journal-First)")
         self.assertEqual(change["after_pages"], [])
         self.assertIsNone(change["after_page"])
         self.assertEqual(change["after_reference_page"], 1)
-        self.assertEqual(same["before_text"], "2 N. Silvis-Cividjian")
-        self.assertEqual(same["after_text"], same["before_text"])
-        self.assertEqual(same["before_pages"], [2])
-        self.assertEqual(same["after_pages"], [2])
-        self.assertEqual(same["before_locations"], same["after_locations"])
+        self.assertGreater(result["token_coverage"]["paired"], 0)
         self.assert_text_accounted_for(before, after, result)
 
     def test_changed_or_removed_header_is_not_discarded_as_layout_noise(self):
@@ -158,15 +190,13 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertTrue(any(row["category"] == "reference" and row["after_locations"][0]["box"][1] > .9 for row in result["findings"]))
         self.assert_text_accounted_for(before, after, result)
 
-    def test_moved_unique_passage_is_retained_as_a_two_sided_finding(self):
+    def test_moved_unique_passage_is_accounted_for_without_a_finding(self):
         anchor = "The common study protocol describes all assessment methods and independently collected research outcomes."
         moved = "Participants could withdraw voluntarily."
         before, after = make_pdf([moved + "\n" + anchor]), make_pdf([anchor + "\n" + moved])
         result = compare_pdf_bytes(before, after)
-        same = [row for row in result["findings"] if row["category"] == "sequence"]
-        self.assertEqual(len(same), 1)
-        self.assertEqual(same[0]["before_text"], moved)
-        self.assertNotEqual(same[0]["before_locations"], same[0]["after_locations"])
+        self.assertEqual(result["findings"], [])
+        self.assertGreater(result["token_coverage"]["paired"], 0)
         self.assert_text_accounted_for(before, after, result)
 
     def test_changed_words_beside_a_moved_passage_remain_content_findings(self):
@@ -177,7 +207,7 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         content = [row for row in result["findings"] if row["category"] == "text"]
         self.assertIn("12", " ".join(row["before_text"] for row in content))
         self.assertIn("21", " ".join(row["after_text"] for row in content))
-        self.assertTrue(result["sequence_count"])
+        self.assertGreater(result["token_coverage"]["paired"], 0)
         self.assert_text_accounted_for(before, after, result)
 
     def test_deleted_repeated_passage_cannot_be_cancelled_by_another_occurrence(self):
@@ -506,7 +536,7 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
                 self.assertContains(page, f'href="{self.url}?next=')
                 self.assertContains(page, 'target="_blank" rel="noopener">Compare PDF</a>')
 
-    def test_warning_info_presentation_preserves_comparison_results_and_review_state(self):
+    def test_content_only_presentation_preserves_comparison_results_and_review_state(self):
         before, after = reflow_pair()
         self.submission.pdf_file.save("before-reflow.pdf", ContentFile(before))
         self.submission.formatted_pdf_file.save("after-reflow.pdf", ContentFile(after))
@@ -514,11 +544,12 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         payload = create_pdf_comparison(self.submission.pk)
         response = self.client.get(self.url, {"comparison": payload["token"]})
         self.assertContains(response, 'data-comparison-level="warning"')
-        self.assertContains(response, 'data-comparison-level="info"')
+        self.assertContains(response, 'data-finding-group="formatting"')
+        self.assertEqual(payload["result"]["info_count"], 0)
         self.assertContains(response, '<span class="cfm-comparison-level">Warning</span>')
-        self.assertContains(response, '<span class="cfm-comparison-level">Info</span>')
+        self.assertContains(response, '<option value="removed">Removed text</option>')
         self.assertContains(response, 'class="badge text-bg-warning" data-finding-group-count="attention">1</span>')
-        self.assertContains(response, 'class="badge text-bg-info" data-finding-group-count="sequence">1</span>')
+        self.assertNotContains(response, 'Same text / sequence position')
         self.assertEqual(response.context["comparison_data"]["findings"], payload["result"]["findings"])
         self.assertEqual(response.context["comparison_data"]["page_map"], payload["result"]["page_map"])
         self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
@@ -534,7 +565,8 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         signature = publication_database_signature()
         readiness = publication_readiness_rows(strict_hash=True)
         result = create_pdf_comparison(self.submission.pk)
-        self.assertEqual(result["result"]["sequence_count"], 1)
+        self.assertEqual(result["result"]["sequence_count"], 0)
+        self.assertGreater(result["result"]["token_coverage"]["paired"], 0)
         with zipfile.ZipFile(export_publication_package()) as archive:
             name = next(name for name in archive.namelist() if name.startswith("PDF/"))
             self.assertEqual(archive.read(name), publication_after)

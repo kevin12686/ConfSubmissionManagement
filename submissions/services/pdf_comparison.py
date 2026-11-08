@@ -5,6 +5,8 @@ import json
 import math
 import re
 import shutil
+import subprocess
+import sys
 import unicodedata
 import uuid
 from bisect import bisect_right
@@ -25,11 +27,12 @@ from submissions.services.file_manager import publication_pdf_info
 from submissions.services.formatting_history import open_revision_file
 from submissions.services.preview_storage import PREVIEW_TOKEN_PATTERN, purge_expired_preview_directories
 from submissions.services.publication_decisions import publication_master_paper_ids
+from submissions.services.pdf_text_evidence import font_name
 
 
 TTL = timedelta(hours=2)
 SALT = "submissions.pdf-comparison.v1"
-COMPARISON_VERSION = 2
+COMPARISON_VERSION = 4
 MAX_BYTES = 64 * 1024 * 1024
 MAX_PAGES = 100
 MAX_TOKENS = 30000
@@ -150,34 +153,160 @@ def _read_baseline(submission, baseline):
     }
 
 
+def _geometry(page, bbox):
+    rect = page.rect
+    box = fitz.Rect(bbox) * page.rotation_matrix
+    if not all(math.isfinite(value) for value in box):
+        raise PDFComparisonError("The PDF has invalid text coordinates.")
+    return [max(0, min(1, v / size)) for v, size in
+            zip(box, (rect.width, rect.height, rect.width, rect.height))]
+
+
+def _union(boxes):
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+
+def _has_glyph_ink(bbox):
+    # MuPDF coordinates are single precision. Transforming an empty glyph can
+    # leave a few rounding units of height; that is not a drawn character.
+    tolerance = max(1, *(abs(value) for value in bbox)) * 2 ** -22
+    return bbox[2] - bbox[0] > tolerance and bbox[3] - bbox[1] > tolerance
+
+
+def _pdf_evidence(data):
+    # PyMuPDF's table detector has mutable module/global rendering state. Keep
+    # it out of the web process, which also renders review images concurrently.
+    try:
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("pdf_comparison_worker.py"))],
+            input=data, capture_output=True, timeout=30, check=True,
+        )
+        return json.loads(result.stdout)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise PDFComparisonError("PDF text evidence could not be checked safely. No complete comparison is available; review the PDFs manually.") from exc
+
+
+def _table_order(tables, words, tokens):
+    """Keep detected table cells in row/column order, not PDF paint order.
+
+    Use the same occurrence ranks for words and tokens. No text is removed;
+    ambiguous/undetected cells retain their native order.
+    """
+    ranks = {}
+    for cells in tables:
+        members = []
+        for word in words:
+            x0, y0, x1, y1 = word["pdf_box"]
+            hits = [i for i, (l, t, r, b) in enumerate(cells)
+                    if l <= (x0 + x1) / 2 <= r and t <= (y0 + y1) / 2 <= b]
+            if len(hits) == 1:
+                members.append((hits[0], y0, x0, word["occurrence"]))
+        if not members:
+            continue
+        first = min(item[3] for item in members)
+        for index, item in enumerate(sorted(members)):
+            ranks[item[3]] = (first, index)
+    key = lambda item: ranks.get(item["occurrence"], (item["occurrence"], -1))
+    words.sort(key=key)
+    tokens.sort(key=key)
+
+
 def _extract(data):
     words, tokens, pages = [], [], []
+    controls = []
     with fitz.open(stream=data, filetype="pdf") as document:
         if document.needs_pass:
             raise PDFComparisonError("Password-protected PDFs cannot be compared. No file was decrypted or modified.")
         if not 0 < len(document) <= MAX_PAGES:
             raise PDFComparisonError("Comparison supports PDFs with 1-100 pages. Open these PDFs manually instead.")
+        evidence = _pdf_evidence(data)
         for page_number, page in enumerate(document, 1):
             rect = page.rect
             if not all(math.isfinite(v) and v > 0 for v in (rect.width, rect.height)):
                 raise PDFComparisonError("The PDF has invalid page dimensions.")
             pages.append({"number": page_number, "width": rect.width, "height": rect.height})
-            for word in page.get_text("words", sort=True):
-                text = unicodedata.normalize("NFC", word[4])
-                box = fitz.Rect(word[:4]) * page.rotation_matrix
-                if not all(math.isfinite(value) for value in box):
-                    raise PDFComparisonError("The PDF has invalid text coordinates.")
-                geometry = [
-                    max(0, min(1, box.x0 / rect.width)), max(0, min(1, box.y0 / rect.height)),
-                    max(0, min(1, box.x1 / rect.width)), max(0, min(1, box.y1 / rect.height)),
-                ]
-                item = {"text": text, "page": page_number, "box": geometry}
-                words.append(item)
-                for match in TOKEN_PATTERN.finditer(text):
-                    tokens.append({**item, "text": match.group(), "word": text})
-                if len(tokens) > MAX_TOKENS:
-                    raise PDFComparisonError("This PDF exceeds the 30,000-token comparison limit. No incomplete comparison was presented as complete.")
-    return {"words": words, "tokens": tokens, "pages": pages}
+            page_words, page_tokens = [], []
+            page_evidence = evidence["fonts"][str(page_number)]
+            flags = fitz.TEXTFLAGS_RAWDICT & ~fitz.TEXT_PRESERVE_IMAGES
+            blocks = page.get_text("rawdict", flags=flags, sort=False)["blocks"]
+            # Inspect ink, not just advance: combining/overprinted glyphs can
+            # have zero advance while remaining visible.
+            accurate = page.get_text("rawdict", flags=flags | fitz.TEXT_ACCURATE_BBOXES, sort=False)
+            ink = {(tuple(c["origin"]), c["c"]): _has_glyph_ink(c["bbox"])
+                   for b in accurate["blocks"] for l in b.get("lines", []) for s in l["spans"] for c in s["chars"]
+                   if not c.get("synthetic")}
+            # Native text runs preserve paragraphs across columns. Global y/x
+            # sorting interleaves unrelated columns and table cells after reflow.
+            for block in blocks:
+                for line in block.get("lines", []):
+                    chars = []
+                    raw_line = "".join(c["c"] for s in line["spans"] for c in s["chars"])
+                    for span in line["spans"]:
+                        risks = [f for f in page_evidence["fonts"] if font_name(span["font"]) in f.get("aliases", [f["font"]])]
+                        for char in span["chars"]:
+                            reasons = [page_evidence["error"]] if page_evidence["error"] else []
+                            if not risks and not page_evidence["error"]:
+                                reasons.append("The extracted font could not be matched to inspected font resources.")
+                            reasons.extend(f["reason"] for f in risks if f["all"])
+                            if "\ufffd" in char["c"]:
+                                reasons.append("The extracted character is a replacement character.")
+                            has_ink = ink.get((tuple(char["origin"]), char["c"]))
+                            if has_ink is False and char["c"].strip() and char["c"] != "\u200b":
+                                reasons.append("An extracted visible character has no glyph ink; verify this region.")
+                            if has_ink and (char["c"].isspace() or char["c"] == "\u200b") and not char.get("synthetic"):
+                                reasons.append("A drawing glyph is mapped to whitespace or an invisible character.")
+                            chars.append({**char, "font": span["font"], "issues": sorted(set(reasons))})
+                    # A partial formula cannot be certified character-by-character
+                    # when its font falls back to raw codes. Keep that same-font
+                    # line region together; do not extend into neighboring prose.
+                    line_issues = defaultdict(set)
+                    for char in chars:
+                        line_issues[char["font"]].update(char["issues"])
+                    for char in chars:
+                        char["issues"] = sorted(line_issues[char["font"]])
+                    text, boxes, issues, fonts = "", [], [], []
+                    for char in chars:
+                        value = char["c"]
+                        has_ink = ink.get((tuple(char["origin"]), value))
+                        if value == "\u200b" and has_ink is False and not char["issues"]:
+                            controls.append({"text": "U+200B", "page": page_number, "box": _geometry(page, char["bbox"]), "context": raw_line})
+                            continue
+                        if value.isspace() and has_ink and not char.get("synthetic"):
+                            value = "\ufffd"
+                        if value and unicodedata.combining(value[0]) and text:
+                            normalized = unicodedata.normalize("NFC", text[-1] + value)
+                            box = _union([boxes[-1], char["bbox"]])
+                            issue = sorted(set(issues[-1] + char["issues"]))
+                            text, boxes = text[:-1] + normalized, boxes[:-1] + [box] * len(normalized)
+                            issues = issues[:-1] + [issue] * len(normalized)
+                            fonts = fonts[:-1] + [char["font"]] * len(normalized)
+                        else:
+                            normalized = unicodedata.normalize("NFC", value)
+                            text += normalized
+                            boxes.extend([char["bbox"]] * len(normalized))
+                            issues.extend([char["issues"]] * len(normalized))
+                            fonts.extend([char["font"]] * len(normalized))
+                    for word in re.finditer(r"\S+", text):
+                        pdf_boxes = boxes[word.start():word.end()]
+                        item = {"text": word.group(), "page": page_number,
+                                "box": _geometry(page, _union(pdf_boxes)),
+                                "pdf_box": _union(pdf_boxes), "occurrence": len(page_words),
+                                "issues": sorted({v for entry in issues[word.start():word.end()] for v in entry}),
+                                "fonts": sorted(set(fonts[word.start():word.end()])), "raw_context": raw_line}
+                        page_words.append(item)
+                        for match in TOKEN_PATTERN.finditer(word.group()):
+                            glyphs = [_geometry(page, box) for box in pdf_boxes[match.start():match.end()]]
+                            page_tokens.append({**item, "text": match.group(), "word": word.group(),
+                                                "word_box": item["box"], "box": _union(glyphs), "glyphs": glyphs,
+                                                "issues": sorted({v for entry in issues[word.start() + match.start():word.start() + match.end()] for v in entry}),
+                                                "word_start": match.start(), "word_end": match.end()})
+                        if len(tokens) + len(page_tokens) > MAX_TOKENS:
+                            raise PDFComparisonError("This PDF exceeds the 30,000-token comparison limit. No incomplete comparison was presented as complete.")
+            _table_order(evidence["tables"].get(str(page_number), []), page_words, page_tokens)
+            words.extend(page_words)
+            tokens.extend(page_tokens)
+    return {"words": words, "tokens": tokens, "pages": pages, "controls": controls}
 
 
 def _locations(items):
@@ -193,12 +322,16 @@ def _locations(items):
 
 
 def _snippet(items):
-    words, previous = [], None
+    words, previous, previous_end = [], None, None
     for item in items:
-        key = (item["page"], tuple(item["box"]))
-        if key != previous:
-            words.append(item.get("word", item["text"]))
+        key = _word_key(item)
+        if key == previous:
+            gap = previous_end is not None and item.get("word_start", previous_end) != previous_end
+            words[-1] += (" ... " if gap else "") + item["text"]
+        else:
+            words.append(item["text"])
         previous = key
+        previous_end = item.get("word_end")
     text = " ".join(words)
     return text[:1200] + ("..." if len(text) > 1200 else "")
 
@@ -219,7 +352,12 @@ def _scanned_findings(before, after):
                 offset += len(word["text"]) + 1
             texts.append(" ".join(parts))
             offsets.append(starts)
-        previous = Counter(" ".join(match.group().lower().split()) for match in pattern.finditer(texts[0]))
+        previous = Counter()
+        for match in pattern.finditer(texts[0]):
+            first = max(0, bisect_right(offsets[0], match.start()) - 1)
+            last = bisect_right(offsets[0], match.end() - 1)
+            if not any(item.get("issues") for item in before["words"][first:last]):
+                previous[" ".join(match.group().lower().split())] += 1
         for match in pattern.finditer(texts[1]):
             key = " ".join(match.group().lower().split())
             if previous[key]:
@@ -228,6 +366,10 @@ def _scanned_findings(before, after):
             first = max(0, bisect_right(offsets[1], match.start()) - 1)
             last = bisect_right(offsets[1], match.end() - 1)
             items = after["words"][first:last]
+            if any(item.get("issues") for item in items):
+                # Untrusted text cannot prove a new error pattern. Its tokens
+                # are never aligned away and remain in the uncertainty findings.
+                continue
             findings.append({
                 "category": category, "label": label if before["words"] else {
                     "reference": "Reference error pattern", "placeholder": "Possible unresolved reference",
@@ -238,19 +380,19 @@ def _scanned_findings(before, after):
                 "before_page": None, "after_page": items[0]["page"] if items else 1,
                 "before_pages": [], "after_pages": sorted({item["page"] for item in items}),
             })
-            if len(findings) >= MAX_FINDINGS:
-                return findings
     return findings
 
 
 def _word_key(token):
-    return token["page"], tuple(token["box"])
+    return token["page"], tuple(token.get("word_box", token["box"]))
 
 
 def _unique_seeds(tokens):
     """Count seeds over the whole document, including already aligned text."""
     positions = {}
     for index in range(len(tokens) - 2):
+        if any(t.get("issues") for t in tokens[index:index + 3]):
+            continue
         key = tuple(item["text"] for item in tokens[index:index + 3])
         positions[key] = -1 if key in positions else index
     return positions
@@ -278,14 +420,14 @@ def _sequence_pairs(a, b, changes):
             steps += 1
             if steps > MAX_PAIRING_STEPS:
                 return pairs, used_a, used_b, True
-            if a[a0 - 1]["text"] != b[b0 - 1]["text"]:
+            if a[a0 - 1].get("issues") or b[b0 - 1].get("issues") or a[a0 - 1]["text"] != b[b0 - 1]["text"]:
                 break
             a0, b0 = a0 - 1, b0 - 1
         while a1 < left[1] and b1 < right[1] and a1 not in used_a and b1 not in used_b:
             steps += 1
             if steps > MAX_PAIRING_STEPS:
                 return pairs, used_a, used_b, True
-            if a[a1]["text"] != b[b1]["text"]:
+            if a[a1].get("issues") or b[b1].get("issues") or a[a1]["text"] != b[b1]["text"]:
                 break
             a1, b1 = a1 + 1, b1 + 1
         # Do not reclassify a matching prefix/suffix inside a changed PDF word.
@@ -329,23 +471,43 @@ def _remaining_ranges(start, end, used):
     return ranges
 
 
-def _text_finding(a, b, a0, a1, b0, b1, *, sequence=False):
+def _text_finding(a, b, a0, a1, b0, b1):
     left, right = a[a0:a1], b[b0:b1]
+    issues = sorted({issue for item in left + right for issue in item.get("issues", [])})
+    display_left, display_right = left, right
+    # Refine a single changed token to the actual differing glyphs. Coverage
+    # continues to refer to the complete source tokens, not this presentation.
+    if not issues and len(left) == len(right) == 1 and not (left[0]["text"].isnumeric() or right[0]["text"].isnumeric()):
+        display_left, display_right = [], []
+        for op, i, j, k, l in SequenceMatcher(None, left[0]["text"], right[0]["text"], autojunk=False).get_opcodes():
+            if op == "equal":
+                continue
+            for source, start, end, target in ((left[0], i, j, display_left), (right[0], k, l, display_right)):
+                if start != end:
+                    glyphs = source["glyphs"][start:end]
+                    target.append({**source, "text": source["text"][start:end], "box": _union(glyphs),
+                                   "word_start": source["word_start"] + start, "word_end": source["word_start"] + end})
     pages_a, pages_b = sorted({item["page"] for item in left}), sorted({item["page"] for item in right})
     return {
-        "category": "sequence" if sequence else "text",
-        "label": "Same text, different sequence position" if sequence else (
-            "Changed text" if left and right else "Unmatched baseline text" if left else "Added text"
-        ),
-        "before_text": _snippet(left), "after_text": _snippet(right),
+        "category": "uncertain" if issues else "text",
+        "kind": "changed" if left and right else "removed" if left else "added",
+        "label": "Check text / formula" if issues else "Changed text" if left and right else "Removed text" if left else "Added text",
+        "issues": issues,
+        "fonts": sorted({font for item in left + right for font in item.get("fonts", [])}),
+        "before_raw": "\n".join(dict.fromkeys(t.get("raw_context", t["text"]) for t in left))[:2400],
+        "after_raw": "\n".join(dict.fromkeys(t.get("raw_context", t["text"]) for t in right))[:2400],
+        "before_text": _snippet(display_left), "after_text": _snippet(display_right),
         "before_context": _snippet(a[max(0, a0 - 12):min(len(a), a1 + 12)]),
         "after_context": _snippet(b[max(0, b0 - 12):min(len(b), b1 + 12)]),
-        "before_locations": _locations(left), "after_locations": _locations(right),
+        "before_locations": _locations(display_left), "after_locations": _locations(display_right),
         "before_pages": pages_a, "after_pages": pages_b,
         "before_page": pages_a[0] if pages_a else None,
         "after_page": pages_b[0] if pages_b else None,
         "before_token_range": [a0, a1], "after_token_range": [b0, b1],
-        "locations_truncated": len({_word_key(item) for item in left}) > MAX_BOXES or len({_word_key(item) for item in right}) > MAX_BOXES,
+        "locations_truncated": any(
+            len({(item["page"], tuple(item["box"])) for item in items}) > MAX_BOXES
+            for items in (display_left, display_right)
+        ),
     }
 
 
@@ -378,19 +540,25 @@ def _page_maps(a, b, opcodes):
 def compare_pdf_bytes(before_data, after_data):
     before, after = _extract(before_data), _extract(after_data)
     a, b = before["tokens"], after["tokens"]
-    findings = _scanned_findings(before, after)
-    patterns_limited = len(findings) >= MAX_FINDINGS
-    total_findings = len(findings)
+    patterns = _scanned_findings(before, after)
+    findings = patterns[:MAX_FINDINGS]
+    total_counts = Counter(item["category"] for item in patterns)
+    total_findings = len(patterns)
 
-    def add_finding(a0, a1, b0, b1, *, sequence=False):
+    def add_finding(a0, a1, b0, b1):
         nonlocal total_findings
+        finding = _text_finding(a, b, a0, a1, b0, b1)
         total_findings += 1
+        total_counts[finding["category"]] += 1
         if len(findings) < MAX_FINDINGS:
-            findings.append(_text_finding(a, b, a0, a1, b0, b1, sequence=sequence))
+            findings.append(finding)
 
-    opcodes = SequenceMatcher(None, [item["text"] for item in a], [item["text"] for item in b]).get_opcodes() if a and b else []
+    def keys(items, side):
+        return [(side, index) if item.get("issues") and before_data != after_data else item["text"] for index, item in enumerate(items)]
+
+    opcodes = SequenceMatcher(None, keys(a, "before"), keys(b, "after")).get_opcodes()
     changes = [row for row in opcodes if row[0] != "equal"]
-    pairs, used_a, used_b, pairing_limited = _sequence_pairs(a, b, changes)
+    _, used_a, used_b, pairing_limited = _sequence_pairs(a, b, changes)
     remaining_a = remaining_b = 0
     for _, a0, a1, b0, b1 in changes:
         ranges_a, ranges_b = _remaining_ranges(a0, a1, used_a), _remaining_ranges(b0, b1, used_b)
@@ -403,12 +571,30 @@ def compare_pdf_bytes(before_data, after_data):
                 add_finding(start, end, b0, b0)
             for start, end in ranges_b:
                 add_finding(a0, a0, start, end)
-    for a0, a1, b0, b1 in pairs:
-        add_finding(a0, a1, b0, b1, sequence=True)
+    # Exact one-to-one moved text is accounted for, but is not a content finding.
     equal = sum(a1 - a0 for operation, a0, a1, _, _ in opcodes if operation == "equal")
-    if a and b and (equal + len(used_a) + remaining_a != len(a) or equal + len(used_b) + remaining_b != len(b)):
+    if equal + len(used_a) + remaining_a != len(a) or equal + len(used_b) + remaining_b != len(b):
         raise PDFComparisonError("Text accounting failed. No incomplete comparison was presented as complete.")
     page_map, inverse_map = _page_maps(a, b, opcodes)
+    if before_data != after_data and (before["controls"] or after["controls"]):
+        total_findings += 1
+        total_counts["formatting"] += 1
+        if len(findings) < MAX_FINDINGS:
+            findings.append({
+                "category": "formatting", "label": "Invisible formatting characters", "kind": "formatting",
+                "before_text": f'{len(before["controls"])} non-drawing U+200B character(s)',
+                "after_text": f'{len(after["controls"])} non-drawing U+200B character(s)',
+                "before_locations": _locations(before["controls"]), "after_locations": _locations(after["controls"]),
+                "before_pages": sorted({t["page"] for t in before["controls"]}),
+                "after_pages": sorted({t["page"] for t in after["controls"]}),
+                "before_page": before["controls"][0]["page"] if before["controls"] else None,
+                "after_page": after["controls"][0]["page"] if after["controls"] else None,
+                "before_raw": "\n".join(dict.fromkeys(t["context"] for t in before["controls"]))[:2400],
+                "after_raw": "\n".join(dict.fromkeys(t["context"] for t in after["controls"]))[:2400],
+                "issues": ["Only U+200B glyphs with empty ink bounds and no detected font-mapping issue were normalized. Visible characters and ordinary spaces were retained."],
+                "fonts": [],
+                "locations_truncated": len(before["controls"]) > MAX_BOXES or len(after["controls"]) > MAX_BOXES,
+            })
     for index, finding in enumerate(findings):
         finding["id"] = index
         finding["before_reference_page"] = inverse_map.get(str(finding["after_page"])) if not finding["before_pages"] else None
@@ -417,10 +603,18 @@ def compare_pdf_bytes(before_data, after_data):
         "findings": findings, "counts": dict(Counter(item["category"] for item in findings)),
         "before_pages": before["pages"], "after_pages": after["pages"],
         "page_map": page_map, "inverse_map": inverse_map,
-        "text_available": bool(a and b), "truncated": patterns_limited or total_findings > MAX_FINDINGS,
+        "text_available": bool(a and b), "truncated": total_findings > MAX_FINDINGS,
         "pairing_limited": pairing_limited,
-        "attention_count": sum(item["category"] != "sequence" for item in findings),
-        "sequence_count": sum(item["category"] == "sequence" for item in findings),
+        "total_findings": total_findings,
+        "shown_findings": len(findings),
+        "total_counts": dict(total_counts),
+        "total_attention_count": total_findings - total_counts["formatting"],
+        "attention_count": sum(item["category"] != "formatting" for item in findings),
+        "uncertain_count": total_counts["uncertain"],
+        "content_count": total_counts["text"] + total_counts["reference"] + total_counts["placeholder"] + total_counts["character"],
+        "info_count": total_counts["formatting"],
+        "sequence_count": 0,
+        "normalized_controls": {"before": len(before["controls"]), "after": len(after["controls"])},
         "token_coverage": {"comparable": bool(a and b), "aligned": equal, "paired": len(used_a), "unmatched_before": remaining_a, "unmatched_after": remaining_b, "before_total": len(a), "after_total": len(b)},
         "identical_bytes": before_data == after_data,
     }

@@ -30,7 +30,10 @@
             panel.querySelectorAll("[data-comparison-page-step]").forEach(button => button.addEventListener("click", () => navigate(name, state[name] + Number(button.dataset.comparisonPageStep))));
         }
         function visibleFindings() {
-            return data.findings.filter(finding => state.category === "all" || finding.category === state.category);
+            return data.findings.filter(matchesFilter);
+        }
+        function matchesFilter(finding) {
+            return state.category === "all" || finding.category === state.category || (finding.category === "text" && finding.kind === state.category);
         }
         function pageLabel(finding, name) {
             const pages = finding[`${name}_pages`];
@@ -52,12 +55,13 @@
                     location.textContent = `Before ${pageLabel(finding, "before")} / After ${pageLabel(finding, "after")}`;
                     button.append(label, location);
                     button.addEventListener("click", () => select(finding, true));
-                    list.querySelector(`[data-finding-group="${finding.category === "sequence" ? "sequence" : "attention"}"]`).appendChild(button);
+                    const group = ["uncertain", "formatting"].includes(finding.category) ? finding.category : "attention";
+                    list.querySelector(`[data-finding-group="${group}"]`).appendChild(button);
                 }
             }
             for (const button of list.querySelectorAll("[data-finding-id]")) {
                 const finding = data.findings[Number(button.dataset.findingId)];
-                button.hidden = state.category !== "all" && finding.category !== state.category;
+                button.hidden = !matchesFilter(finding);
                 button.setAttribute("aria-pressed", String(state.selected === finding.id));
             }
             list.querySelectorAll("[data-finding-group]").forEach(group => {
@@ -95,7 +99,7 @@
                 side.text.textContent = text || (finding ? "No matched text on this side. Inspect the page image." : "Select a text finding, or use Page comparison to inspect the full PDFs.");
                 if (text) {
                     const changed = document.createElement("span");
-                    changed.className = finding.category === "sequence" ? "cfm-comparison-text-sequence" : "cfm-comparison-text-change";
+                    changed.className = "cfm-comparison-text-change";
                     changed.textContent = text;
                     side.text.replaceChildren(changed);
                 }
@@ -110,6 +114,7 @@
                 }
                 side.layer.replaceChildren();
                 for (const location of finding?.[`${name}_locations`] || []) {
+                    if (finding.category === "formatting") continue;
                     if (location.page !== state[name]) continue;
                     const box = document.createElement("span");
                     box.className = "cfm-comparison-mark";
@@ -134,11 +139,12 @@
         }
         function select(finding, reveal = false) {
             state.selected = finding?.id ?? null;
+            root.classList.toggle("cfm-comparison-uncertain-selected", finding?.category === "uncertain");
+            root.classList.toggle("cfm-comparison-formatting-selected", finding?.category === "formatting");
             if (finding) {
                 state.before = finding.before_page || finding.before_reference_page || state.before;
                 state.after = finding.after_page || finding.after_reference_page || state.after;
             }
-            root.classList.toggle("cfm-comparison-sequence-selected", finding?.category === "sequence");
             const findings = visibleFindings();
             const index = findings.findIndex(item => item.id === state.selected);
             query("[data-comparison-heading]").textContent = finding?.label || "Manual page comparison";
@@ -146,13 +152,20 @@
             query("[data-comparison-position]").textContent = index < 0 ? "" : `${index + 1} / ${findings.length}`;
             let message = "Browse every page to compare tables, figures, equations, and layout. No automatic completeness verdict is provided.";
             if (finding) {
-                message = finding.category === "sequence" ? "This exact token sequence occurs once in each PDF and was paired one-to-one. Its position in the extracted document sequence differs; compare both locations. This does not confirm unchanged layout or meaning."
-                    : finding.category === "text" ? "Text did not match here. It may have changed, moved, or been extracted in a different order; check both pages. Repeated or uncertain passages are not automatically paired."
+                message = finding.category === "uncertain" ? "These PDF characters could not be read reliably. Compare the marked regions visually. This region may also contain real added, changed or removed text; it has not been assumed unchanged."
+                    : finding.category === "formatting" ? "Non-drawing U+200B characters were excluded from text matching, not from this record. No content-change highlights are drawn for them. Other text changes remain separate findings."
+                    : finding.category === "text" ? "Highlighted text was added, removed, or changed in the extracted content. Confirm against the PDFs; unreliable text encoding can also cause differences. Exact matched text moved by reflow is not highlighted."
                         : data.text_available ? "This pattern occurs more often in the corrected extracted text than in the baseline. Check the actual page before deciding it is an error."
                             : "This pattern is present in the corrected extracted text, but the baseline has no extractable text. It cannot be classified as new; inspect both PDFs manually.";
                 if (finding.locations_truncated) message += " Only the first word regions are highlighted; the passage is longer.";
             }
             query("[data-comparison-description]").textContent = message;
+            const evidence = query("[data-comparison-evidence]");
+            evidence.hidden = !finding?.issues?.length;
+            query("[data-comparison-evidence-reason]").textContent = [...(finding?.issues || []), ...(finding?.fonts?.length ? [`Fonts: ${finding.fonts.join(", ")}`] : [])].join(" ");
+            for (const side of ["before", "after"]) {
+                query(`[data-comparison-raw-${side}]`).textContent = (finding?.[`${side}_raw`] || "No extracted passage.").replace(/\u200b/g, "[U+200B]");
+            }
             query("[data-comparison-map-status]").textContent = "Finding locations contain actual text only. A side without corresponding text shows a separately labeled reference page. Page linking uses matched content, not equal page numbers.";
             root.querySelectorAll("[data-comparison-step]").forEach(button => button.disabled = findings.length === 0);
             renderList(); renderPages();

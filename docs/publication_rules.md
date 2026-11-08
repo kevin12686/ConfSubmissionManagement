@@ -309,8 +309,13 @@ and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
 corrected files or historical baselines never trigger a substitute. A comparison
 with no findings is not proof of intact figures, tables, equations, or layout.
 Header/footer text stays in comparison. Exact same-text reconciliation retains
-both occurrences and all unpaired remainder, does not waive a content change,
+both occurrences in token accounting and all unpaired remainder; exact moved
+text is not highlighted. This does not waive a content change,
 and cannot affect readiness. Reference-page navigation is not a text match.
+Unreliable text/formula regions remain explicit verification warnings even if
+their extracted strings match. Non-drawing U+200B normalization remains
+inspectable information. Neither classification is a publication approval;
+no comparison classification changes the selected files or review evidence.
 
 Automatic Original comparison starts separately after a successful Formatting
 PDF save, never within its transaction. A signed request binds the exact saved
