@@ -72,10 +72,15 @@ fail explicitly. Comparison data is excluded from archives, protected from
 normal Reports cleanup, and covered by full Clear Database. Archive v8 remains
 unchanged because neither model state nor retained artifact contracts change.
 
-Ruled-table detection runs in a bounded, read-only subprocess because PyMuPDF's
-detector mutates global rendering settings. Cell geometry and read-only font
-evidence return to the web process; worker failure stops comparison rather than
-claiming success.
+Evidence inspection, including ruled-table detection, and token alignment run
+together in the read-only `pdf_comparison_worker.py` subprocess. Isolation also
+contains PyMuPDF table detection's mutable global rendering settings. The worker
+receives exact PDF byte snapshots, has no Django/database or publication metadata
+access, and performs no filesystem writes. It returns bounded occurrence and
+alignment evidence for parent validation. Its CPU soft limit is 90 seconds
+(95-second hard limit where supported); the parent enforces a 95-second wall
+timeout. Windows relies on the wall timeout and bounded inputs. Worker failure
+or invalid alignment evidence stops comparison rather than claiming success.
 Native text runs retain glyph coordinates and every token, including headers
 and footers, without interleaving columns by y coordinate. Detected ruled-table
 cells use spatial row/column order rather than PDF painting order.
@@ -92,18 +97,35 @@ content/CMap parser inside the isolated comparison worker. Standard fonts and
 explicit supported encodings do not require ToUnicode. Partial/invalid maps,
 unresolved resource identities, and contradictory glyph ink remain uncertain.
 Font aliases come from the same embedded font, not a font-name heuristic.
-Missing used codes make the corresponding font regions on that page uncertain;
-this can conservatively include prose using the same font. Glyph contradictions
-extend to their same-font line region. Uncertain tokens cannot align or seed
-moved-text reconciliation (except byte-identical PDFs).
+Occurrence inspection replaces blanket same-font/page warnings with per-occurrence
+code/glyph/paint evidence. Unattributable occurrences remain explicitly uncertain.
+Strict paint-pair deduplication must not merge independent overprints; ambiguous
+overprints remain warnings. Context-aware alignment consumes occurrences
+one-to-one. Unicode uncertainty is distinct from unsupported glyph identity:
+identical exact opaque outlines may align through matching `opaque_key` and
+context when `text_identity_supported` is true, without inventing Unicode.
+Limited coverage and the unknown-Unicode reason remain; unmatched opaque glyphs
+warn. Supported role changes are checked separately and still warn. Unknown
+mathematical baseline attachment of otherwise known Unicode limits structural
+coverage without inventing a text edit or assuming a missing role is baseline.
+Approximate vectors can locate candidate counterparts only; both remain uncertain,
+never equality anchors or recovered text.
 No guessed Unicode recovery, OCR approval or approximate visual equality is used.
 Raw text, font identity, reasons and source positions accompany uncertain
 findings. Only mapped U+200B with empty glyph ink is normalized, with separate
 counts/locations/raw contexts. Other controls and visible whitespace glyphs stay
 in the comparison. Coverage counts normalized tokens plus an explicit control
 inventory. Uncertainty is advisory Warning; normalization records are Info.
-Comparison payload method v4 rejects earlier results with a rebuild prompt; this
-temporary payload version is independent of System State archive v8.
+The UI displays coverage status/reasons, evidence counts and
+per-finding explanations, including structure warnings. Limited coverage is a
+result with limitations; parser failure supplies no result. Complete means only
+that supported engine checks completed, not that full math, images or layout
+were validated. Approximate glyph/vector matches cannot establish equality;
+ambiguous vectors and unsupported formulas require warnings. See the
+[comparison contract](pdf_comparison.md) for exact-evidence requirements,
+corrective classification rules and supported-scope boundaries.
+Temporary method 6 requires rebuilding method-5 and older results and remains
+independent of System State archive v8.
 
 Automatic upload comparison orchestration belongs to
 `automatic_pdf_comparison.py`, not the Formatting transaction. A typed

@@ -303,7 +303,8 @@ page pairing follows text rather than page numbers. No automatic table/image
 completeness verdict is permitted.
 
 Reflow a two-page document while preserving its second-page header: expect
-one visible same-text record at page 2/2, not separate removal/addition. A real
+exact matched text to be accounted for without a same-text record or separate
+removal/addition. A real
 title deletion must remain a separate content finding. Then change/remove the
 header, edit footer years/table numbers, remove one repeated sentence, change a
 suffix/punctuation beside a moved passage, and introduce a footer reference
@@ -325,6 +326,61 @@ Non-drawing U+200B-only differences should be Info with raw context and counts;
 real edits beside them, other control characters, operators and numeric changes
 must remain visible. Check all three groups/filters, evidence text contrast,
 Ctrl magnification and narrow-screen stacking without horizontal overflow.
+For the [comparison contract](pdf_comparison.md), use synthetic fixtures
+for UI QA, then repeat against actual engine payloads before release claims:
+
+- Check complete/limited/missing coverage, reasons with zero findings, evidence
+  counts including zero, truncation, pairing limits, parser failure, and page-image
+  failure. No state may imply image preservation or full-math validation.
+  With a long reason list, confirm Coverage details starts closed while the
+  coverage heading and brief warning remain visible; expanding it reveals every
+  reason without horizontal overflow.
+- Keep content/structure Warning, uncertainty Warning and normalization Info
+  separate. Structural findings have their own filter and explanation, not
+  reference-error copy. Evidence text must remain literal, including markup-like
+  strings; long reasons must wrap at 320, 768, 1024 and 1440 pixel widths.
+- Focus each side's actual selected region, including tiny symbols and multi-page
+  findings. Reference pages, Info-only findings, text mode and unloaded images
+  must not focus a fabricated location. Page linking, Ctrl magnification,
+  keyboard access and highlight toggles remain usable. Confirm the inline mark
+  legend matches the shared overlay palette, wraps without overflow and is
+  hidden in text mode; no extra warning panel is introduced.
+- Verify one defective occurrence does not taint unrelated same-font prose;
+  strict paint-pair deduplication does not collapse independent overprints;
+  approximate glyph/vector matches never become definitive equality; ambiguous
+  vectors and unsupported formulas warn; repeated/context-sensitive alignment
+  consumes occurrences one-to-one and preserves real edits.
+- Pair identical exact-outline opaque glyphs with supported identity and matching
+  context: no Unicode may be invented, and unknown-Unicode/limited coverage must
+  remain. Unmatched opaque glyphs, differing context/outlines and unsupported
+  identity must not silently match. Repeated opaque glyphs are consumed one-to-one.
+  Supported script-role changes still warn on matched opaque identities. Unknown
+  mathematical baseline attachment of known Unicode must not invent a text edit
+  or an ordinary-baseline role. Approximate vectors may suggest counterparts only;
+  the resulting findings remain uncertain, never equality or recovered text.
+
+Apply the canonical [corrective acceptance requirements](pdf_comparison.md#acceptance-handoff)
+to the actual engine, not only UI fixtures or injected evidence. Pin input hashes
+and reviewed finding identities before comparing outputs. Include segmented
+vertical filled table rules, repaired native/presentation mappings, unchanged
+script attachment, and genuine mutations beside each. Run metadata/document-ID
+transformations with no database or audit access and verify the content-preserving
+premise before judging the result. Both the byte-identical control and the
+changed-bytes case must be exercised. Adjudicate residual warning classes rather
+than treating zero warnings, a smaller count, or a green suite as acceptance.
+Exercise both exact vector-pair proof paths in the canonical contract, including
+the render-source closure's unsupported, duplicate and changed-resource cases.
+Keep the real author-comma baseline-to-superscript change and any unproved
+vector-to-font substitution visible; metadata-only controls do not justify
+clearing those findings from the original/corrected comparison.
+Recheck all real cases in the workspace, including the densest uncertainty case,
+at desktop and 320/768 pixel widths. Preserve publication/baseline selection and
+verify actual/reference pages, evidence, focus, legend and exact snapshot links.
+Confirm method-5 results require rebuilding rather than rendering under method 6.
+
+Record actual-engine gate results and engine-owner release acceptance separately
+from synthetic UI checks. These instructions are acceptance scenarios, not a
+claim that they have all passed.
 State ZIP excludes comparison staging while retaining history/review
 artifacts. Ordinary cleanup preserves staging; Clear Database removes it.
 

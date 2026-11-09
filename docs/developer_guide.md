@@ -198,16 +198,34 @@ Put reusable workflow behavior in services:
   contributes to coverage but not
   highlights or counts. Read native glyph runs, order detected ruled-table cells
   spatially, and keep display glyph refinement separate from token accounting.
-  Keep evidence inspection isolated in `pdf_comparison_worker.py`: table detection uses mutable
-  global state. Test timeout failure, rotated cells and unchanged parent rendering
-  settings; never silently skip failed table detection.
+  Keep evidence inspection and token alignment inside `pdf_comparison_worker.py`,
+  not the request process: table detection also uses mutable global state.
+  Pass exact PDF bytes, never model objects or live file paths. The worker has
+  no Django initialization, database/publication metadata access or filesystem
+  writes. Enforce the 90-second CPU soft limit (95-second hard limit where
+  supported) and the parent's 95-second wall timeout; Windows relies on the wall
+  timeout and bounded inputs. Validate returned occurrence and alignment evidence
+  in the parent. Test timeout failure, rotated cells and unchanged parent rendering
+  settings; never silently skip failed inspection or treat it as a complete result.
   `pdf_text_evidence.py` uses structured PDF operations and bounded CMap records
-  to inspect actually used font codes. Unknown or unsupported evidence must
-  remain a warning, including when raw extracted strings happen to match.
+  to inspect actually used font codes. Matching raw strings alone cannot resolve
+  unknown or unsupported evidence. Separate Unicode certainty from supported
+  identity: matching exact-outline `opaque_key` values with
+  `text_identity_supported=True` may align one-to-one in matching context while
+  preserving unknown Unicode and limited coverage. Unmatched opaque glyphs warn;
+  an unsupported identity cannot become equal merely by supplying an opaque key.
+  Check supported script-role changes independently. Unknown mathematical
+  baseline attachment of known Unicode must limit coverage, not invent a text
+  edit or an ordinary-baseline role. Approximate vectors may locate candidate
+  counterparts only; those counterparts remain uncertain and cannot seed equality.
   Preserve raw text, font aliases, positions and reasons. Do not infer Unicode
   from font names, the other PDF, OCR or approximate raster similarity.
-  A used missing code makes that font's page regions uncertain; do not guess
-  which fallback Unicode character a PDF extractor will return.
+  Use per-occurrence evidence rather than blanket same-font/page
+  uncertainty. Unsupported occurrence attribution remains explicit uncertainty;
+  never guess which fallback character an extractor will return. Strict
+  paint-pair deduplication must not merge independent overprints. Exact evidence,
+  conservative vector limits and one-to-one/context-aware alignment are specified
+  in the [comparison contract](pdf_comparison.md).
   Only non-drawing U+200B with no detected mapping issue may be normalized;
   retain an explicit inventory. Test visible glyphs mapped to controls, other
   zero-width controls, malformed/partial maps, forms, sub/superscripts and real
@@ -217,6 +235,18 @@ Put reusable workflow behavior in services:
   old signed result under a new algorithm. Regression coverage must include
   repagination, repeated/deleted passages, partial-word and numeric edits,
   multi-page findings, and byte-identical publication/CrossCheck output.
+  The workspace consumes `coverage_status`, `coverage_reasons`, `evidence_summary`
+  and finding `issues` without deriving safety from counts. `structure` is a
+  warning category, distinct from uncertain evidence and normalization Info.
+  Run `node --test submissions/tests/js/pdf_comparison.test.mjs` for UI contract
+  coverage, plus actual-payload browser QA. Synthetic UI tests do not validate
+  engine behavior. Keep automatic upload receipts and controller ownership intact.
+  Follow the contract's corrective acceptance requirements: hash-pinned real
+  cases with reviewed expectations, metadata-only transformations whose text,
+  geometry and rendering are verified unchanged, and mutation checks beside
+  uncertain regions. Run pure comparisons with database access disabled. Do not
+  equate the regression-suite count, injected-evidence tests or reduced warning
+  totals with successful parser-to-finding acceptance.
 - Automatic post-upload comparison: `automatic_pdf_comparison.py`, with the
   shared `formatting_comparison_status` partial/CSS/JS. Prepare a signed receipt
   only after a successful save returns its exact `FormattingSaveResult`;

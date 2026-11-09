@@ -631,26 +631,54 @@ characters. Context is shown separately. Warning styling is advisory, never
 an export blocker or approval. Text-layer encoding differences, particularly
 equation fonts, can produce findings even when rendered glyphs look the same.
 
-The workspace separates **Text changes**, **Check text / formula** warnings,
-and **Formatting information**. The top summary counts all three independently;
-zero text changes does not mean there are no regions to verify. Amber dashed
-outlines mean the text cannot be read reliably, not that the region is unchanged.
+The workspace separates **Content / structure findings**, **Check text / formula** warnings,
+and **Formatting information** (normalization Info). Structural findings
+also appear as warnings with a **Structure warnings** filter, not as reference
+errors. The top summary separates content findings (including structure),
+uncertainty warnings, and normalization Info;
+zero content findings does not mean there are no regions to verify. Amber dashed
+outlines mark uncertain evidence or a supported structural warning, not an
+unchanged region.
 These regions can also contain real additions/removals. Compare both saved PDF
-images and open Extraction details for the raw text, fonts and reason. No text
+images and open Finding evidence / extraction details for raw text, fonts and
+per-finding explanations. No text
 is guessed from context, and no formula is silently excluded or auto-approved.
-An unavailable/ambiguous mapping remains a verification warning even when both
-PDFs extract the same characters. Byte-identical files are separately identified.
+Matching extracted strings alone does not resolve unavailable/ambiguous mappings.
+The comparison contract also distinguishes exact opaque glyph identity from known
+Unicode: identical exact outlines may be paired one-to-one without guessing a
+character, while Unicode remains unknown and coverage remains limited. Unmatched
+opaque glyphs still warn; supported subscript/superscript role changes still warn
+even for matched glyphs. Unknown mathematical baseline attachment of known text
+does not by itself prove a text edit. Byte-identical files are separately identified.
+Comparison uses per-occurrence evidence rather than
+blanket same-font/page warnings: strictly verified paint pairs may be deduplicated,
+but independent overprints and ambiguous vectors remain warnings. Approximate
+glyph/vector matches and OCR guesses cannot establish equality. Approximate
+vectors may suggest a counterpart for an uncertainty finding, not recovered text
+or equality; unsupported formula coverage remains a limitation. Matched exact
+opaque glyphs may leave only a coverage limitation, not a text-change warning.
+See the [comparison contract](pdf_comparison.md).
 
 Non-drawing U+200B zero-width spaces without detected mapping issues are removed
 only from comparison text. Their counts, pages and raw contexts remain under
-Formatting information, with `[U+200B]` visible in Extraction details. This is a
+Formatting information, with `[U+200B]` visible in the evidence details. This is a
 normalization inventory, not a count of deleted words. Other controls, ordinary
 spaces, and any glyph that still draws are not deleted by this rule.
 
 Select a finding to view both passages and their highlighted page regions.
+The inline mark legend distinguishes Before/After text, amber review regions,
+and the blue focused region; these colors do not indicate review approval.
 Switch to Text changes for the extracted passages. Browse all pages for manual
-table, figure, equation, and layout checks; no automatic completeness verdict
-is provided. Page linking uses confidently matched text rather than equal page
+table, figure, equation, and layout checks. **Engine coverage** distinguishes
+supported checks completed from a limited result. Open **Coverage details** for
+limitation reasons; the coverage heading and brief warning stay visible.
+Expandable engine evidence counts are separate from finding counts. Missing
+coverage metadata is labeled not reported. Neither complete engine coverage nor
+zero findings certifies figures, image preservation, full mathematical structure,
+tables or layout. Unknown/unsupported regions are not treated as unchanged.
+**Comparison unavailable** means no result is available, including after a parser
+failure; it is not a limited result with zero findings. Page linking uses
+confidently matched text rather than equal page
 numbers; unpaired pages remain independently selectable. Each side can open
 the exact compared PDF. Ctrl magnification and loading/retry behavior match
 the existing review images.
@@ -660,8 +688,14 @@ is explicitly labeled as such; its displayed PDF page is a reference page,
 selected from a reliable page match or left manually selected. It is never
 reported as the passage location. Multi-page findings offer a finding-page
 selector on each side; manual page navigation clears the old finding selection.
+The small focus symbol beside each side's position brings the first highlighted
+region on its current actual finding page into view. It is disabled on reference
+pages, while loading, in text mode, and when no highlight is available. Ctrl
+magnification remains unchanged; focus does not choose another page or revision.
 
-Comparisons expire after two hours and reject changed publication scope,
+Method-5 and older comparison results must be rebuilt for method 6; rebuilding
+does not approve the PDF or change its publication selection. Comparisons expire
+after two hours and reject changed publication scope,
 selected file identities/bytes, missing baselines, or damaged snapshots. Build
 a new comparison rather than reusing a stale result. Limits are 64 MiB, 100
 pages, and 30,000 tokens per PDF; up to 300 findings and limited passage

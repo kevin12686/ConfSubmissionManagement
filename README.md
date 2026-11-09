@@ -57,6 +57,12 @@ one local application:
 - records state-changing work in an audit log and creates portable System State
   backups.
 
+The PDF comparison shows engine coverage status, limitation reasons,
+evidence counts and structural warnings; see the
+[comparison contract](docs/pdf_comparison.md).
+Engine completion is not publication approval and does not certify figures,
+image preservation or full mathematical structure.
+
 Automatic CrossCheck has no prefilled service address. In Settings, enter the
 URL and any required service login before testing the connection. Optional
 credentials can be saved for that URL without enabling the integration or

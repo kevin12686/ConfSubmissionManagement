@@ -472,15 +472,40 @@ or green completeness badge in this workspace.
 Show content/pattern findings in one navigator using the existing Warning amber
 tokens, with Added / Changed / Removed and error-pattern filters. Exact matched
 reflow has no finding, highlight or Info badge. Total and displayed counts must
-be distinct when capped; a limited result must never look complete.
+be distinct when capped; a limited result must never look complete. Render
+`coverage_status` separately: complete means supported engine checks completed,
+not publication safety. Limited coverage retains reasons even with zero content
+findings. Missing metadata says not reported; parser failure says Comparison
+unavailable, and image-load failure remains a separate error. Do not derive a
+safety score from `evidence_summary`. Show its engine-named counts in expandable
+details. Keep limitations in one coverage notice, not stacked generic,
+uncertainty and text-unavailable disclaimers. The content total includes
+structure; do not show it again as an additional independent total.
+Keep the coverage heading and brief warning visible. Put the reason list in a
+closed-by-default Coverage details disclosure within that same notice, so long
+lists do not displace the findings. Evidence counts retain their own disclosure.
+See the [comparison contract](pdf_comparison.md) for the evidence contract.
 Use the same navigator for **Check text / formula** (Warning) and **Formatting
 information** (neutral Info), with independent totals above the workspace.
 Uncertain regions use amber dashed outlines, not a confirmed insertion/deletion
-color. Raw extracted text, font identity and the inspection reason belong in
-Extraction details. Render raw U+200B visibly as `[U+200B]` there; its information
+color. Keep the compact mark legend inline above the pages, sharing the overlay
+palette: Before/After text, amber review outline and blue focus outline. It is
+not a separate panel and is hidden in text mode. Raw extracted text, font
+identity and the inspection reason belong in
+Finding evidence / extraction details. Show each `issues` explanation as plain
+text in every category, including structural findings and normalization Info.
+Render raw U+200B visibly as `[U+200B]` there; its information
 record has no content-change overlay. A zero content count alongside uncertainty
 must still direct the editor to check both PDFs. Automatic upload status must
 also say that text/formula verification is needed.
+`structure` findings belong to the content/structure Warning group with an
+independent filter and amber outlines, never the reference-error description.
+Neither approximate glyph/vector matches nor unsupported formula regions may
+be presented as unchanged. No UI result certifies image preservation or full
+mathematical structure.
+Evidence corrections belong in the engine. Do not relabel, suppress or cap away
+uncertainty to make a result look improved; retain supported coverage limitations
+and test the densest real result as well as small synthetic UI fixtures.
 Category headings are unfilled, non-interactive text with a bottom divider and
 space before the indented findings. Do not reuse item-style filled surfaces or
 left borders on these headings. Clickable findings retain restrained
@@ -492,6 +517,10 @@ List actual passage pages independently on Before/After; a side without text
 says **No corresponding text** and labels its viewer as a reference page.
 Multi-page passages use side-specific finding-page selectors. Changing those
 selectors retains the selected finding; ordinary page browsing clears it.
+Use a compact, named/tooltip focus symbol per side to reveal the first actual
+highlight on that side's current finding page through the existing workspace
+reveal helper. Do not focus a reference page, unloaded image or normalization
+inventory. Keep the existing Ctrl magnifier; no new viewer/zoom framework.
 
 ## Title/Author Evidence
 

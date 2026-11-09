@@ -3,6 +3,56 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.21.1 - Unreleased
+
+- Advance temporary comparisons to method 6, requiring method-5 and older
+  results to be rebuilt instead of reusing earlier evidence classifications.
+- Classify supported connected table rulings and junctions as graphics, retaining
+  their coverage limits. Resolve repeated row labels only within a uniquely
+  corresponding complete ordered table, without skipping cell-content checks.
+- Separate native boundary extraction from `ActualText` presentation substitutions
+  and retain span evidence. Keep unresolved script attachment distinct from a
+  supported baseline role, preserving genuine structural changes.
+- Require actual-engine, content-preserving metadata transformations and mutation
+  checks; a passing test total or lower warning count alone is not semantic acceptance.
+- Pair unique vector occurrences using exact bounded page/resource-source
+  identity plus identical appearance and position, including metadata/ID-only
+  rewrites. Unsupported source graphs provide no proof; Unicode and graphics
+  coverage limitations remain. This static-paint proof does not validate hyperlink
+  navigation. Genuine script-role changes and unproved
+  vector-to-font substitutions still require review.
+- Consolidate the evidence contract in `docs/pdf_comparison.md`. Keep explicit
+  coverage limitations, exact-evidence requirements and manual review; neither
+  zero findings nor complete supported checks certifies full math or images.
+- Set app version 1.21.1. State archive v8, publication selection, saved files,
+  upload revision binding and review state remain unchanged by comparison.
+
+## 1.21.0 - Unreleased
+
+- Integrate method-5 coverage status/reasons, evidence
+  counts, per-finding explanations and structure warnings. Separate supported
+  check completion from limited coverage, parser failure and page-image failure;
+  none is a publication approval or certification of images/full math structure.
+  Keep long limitation lists in Coverage details while the brief warning remains
+  visible.
+- Keep content/structure warnings, uncertainty warnings and normalization Info
+  distinct. Add a small per-side focus control for the selected actual finding
+  region and an inline mark legend using the shared palette, retaining existing
+  page images, Ctrl magnification and reference labels.
+- Document the engine's per-occurrence evidence, strict paint-pair
+  deduplication, independent-overprint ambiguity, exact evidence requirements,
+  conservative vector coverage and one-to-one/context-aware alignment contract.
+  Evidence inspection and primary alignment run inside the read-only worker,
+  with a 90-second CPU soft limit and 95-second parent wall timeout, without DB
+  access. Release acceptance is recorded separately from this design summary.
+- Clarify that exact opaque glyph identity may align without Unicode recovery
+  while only the coverage limitation may remain. Unmatched opaque glyphs and
+  supported role changes still warn; unknown mathematical baseline attachment must not invent
+  text edits. Unknown approximate vector candidates remain uncertainty warnings,
+  never equality or Unicode guesses.
+- Set app version 1.21.0. State archive v8, saved files, publication selection,
+  automatic upload revision binding and review state are unchanged by the comparison workflow.
+
 ## 1.20.1 - 2026-11-08
 
 - Distinguish text changes from text/formula regions with unreliable character

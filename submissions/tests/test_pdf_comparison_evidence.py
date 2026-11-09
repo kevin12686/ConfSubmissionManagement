@@ -1,5 +1,6 @@
 """Generated PDFs test evidence failures without private papers or font-name rules."""
 import io
+import copy
 from unittest.mock import patch
 
 import fitz
@@ -7,8 +8,9 @@ from django.test import SimpleTestCase
 from pypdf import PdfReader
 from pypdf.generic import DecodedStreamObject
 
-from submissions.services.pdf_comparison import _extract, compare_pdf_bytes
-from submissions.services.pdf_text_evidence import document_font_evidence, unicode_map
+from submissions.services.pdf_comparison import _extract, _validate_evidence, compare_pdf_bytes
+from submissions.services.pdf_text_alignment import align_tokens
+from submissions.services.pdf_text_evidence import unicode_map
 from submissions.tests.test_pdf_comparison import make_pdf, make_positioned_pdf
 
 
@@ -30,14 +32,154 @@ def coded_pdf(text, *, missing=(), replacements=None, malformed=False):
 
 
 class PDFEvidenceTests(SimpleTestCase):
-    def test_partial_mapping_flags_only_used_codes(self):
-        self.assertFalse(document_font_evidence(coded_pdf("A", missing="z"))["1"]["fonts"][0]["reason"])
-        self.assertTrue(document_font_evidence(coded_pdf("z", missing="z"))["1"]["fonts"][0]["reason"])
+    def test_exact_page_source_pairs_only_unique_identical_drawing_occurrences(self):
+        left, right = make_pdf(["Alpha Beta"]), make_pdf(["Alpha Beta"])
+        original = [_extract(left), _extract(right)]
+        for mutation in (None, "resource", "appearance", "position", "duplicate_region", "duplicate_page", "missing"):
+            evidence = copy.deepcopy(original)
+            region = {"page": 1, "box": [.2, .2, .3, .3], "issues": ["Unknown vector Unicode"],
+                      "appearance_key": "a" * 64, "right_token_index": 1}
+            for document in evidence:
+                document["pages"][0]["render_source_key"] = "c" * 64
+                document["uncertain_regions"] = [copy.deepcopy(region)]
+                document["coverage_reasons"] = ["Unknown vector Unicode"]
+            if mutation == "resource":
+                evidence[1]["pages"][0]["render_source_key"] = "d" * 64
+            elif mutation == "appearance":
+                evidence[1]["uncertain_regions"][0]["appearance_key"] = "b" * 64
+            elif mutation == "position":
+                evidence[1]["uncertain_regions"][0]["box"][1] = .1
+            elif mutation == "duplicate_region":
+                evidence[1]["uncertain_regions"].append(copy.deepcopy(region))
+            elif mutation == "duplicate_page":
+                evidence[1]["pages"].append({**evidence[1]["pages"][0], "number": 2})
+            elif mutation == "missing":
+                del evidence[1]["pages"][0]["render_source_key"]
+            opcodes, limited = align_tokens(evidence[0]["tokens"], evidence[1]["tokens"])
+            evidence[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
+            with self.subTest(mutation=mutation), patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
+                result = compare_pdf_bytes(left, right)
+                self.assertEqual(result["uncertain_count"], 0 if mutation is None else 3 if mutation == "duplicate_region" else 2)
+                self.assertEqual(result["coverage_status"], "limited")
+                self.assertIn("Unknown vector Unicode", result["coverage_reasons"])
 
-    def test_partial_mapping_does_not_assume_the_extractors_fallback_character(self):
-        record = document_font_evidence(coded_pdf("Q!", missing="!"))["1"]["fonts"][0]
-        self.assertTrue(record["all"])
-        self.assertTrue(all(token["issues"] for token in _extract(coded_pdf("Q!", missing="!"))["tokens"]))
+    def test_page_render_source_key_is_validated_at_worker_boundary(self):
+        original = _extract(make_pdf(["Source proof validation"]))
+        for value in ("", "z" * 64, "a" * 63, "a" * 65, 1, True, [], {}):
+            document = copy.deepcopy(original)
+            document["pages"][0]["render_source_key"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "render source"):
+                _validate_evidence(document)
+
+    def test_vector_pair_requires_exact_appearance_anchors_and_attachment(self):
+        for mutation in (None, "appearance", "geometry", "duplicate"):
+            left, right = make_pdf(["Alpha Beta old"]), make_pdf(["Alpha Beta new"])
+            evidence = [_extract(left), _extract(right)]
+            region = {"page": 1, "box": [.2, .2, .3, .3], "issues": ["Unknown vector Unicode"],
+                "left_token_index": 0, "right_token_index": 1, "appearance_key": "a" * 64,
+                "anchor_geometry": {"left": ["1", "-1", "2", "0"], "right": ["-2", "-1", "-1", "0"]}}
+            for document in evidence:
+                document["uncertain_regions"] = [copy.deepcopy(region)]
+                document["coverage_reasons"] = []
+            if mutation == "appearance":
+                evidence[1]["uncertain_regions"][0]["appearance_key"] = "b" * 64
+            elif mutation == "geometry":
+                evidence[1]["uncertain_regions"][0]["anchor_geometry"]["left"][1] = "1"
+            elif mutation == "duplicate":
+                evidence[0]["uncertain_regions"].append(copy.deepcopy(region))
+            opcodes, limited = align_tokens(evidence[0]["tokens"], evidence[1]["tokens"])
+            evidence[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
+            with self.subTest(mutation=mutation), patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
+                result = compare_pdf_bytes(left, right)
+                self.assertEqual(result["uncertain_count"], 0 if mutation is None else 3 if mutation == "duplicate" else 1)
+                self.assertEqual(result["coverage_status"], "limited")
+                if mutation in {"appearance", "geometry"}:
+                    warning = next(f for f in result["findings"] if f["category"] == "uncertain")
+                    self.assertTrue(warning["before_locations"])
+                    self.assertTrue(warning["after_locations"])
+                    self.assertIn("not established", " ".join(warning["issues"]))
+                changes = " ".join(f["before_text"] + f["after_text"] for f in result["findings"] if f["category"] == "text")
+                self.assertIn("old", changes)
+                self.assertIn("new", changes)
+
+    def test_vector_counterpart_stays_uncertain_and_neighboring_real_change_survives(self):
+        for reverse in (False, True):
+            left, right = make_pdf(["Alpha Beta old"]), make_pdf(["Alpha { Beta new"])
+            evidence = [_extract(left), _extract(right)]
+            evidence[0]["uncertain_regions"] = [{"page": 1, "box": [.2, .2, .3, .3],
+                "issues": ["Vector glyph cannot be identified uniquely."],
+                "left_token_index": 0, "right_token_index": 1, "candidate_values": ["{"]}]
+            if reverse:
+                left, right = right, left
+                evidence.reverse()
+            opcodes, limited = align_tokens(evidence[0]["tokens"], evidence[1]["tokens"])
+            evidence[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
+            with self.subTest(reverse=reverse), patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
+                result = compare_pdf_bytes(left, right)
+                self.assertEqual(result["uncertain_count"], 1)
+                warning = next(f for f in result["findings"] if f["category"] == "uncertain")
+                self.assertTrue(warning["before_locations"])
+                self.assertTrue(warning["after_locations"])
+                edits = " ".join(f["before_text"] + f["after_text"] for f in result["findings"] if f["category"] == "text")
+                self.assertIn("old", edits)
+                self.assertIn("new", edits)
+                self.assertEqual(result["coverage_status"], "limited")
+
+    def test_many_vectors_cannot_be_collapsed_onto_one_unmatched_character(self):
+        left, right = make_pdf(["Alpha Beta"]), make_pdf(["Alpha { Beta"])
+        evidence = [_extract(left), _extract(right)]
+        region = {"page": 1, "box": [.2, .2, .3, .3], "issues": ["Unresolved"],
+            "left_token_index": 0, "right_token_index": 1, "candidate_values": ["{"]}
+        evidence[0]["uncertain_regions"] = [region, copy.deepcopy(region)]
+        opcodes, limited = align_tokens(evidence[0]["tokens"], evidence[1]["tokens"])
+        evidence[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
+        with patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
+            result = compare_pdf_bytes(left, right)
+        self.assertEqual(result["uncertain_count"], 2)
+        self.assertTrue(any(f["after_text"] == "{" and f["category"] == "text" for f in result["findings"]))
+
+    def test_unresolved_vector_is_located_without_hiding_real_text_deletion(self):
+        before, after = make_pdf(["Deleted content. Stable content"]), make_pdf(["Stable content"])
+        evidence = [_extract(before), _extract(after)]
+        evidence[0]["uncertain_regions"] = [{"page": 1, "box": [.2, .2, .3, .3],
+            "issues": ["Vector glyph cannot be identified uniquely."]}]
+        opcodes, limited = align_tokens(evidence[0]["tokens"], evidence[1]["tokens"])
+        evidence[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
+        with patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
+            result = compare_pdf_bytes(before, after)
+        self.assertEqual(result["uncertain_count"], 1)
+        self.assertEqual(result["coverage_status"], "limited")
+        self.assertIn("Deleted content", " ".join(f["before_text"] for f in result["findings"] if f["category"] == "text"))
+        region = next(f for f in result["findings"] if f["category"] == "uncertain")
+        self.assertEqual(region["before_locations"], [{"page": 1, "box": [.2, .2, .3, .3]}])
+        self.assertFalse(region["after_locations"])
+
+    def test_worker_evidence_contract_rejects_incomplete_or_nonfinite_locations(self):
+        token = {"text": "x", "page": 1, "box": [.1, .1, .2, .2],
+                 "glyphs": [[.1, .1, .2, .2]], "word_start": 0, "word_end": 1, "issues": []}
+        valid = {"words": [token], "tokens": [token], "controls": [],
+                 "pages": [{"number": 1, "width": 600, "height": 800}]}
+        _validate_evidence(valid)
+        invalid = copy.deepcopy(valid)
+        invalid["uncertain_regions"] = [{"page": 1, "box": [0, 0, float("nan"), 1], "issues": ["Unresolved"]}]
+        with self.assertRaises(ValueError):
+            _validate_evidence(invalid)
+        for field, value in (("glyphs", []), ("glyphs", [[0, 0, float("nan"), 1]]),
+                             ("page", 2), ("word_end", 2), ("box", [0, 0, 2, 1]),
+                             ("char_meta", [None])):
+            invalid = copy.deepcopy(valid)
+            invalid["tokens"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                _validate_evidence(invalid)
+
+    def test_partial_mapping_flags_only_used_codes(self):
+        self.assertFalse(_extract(coded_pdf("A", missing="z"))["tokens"][0]["issues"])
+        self.assertTrue(_extract(coded_pdf("z", missing="z"))["tokens"][0]["issues"])
+
+    def test_partial_mapping_localizes_uncertainty_without_guessing_fallback(self):
+        tokens = _extract(coded_pdf("Q!", missing="!"))["tokens"]
+        self.assertTrue(any(token["issues"] for token in tokens))
+        self.assertTrue(any(token["text"] == "Q" and not token["issues"] for token in tokens))
 
     def test_regular_standard_font_without_tounicode_is_not_uncertain(self):
         self.assertEqual(compare_pdf_bytes(make_pdf(["A useful result"]), make_pdf(["A useful outcome"]))["uncertain_count"], 0)
@@ -56,7 +198,7 @@ class PDFEvidenceTests(SimpleTestCase):
             ref = int(doc.xref_get_key(doc[0].get_fonts()[0][0], "ToUnicode")[1].split()[0])
             doc.update_stream(ref, doc.xref_stream(ref).replace(b"<00> <ff>", b"<0000> <ffff>"))
             data = doc.tobytes()
-        self.assertFalse(document_font_evidence(data)["1"]["fonts"][0]["reason"])
+        self.assertTrue(all(not token["issues"] for token in _extract(data)["tokens"]))
 
     def test_same_extracted_letters_with_incomplete_mapping_are_not_silently_equal(self):
         r = compare_pdf_bytes(coded_pdf("Q!", missing="!"), coded_pdf("Q!", missing="!"))
@@ -118,10 +260,18 @@ class PDFEvidenceTests(SimpleTestCase):
         self.assertGreater(r["uncertain_count"], 0)
 
     def test_page_inspection_error_is_visible_and_does_not_use_equal_text_to_hide_it(self):
-        evidence = {"tables": {}, "fonts": {"1": {"fonts": [], "error": "Inspection failed"}}}
+        # The isolated worker now returns occurrence-level pair evidence.
+        evidence = [_extract(make_pdf(["Same text"])) for _ in range(2)]
+        for document in evidence:
+            for item in document["tokens"] + document["words"]:
+                item["issues"] = ["Page inspection failed"]
+                item["text_identity_supported"] = False
+            document["coverage_reasons"] = ["Page inspection failed"]
+        evidence[0]["alignment"] = {"opcodes": [["replace", 0, len(evidence[0]["tokens"]), 0, len(evidence[1]["tokens"])]], "limited": False}
         with patch("submissions.services.pdf_comparison._pdf_evidence", return_value=evidence):
             r = compare_pdf_bytes(make_pdf(["Same text"]), make_pdf(["Same text"]))
         self.assertGreater(r["uncertain_count"], 0)
+        self.assertEqual(r["coverage_status"], "limited")
 
     def test_nested_form_resources_are_inspected(self):
         source = coded_pdf("Q!", missing="!")
@@ -129,7 +279,9 @@ class PDFEvidenceTests(SimpleTestCase):
             page = doc.new_page()
             page.show_pdf_page(page.rect, original, 0)
             nested = doc.tobytes()
-        self.assertTrue(any(f["reason"] for f in document_font_evidence(nested)["1"]["fonts"]))
+        tokens = _extract(nested)["tokens"]
+        self.assertTrue(any(token["issues"] for token in tokens))
+        self.assertTrue(any(token["text"] == "Q" and not token["issues"] for token in tokens))
 
     def test_cmap_ranges_arrays_and_limits(self):
         reader = PdfReader(io.BytesIO(make_pdf(["Test"])))

@@ -740,12 +740,40 @@ afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
 
 **Check text / formula** means the PDF's character mapping or glyph evidence is
 unreliable, not that a formula was changed or approved. Open the marked regions
-and Extraction details. A glyph can render as a subscript while extracting as
+and Finding evidence / extraction details. A glyph can render as a subscript while extracting as
 punctuation. The system does not guess a replacement or ignore the formula.
 Real changes within uncertain regions still need visual verification. Zero-width
 U+200B characters are informational only when their glyph ink is empty and no
 mapping issue is detected; the raw contexts and counts remain available. Other
 controls are not blanket-removed. Older comparison methods require rebuilding.
+
+**Engine coverage: limited** means a result exists but its supported inspection
+could not cover all evidence. Read the reasons even when content counts are
+zero. **Engine coverage not reported** is not complete. **Comparison unavailable**
+means no result is available, for example after a parser/worker failure; retry
+or inspect the full PDFs. A page-image load error is separate from both states.
+Complete engine coverage is not a check of image preservation, figures or full
+mathematical structure, and unsupported regions are not unchanged.
+
+The [comparison evidence rules](pdf_comparison.md) attach reasons
+at the affected occurrence, not blanket same-font/page or `noFontTools` claims.
+Strict paint-pair deduplication must not hide independent overprints. Approximate
+glyph/vector matching is not definitive evidence; ambiguous vectors and
+unsupported formulas remain warnings/limitations. Approximate vector evidence
+may locate a possible counterpart, but neither becomes equal or recovered text.
+Exact opaque glyph pairs are different: supported exact-outline identity may
+align one-to-one without resolving Unicode, so zero content findings can coexist
+with unknown Unicode and limited coverage. Unmatched opaque glyphs still warn.
+Supported script-role changes still warn; unknown mathematical baseline attachment
+of known Unicode is a coverage limitation, not an invented text edit.
+Inspect structural warnings using their own evidence, not the reference-error
+explanation.
+
+Method-5 and older cached results require rebuilding for method 6. A reduction
+in warnings after rebuilding is not publication approval. If table rules are
+marked as formula glyphs, or a metadata-only change creates a warning flood,
+retain the input hashes and finding evidence for a comparison regression report;
+do not change the PDFs or dismiss all uncertainty to make the counts smaller.
 
 A saved Formatting PDF now starts an Original comparison through the returned
 page, not as part of saving the upload. If comparison fails, the corrected PDF,

@@ -16,7 +16,7 @@ from submissions.models import FinalSubmission
 from submissions.services.checks import publication_readiness_rows
 from submissions.services.formatting_history import capture_existing_formatting
 from submissions.services.pdf_comparison import (
-    PDFComparisonError, _extract, _scanned_findings, compare_pdf_bytes, comparison_page_png,
+    COMPARISON_VERSION, PDFComparisonError, _extract, _scanned_findings, compare_pdf_bytes, comparison_page_png,
     comparison_pdf_bytes, comparison_root, create_pdf_comparison, load_pdf_comparison,
 )
 from submissions.services.publication_read import publication_database_signature
@@ -428,9 +428,10 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
     def test_old_method_requires_explicit_rebuild_without_rewriting_saved_comparison(self):
         from django.core import signing
         payload = create_pdf_comparison(self.submission.pk)
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
         path = comparison_root() / payload["token"] / "payload.json"
         wrapper = json.loads(path.read_text())
-        payload["version"] = 1
+        payload["version"] = COMPARISON_VERSION - 1
         wrapper["signed"] = signing.dumps(payload, salt="submissions.pdf-comparison.v1", compress=True)
         path.write_text(json.dumps(wrapper))
         old_bytes = path.read_bytes()
@@ -439,6 +440,9 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertContains(response, "older comparison method", status_code=409)
         self.assertContains(response, "Build comparison", status_code=409)
         self.assertEqual(path.read_bytes(), old_bytes)
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+        self.assertEqual(Path(self.submission.pdf_file.path).read_bytes(), self.before)
+        self.assertEqual(Path(self.submission.formatted_pdf_file.path).read_bytes(), self.after)
 
     def test_scope_and_current_bytes_are_bound_but_notes_and_review_are_not(self):
         payload = create_pdf_comparison(self.submission.pk)
@@ -516,7 +520,7 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         response = self.client.post(self.url, {"baseline": "original", "next": "https://example.com/"})
         self.assertEqual(response.status_code, 302)
         response = self.client.get(response.url)
-        self.assertContains(response, "Needs a closer look")
+        self.assertContains(response, "Content / structure findings")
         self.assertContains(response, "Browse all pages")
         self.assertNotIn("example.com", response.context["back_url"])
         payload = response.context["comparison_data"]

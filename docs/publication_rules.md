@@ -312,10 +312,22 @@ Header/footer text stays in comparison. Exact same-text reconciliation retains
 both occurrences in token accounting and all unpaired remainder; exact moved
 text is not highlighted. This does not waive a content change,
 and cannot affect readiness. Reference-page navigation is not a text match.
-Unreliable text/formula regions remain explicit verification warnings even if
-their extracted strings match. Non-drawing U+200B normalization remains
+Matching extracted strings alone cannot resolve unreliable text/formula evidence.
+Exact opaque glyph identities may align one-to-one without known Unicode, but
+Unicode uncertainty and limited coverage remain; this is not semantic equality
+or approval. Unmatched opaque glyphs and supported structural-role changes still
+warn. Unknown mathematical baseline attachment must not invent a text edit.
+Non-drawing U+200B normalization remains
 inspectable information. Neither classification is a publication approval;
 no comparison classification changes the selected files or review evidence.
+Engine coverage is separate from publication readiness: `complete` covers only
+supported checks, and `limited` means a result with limitations, not parser
+failure. Missing coverage metadata cannot imply completeness. Unsupported regions
+are not unchanged. Approximate glyph/vector matches cannot certify equality;
+candidate counterparts remain uncertain, not accepted text.
+Neither a structural warning nor its absence validates full math, figures or
+image preservation. The [comparison contract](pdf_comparison.md) introduces
+no new publication approval path.
 
 Automatic Original comparison starts separately after a successful Formatting
 PDF save, never within its transaction. A signed request binds the exact saved

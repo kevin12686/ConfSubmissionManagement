@@ -14,6 +14,7 @@ current task instead of reading the set in order.
 | Docker operator | [Docker Guide](docker_guide.md) | Docker deployment, update, backup, migration, and rollback |
 | Developer | [Developer Guide](developer_guide.md) | Local development, code ownership, tests, and releases |
 | Maintainer reviewing design | [Architecture Notes](architecture.md) | System boundaries, data flow, concurrency, and safety rationale |
+| Maintainer reviewing PDF comparison | [PDF Comparison](pdf_comparison.md) | Evidence contract, supported scope and semantic acceptance |
 | Maintainer changing publication behavior | [Publication Rules](publication_rules.md) | Canonical publication scope, version, file, readiness, and export rules |
 | Maintainer changing shared UI | [UI Conventions](ui_conventions.md) | Canonical UI, worklist, navigation, and accessibility contracts |
 | Release reviewer | [Editorial Acceptance Runbook](editorial_acceptance_runbook.md) | Disposable end-to-end release validation |
@@ -64,6 +65,7 @@ kind of information has one canonical home:
 | Publication scope, active versions, file priority, readiness, export | Publication Rules |
 | Shared UI, worklists, navigation, accessibility | UI Conventions |
 | Internal components and design rationale | Architecture Notes |
+| PDF comparison evidence and semantic acceptance | PDF Comparison |
 | Code placement, tests, and release mechanics | Developer Guide |
 | Symptom-to-recovery instructions | Troubleshooting |
 | Manual release proof | Editorial Acceptance Runbook |
