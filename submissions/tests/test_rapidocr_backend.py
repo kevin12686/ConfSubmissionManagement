@@ -21,6 +21,21 @@ from submissions.tests.ocr_fixtures import ocr_pages
 
 
 class OCRProvisioningTests(SimpleTestCase):
+    def test_thread_configuration_is_bounded_by_runtime_capacity(self):
+        with patch.object(runtime.os, "cpu_count", return_value=8):
+            for value in ("1", "4", "6", "8"):
+                with self.subTest(value=value), patch.dict(os.environ, {runtime.THREAD_ENV: value}):
+                    self.assertEqual(runtime.ocr_thread_count(), int(value))
+            for value in ("0", "-1", "9", "6.5", "auto", ""):
+                with self.subTest(value=value), patch.dict(os.environ, {runtime.THREAD_ENV: value}):
+                    with self.assertRaises(ValueError):
+                        runtime.ocr_thread_count()
+        with patch.object(runtime.os, "cpu_count", return_value=4), patch.dict(os.environ, {runtime.THREAD_ENV: "8"}):
+            with self.assertRaises(ValueError):
+                runtime.ocr_thread_count()
+        with patch.object(runtime.os, "cpu_count", return_value=2), patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(runtime.ocr_thread_count(), 2)
+
     def test_models_are_explicit_and_hash_validated(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -67,7 +82,7 @@ class OCRProvisioningTests(SimpleTestCase):
     def test_recognizer_uses_only_pinned_local_models_and_disables_telemetry(self):
         recognizer = Mock()
         disable = Mock()
-        with patch.dict("sys.modules", {"rapidocr": SimpleNamespace(RapidOCR=recognizer),
+        with patch.dict(os.environ, {runtime.THREAD_ENV: "6"}), patch.object(runtime.os, "cpu_count", return_value=8), patch.dict("sys.modules", {"rapidocr": SimpleNamespace(RapidOCR=recognizer),
                                        "onnxruntime": SimpleNamespace(disable_telemetry_events=disable)}):
             with patch.object(runtime, "validate_models", return_value=Path("/local/models")), patch.object(
                 runtime.importlib.metadata, "version", side_effect=lambda name: {"rapidocr": "3.10.0", "onnxruntime": "1.31.1"}[name]
@@ -78,6 +93,7 @@ class OCRProvisioningTests(SimpleTestCase):
         self.assertFalse(params["Global.use_cls"])
         self.assertEqual(params["Global.text_score"], 0.0)
         self.assertEqual(params["Det.limit_side_len"], 2560)
+        self.assertEqual(params["EngineConfig.onnxruntime.intra_op_num_threads"], 6)
         self.assertEqual(params["Rec.model_path"], "/local/models/PP-OCRv6_rec_small.onnx")
 
     def test_wrong_runtime_version_is_configuration_failure(self):
@@ -137,9 +153,10 @@ class OCRWorkerRuntimeTests(SimpleTestCase):
             with self.assertRaisesRegex(pdf_comparison.PDFComparisonError, "absolute"):
                 pdf_comparison.compare_pdf_bytes(b"a", b"b")
 
-    def test_cpu_limit_accounts_for_four_threads_and_linux_memory_is_bounded(self):
+    def test_cpu_limit_accounts_for_all_supported_threads_and_linux_memory_is_bounded(self):
         resource = SimpleNamespace(RLIMIT_CPU=0, RLIMIT_AS=1, setrlimit=Mock())
         with patch.dict("sys.modules", {"resource": resource}), patch.object(pdf_comparison_worker.sys, "platform", "linux"):
             pdf_comparison_worker.resource_limits()
-        self.assertEqual(resource.setrlimit.call_args_list[0].args, (0, (900, 920)))
+        budget = runtime.MAX_THREADS * runtime.WALL_SECONDS
+        self.assertEqual(resource.setrlimit.call_args_list[0].args, (0, (budget, budget + 20)))
         self.assertEqual(resource.setrlimit.call_args_list[1].args, (1, (6 * 1024 ** 3, 6 * 1024 ** 3)))

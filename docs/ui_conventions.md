@@ -487,6 +487,9 @@ either document. Moving from a mark into the inspector keeps it open; use a
 short crossing grace period when leaving both. Support keyboard activation,
 touch taps, Escape and a named close control. Hover must not persist host state
 or create a host restoration/write-back loop.
+Handle inspector dismissal at document level while it is visible: a pure hover
+can leave focus on `body`, outside the comparison root. Escape and Control must
+still close the panel without intercepting keys when it is already closed.
 
 For large unlocated ranges, center the hovered side's crop on the actual pointer
 position. The other crop starts from its own recorded range and is explicitly

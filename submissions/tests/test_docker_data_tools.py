@@ -441,6 +441,15 @@ class DockerRebuildCompatibilityTests(TestCase):
 
 
 class DockerUnifiedUpdateTests(TestCase):
+    def test_ocr_thread_setting_survives_instance_discovery_and_recreation(self):
+        container = make_container(self.root, project="sms-ocr", mount={
+            "Type": "bind", "Destination": "/app/data", "Source": str(self.root / "data"),
+        })
+        container["Config"]["Env"].append("CFM_RAPIDOCR_THREADS=8")
+        instance = docker_instance_tools.instance_from_container(container, "sms-ocr", self.root)
+        self.assertEqual(instance["env"]["CFM_RAPIDOCR_THREADS"], "8")
+        self.assertEqual(docker_instance_tools.compose_env(instance)["CFM_RAPIDOCR_THREADS"], "8")
+
     def test_crosscheck_passwords_are_retained_and_redacted(self):
         for key in ("SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD"):
             self.assertIn(key, docker_instance_tools.ENV_KEYS)

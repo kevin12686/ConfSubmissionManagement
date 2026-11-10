@@ -37,8 +37,11 @@ def resource_limits():
         import resource
     except ImportError:
         return
-    # CPU includes all four ONNX threads; wall time is independently 240s.
-    resource.setrlimit(resource.RLIMIT_CPU, (900, 920))
+    from submissions.services.rapidocr_comparison.runtime import MAX_THREADS, WALL_SECONDS
+    # CPU time accumulates across threads; it must not cut short the wall budget
+    # when a deployment explicitly enables more ONNX threads.
+    cpu_budget = MAX_THREADS * WALL_SECONDS
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_budget, cpu_budget + 20))
     if sys.platform.startswith("linux"):
         resource.setrlimit(resource.RLIMIT_AS, (6 * 1024 ** 3, 6 * 1024 ** 3))
 

@@ -129,6 +129,60 @@ exceptions can deliberately tolerate real similar-character edits, so a zero
 count is not release approval. Record Linux/Docker verification separately from
 host and research results.
 
+### CPU Allocation And Thread Tuning
+
+Docker Desktop's CPU allocation limits what the Linux VM can use. Increasing
+the VM allocation does not automatically change CFM's OCR thread count. Set
+`CFM_RAPIDOCR_THREADS` in the conference environment file (default `4`, valid
+`1`-`8`, within the visible CPU count); Compose passes it to `web`, and the
+unified updater retains it during recreation. Preview the update as usual.
+This is a machine/runtime option, not an AppSetting or System State field.
+
+Compare 4/6/8 sequentially, not as competing OCR jobs. Check full text, boxes,
+scores, locations and authored edit controls as well as timing. Logical threads
+are not physical cores, and ARM64 Docker Desktop timing is not a performance
+guarantee for native Intel/AMD Linux. Do not assume maximum threads is fastest.
+RAM increases do not fix a CPU-bound workload when there is already sufficient
+memory. Models, 300 DPI and the 240-second wall limit remain unchanged; Linux
+CPU-time accounting permits all eight supported threads within that wall budget.
+
+The image build excludes `data/`, `runtime/`, `output/` and `.playwright-cli/`.
+Research PDFs, screenshots and local models must not be baked into the image.
+Provision models separately as described above. A passing image build or unit
+suite is not evidence that full PDFs complete within the runtime limit.
+
+### Validation Record: 2026-11-10
+
+The isolated ARM64 Docker Desktop test used 8 allocated CPUs, approximately
+8 GiB RAM, Python 3.12.16, PyMuPDF 1.27.2.3, RapidOCR 3.10.0 and ONNX Runtime
+1.31.1. **Full-document comparison availability did not pass.** All three real
+PDF pairs timed out at the unchanged 240-second wall limit at each of 4, 6 and
+8 threads (nine sequential runs). Their page counts were 12/12, 14/10 and
+10/10. No timed-out run was accepted as a complete result or substituted a PDF.
+
+The nine representative-page recognitions retained identical full OCR outputs
+across thread settings; 6/8 threads improved page timing versus 4 but did not
+resolve the full-document limit. All 24 fresh authored edge controls passed
+(eight at each setting). Both Linux ARM64 and emulated x86-64 images passed
+809 Django tests with one existing filesystem-specific skip. Host tests passed
+all 809; 86 JavaScript tests passed. Browser acceptance included a fresh Linux
+one-page result and separately labelled dense, precomputed Mac OCR UI fixtures;
+the latter are not Linux full-document engine acceptance.
+
+The real 240-second stalled-worker rejection, worker reaping and service
+recovery passed. A separate test-only 3-second Nginx deadline exercised the
+fallback response; production proxy/Gunicorn deadlines stayed 300 seconds.
+Model/input failure paths, signed-source HTTP rejection, unchanged QA workflow
+state and exact corrected PDF bytes in both CrossCheck ZIP scopes were verified.
+Unreviewed QA records still blocked final publication export.
+
+An emulated x86-64 real one-page pair passed the production worker including
+Linux resource limits. It proves that smoke case only, not complete-article
+performance on the intended i7-4790 Ubuntu host, which was not accessed. Do not
+describe these results as a full Docker performance pass. Before accepting this
+comparison workload, resolve/validate its execution-time lifecycle without
+lowering resolution, replacing models or weakening publication checks.
+
 ## Update Existing Instances
 
 After changing code or any `.env` / `.env.*` setting, preview the complete

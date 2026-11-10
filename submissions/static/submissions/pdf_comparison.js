@@ -516,7 +516,8 @@
             const finding = data.findings.find(item => String(item.id) === String(event.target.value));
             openInspection(finding, inspection.side, inspection.location, inspection.mode);
         });
-        root.addEventListener("keydown", event => {
+        document.addEventListener("keydown", event => {
+            if (inspectionPanel.hidden) return;
             if (event.key === "Escape" || event.key === "Control") { inspection.blocked = inspection.mode === "hover" ? inspection.location : null; closeInspection(); }
         });
         root.addEventListener("focusout", event => {

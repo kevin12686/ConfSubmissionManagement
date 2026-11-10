@@ -102,10 +102,11 @@ function setup(overrides = {}) {
             page.classList.remove("is-ready", "is-error"); page.classList.add("is-loading"); loads.push(url);
         }}, CFMContextExpansion: {reveal: target => reveals.push(target)}});
     runInNewContext(script, {document: {readyState: "complete", querySelector: selector => doc.querySelector(selector),
+        addEventListener: (type, handler) => doc.addEventListener(type, handler),
         getElementById: () => ({textContent: JSON.stringify(data)}), createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag)},
         window: win, setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id),
         requestAnimationFrame: fn => { frames.set(++timerId, fn); return timerId; }, cancelAnimationFrame: id => frames.delete(id)});
-    const api = {root, q, data, loads, reveals, win,
+    const api = {root, doc, q, data, loads, reveals, win,
         side: name => q(`[data-comparison-side="${name}"]`),
         panel: q("[data-comparison-inspection]"),
         crop: name => q(`[data-comparison-crop="${name}"]`),
@@ -250,9 +251,9 @@ test("keyboard, touch, Escape and Ctrl preserve accessible inspection without ho
     const page = setup(); page.loaded("before"); page.loaded("after");
     const mark = page.marks("before")[0]; mark.fire("pointerenter", {pointerType: "touch"}); assert.equal(page.panel.hidden, true);
     mark.fire("click", {detail: 1, pointerType: "touch", clientX: 100, clientY: 400}); assert.equal(page.panel.hidden, false);
-    page.root.fire("keydown", {key: "Escape"}); assert.equal(page.panel.hidden, true);
+    page.doc.fire("keydown", {key: "Escape"}); assert.equal(page.panel.hidden, true);
     mark.focusVisible = true; mark.fire("focus"); assert.equal(page.panel.dataset.interaction, "keyboard");
-    page.root.fire("keydown", {key: "Control"}); assert.equal(page.panel.hidden, true);
+    page.doc.fire("keydown", {key: "Control"}); assert.equal(page.panel.hidden, true);
 });
 test("invalid locations never draw; reference findings remain navigable", () => {
     const page = setup({findings: [finding({category: "reference", kind: "reference", before_locations: [{page: 1, box: [-.1, 0, .2, .3]}]})]});
@@ -262,9 +263,20 @@ test("invalid locations never draw; reference findings remain navigable", () => 
 
 test("dismissed explicit selection does not block subsequent hover", () => {
     const page = setup(); page.loaded("before"); page.loaded("after"); page.next();
-    page.root.fire("keydown", {key: "Escape"});
+    page.doc.fire("keydown", {key: "Escape"});
     page.hover("before"); assert.equal(page.panel.hidden, false);
-    page.root.fire("keydown", {key: "Escape"});
+    page.doc.fire("keydown", {key: "Escape"});
     page.hover("before"); assert.equal(page.panel.hidden, true);
     page.marks("before")[0].fire("pointerleave"); page.hover("before"); assert.equal(page.panel.hidden, false);
+});
+
+test("Escape closes hover inspection without a focused control inside the comparison", () => {
+    const page = setup(); page.loaded("before"); page.loaded("after");
+    page.hover("before");
+    assert.equal(page.panel.hidden, false);
+    page.doc.fire("keydown", {key: "Escape", target: new Element("body")});
+    assert.equal(page.panel.hidden, true);
+    assert.equal(page.crop("before").draws.length, 0);
+    page.doc.fire("keydown", {key: "Escape", target: new Element("input")});
+    assert.equal(page.panel.hidden, true);
 });

@@ -336,11 +336,23 @@ database or invoke audit/publication workflows.
   corrupt models, render/worker failure and timeout produce unavailable states
   without runtime download or native-engine fallback. Verify offline operation
   after explicit provisioning in the supported local and Docker/Linux runtimes.
+- On Docker, run thread settings 4/6/8 sequentially where that CPU capacity is
+  allocated. Record OCR strings, scores and boxes in addition to elapsed times.
+  Retain the wall limit and distinguish timeout rejection from completed PDF
+  acceptance. Native Intel and ARM64 Desktop timings are separate evidence.
+  Check that environment values survive an instance update, invalid/oversized
+  thread values fail explicitly, and CPU-time accounting permits supported
+  parallelism without removing the wall/address-space bounds.
 - Preserve complete one-to-one token/character accounting before display caps.
   Do not use smaller counts or arbitrary zero-warning expectations as accuracy.
   Recheck real pairs and explain residual OCR/order/formula limitations.
 
 #### Document-First Browser Evidence
+
+Test Esc from pure hover with focus still on `body`, not only after clicking a
+control inside the comparison. Verify Control also dismisses it and existing
+PDF magnification still works. Use an actual proxy route, including static
+modules and failure/retry behavior, for Docker UI acceptance.
 
 Use actual engine payloads, including the densest real result, at desktop and
 320/768 pixel widths. Record screenshots and nonblank page/crop pixel checks.

@@ -22,6 +22,20 @@ MAX_NATIVE_WORDS = 60_000
 MAX_LINES = 2000
 MAX_CHARACTERS = 300_000
 WALL_SECONDS = 240
+MAX_THREADS = 8
+THREAD_ENV = "CFM_RAPIDOCR_THREADS"
+
+
+def ocr_thread_count():
+    available = os.cpu_count() or 1
+    value = os.environ.get(THREAD_ENV, str(min(4, available)))
+    try:
+        count = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{THREAD_ENV} must be an integer from 1 to {MAX_THREADS}.") from exc
+    if not 1 <= count <= min(MAX_THREADS, available):
+        raise ValueError(f"{THREAD_ENV} must be between 1 and {min(MAX_THREADS, available)} for this runtime.")
+    return count
 
 
 def validate_models(directory=None):
@@ -56,7 +70,7 @@ def build_recognizer():
         "Det.model_path": str(root / "PP-OCRv6_det_small.onnx"),
         "Rec.model_path": str(root / "PP-OCRv6_rec_small.onnx"),
         "Det.limit_side_len": 2560, "Det.limit_type": "max",
-        "EngineConfig.onnxruntime.intra_op_num_threads": 4,
+        "EngineConfig.onnxruntime.intra_op_num_threads": ocr_thread_count(),
         "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     })
 

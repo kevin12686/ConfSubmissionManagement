@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.22.1 - Unreleased
+
+- Allow an explicit, validated `CFM_RAPIDOCR_THREADS` deployment setting (1-8,
+  within visible CPU capacity), retained by Docker instance recreation. Keep
+  rendering, models, comparison rules and the 240-second wall limit unchanged.
+  Account for all supported threads in the worker's finite CPU-time limit.
+- Fix Esc/Control dismissal of hover inspection when focus remains outside the
+  comparison controls. Exclude experimental output/browser artifacts from images.
+- State archive v8 and publication selection/review rules remain unchanged.
+
 ## 1.22.0 - Unreleased
 
 - Advance temporary PDF comparison to method 7 with rendered-page RapidOCR,

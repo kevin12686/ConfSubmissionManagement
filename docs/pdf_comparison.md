@@ -3,7 +3,7 @@
 ## Implemented Design
 
 The production integration uses temporary comparison method **7**, in app
-**1.22.0**. This is the canonical engine/UI contract, not a test report or
+**1.22.1** (method 7 was introduced in 1.22.0). This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-6 and older signed results must be rebuilt;
 they must not be relabeled or reused as method-7 results. Historical method
 descriptions remain in the changelog, not as requirements for this engine.
@@ -83,6 +83,17 @@ pixels per side and 16 million pixels, with at most 2,000 OCR lines. Oversized
 pages are rejected rather than silently downsampled below the declared rendering
 resolution. The detector's 2560-pixel long-side setting is a separate model
 processing bound, not the saved page-image resolution.
+
+`CFM_RAPIDOCR_THREADS` controls ONNX intra-operation CPU threads, not recognition
+quality. The default is four (or fewer when fewer CPUs are visible); an explicit
+value must be an integer from 1 through 8 and cannot exceed the runtime-visible
+CPU count. Invalid settings fail rather than silently selecting another mode.
+Inter-operation parallelism remains one. The parent wall limit is still 240
+seconds. CPU time accumulates across threads, so its separate finite allowance
+is 8 * 240 = 1920 CPU seconds, with a 20-second hard-limit margin. Linux retains
+the 6 GiB address-space bound. More threads do not guarantee faster completion;
+benchmark on the actual deployment, without reducing DPI, changing models or
+treating timeouts as successful comparisons.
 
 Unchanged anchors require six tokens and 24 characters, with the explicit
 identical-sequence control supported separately. Local gaps are bounded to 200
@@ -188,6 +199,8 @@ existing finding, raw text and two crops from the actual page pixels, without
 changing pages or scrolling either document. Moving into the inspector keeps
 it open; leaving mark and inspector uses a short crossing grace period.
 Keyboard activation, touch, Escape and an explicit close control are supported.
+Escape/Control dismiss an open inspector even when hover has left keyboard
+focus on the surrounding page; inactive inspection does not consume keys.
 Hover is transient and must not persist host state.
 
 For large unlocated ranges, magnify the hovered side at the actual pointer.

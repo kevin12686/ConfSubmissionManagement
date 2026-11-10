@@ -79,6 +79,13 @@ System State data: provision it again on a restored/new host. Keep model files
 out of publication directories, report cleanup and state archives. See the
 [Docker Guide](docker_guide.md#pdf-comparison-runtime) for container paths.
 
+Deployment CPU parallelism is configured separately with `CFM_RAPIDOCR_THREADS`
+(1-8, default up to 4, within visible CPU capacity). Keep models, DPI and result
+rules unchanged when tuning threads; compare actual OCR outputs, not only timing.
+Container CPU allocation and hyperthreads do not imply linear speedup. Preserve
+the wall timeout, bounded Linux CPU-time accounting across threads, and explicit
+failure behavior. Test Docker environment retention when changing this setting.
+
 ## Docker Development Boundary
 
 Docker procedures are centralized in the [Docker Guide](docker_guide.md).
