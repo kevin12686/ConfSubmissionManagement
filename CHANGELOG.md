@@ -3,6 +3,26 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.22.0 - Unreleased
+
+- Advance temporary PDF comparison to method 7 with rendered-page RapidOCR,
+  native geometry used only for reading-order guidance, unchanged-context
+  alignment and bounded small-edit comparison. Rebuild method-6 and older results.
+- Integrate all 38 approved direct visual-tolerance groups. Retain raw OCR,
+  locations, rule IDs and risks as inspectable information. Real similar-character
+  edits and whitespace-only changes remain explicit accepted blind spots;
+  unlocated/empty-OCR ranges require manual review. No equality or safety claim
+  follows from a lower finding count.
+- Make annotated documents the primary comparison view. Hover, keyboard and
+  touch inspection show page-pixel crops without moving the documents; explicit
+  result navigation remains available. Use red text changes, amber unlocated
+  ranges and neutral information, with only the active finding connected.
+- Replace superseded method-6 rules in active documentation; retain historical
+  release notes. Research/prototype verification is not production acceptance.
+- Set app version 1.22.0. State archive v8, publication helpers, saved PDF bytes,
+  review/readiness rules, upload revision binding and audit requirements remain
+  unchanged. Release test and browser acceptance results must be recorded separately.
+
 ## 1.21.1 - Unreleased
 
 - Advance temporary comparisons to method 6, requiring method-5 and older

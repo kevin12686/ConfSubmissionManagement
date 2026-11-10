@@ -738,42 +738,40 @@ afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
 
 ### PDF comparison unavailable or unexpectedly noisy
 
-**Check text / formula** means the PDF's character mapping or glyph evidence is
-unreliable, not that a formula was changed or approved. Open the marked regions
-and Finding evidence / extraction details. A glyph can render as a subscript while extracting as
-punctuation. The system does not guess a replacement or ignore the formula.
-Real changes within uncertain regions still need visual verification. Zero-width
-U+200B characters are informational only when their glyph ink is empty and no
-mapping issue is detected; the raw contexts and counts remain available. Other
-controls are not blanket-removed. Older comparison methods require rebuilding.
+Method 7 uses rendered-page RapidOCR, not the former method-6 glyph-proof
+engine. **Text differences** are OCR-localized candidate edits; **unlocated
+ranges** need manual confirmation; **information** includes tolerated visual
+differences and spacing/wrap records. Inspect actual page pixels, raw OCR and
+the reason, not just the count. Image text/formulas can still be misrecognized.
 
-**Engine coverage: limited** means a result exists but its supported inspection
-could not cover all evidence. Read the reasons even when content counts are
-zero. **Engine coverage not reported** is not complete. **Comparison unavailable**
-means no result is available, for example after a parser/worker failure; retry
-or inspect the full PDFs. A page-image load error is separate from both states.
-Complete engine coverage is not a check of image preservation, figures or full
-mathematical structure, and unsupported regions are not unchanged.
+The broad 38-group policy deliberately tolerates some real edits, including
+O/0, f/t, rn/m and S/5. Whitespace-only now here/nowhere and 1 1/11 changes can
+also be missed. This is not spelling correction or proof of equality. Minus,
+decimal, question-mark or word deletion is not automatically exempted; mixed
+ordinary edits must remain visible. Identical OCR errors or omitted text on both
+sides can still hide changes. Manual figure/layout/table/math review is required.
 
-The [comparison evidence rules](pdf_comparison.md) attach reasons
-at the affected occurrence, not blanket same-font/page or `noFontTools` claims.
-Strict paint-pair deduplication must not hide independent overprints. Approximate
-glyph/vector matching is not definitive evidence; ambiguous vectors and
-unsupported formulas remain warnings/limitations. Approximate vector evidence
-may locate a possible counterpart, but neither becomes equal or recovered text.
-Exact opaque glyph pairs are different: supported exact-outline identity may
-align one-to-one without resolving Unicode, so zero content findings can coexist
-with unknown Unicode and limited coverage. Unmatched opaque glyphs still warn.
-Supported script-role changes still warn; unknown mathematical baseline attachment
-of known Unicode is a coverage limitation, not an invented text edit.
-Inspect structural warnings using their own evidence, not the reference-error
-explanation.
+**Engine coverage: limited** means a result with inspection limitations, even
+with zero changes. Missing coverage metadata is not complete. **Comparison
+unavailable** means no usable result, including missing dependencies/models,
+OCR/render failure or worker timeout; it must not appear as zero differences.
+A page-image display error is separate. Model files must be provisioned before
+requests, with no automatic request-time download or native-text fallback. Check
+`BASE_DIR/runtime/rapidocr-models` by default, or the explicitly configured
+`CFM_RAPIDOCR_MODEL_DIR` when present. Existing Compose exposes the default as
+`/app/runtime/rapidocr-models` through its app mount; do not add another mount just
+for that default. External overrides require a container-visible mount and the
+container environment variable. Check for a stale override before changing the
+default files; an invalid override does not fall back. See
+[local setup](developer_guide.md#pdf-comparison-runtime) and
+[Docker setup](docker_guide.md#pdf-comparison-runtime). The research environment
+under a temporary directory is not a production dependency.
 
-Method-5 and older cached results require rebuilding for method 6. A reduction
-in warnings after rebuilding is not publication approval. If table rules are
-marked as formula glyphs, or a metadata-only change creates a warning flood,
-retain the input hashes and finding evidence for a comparison regression report;
-do not change the PDFs or dismiss all uncertainty to make the counts smaller.
+Rebuild method-6 and older cached results for method 7. If unexpected differences
+remain, retain input hashes, runtime/model versions, raw OCR, actual locations
+and tolerance rule IDs for diagnosis. Do not edit source PDFs, suppress all
+unlocated ranges or add paper-specific rules to reduce counts. The
+[comparison contract](pdf_comparison.md) explains the accepted policy and limits.
 
 A saved Formatting PDF now starts an Original comparison through the returned
 page, not as part of saving the upload. If comparison fails, the corrected PDF,
@@ -794,26 +792,24 @@ missing/corrupt revision files from a verified backup; comparison does not
 repair files or create revisions. Temporary comparison data is deliberately
 absent after System State restore.
 
-Textless/password-protected or over-limit PDFs may require manual comparison.
-Exact matched reflow is not highlighted. Unmatched text can still reflect
-ligatures, equations, ambiguous repetition, or unreliable extraction order;
-check the page image and do not treat an unmatched passage or a replacement
-character as proof of missing/corrupt content. A no-findings result does not
-validate figures or tables. Comparisons stop at 64 MiB, 100 pages, or 30,000
-tokens per PDF and explicitly warn when the 300-finding display cap is reached.
+Scanned/textless PDFs can be recognized from pixels; empty OCR is not proof of a
+blank page. Password-protected or over-limit PDFs may need manual comparison.
+Matched movement/reflow is not a red edit. Unlocated ranges can reflect large
+rewrites, repetition, absent anchors, formulas or unreliable OCR/order; they
+are neither confirmed deletion nor equality. Bounded work and display limits
+must leave explicit reasons/counts rather than silently discarding remainder.
 Ordinary cleanup protects open comparison folders even if Reports overlaps
-them; their normal expiry and Clear Database remain responsible for removal.
+them; normal expiry and Clear Database remain responsible for removal.
 
-If repagination splits the same page header into apparent removal/addition,
-rebuild an older-method comparison. The current method retains headers/footers
-and accounts for uniquely paired exact passages without highlighting them.
-Repeated or ambiguous text intentionally stays unmatched. Check both actual
-locations and context; matching text is not a layout or meaning approval.
-**No corresponding text** means the other viewer is only a labeled reference,
-not evidence that a passage exists there. Multi-page findings have a page
-selector for each side. A pairing-limit notice means remaining text was kept
-unpaired, not dropped. Even a textless baseline permits corrected-file pattern
-prompts, but cannot establish that those patterns are new.
+Hover inspection does not change pages or scroll either document. Use explicit
+result/page controls to navigate. For a large amber range, move within it to
+inspect the actual pointer location; the opposite crop is only its own recorded
+candidate range, not a character match. Keyboard/touch and the close control
+remain available. Missing counterparts have no fabricated connection. If a page
+or crop fails to load, retry rather than trusting stale image content.
+**No corresponding text** means any opposite reference page is navigation only.
+Review all actual locations and unresolved content; no count certifies layout,
+figures or full mathematical structure.
 
 ### Need a completely clean conference
 

@@ -59,73 +59,54 @@ belong in the audience-specific guides listed on the
 - Templates stay server-rendered Django pages using locally pinned Tabler 1.4.0 with Bootstrap-compatible markup; there is no React or separate frontend build.
 
 Formatting comparison is a separate read-only service/controller/workspace,
-not a branch of PDF processing or Formatting save. It uses PyMuPDF plus the
-standard-library sequence matcher to compare exact saved file bytes. The
-current publication helper selects After; Before is the same submission's
-Original or a hash-verified Formatting revision. No FinalSubmission or mirrored
-state is written. The build checks scope/files again before retaining signed,
-two-hour snapshots in `data/formatting_comparison_previews/<token>/`. Snapshot
-PDF/image access rechecks current scope, live file identities/hashes, and the
-requested copy's SHA256. This workspace reuses image loading/magnification and
-never uses generated images as publication inputs. Missing/changed documents
+not a branch of PDF processing or Formatting save. Method 7 renders each exact
+saved PDF independently and compares local RapidOCR output. The current
+publication helper selects After; Before is the same submission's Original or a
+hash-verified Formatting revision. No FinalSubmission or mirrored state is
+written. The build checks scope/files again before retaining signed, two-hour
+snapshots in `data/formatting_comparison_previews/<token>/`. PDF/image access
+rechecks current scope, live identities/hashes and the snapshot SHA256.
+Generated page images never become publication input. Missing/changed documents
 fail explicitly. Comparison data is excluded from archives, protected from
-normal Reports cleanup, and covered by full Clear Database. Archive v8 remains
-unchanged because neither model state nor retained artifact contracts change.
+ordinary Reports cleanup and covered by full Clear Database. Archive v8 is
+unchanged because retained state/artifact contracts do not change.
 
-Evidence inspection, including ruled-table detection, and token alignment run
-together in the read-only `pdf_comparison_worker.py` subprocess. Isolation also
-contains PyMuPDF table detection's mutable global rendering settings. The worker
-receives exact PDF byte snapshots, has no Django/database or publication metadata
-access, and performs no filesystem writes. It returns bounded occurrence and
-alignment evidence for parent validation. Its CPU soft limit is 90 seconds
-(95-second hard limit where supported); the parent enforces a 95-second wall
-timeout. Windows relies on the wall timeout and bounded inputs. Worker failure
-or invalid alignment evidence stops comparison rather than claiming success.
-Native text runs retain glyph coordinates and every token, including headers
-and footers, without interleaving columns by y coordinate. Detected ruled-table
-cells use spatial row/column order rather than PDF painting order.
-A bounded second pass pairs globally unique exact unmatched spans,
-consumes occurrences one-to-one, and leaves changed/ambiguous remainder visible.
-Whole-word boundaries prevent pairing a matching prefix inside a changed word.
-Token accounting must balance aligned, paired, and remaining tokens on each
-side. Same-text pairs are accounted for but not emitted as content findings.
-Glyph refinement is presentation-only; coverage uses complete source tokens.
-Finding totals are calculated before the display cap.
-Actual passage pages and navigation-only reference pages are separate fields.
-`pdf_text_evidence.py` inspects used font codes through pypdf's structured
-content/CMap parser inside the isolated comparison worker. Standard fonts and
-explicit supported encodings do not require ToUnicode. Partial/invalid maps,
-unresolved resource identities, and contradictory glyph ink remain uncertain.
-Font aliases come from the same embedded font, not a font-name heuristic.
-Occurrence inspection replaces blanket same-font/page warnings with per-occurrence
-code/glyph/paint evidence. Unattributable occurrences remain explicitly uncertain.
-Strict paint-pair deduplication must not merge independent overprints; ambiguous
-overprints remain warnings. Context-aware alignment consumes occurrences
-one-to-one. Unicode uncertainty is distinct from unsupported glyph identity:
-identical exact opaque outlines may align through matching `opaque_key` and
-context when `text_identity_supported` is true, without inventing Unicode.
-Limited coverage and the unknown-Unicode reason remain; unmatched opaque glyphs
-warn. Supported role changes are checked separately and still warn. Unknown
-mathematical baseline attachment of otherwise known Unicode limits structural
-coverage without inventing a text edit or assuming a missing role is baseline.
-Approximate vectors can locate candidate counterparts only; both remain uncertain,
-never equality anchors or recovered text.
-No guessed Unicode recovery, OCR approval or approximate visual equality is used.
-Raw text, font identity, reasons and source positions accompany uncertain
-findings. Only mapped U+200B with empty glyph ink is normalized, with separate
-counts/locations/raw contexts. Other controls and visible whitespace glyphs stay
-in the comparison. Coverage counts normalized tokens plus an explicit control
-inventory. Uncertainty is advisory Warning; normalization records are Info.
-The UI displays coverage status/reasons, evidence counts and
-per-finding explanations, including structure warnings. Limited coverage is a
-result with limitations; parser failure supplies no result. Complete means only
-that supported engine checks completed, not that full math, images or layout
-were validated. Approximate glyph/vector matches cannot establish equality;
-ambiguous vectors and unsupported formulas require warnings. See the
-[comparison contract](pdf_comparison.md) for exact-evidence requirements,
-corrective classification rules and supported-scope boundaries.
-Temporary method 6 requires rebuilding method-5 and older results and remains
-independent of System State archive v8.
+The isolated worker performs rendering, local OCR and bounded alignment; the
+parent service owns source selection, audit, snapshots and revision binding.
+RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
+1.31.1. Models are explicitly provisioned before use, not downloaded by a
+comparison request. The default lookup is `BASE_DIR/runtime/rapidocr-models`,
+already exposed in Docker by the existing `.:/app` mount. An optional absolute
+`CFM_RAPIDOCR_MODEL_DIR` overrides it; external Docker directories need an explicit
+mount and container environment setting. Dependencies and models belong to the
+production runtime, not a research environment. Worker/model failures return Comparison unavailable;
+they never fall back to the retired native glyph-proof engine.
+
+Each document's own native geometry can guide region ownership and actual row
+order, but native words cannot repair/replace OCR or establish equality.
+Visible OCR remains authoritative even with a stale or absent text layer.
+Unchanged context anchors bounded local small-edit alignment; relative position
+only breaks alignment ties. Repeated/table values retain field ownership and
+one-to-one accounting. Page matches support navigation, not absolute-page
+identity. Large rewrites, absent anchors, empty OCR and exhausted bounds remain
+explicit unlocated ranges/limitations.
+
+All 38 approved direct visual groups are enabled by the broad policy. A complete
+local difference explained by those rules and existing spacing tolerance becomes
+inspectable neutral information. A mixed residual edit retains the original
+change finding. Rules are not transitive, spelling correction, general Unicode
+normalization or exact visual proof. Real similar-character edits and
+whitespace-only changes can deliberately be missed; the
+[comparison contract](pdf_comparison.md) records the policy and risks.
+
+The workspace is document-first: annotated pages, compact controls and transient
+hover/focus/tap inspection with page-pixel crops, not a permanent findings
+sidebar. Red text changes, amber unlocated ranges and neutral information stay
+distinct. Hover cannot move pages or scroll either document; explicit result
+navigation can. Only the active finding is connected, with no fabricated
+counterpart. Coverage and evidence totals never certify figures, layout or full
+math. Temporary method 7 requires rebuilding method-6 and older results,
+independently of System State archive v8.
 
 Automatic upload comparison orchestration belongs to
 `automatic_pdf_comparison.py`, not the Formatting transaction. A typed

@@ -26,11 +26,13 @@ from submissions.services.pdf_comparison import (
 from submissions.services.publication_read import publication_database_signature
 from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
 from submissions.tests.test_pdf_comparison import make_pdf, reflow_pair
+from submissions.tests.ocr_fixtures import synthetic_ocr_worker
 
 
 class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
     def setUp(self):
         super().setUp()
+        self.enterContext(patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker))
         self.enterContext(override_settings(BASE_DIR=self.root.resolve()))
         self.make_master_paper()
         self.submission = self.make_final_submission(format_status="pending")

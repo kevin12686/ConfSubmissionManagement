@@ -606,106 +606,72 @@ active Publishing submission, normally Corrected. It never reads a debug copy,
 another submission, or a history file as publication input. A missing selected
 file is an error, not permission to fall back.
 
-Findings include new occurrences of common Word reference/bookmark errors,
-possible unresolved references (`??` / `[?]`), replacement characters, and
-added/changed/removed text. Counts are findings, not affected-paper counts;
-one passage may have both a pattern finding and a text change. Existing error
-occurrences are not reported as new just because they moved to another page.
-Whitespace differences are ignored, but case, punctuation, numbers, and actual
-words are retained. Unmatched text may have moved or extracted in a different
-order; it is not proof of deletion. Extraction anomalies are not proof of
-visible corruption.
+Method 7 compares rendered pages with local RapidOCR. Native PDF geometry can
+help order text within each document, but hidden/stale text cannot replace what
+OCR reads from the page. Image text, formulas, headers/footers and low-confidence
+recognition are not excluded. This remains an aid for small revisions, not an
+automatic certification of every PDF change.
 
-Headers and footers are not excluded. Native text-run order avoids interleaving
-page columns; detected ruled-table cells use row/column order. A bounded second
-pass pairs globally unique exact spans one-to-one. Matched moved text does not
-produce a finding or highlight; changed remainder and unmatched repeated or
-ambiguous text stay visible. No fuzzy matching, word-count cancellation or
-header/footer exclusion is used to make differences disappear.
+The workspace opens on annotated documents, initially Fit page, without a
+permanent findings sidebar. Red outlines/arrows mark text differences; amber
+regions mark ranges without a reliable counterpart; quiet neutral outlines mark
+information such as tolerated visual differences and whitespace joins/splits.
+Counts are records, not affected papers or accuracy. Filters and explicit
+previous/next-result navigation let you inspect the relevant recorded pages.
+Browse all pages and open each exact snapshot PDF for manual review.
 
-Use Added / Changed / Removed text or error-pattern filters in the same
-navigator. Additions highlight After, removals highlight Before. Glyph
-coordinates keep punctuation changes from marking whole author names. Numeric
-values remain whole values; single-word edits can highlight only changed
-characters. Context is shown separately. Warning styling is advisory, never
-an export blocker or approval. Text-layer encoding differences, particularly
-equation fonts, can produce findings even when rendered glyphs look the same.
+Hover a mark to inspect its raw OCR text, reason and two local page-image crops.
+This does not turn pages or scroll either document. Move into the inspector to
+keep it open; keyboard focus/activation and touch taps also work. Escape or the
+close control dismisses it. For a large unlocated range, the hovered side follows
+the actual pointer position; the opposite crop starts at its own recorded range,
+not an invented character match. Inspect either side independently. Only the
+active finding's connection is shown; an amber dashed connection is a candidate,
+not verified equality. Added/removed text has no fabricated opposite mark.
 
-The workspace separates **Content / structure findings**, **Check text / formula** warnings,
-and **Formatting information** (normalization Info). Structural findings
-also appear as warnings with a **Structure warnings** filter, not as reference
-errors. The top summary separates content findings (including structure),
-uncertainty warnings, and normalization Info;
-zero content findings does not mean there are no regions to verify. Amber dashed
-outlines mark uncertain evidence or a supported structural warning, not an
-unchanged region.
-These regions can also contain real additions/removals. Compare both saved PDF
-images and open Finding evidence / extraction details for raw text, fonts and
-per-finding explanations. No text
-is guessed from context, and no formula is silently excluded or auto-approved.
-Matching extracted strings alone does not resolve unavailable/ambiguous mappings.
-The comparison contract also distinguishes exact opaque glyph identity from known
-Unicode: identical exact outlines may be paired one-to-one without guessing a
-character, while Unicode remains unknown and coverage remains limited. Unmatched
-opaque glyphs still warn; supported subscript/superscript role changes still warn
-even for matched glyphs. Unknown mathematical baseline attachment of known text
-does not by itself prove a text edit. Byte-identical files are separately identified.
-Comparison uses per-occurrence evidence rather than
-blanket same-font/page warnings: strictly verified paint pairs may be deduplicated,
-but independent overprints and ambiguous vectors remain warnings. Approximate
-glyph/vector matches and OCR guesses cannot establish equality. Approximate
-vectors may suggest a counterpart for an uncertainty finding, not recovered text
-or equality; unsupported formula coverage remains a limitation. Matched exact
-opaque glyphs may leave only a coverage limitation, not a text-change warning.
-See the [comparison contract](pdf_comparison.md).
+Matched reflow and movement can be accounted for without a red change mark.
+Unlocated text can reflect a large rewrite, missing unchanged context, reading
+order or OCR difficulty; it is neither proof of deletion nor a passed check.
+Page synchronization follows alignment evidence, not equal page numbers.
+A missing counterpart is explicitly labeled; any reference page is navigation
+only, never the location of nonexistent text. Actual passage pages remain
+independently selectable, including multi-page findings.
 
-Non-drawing U+200B zero-width spaces without detected mapping issues are removed
-only from comparison text. Their counts, pages and raw contexts remain under
-Formatting information, with `[U+200B]` visible in the evidence details. This is a
-normalization inventory, not a count of deleted words. Other controls, ordinary
-spaces, and any glyph that still draws are not deleted by this rule.
+The approved broad visual policy tolerates all 38 listed direct groups, including
+`O/0`, `rn/m`, `f/t` and `S/5`. Tolerated occurrences retain original text,
+locations, rule IDs and risks as information. Only a completely explained local
+difference is tolerated; a nearby real residual edit keeps its original finding.
+There is no spelling correction or cross-group transitive matching. Minus-sign,
+decimal-point, question-mark or word deletion is not an empty-string exception.
+The full table is in the [comparison contract](pdf_comparison.md#visual-tolerance-policy).
 
-Select a finding to view both passages and their highlighted page regions.
-The inline mark legend distinguishes Before/After text, amber review regions,
-and the blue focused region; these colors do not indicate review approval.
-Switch to Text changes for the extracted passages. Browse all pages for manual
-table, figure, equation, and layout checks. **Engine coverage** distinguishes
-supported checks completed from a limited result. Open **Coverage details** for
-limitation reasons; the coverage heading and brief warning stay visible.
-Expandable engine evidence counts are separate from finding counts. Missing
-coverage metadata is labeled not reported. Neither complete engine coverage nor
-zero findings certifies figures, image preservation, full mathematical structure,
-tables or layout. Unknown/unsupported regions are not treated as unchanged.
-**Comparison unavailable** means no result is available, including after a parser
-failure; it is not a limited result with zero findings. Page linking uses
-confidently matched text rather than equal page
-numbers; unpaired pages remain independently selectable. Each side can open
-the exact compared PDF. Ctrl magnification and loading/retry behavior match
-the existing review images.
+These tolerances can deliberately miss real edits, for example
+`safety/satety`, and whitespace-only `now here/nowhere` or `1 1/11` changes.
+OCR can also read both sides incorrectly in the same way or miss text entirely.
+Inspect the page pixels, not just the OCR strings. **Figures, image preservation,
+tables, layout and full mathematical structure still require manual review.**
+Zero red marks, reduced counts and tolerated differences are not publication
+approval or a universal catch-all.
 
-Finding labels list all actual passage pages. A side with no corresponding text
-is explicitly labeled as such; its displayed PDF page is a reference page,
-selected from a reliable page match or left manually selected. It is never
-reported as the passage location. Multi-page findings offer a finding-page
-selector on each side; manual page navigation clears the old finding selection.
-The small focus symbol beside each side's position brings the first highlighted
-region on its current actual finding page into view. It is disabled on reference
-pages, while loading, in text mode, and when no highlight is available. Ctrl
-magnification remains unchanged; focus does not choose another page or revision.
+Coverage reasons and engine evidence counts remain separate from findings.
+A limited result has inspection limitations even with zero changes; missing
+coverage metadata is not complete. Supported execution being complete does not
+certify document safety. Comparison unavailable means no usable result, for
+example after missing OCR models, worker timeout or parse/render failure. A
+viewer image-load failure is separate. Correct installation issues and retry;
+do not treat a failed comparison as an unchanged paper.
 
-Method-5 and older comparison results must be rebuilt for method 6; rebuilding
-does not approve the PDF or change its publication selection. Comparisons expire
-after two hours and reject changed publication scope,
-selected file identities/bytes, missing baselines, or damaged snapshots. Build
-a new comparison rather than reusing a stale result. Limits are 64 MiB, 100
-pages, and 30,000 tokens per PDF; up to 300 findings and limited passage
-regions are shown. Total and displayed counts are separate; matched reflow
-does not consume the display allowance. Textless PDFs support visual
-comparison, plus pattern prompts in any extractable corrected text; without
-baseline text those patterns cannot be classified as newly introduced.
-Exact pairing also has a bounded processing budget: if reached, remaining
-unmatched text stays listed and a pairing-limit notice appears. Old-method
-comparison links require an explicit rebuild and are not silently reinterpreted.
+Method-6 and older results must be rebuilt for method 7. Comparisons expire
+after two hours and reject changed scope, selected identities/bytes, missing
+baselines or damaged snapshots. Size/page/token/work limits and display caps
+remain bounded (including 64 MiB, 40 pages and 30,000 tokens per PDF); consult
+the [work bounds](pdf_comparison.md#work-bounds) and review unresolved or undisplayed
+content manually. Scanned PDFs can be recognized from page pixels, but empty
+OCR does not prove a page is blank. Password-protected or over-limit PDFs may
+need manual comparison. No failed OCR/model check silently substitutes native
+text. See [setup](developer_guide.md#pdf-comparison-runtime) and
+[Docker setup](docker_guide.md#pdf-comparison-runtime).
+
 No comparison changes Review OK, review flags, exceptions,
 publication selection, or export eligibility. Temporary comparisons are not
 backups or retained review evidence; the build itself is recorded in Audit Log.

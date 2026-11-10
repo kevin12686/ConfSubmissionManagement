@@ -73,6 +73,62 @@ Use a different project name, port, and data folder for every conference.
 Sharing any of them risks sending an operator to the wrong conference or mixing
 data ownership.
 
+## PDF Comparison Runtime
+
+Method-7 comparison uses local CPU inference with `rapidocr==3.10.0`,
+`onnxruntime==1.31.1` and the approved PP-OCRv6 small detection/recognition model
+pair. Rebuild the Linux image with the pinned requirements and verify that both
+packages import in the container; a host virtual environment is not used by
+Docker and does not prove container compatibility.
+
+Provision models explicitly before serving comparisons. On a host with the
+application environment, use the
+[model import command](developer_guide.md#pdf-comparison-runtime) to validate and
+copy the approved files into the checkout's `runtime/rapidocr-models` directory.
+The default runtime lookup is `BASE_DIR/runtime/rapidocr-models`. Existing Compose
+already mounts `.:/app`, so those host files are visible at
+`/app/runtime/rapidocr-models` inside `web`. **No additional model mount,
+environment variable or Compose change is needed for this default setup.**
+The directory is outside the separate `/app/data` named-volume mount.
+
+Alternatively run `python manage.py prepare_rapidocr_models` in a one-off `web`
+container, with an absolute path to the approved source visible in that container
+and `--destination /app/runtime/rapidocr-models`. This writes the default model
+directory through the existing app mount. The command imports local files only;
+it never downloads them. The default is a lookup location, not automatic
+provisioning: the validated files must actually exist there.
+
+For an **optional external model directory**, the running `web` container needs
+both:
+
+- A read-only bind mount of the validated host model directory at a stable
+  absolute container path, for example `/opt/cfm-ocr-models`.
+- `CFM_RAPIDOCR_MODEL_DIR=/opt/cfm-ocr-models` in the **container** environment.
+
+Configure these only when choosing an external directory, in the deployment's
+Compose service definition before updating the instance. A host-only environment
+value or a line in an env file is not
+enough unless Compose passes it through; the value must name the container path,
+not the host path. Keep any deployment override attached to every Compose
+operation, including update/recreate, and inspect the rendered configuration
+before cutover. The automatic updater does not infer arbitrary extra mounts or
+environment variables from a model directory. An explicit override takes
+precedence over the default and does not fall back if its files are invalid.
+
+Keep models separate from `sms_data`, publication/media paths and report cleanup.
+System State v8 does not provision models or archive machine-level OCR settings;
+restore/migration needs this setup again. Requests never download models or use
+cloud inference. Missing files, failed checksums or unsupported/missing runtime
+packages return Comparison unavailable without a native-text fallback.
+
+After setup, verify an actual disposable comparison through the browser while
+offline, including nonblank page crops and an intentional visible edit. Check
+worker/time limits through the proxy; do not disable timeouts to force large PDFs
+through. Continue manual figure, table, layout and full-math review. Broad visual
+exceptions can deliberately tolerate real similar-character edits, so a zero
+count is not release approval. Record Linux/Docker verification separately from
+host and research results.
+
 ## Update Existing Instances
 
 After changing code or any `.env` / `.env.*` setting, preview the complete

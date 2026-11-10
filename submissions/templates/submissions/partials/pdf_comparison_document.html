@@ -1,0 +1,18 @@
+{% load pdf_viewer %}
+<section class="cfm-comparison-document" data-comparison-side="{{ side }}" aria-label="{{ side_label }} PDF">
+    <div class="cfm-comparison-document-header">
+        <div><h3 class="h6 mb-0">{{ side_label }} · {{ file.label }}</h3><span class="small text-break">{{ file.filename }}</span></div>
+        <div class="cfm-comparison-page-controls">
+            <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-page-step="-1" aria-label="Previous {{ side }} page" title="Previous {{ side }} page"><span class="cfm-comparison-icon-previous" aria-hidden="true"></span></button>
+            <label class="small">Page <input class="form-control form-control-sm" type="number" min="1" max="{{ pages|length }}" value="1" data-comparison-page aria-label="{{ side_label }} page"></label><span class="small">/ {{ pages|length }}</span>
+            <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-page-step="1" aria-label="Next {{ side }} page" title="Next {{ side }} page"><span class="cfm-comparison-icon-next" aria-hidden="true"></span></button>
+            <a class="small" href="{{ pdf_url|pdf_viewer_url }}" target="_blank" rel="noopener">Open PDF</a>
+        </div>
+    </div>
+    <div class="cfm-comparison-passage">
+        <div class="cfm-comparison-passage-position"><span class="small" data-comparison-side-position></span><button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-focus aria-label="Focus selected {{ side }} region" title="Focus selected {{ side }} region" disabled><span class="cfm-comparison-icon-focus" aria-hidden="true"></span></button></div>
+        <select class="form-select form-select-sm" data-comparison-finding-pages aria-label="{{ side_label }} finding pages" hidden></select>
+    </div>
+    <div class="cfm-comparison-scroll" tabindex="0" aria-label="{{ side_label }} page area"><div class="cfm-comparison-page cfm-image-loader cfm-image-magnifier" data-cfm-image-loader data-cfm-image-magnifier data-cfm-image-magnifier-hint="Hold Ctrl to magnify" data-cfm-image-loading-label="Loading {{ side }} page..." data-cfm-image-error-label="Preview unavailable. Retry or rebuild comparison."><img alt="{{ side_label }} PDF page"><div class="cfm-comparison-mark-layer"></div></div></div>
+    <div class="cfm-comparison-text" data-comparison-text hidden></div>
+</section>

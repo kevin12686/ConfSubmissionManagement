@@ -308,26 +308,26 @@ readiness conditions, or evidence that can approve/reset a review. Builds
 and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
 corrected files or historical baselines never trigger a substitute. A comparison
 with no findings is not proof of intact figures, tables, equations, or layout.
-Header/footer text stays in comparison. Exact same-text reconciliation retains
-both occurrences in token accounting and all unpaired remainder; exact moved
-text is not highlighted. This does not waive a content change,
-and cannot affect readiness. Reference-page navigation is not a text match.
-Matching extracted strings alone cannot resolve unreliable text/formula evidence.
-Exact opaque glyph identities may align one-to-one without known Unicode, but
-Unicode uncertainty and limited coverage remain; this is not semantic equality
-or approval. Unmatched opaque glyphs and supported structural-role changes still
-warn. Unknown mathematical baseline attachment must not invent a text edit.
-Non-drawing U+200B normalization remains
-inspectable information. Neither classification is a publication approval;
-no comparison classification changes the selected files or review evidence.
-Engine coverage is separate from publication readiness: `complete` covers only
-supported checks, and `limited` means a result with limitations, not parser
-failure. Missing coverage metadata cannot imply completeness. Unsupported regions
-are not unchanged. Approximate glyph/vector matches cannot certify equality;
-candidate counterparts remain uncertain, not accepted text.
-Neither a structural warning nor its absence validates full math, figures or
-image preservation. The [comparison contract](pdf_comparison.md) introduces
-no new publication approval path.
+Headers/footers, image text and formulas remain in rendered-page OCR scope.
+Method 7 uses native geometry only for order/ownership guidance, not native
+strings as proof of equality. Context alignment preserves one-to-one occurrence
+accounting; reference-page navigation is not a text match. Unlocated or empty-OCR
+ranges remain explicit and require manual review.
+
+The approved broad policy tolerates complete local differences covered by 38
+direct visual groups and existing whitespace rules. Raw OCR, locations, rule
+IDs and risks remain inspectable as information. Real similar-character edits
+(such as O/0, f/t and rn/m) and whitespace-only edits can be missed. These are
+comparison tolerances, **not Exceptions Center decisions**, and cannot waive a
+publication blocker. A mixed non-tolerated edit must not disappear with a
+neighboring tolerated character.
+
+Coverage is separate from publication readiness: complete describes supported
+execution only, limited describes a usable result with limitations, and missing
+metadata is not complete. Worker/OCR/model failure is Comparison unavailable,
+never zero-findings success. No result validates figures, image preservation,
+tables, layout or full mathematical structure. The
+[comparison contract](pdf_comparison.md) introduces no publication approval path.
 
 Automatic Original comparison starts separately after a successful Formatting
 PDF save, never within its transaction. A signed request binds the exact saved

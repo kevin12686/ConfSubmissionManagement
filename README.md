@@ -38,13 +38,12 @@ one local application:
   exclusions;
 - retains immutable Formatting revision PDF/source pairs for viewing and
   download, including through System State backup/restore;
-- compares saved Original/revision PDFs with the selected publication PDF for
-  added, removed and changed text and reference-error prompts, without
-  highlighting exact matched reflow; unreliable text/formula regions remain
-  visible for manual verification, and non-drawing zero-width-space information
-  stays inspectable. Read-only page images remain available
-  (headers/footers are not excluded), and
-  automatically starts an Original comparison after a saved Formatting PDF upload;
+- compares saved Original/revision PDFs with the selected publication PDF using
+  rendered-page RapidOCR and bounded small-edit alignment. Annotated documents
+  show text changes, unlocated ranges and inspectable visual-tolerance information;
+  hover inspection shows raw OCR and page-pixel crops without moving the pages.
+  Headers/footers, formulas and image text remain in scope. A saved Formatting
+  PDF upload automatically starts a separate Original comparison;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
   plagiarism, author-count, and exception reviews;
 - gives Dashboard, Organized List, Error Report, and final export one shared
@@ -58,10 +57,12 @@ one local application:
   backups.
 
 The PDF comparison shows engine coverage status, limitation reasons,
-evidence counts and structural warnings; see the
+evidence counts and unlocated ranges; see the
 [comparison contract](docs/pdf_comparison.md).
-Engine completion is not publication approval and does not certify figures,
-image preservation or full mathematical structure.
+Method 7's broad visual policy can deliberately tolerate real similar-character
+edits such as O/0, f/t and rn/m; whitespace-only changes can also be missed.
+Engine completion or zero findings is not publication approval. Figures, image
+preservation, tables, layout and full mathematical structure require manual review.
 
 Automatic CrossCheck has no prefilled service address. In Settings, enter the
 URL and any required service login before testing the connection. Optional
@@ -111,7 +112,10 @@ conflicts block the final package instead of being guessed around.
 ## Quick Start
 
 Python 3.12 or newer is required. The first run needs internet access to install
-Python packages; normal local operation is offline afterward.
+Python packages; normal local operation is offline afterward. PDF comparison
+also requires explicitly provisioned local OCR models before use; requests never
+download models. See [PDF comparison setup](docs/developer_guide.md#pdf-comparison-runtime)
+and [Docker setup](docs/docker_guide.md#pdf-comparison-runtime).
 
 macOS or Linux:
 

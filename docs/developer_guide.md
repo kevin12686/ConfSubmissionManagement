@@ -24,6 +24,61 @@ python manage.py runserver 127.0.0.1:8000
 
 macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windows operators run `start_windows.bat`.
 
+## PDF Comparison Runtime
+
+Method 7 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
+`requirements.txt`, with the approved PP-OCRv6 small detection/recognition models.
+Use the application's Python environment on macOS/Linux/Windows; a successful
+installation on one host does not establish Linux/container compatibility.
+Do not use a temporary research environment or silently substitute other models.
+
+Obtain the approved files through the deployment's explicit provisioning process:
+`PP-OCRv6_det_small.onnx` and `PP-OCRv6_rec_small.onnx`. RapidOCR 3.10.0's
+`default_models.yaml` lists these versioned upstream downloads:
+
+- [Detection model](https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx)
+- [Recognition model](https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx)
+
+Download both into a separate local provisioning directory, retaining the exact
+filenames, then run the importer below. If an upstream download is unavailable,
+transfer these same checksum-verified files from another provisioned machine;
+do not substitute another model or bypass verification. The importer validates
+the pinned SHA256 values in
+`submissions/services/rapidocr_comparison/runtime.py`. The default lookup directory
+is `BASE_DIR/runtime/rapidocr-models`, outside conference-managed storage. From
+the repository root, import the files there before starting comparisons:
+
+```bash
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python manage.py prepare_rapidocr_models \
+  --source /absolute/path/to/approved-models \
+  --destination "$(pwd)/runtime/rapidocr-models"
+.venv/bin/python manage.py runserver 127.0.0.1:8000
+```
+
+The source above is a deployment placeholder, not a supplied model location.
+The explicit destination selects the default runtime directory; no environment
+variable is needed for that location. On Windows, supply the absolute checkout
+path followed by `runtime/rapidocr-models` instead of the shell substitution.
+Model files must be regular, non-symlink files with the approved checksums.
+The command only copies/validates local files; it never downloads models.
+
+For an external directory, pass an absolute `--destination` and set
+`CFM_RAPIDOCR_MODEL_DIR` to that same absolute path in the actual launcher/service
+environment. Restart the server after changing its environment. An override
+takes precedence over the default; invalid/missing files at the selected path
+do not authorize fallback to another model directory. Docker uses container
+paths, as described below. No external-directory override is necessary for the
+normal checkout-local setup.
+
+No comparison request downloads models or calls network inference. Missing,
+corrupt or mismatched models/dependencies cause Comparison unavailable, never
+native-text fallback. Local inference and actual rendered-PDF acceptance must be
+verified after provisioning. Model installation is a machine prerequisite, not
+System State data: provision it again on a restored/new host. Keep model files
+out of publication directories, report cleanup and state archives. See the
+[Docker Guide](docker_guide.md#pdf-comparison-runtime) for container paths.
+
 ## Docker Development Boundary
 
 Docker procedures are centralized in the [Docker Guide](docker_guide.md).
@@ -186,67 +241,48 @@ Put reusable workflow behavior in services:
   DB transaction so newly created files are compensated on failure. Capture an
   unrecorded corrected pair before original-file invalidation. Do not add file
   copies to migrations or create revisions from GET requests.
-- Read-only Formatting PDF comparison: `pdf_comparison.py`. Keep source
-  selection on the publication helper, revision reads on the verified history
-  reader, and parsing/rendering on PyMuPDF. Builds use audited POSTs;
-  GETs only validate/read an existing signed snapshot. Never call processing,
-  extraction, Formatting save, author-cache rebuild, or workflow recomputation
-  from comparison. Difference results cannot feed readiness or review flags.
-  Keep headers/footers in extraction and scanning. Exact-span reconciliation
-  must consume globally unique occurrences one-to-one, preserve unmatched
-  remainder, and balance token coverage before display limits. Exact moved text
-  contributes to coverage but not
-  highlights or counts. Read native glyph runs, order detected ruled-table cells
-  spatially, and keep display glyph refinement separate from token accounting.
-  Keep evidence inspection and token alignment inside `pdf_comparison_worker.py`,
-  not the request process: table detection also uses mutable global state.
-  Pass exact PDF bytes, never model objects or live file paths. The worker has
-  no Django initialization, database/publication metadata access or filesystem
-  writes. Enforce the 90-second CPU soft limit (95-second hard limit where
-  supported) and the parent's 95-second wall timeout; Windows relies on the wall
-  timeout and bounded inputs. Validate returned occurrence and alignment evidence
-  in the parent. Test timeout failure, rotated cells and unchanged parent rendering
-  settings; never silently skip failed inspection or treat it as a complete result.
-  `pdf_text_evidence.py` uses structured PDF operations and bounded CMap records
-  to inspect actually used font codes. Matching raw strings alone cannot resolve
-  unknown or unsupported evidence. Separate Unicode certainty from supported
-  identity: matching exact-outline `opaque_key` values with
-  `text_identity_supported=True` may align one-to-one in matching context while
-  preserving unknown Unicode and limited coverage. Unmatched opaque glyphs warn;
-  an unsupported identity cannot become equal merely by supplying an opaque key.
-  Check supported script-role changes independently. Unknown mathematical
-  baseline attachment of known Unicode must limit coverage, not invent a text
-  edit or an ordinary-baseline role. Approximate vectors may locate candidate
-  counterparts only; those counterparts remain uncertain and cannot seed equality.
-  Preserve raw text, font aliases, positions and reasons. Do not infer Unicode
-  from font names, the other PDF, OCR or approximate raster similarity.
-  Use per-occurrence evidence rather than blanket same-font/page
-  uncertainty. Unsupported occurrence attribution remains explicit uncertainty;
-  never guess which fallback character an extractor will return. Strict
-  paint-pair deduplication must not merge independent overprints. Exact evidence,
-  conservative vector limits and one-to-one/context-aware alignment are specified
-  in the [comparison contract](pdf_comparison.md).
-  Only non-drawing U+200B with no detected mapping issue may be normalized;
-  retain an explicit inventory. Test visible glyphs mapped to controls, other
-  zero-width controls, malformed/partial maps, forms, sub/superscripts and real
-  text changes beside uncertain formulas. Never feed these findings to readiness.
-  Never substitute a navigation reference page for an actual text location. Update the temporary
-  comparison method version when its result contract changes; do not reuse an
-  old signed result under a new algorithm. Regression coverage must include
-  repagination, repeated/deleted passages, partial-word and numeric edits,
-  multi-page findings, and byte-identical publication/CrossCheck output.
-  The workspace consumes `coverage_status`, `coverage_reasons`, `evidence_summary`
-  and finding `issues` without deriving safety from counts. `structure` is a
-  warning category, distinct from uncertain evidence and normalization Info.
-  Run `node --test submissions/tests/js/pdf_comparison.test.mjs` for UI contract
-  coverage, plus actual-payload browser QA. Synthetic UI tests do not validate
-  engine behavior. Keep automatic upload receipts and controller ownership intact.
-  Follow the contract's corrective acceptance requirements: hash-pinned real
-  cases with reviewed expectations, metadata-only transformations whose text,
-  geometry and rendering are verified unchanged, and mutation checks beside
-  uncertain regions. Run pure comparisons with database access disabled. Do not
-  equate the regression-suite count, injected-evidence tests or reduced warning
-  totals with successful parser-to-finding acceptance.
+- Read-only Formatting PDF comparison: `pdf_comparison.py` and the isolated
+  RapidOCR comparison engine. Keep After on the publication helper and Before
+  on Original/verified revision readers. Builds use audited POSTs; GETs only
+  validate/read existing signed snapshots. Never call processing, Formatting
+  save, author-cache rebuild or workflow recomputation from comparison.
+  Method 7 uses rendered-page RapidOCR, not the retired method-6 font/glyph
+  proof engine. Native geometry guides region/row order only; it never supplies
+  OCR text or an equality shortcut. Preserve raw OCR text, scores and boxes,
+  headers/footers, image/formula text and low-confidence recognition.
+  Keep the approved context anchors, bounded small-edit alignment, field
+  ownership and complete one-to-one accounting. Do not cancel repeated values
+  globally, infer a location from a reference page, or tune per paper.
+  All 38 direct visual groups are enabled by the broad policy. Only a wholly
+  explained local difference is tolerated; a mixed real edit keeps its original
+  finding. Preserve tolerated occurrences as neutral information with rule IDs
+  and risks. Empty OCR, unlocated ranges and exceeded work bounds cannot look
+  unchanged. Explicitly test real similar-character/whitespace blind spots.
+  See the [comparison contract](pdf_comparison.md) for the full policy.
+  Run rendering/OCR/alignment behind the worker boundary with exact byte
+  snapshots, bounded inputs/work and parent validation. Keep Django, database
+  and publication metadata out of the engine. Missing models/dependencies or
+  worker errors fail explicitly; never silently substitute native text or
+  download models in a request. Production modules must not import research
+  scripts or require the research virtual environment.
+  Advance temporary method versions for algorithm/result changes; old signed
+  results and cached automatic requests must rebuild, not be relabeled.
+  Preserve upload receipts, revision binding, audit, expiry and archive exclusion.
+  Keep differences, unlocated ranges and information separately counted; coverage
+  metadata and display caps cannot imply safety. The document-first UI consumes
+  actual side-specific locations, raw text and explanations without reclassifying
+  evidence. Hover inspection must not navigate or scroll either PDF.
+  Run `node --test submissions/tests/js/pdf_comparison.test.mjs` and actual-payload
+  browser QA in addition to the regression gate. Test real rendered-PDF OCR,
+  stale/absent/contradictory native layers, order/value swaps, reflow, repeated
+  deletions, mixed tolerated/real edits and failure paths. Record exact fixture
+  hashes and expected locations; research counts or synthetic UI tests are not
+  production acceptance. Verify unchanged database/review/readiness state and
+  byte-identical publication/CrossCheck output.
+  Record the PyMuPDF extraction version as well as OCR/model versions: native
+  block/line geometry can change despite identical raster pixels and recognition.
+  Frozen-input parity and fresh PDF acceptance are separate gates; do not change
+  the publication PDF runtime just to reproduce an experiment's finding count.
 - Automatic post-upload comparison: `automatic_pdf_comparison.py`, with the
   shared `formatting_comparison_status` partial/CSS/JS. Prepare a signed receipt
   only after a successful save returns its exact `FormattingSaveResult`;

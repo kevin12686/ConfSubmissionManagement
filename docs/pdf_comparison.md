@@ -2,288 +2,249 @@
 
 ## Implemented Design
 
-The current temporary comparison method is **6**, in app **1.21.1**. This document
-is the canonical evidence and engine/UI contract, with a stable filename across
-method versions. It does not
-serve as a test report or release acceptance record. The comparison UI consumes
-the fields below without changing publication selection, upload revision binding,
-review state, or System State archive v8. The method version applies to temporary
-comparison results only. Method-5 and older signed results require rebuilding;
-they must not be relabeled or reused as method-6 results.
+The production integration uses temporary comparison method **7**, in app
+**1.22.0**. This is the canonical engine/UI contract, not a test report or
+release acceptance record. Method-6 and older signed results must be rebuilt;
+they must not be relabeled or reused as method-7 results. Historical method
+descriptions remain in the changelog, not as requirements for this engine.
 
-## Result Contract
+Comparison is advisory and read-only. After comes from the publication helper
+for the exact active Publishing submission. Before is its Original or a
+hash-verified Formatting revision. Builds and snapshot reads revalidate scope,
+file identity and SHA256. Missing files never authorize a fallback. The build
+is audited, but findings cannot approve/reset reviews, waive exceptions, change
+publication selection, or feed readiness. Automatic post-upload requests remain
+bound to the exact saved revision and run separately from the save transaction.
+Temporary comparison artifacts expire after two hours and are excluded from
+System State. **State archive v8 is unchanged.**
 
-The result retains existing fields, finding IDs, source locations, actual page
-lists, reference-page fields, total/display counts, and page maps, and includes:
+## Rendered OCR Workflow
 
-- `coverage_status`: `complete` or `limited`, describing execution of the
-  engine's supported checks, never publication safety or full PDF equivalence.
-- `coverage_reasons`: a list of strings explaining limitations. Show these even
-  when content counts are zero or PDF bytes are identical. Keep the heading and
-  brief coverage warning visible, with reasons in a closed-by-default Coverage
-  details disclosure. Missing coverage metadata is not an implicit `complete`
-  result.
-- `evidence_summary`: engine-supplied counts. The UI displays nonnegative
-  integer counts under their supplied names, including grouped counts, without
-  deriving a confidence score or a percentage of document safety.
-- `issues`: per-finding evidence explanations, rendered as plain text for every
-  category, not just extraction errors.
-- `category="structure"`: an advisory content/structure warning, with its own
-  filter and amber region outlines. It is not an unresolved-reference pattern.
+1. Render each saved PDF independently at 300 DPI and recognize its visible
+   page content with local RapidOCR/ONNX, using the approved detector long-side
+   limit of 2560. Preserve raw OCR strings, boxes and scores. Do not exclude
+   image text, formulas, headers/footers or low-confidence recognition.
+2. Use each document's own native geometry only to guide region ownership and
+   reading order. Native text is not an OCR replacement, correction source or
+   equality shortcut. Identical, stale, missing or contradictory native text
+   must not hide a visible edit.
+3. Reorder fragments only with compatible native-region, native-row and visible
+   OCR-row evidence, using that document's actual horizontal positions. Do not
+   force RTL, vertical, coarse or ambiguous geometry into this ordering. Keep
+   punctuation/token order inside a word box.
+4. Establish correspondence from unchanged OCR context, not equal page numbers
+   or absolute coordinates. Use bounded local token alignment for small edits;
+   relative position only resolves alignment ties. Repeated/table values retain
+   field ownership and cannot cancel through global word bags or cross-row matches.
+5. Retain added, removed and changed local passages with actual side-specific
+   locations. Large rewrites, missing anchors, ambiguous pairing, exhausted
+   local work bounds and empty OCR remain explicit handoffs/limitations, never
+   a clean comparison.
+6. Apply only the explicit visual policy below to complete local differences.
+   Keep original text, occurrence counts, locations, rule IDs and risks
+   inspectable. No dictionary, LLM, semantic repair, global confusables skeleton,
+   general Unicode compatibility normalization or paper-specific tuning is used.
 
-Keep content/structure Warning, uncertain text/formula Warning, and
-normalization Info separate. The existing UI category for normalization
-information is `formatting`; `info_count` is not a count of verified content.
-An engine classification called `normalizationInfo` must retain or explicitly
-map to that category at the engine boundary, not be guessed from display text.
-Finding totals count findings, not affected pages or papers.
+PDF rendering and OCR/comparison execute behind the isolated worker boundary;
+the request service owns publication selection, snapshots, audit and revision
+binding. No OCR/model failure may silently invoke the retired method-6 engine
+or native-text-only comparison. Worker timeout, missing dependencies/models,
+malformed output or render failure that prevents comparison means
+**Comparison unavailable**, not success with zero findings. Runtime and input
+bounds must be enforced and validated at the parent boundary. A usable bounded
+result with unresolved ranges instead reports its limitations.
 
-Limited coverage means a result exists but has inspection limitations. A parser
-or worker failure that prevents a result is **Comparison unavailable**, not a
-successful result with zero findings. Rendering failure is a separate page-image
-error. Truncation and pairing-budget limitations remain visible in the coverage
-area rather than stacking duplicate warning notices.
+Local inference requires RapidOCR 3.10.0, ONNX Runtime 1.31.1 and the approved
+PP-OCRv6 small detection/recognition models. Provision with
+`prepare_rapidocr_models --source ... --destination ...` into the default
+`BASE_DIR/runtime/rapidocr-models` directory. Existing Compose's `.:/app` mount
+exposes this default in Docker without another mount or environment setting.
+An optional absolute `CFM_RAPIDOCR_MODEL_DIR` overrides the lookup location;
+external Docker paths need their own mount and container environment setting.
+See [runtime setup](developer_guide.md#pdf-comparison-runtime).
+Provision them before use; a comparison must not depend on a research virtual
+environment, files under `output/`, network inference or runtime model downloads.
+The experiment's environment is not a deployment dependency.
 
-## Worker Boundary
+Native geometry is also a runtime input: different PyMuPDF versions can group
+the same visible words into different blocks/lines or return different boxes,
+even with byte-identical rendered images and identical OCR. That can change
+alignment boundaries and finding counts. Cached-OCR regression on frozen
+geometry proves comparator parity only, not end-to-end PDF parity. Record the
+render/extraction runtime and run fresh-PDF acceptance when changing it; do not
+upgrade the publication runtime or tune per-paper thresholds to force old counts.
 
-Evidence inspection and token alignment run together inside
-`pdf_comparison_worker.py`, not in the Django request process. The worker receives
-the two exact PDF byte snapshots, returns bounded occurrence and alignment
-evidence, and has no Django initialization, database access, publication metadata
-access or filesystem writes. Source selection, revision binding, audit logging
-and snapshot retention remain the parent service's responsibility.
+### Work Bounds
 
-The worker has a 90-second CPU soft limit (95-second hard limit where OS resource
-limits are supported), plus a parent-enforced 95-second wall-clock timeout.
-Windows uses the wall timeout and bounded inputs because the CPU-limit API is
-unavailable. The parent validates returned evidence and alignment ranges before
-using them. A timeout, worker failure or invalid response means Comparison
-unavailable, not a complete or zero-findings result. A bounded alignment that
-returns successfully with unresolved remainder instead reports limited coverage.
+Input PDF bytes remain capped at 64 MiB per side. The OCR runtime limits each
+document to 40 pages, 300,000 recognized line characters, 30,000 comparison
+tokens and 60,000 native geometry words. A 300-DPI page must fit within 4,000
+pixels per side and 16 million pixels, with at most 2,000 OCR lines. Oversized
+pages are rejected rather than silently downsampled below the declared rendering
+resolution. The detector's 2560-pixel long-side setting is a separate model
+processing bound, not the saved page-image resolution.
 
-Work limits also bound native items to 500,000 per document, candidate outlines
-to 100,000, TTC collection faces to 64 and table-rule ownership work to 2,000,000
-steps per page inspection. Exhausted work limits produce a bounded
-failure or an explicit limited result, never an unbounded retry or an inference
-that uninspected content is unchanged.
+Unchanged anchors require six tokens and 24 characters, with the explicit
+identical-sequence control supported separately. Local gaps are bounded to 200
+tokens; the small-edit budget is 16 tokens, 80 characters and six edit runs.
+Visual-rule alignment is bounded to 1,600 characters per side of a local
+difference. Exceeded local budgets retain a manual handoff; document/runtime
+limits can make comparison unavailable. These are fixed common limits, not
+per-paper tuning or promises that every edit within them is detected.
 
-## Evidence Rules
+## Visual Tolerance Policy
 
-- Bind evidence to each used occurrence: code, glyph, font/resource identity,
-  operation and position. A defective occurrence must not automatically turn
-  every occurrence of the same font on the page into a warning. If occurrence
-  attribution is unsupported or ambiguous, retain that uncertainty explicitly;
-  do not invent Unicode or declare the region unchanged.
-- Exact character/glyph evidence must be traceable to supported mappings or
-  exact glyph evidence. Font names, OCR guesses, another PDF's text, approximate
-  glyph/vector similarity and raster resemblance cannot establish equality.
-  A missing inspection capability must limit coverage for the affected evidence;
-  do not present a blanket `noFontTools` explanation as occurrence evidence.
-- Deduplicate only strictly evidenced paint pairs belonging to the same text
-  occurrence, such as a verified fill/stroke pair. Matching coordinates, strings
-  or glyph appearance alone do not authorize deletion of a duplicate. Separate
-  text-show operations and independent overprints remain distinct; ambiguous
-  overprints remain warnings.
-- Vector evidence is conservative and bounded. Approximate matching is not
-  definitive acceptance: it may propose a possible counterpart for an uncertain
-  finding, but cannot supply accepted text or equality. Ambiguous vectors and
-  unsupported formula coverage remain warnings/limitations even when extracted
-  strings match. A supported structural finding must explain its evidence, not
-  imply that arbitrary math structure, figure integrity or image loss has been
-  checked.
-- Align occurrences one-to-one and context-aware. Repeated text, local context,
-  formula position and structural relationships must not be cancelled through
-  global word counts or loose similarity. Exact moved text may be accounted for
-  without a content finding, but unmatched/ambiguous remainder stays visible.
-  No source occurrence may be consumed twice. Headers and footers stay in scope.
-- Normalize only evidenced non-drawing U+200B occurrences without a detected
-  mapping issue. Preserve counts, positions and raw contexts as Info. Do not
-  silently remove other controls, visible marks or real edits beside them.
+The approved broad policy includes all 38 direct groups, including the six
+weaker substitutions. This is deliberate tolerance, **not exact glyph identity
+or proof that a PDF did not change**. All forms within one row may directly
+substitute for one another; rows do not compose transitively. For example,
+`8/B` and `B/U+0392` do not imply `8/U+0392`.
 
-Neither `complete`, exact text equality, zero warnings nor a supported vector
-check certifies figures, image preservation, full mathematical structure,
-tables, reading order or layout. Unknown/unsupported regions are not unchanged.
-All findings remain advisory; no comparison can approve a review or export.
+The following table spells non-ASCII forms as Unicode code points to make the
+policy unambiguous. Multi-character ASCII forms are literal sequences.
 
-## Identity And Coverage
+| Rule ID | Direct forms |
+| --- | --- |
+| round | `0`, `O`, `o`, U+039F, U+03BF, U+041E, U+043E |
+| vertical | `1`, `I`, `l`, U+007C, U+0406, U+04C0 |
+| dash | `-`, U+2010, U+2011, U+2013, U+2014, U+2212 |
+| single_quote | U+0027, U+2018, U+2019, U+02BC |
+| double_quote | U+0022, U+201C, U+201D |
+| plus | `+`, U+FF0B, U+5341 |
+| times | `x`, U+00D7, U+2715 |
+| middle_dot | U+00B7, U+22C5, U+2219 |
+| fi | `fi`, U+FB01 |
+| fl | `fl`, U+FB02 |
+| ff | `ff`, U+FB00 |
+| ffi | `ffi`, U+FB03 |
+| ffl | `ffl`, U+FB04 |
+| rn_m | `rn`, `m` |
+| cl_d | `cl`, `d` |
+| vv_w | `vv`, `w` |
+| A | `A`, U+0391, U+0410 |
+| a | `a`, U+0430 |
+| B | `B`, U+0392, U+0412 |
+| C | `C`, U+0421 |
+| c | `c`, U+0441 |
+| E | `E`, U+0395, U+0415 |
+| e | `e`, U+0435 |
+| H | `H`, U+0397, U+041D |
+| K | `K`, U+039A, U+041A |
+| M | `M`, U+039C, U+041C |
+| N | `N`, U+039D |
+| P | `P`, U+03A1, U+0420 |
+| p | `p`, U+03C1, U+0440 |
+| T | `T`, U+03A4, U+0422 |
+| X | `X`, U+03A7, U+0425 |
+| Y | `Y`, U+03A5, U+04AE |
+| two_Z (broad) | `2`, `Z` |
+| five_S (broad) | `5`, `S` |
+| eight_B (broad) | `8`, `B` |
+| six_G (broad) | `6`, `G` |
+| f_t (broad) | `f`, `t` |
+| u_v (broad) | `u`, `v` |
 
-Glyph identity, Unicode interpretation and mathematical structure are separate
-evidence dimensions. The engine aligns identical exact-outline opaque
-glyphs one-to-one when their `opaque_key` and context agree and
-`text_identity_supported` is true. This establishes the supported glyph identity
-only; it does not invent Unicode, copy a character from the other PDF, or certify
-meaning/layout. Unresolved Unicode and limited coverage remain visible even when
-these matched occurrences produce no content-change finding: an otherwise
-unchanged matched opaque pair can contribute only a coverage limitation, not a
-per-occurrence text-change warning. An `opaque_key` alone must not override
-resource conflicts or unsupported identity evidence.
+Only a whole local difference explained by equality, existing whitespace
+tolerance and direct table substitutions can lose its red change mark. A mixed
+difference with an ordinary residual edit retains the original finding; do not
+fragment or partially excuse it because one character resembles another.
+Tolerated occurrences are neutral information, not renamed uncertainty warnings.
 
-Unmatched opaque occurrences remain verification warnings, not confident Unicode
-insertions/deletions. Repeated occurrences must still be consumed one-to-one.
-Supported subscript/superscript role changes remain structural warnings even when
-exact opaque glyph identities align. For known Unicode with unresolved
-mathematical baseline attachment, retain the structural coverage limitation
-without inventing a text edit. A missing role is not evidence of an ordinary
-baseline role; compare roles only where both sides have supported role evidence.
+There is no empty-string rule: deletion of a minus sign, decimal point, question
+mark or word is not a visual exception. There is no general case folding,
+subscript/superscript equivalence, arbitrary number substitution or spelling
+correction. Explicit multi-character rules such as `rn/m` can nevertheless
+tolerate genuine character insertions/deletions. Existing whitespace split/join
+tolerance remains inspectable; possible wrap-hyphen information is separate.
 
-Approximate vector evidence has a narrower use: it may identify a candidate
-counterpart using exact neighboring context, but the vector and proposed
-counterpart remain uncertainty Warnings. An unknown vector candidate never
-becomes an equality anchor or a Unicode guess. Ambiguous or many-to-one
-counterpart proposals must not hide findings.
+### Accepted Blind Spots
 
-Anchor-based exact vector-region pairing requires all of: an equal
-`appearance_key` for a pure opaque fill, including paint properties; equal
-`anchor_geometry`; and two mapped text anchors with a unique one-to-one
-correspondence. Matching outlines
-or nearby text alone is insufficient. Such an exactly evidenced pair can omit
-the per-region warning while unknown Unicode and limited coverage remain.
+Real `O/0`, `f/t`, `rn/m`, `S/5` and other listed changes may be tolerated.
+For example, a real `safety/satety` edit cannot be distinguished from the same
+OCR misreading by this rule. Whitespace-only `now here/nowhere` and `1 1/11`
+changes can also be missed. Identical OCR mistakes on both sides, omitted text,
+small image lettering and formula recognition remain risks. Matching OCR is not
+a font-map proof, layout check, figure-preservation check or mathematical proof.
+No zero-finding result certifies a publication PDF.
 
-Method 6 also supports exact render-source identity, independently of text
-anchors. The worker's `_RenderSource` hashes a bounded closure of page content,
-resources and rendering properties, including referenced objects and stream
-bytes. It excludes document Info/ID and page metadata, not the rendering inputs.
-Parsed numeric objects use exact rational values, so equivalent representations
-such as `1` and `1.0` do not create a difference. This is not rounding or a
-numeric tolerance: distinct parsed values remain distinct, and content-stream
-bytes are not approximately normalized.
-The proof uses a strict reader: duplicate dictionary keys and other unsupported
-repairs cannot supply exact identity. Inheritable page attributes resolve through
-explicit nulls to their effective values; null must not hide inherited resources,
-geometry or rotation. Cycles, external/unsupported streams, unresolved objects
-or exhausted bounds yield no key, not assumed equality.
-Traversal is limited to depth 64, 100,000 visited nodes and a 64 MiB byte budget
-per document. Unavailable proof remains an explicit coverage limitation and does
-not by itself turn a usable comparison into parser failure.
+## Result And UI Contract
 
-Bounded static Link annotations can participate in this closure. A supplied
-`/P` backlink must identify the enclosing page before that ownership backlink is
-excluded from recursive hashing. Local destination/GoTo page references require
-a unique page index and retain exact destination arguments; they are navigation
-references, not appearance-resource recursion. Only supported URI/GoTo actions
-are accepted. Appearance streams/states (`/AP`, `/AS`), their resources, borders,
-colors, opacity, flags, rectangles and other appearance properties remain in the
-hash. Unknown annotation types, additional actions (`/AA`), chained actions
-(`/Next`), unsupported actions, foreign page backlinks and unsupported cycles
-or external streams provide no proof. Annotation lists are bounded to 1,000
-entries per page; local page-destination resolution is limited to 100 pages.
-This is static-paint evidence only, not hyperlink-navigation equivalence.
-Named-destination definitions and URI base resolution are not proved by this
-key; retaining destination/action data must not be presented as link validation.
+Keep source filenames, exact snapshot links, actual page lists and boxes,
+navigation-only reference pages, raw text, context and reasons bound to their
+original documents. Totals count records, not affected papers or accuracy.
+Display caps never change full totals or conceal omitted/unknown ranges.
+Expose these distinct groups:
 
-The parent can pair a vector region through this path only when the equal
-`render_source_key` identifies exactly one page on each side, with equal page
-dimensions, equal `appearance_key` and the same absolute region position
-(equal normalized box at those dimensions). The region match must also be
-unique one-to-one. This supports metadata/document-ID-only rewrites without
-inventing Unicode or using approximate similarity. It can omit the matched
-region warning, never consume a text change or remove the underlying Unicode,
-graphics or other coverage limitations. Evidence counts distinguish these
-`exact_render_source_region_pairs` within `exact_vector_region_pairs`.
+- **Text differences:** added/removed/changed passages, red outline and arrow.
+- **Unlocated ranges:** amber highlight/outline, no arrow; manual confirmation
+  is required and the range is not a confirmed deletion or equality.
+- **Information:** quiet neutral outlines for tolerated visual differences,
+  whitespace joins/splits and possible wrap hyphens. Preserve rule and risk
+  details; do not count these as verified unchanged content.
 
-When only the two text anchors match, without exact appearance and geometry
-proof or render-source proof, show both regions in one uncertainty finding. This
-is a candidate pair for manual review, not equality: it cannot consume text or
-invent Unicode.
-Neither exact-proof path generally proves vector-to-font equivalence. A genuine
-vector-to-font substitution without sufficient exact evidence remains a manual
-uncertainty finding; a metadata-only control does not justify removing it from
-a different original/corrected pair.
+The documents are the primary workspace, not a permanent result-list sidebar.
+Show annotated page images immediately. Hover/focus/tap inspection shows the
+existing finding, raw text and two crops from the actual page pixels, without
+changing pages or scrolling either document. Moving into the inspector keeps
+it open; leaving mark and inspector uses a short crossing grace period.
+Keyboard activation, touch, Escape and an explicit close control are supported.
+Hover is transient and must not persist host state.
 
-## Method 6 Corrections
+For large unlocated ranges, magnify the hovered side at the actual pointer.
+The opposite side starts at its own recorded range, explicitly not a character
+correspondence, and can be inspected independently. Draw only the active
+finding's connection: dashed amber for unlocated candidates and none for a
+missing counterpart. Connections are finding-level, never invented
+character-by-character alignment. Explicit previous/next-result commands may
+navigate to recorded pages. Page synchronization uses alignment evidence only
+for navigation, not as a finding location or equality proof. Fit page is the
+initial view; narrow screens retain both documents and independent controls.
+Loading/errors clear stale marks/crops rather than show another page's evidence.
 
-Method-5 investigation exposed a distinction between preserving evidence and
-accurately classifying it. Method 6 changes the evidence classification and
-correspondence rules, not warning names or display caps:
+Coverage status/reasons and evidence counts remain distinct from findings.
+`complete` means supported execution completed, not publication safety;
+`limited` means a result with limitations; missing metadata is not complete.
+Keep a brief coverage notice visible, with long reasons and evidence counts in
+disclosures. Failed comparison and failed page-image display are separate
+states. Neither lowered warning counts nor tolerated differences waive manual
+review or publication blockers.
 
-- Connected table/grid rules are classified as graphics through detected-cell
-  edges and perpendicular ruling at both ends, including filled vertical
-  segments and supported corner junctions. Join bounds use actual rule
-  thicknesses and float32 coordinate roundoff, not approximate glyph equality.
-  A narrow aspect ratio alone is insufficient; inline bars, isolated marks and
-  unsupported graphics are not silently removed. Graphics coverage limitations
-  remain, without certifying table layout.
-- Native boundary extraction disables presentation `ActualText` substitutions
-  and retains those spans in a separate inventory. Boundary binding still
-  requires an unambiguous occurrence match; it does not copy Unicode from the
-  other PDF or promote substituted presentation text to glyph evidence.
-  Unresolved binding and independent-overprint ambiguity remain explicit.
-- Script attachment uses run-level base/context evidence. A small script run
-  with nearby larger text but no supported attachment remains unresolved instead
-  of acquiring a baseline role from its own same-sized letters. Real attachment
-  changes and unknown attachment remain distinct outcomes. For
-  example, an author-list comma genuinely moved from baseline to superscript
-  remains a structure finding; the corrective goal is not zero structure counts.
-- Repeated row labels can use ordered-cell context only within a unique paired
-  table with complete supported cells, unique supported headers and the same
-  ordered row-label sequence. A genuinely empty corner header gets a typed
-  identity only when glyph/image/non-ruling-vector evidence does not occupy it.
-  Row/column positions alone or global word counts cannot establish this
-  correspondence. Cell contents still undergo comparison; changed/swapped values
-  must remain detectable. Incomplete, duplicated or unresolved table identity
-  remains a limitation rather than silently matching ambiguous rows.
+## Experiment Provenance
+
+The approved source is the local research bundle
+`output/pdf/rapid-visual-exceptions-20261110/` (`README.md`, `RESULTS.md`,
+`SYMBOLS.md`) and the interaction reference is
+`output/pdf/document-first-prototype-20261110/`. Keep those research artifacts
+unchanged; production must import its own maintained modules.
+
+The experiment reports 102 pairs and 235 OCR images. Its literal profile
+matches its prior baseline; broad reduced candidate marks across three real
+papers from 122 to 101. Those papers lack complete independently adjudicated
+truth, so that reduction is neither accuracy nor proof of eliminated false
+positives. The reported 13 earlier and 9 new non-tolerated edit checks, plus
+explicit real-change tolerance blind spots, are research evidence only.
+Prototype browser checks are UI evidence only. Neither is the production gate.
 
 ## Acceptance Handoff
 
-Run the [developer gate](developer_guide.md#regression-commands), the comparison
-Node tests, and the [comparison browser scenarios](editorial_acceptance_runbook.md).
-Verify the actual engine payload, not only synthetic UI fixtures. Required cases
-include one bad occurrence beside valid same-font prose; strict paint-pair versus
-independent-overprint cases; exact versus approximate glyph evidence; ambiguous
-vectors and unsupported formulas; repeated/context-sensitive alignment; limited
-coverage with zero content findings; parser failure; normalization beside real
-edits; and unchanged publication/CrossCheck bytes and revision binding. Also cover
-exact opaque pairs with unknown Unicode and limited coverage; unmatched/repeated
-opaque occurrences; context or outline mismatches; unsupported identity flags;
-supported role changes on matched opaque glyphs; unknown mathematical baseline
-attachment of known Unicode without invented text edits; and approximate vector
-counterparts that remain uncertain rather than aligning as equal.
+Run the [developer gate](developer_guide.md#regression-commands), comparison
+Node tests, and [browser/engine scenarios](editorial_acceptance_runbook.md#formatting-pdf-comparison-acceptance).
+Record commands, fixture hashes, actual locations, unresolved limitations and
+backend/UI acceptance separately. This document does not assert they passed.
 
-The regression-suite total is not a semantic acceptance score. Required release
-evidence also includes:
+Required evidence includes actual rendered-PDF OCR (not just injected strings),
+stale/absent/contradictory native layers, same-row ordering versus real word/value
+swaps, repeated/table ownership, shifted/reflowed/repaginated controls, small
+insertions/deletions/replacements, broken references, minus/decimal deletion,
+mixed tolerated/non-tolerated changes, direct-only versus transitive rules,
+large rewrites, empty OCR, worker/model errors and work limits. Include the
+deliberate tolerance blind spots as expected limitations, not detection wins.
+Retain one-to-one token/character accounting before display caps.
 
-1. Versioned real fixtures with input hashes and independently reviewed expected
-   finding identities, actual locations and residual limitations. Preserve the
-   known edits; explain every remaining warning class. Do not require zero
-   warnings on arbitrary PDFs or use the prototype's lower count as an oracle.
-2. Metadata/document-ID-only reserialization compared through the actual pure
-   `compare_pdf_bytes` entry point, with database access disabled and no audit or
-   publication workflow calls. Verify unchanged page geometry, extracted text
-   and drawing evidence, content streams where preserved, and rendered pixels
-   before treating a sample as content-preserving. Inspect differences rather
-   than silently weakening a failed preservation check. Compare the identical-
-   bytes control too: its shortcut alone cannot validate the changed-bytes path.
-   For reviewed controls whose local occurrences have supported identity proof,
-   require zero content, structure and uncertainty findings while retaining
-   applicable coverage limitations. This is a fixture-specific expectation,
-   not a zero-warning promise for arbitrary PDFs or original/corrected pairs.
-3. Realistic connected table borders in both orientations and drawing forms,
-   beside genuine mathematical bars and changed cell values. Successful rule
-   classification must not erase unsupported graphics coverage or real edits.
-4. Actual PDF extraction through repaired mappings, presentation boundaries and
-   script attachment. Mocked evidence exercises downstream contracts but cannot
-   replace parser-to-finding regression cases for those paths.
-5. Mutation checks for punctuation, values, repeated occurrences, arrows and
-   script roles, including edits adjacent to unresolved evidence. A cleaner
-   unchanged case must not come at the cost of missed changes.
-6. Exact render-source proof through actual PDF extraction: metadata/ID changes
-   may retain the key; changed content, resources, paint or position must not
-   acquire the same proof. Equivalent numeric representations must retain the
-   key without merging distinct values. Test duplicate pages/regions, duplicate
-   dictionary keys, unsupported annotations/actions, cycles, external streams
-   and work limits as no-proof cases. Test supported static Links without
-   discarding appearance: changed `/AP` streams, color, flags, rectangles or
-   borders must invalidate the old proof. Cover inherited null attributes,
-   foreign page backlinks and cyclic/chained actions. Preserve coverage reasons
-   and neighboring text findings even when a region pairs exactly. Downstream
-   injected-key tests alone do not validate closure hashing.
-
-Metadata-only transformations must not invent content/structure changes or
-misclassify table borders as glyph warnings. Supported identity reconciliation
-can remove redundant local findings while Unicode or other coverage limitations
-remain explicit. Record any residual review burden and its evidence; neither
-relabeling uncertainty nor declaring all drawings unchanged satisfies acceptance.
-
-UI fixtures demonstrate presentation behavior only. Record actual-engine gate
-results and engine-owner release acceptance separately; this design document
-does not assert that all tests or acceptance cases passed.
+Browser QA must use actual payloads and nonblank image/crop pixels on desktop
+and narrow screens. Verify hover does not navigate or scroll, keyboard/touch
+inspection, overlay crossing/dismissal, pointer-local unlocated crops, one-sided
+findings, active-only links, explicit navigation and stale-load rejection.
+Compare database/review/readiness state and publication/CrossCheck bytes before
+and after. Verify saved-upload revision binding, audited builds, old-method
+rejection, expiry, cleanup and archive exclusion without changing archive v8.

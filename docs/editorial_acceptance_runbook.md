@@ -270,119 +270,109 @@ Publishing must retain their existing export behavior even when history exists.
 
 ### Formatting PDF Comparison Acceptance
 
-Upload a corrected PDF in List/Single/Focus and verify it is saved before a
-separate automatic Original comparison POST starts. Confirm title guard warnings
-first; preview/cancel/validation failure must create no comparison receipt.
-Test PDF-in-source-field recognition, source-only and notes/status saves,
-filtered-out saved rows, loading, content-warning counts, and explicit Retry.
+These are required release scenarios, not a claim they have passed. Run the
+[developer gate](developer_guide.md#regression-commands) and comparison Node
+tests, then record backend and browser acceptance separately. The research
+bundle and document-first prototype are references, not production test results.
+Use disposable records/files and hash-pinned reviewed expectations.
 
-Compare native-run PDFs with shifted/reordered columns and repagination:
-exact matched text must not be highlighted. Insert/delete words and punctuation,
-remove one repeated occurrence, and swap ruled-table values while preserving
-PDF painting order; actual changes must remain. Check Added/Changed/Removed
-filters, glyph-sized highlights, total/display caps and older-method rebuilds.
-Equation encodings may differ despite identical appearance: verify the page,
-never waive such differences automatically or treat this as visual approval.
-Keep the saved card/Single queue position, including after HTMX filter changes.
-Refresh a completed result: no second build. Upload A then B (also with identical
-bytes): A's request/result must never open B as its After side. A later
-source-only revision may reuse a comparison of the same PDF. Interrupt/duplicate
-a request and test missing Original, parse, cache-write and audit failures:
-saved files/revisions/flags must not be rolled back by comparison failure.
-Verify responsive status strips, no auto-navigation/polling, and normal backup,
-cleanup protection and Clear Database coverage of automatic request caches.
+#### Workflow And Safety
 
-Use disposable real PDFs: a corrected Word reference error, removed/moved
-paragraph, changed punctuation/numbers, textless document, rotated page, and
-visually missing table. Open Compare PDF from List/Single/Focus while leaving
-an unsaved Formatting note; the note/input must survive in the original tab.
-Build Original and revision baselines, navigate/filter findings, switch text
-and page views, browse all pages, and verify shared loading, Ctrl magnification,
-responsive stacking, and exact snapshot PDF links. Insert a cover page to prove
-page pairing follows text rather than page numbers. No automatic table/image
-completeness verdict is permitted.
+1. Upload a corrected PDF in List/Single/Focus. It must save before the separate
+   automatic Original comparison POST. Title guard preview/cancel/validation
+   failure creates no receipt. Cover PDF-in-source-field recognition,
+   source-only/status/notes saves, filtered-out saved rows, HTMX return links,
+   loading, separate counts and explicit Retry without auto-navigation/polling.
+2. Refresh a completed result without rebuilding. Upload A then B, including
+   identical bytes: A must never open B as its After. A later source-only
+   revision may reuse the same PDF. Interrupt/duplicate requests and inject
+   missing Original, OCR/model/worker, cache-write and audit failures. Comparison
+   failure must not roll back saved files, revision history or normal save resets.
+3. Compare Original and exact revision baselines while leaving unsaved work in
+   the originating tab. Reject another submission's revision, missing/corrupt
+   files, stale tokens, changed scope, ambiguous active versions and mutations
+   during/after build. Verify exact snapshot links and no fallback.
+4. Rebuild method-6 and older signed results; never relabel them method 7.
+   Check expiry, display/input/work limits and malformed worker payloads.
+   Unresolved remainder and undisplayed counts remain explicit.
+5. Compare database/review flags, readiness, selected publication paths and
+   final/CrossCheck bytes before/after: all must remain unchanged. Build/audit
+   failure cleans temporary output. Ordinary cleanup protects open staging;
+   Clear Database removes it. State ZIP excludes comparison staging and retains
+   revision/review artifacts with State archive v8 unchanged.
 
-Reflow a two-page document while preserving its second-page header: expect
-exact matched text to be accounted for without a same-text record or separate
-removal/addition. A real
-title deletion must remain a separate content finding. Then change/remove the
-header, edit footer years/table numbers, remove one repeated sentence, change a
-suffix/punctuation beside a moved passage, and introduce a footer reference
-error; none may be excluded. Cover multi-page findings and capped highlights:
-all actual pages remain selectable, and a missing counterpart says no
-corresponding text while labeling its reference page separately. An older
-method link requires explicit rebuild. Pairing-budget exhaustion preserves
-unmatched findings with a notice rather than a complete/no-differences result.
+#### Actual Engine Evidence
 
-Reject other submissions' revisions, corrupt/missing PDFs, invalid/expired
-tokens, ambiguous active records, changed scope, and changed files during or
-after build. Test processing limits, same-size file mutation, signed-payload
-corruption, and failed-audit cleanup. Compare existing records, flags, readiness,
-and final/CrossCheck PDF bytes before and after comparison; all must remain
-unchanged. Also test partial/invalid font maps, identical extracted strings with
-unreliable mappings, removed formulas, and visible glyphs mapped to controls.
-These must remain Warning regions, not clean or automatically approved results.
-Non-drawing U+200B-only differences should be Info with raw context and counts;
-real edits beside them, other control characters, operators and numeric changes
-must remain visible. Check all three groups/filters, evidence text contrast,
-Ctrl magnification and narrow-screen stacking without horizontal overflow.
-For the [comparison contract](pdf_comparison.md), use synthetic fixtures
-for UI QA, then repeat against actual engine payloads before release claims:
+Use actual PDF rendering and the provisioned RapidOCR models, not only injected
+OCR strings. Record runtime/model versions, input hashes, expected finding
+identities and side-specific locations. Pure engine runs must not access the
+database or invoke audit/publication workflows.
 
-- Check complete/limited/missing coverage, reasons with zero findings, evidence
-  counts including zero, truncation, pairing limits, parser failure, and page-image
-  failure. No state may imply image preservation or full-math validation.
-  With a long reason list, confirm Coverage details starts closed while the
-  coverage heading and brief warning remain visible; expanding it reveals every
-  reason without horizontal overflow.
-- Keep content/structure Warning, uncertainty Warning and normalization Info
-  separate. Structural findings have their own filter and explanation, not
-  reference-error copy. Evidence text must remain literal, including markup-like
-  strings; long reasons must wrap at 320, 768, 1024 and 1440 pixel widths.
-- Focus each side's actual selected region, including tiny symbols and multi-page
-  findings. Reference pages, Info-only findings, text mode and unloaded images
-  must not focus a fabricated location. Page linking, Ctrl magnification,
-  keyboard access and highlight toggles remain usable. Confirm the inline mark
-  legend matches the shared overlay palette, wraps without overflow and is
-  hidden in text mode; no extra warning panel is introduced.
-- Verify one defective occurrence does not taint unrelated same-font prose;
-  strict paint-pair deduplication does not collapse independent overprints;
-  approximate glyph/vector matches never become definitive equality; ambiguous
-  vectors and unsupported formulas warn; repeated/context-sensitive alignment
-  consumes occurrences one-to-one and preserves real edits.
-- Pair identical exact-outline opaque glyphs with supported identity and matching
-  context: no Unicode may be invented, and unknown-Unicode/limited coverage must
-  remain. Unmatched opaque glyphs, differing context/outlines and unsupported
-  identity must not silently match. Repeated opaque glyphs are consumed one-to-one.
-  Supported script-role changes still warn on matched opaque identities. Unknown
-  mathematical baseline attachment of known Unicode must not invent a text edit
-  or an ordinary-baseline role. Approximate vectors may suggest counterparts only;
-  the resulting findings remain uncertain, never equality or recovered text.
+- Confirm 300-DPI independent rendering and preserved raw OCR text, boxes/scores.
+  Cover image text, formulas, headers/footers and low-confidence text without
+  blanket exclusions. Native geometry may guide order, not repair OCR.
+- Use stale/identical hidden native layers over visible insertion/deletion,
+  garbled words and broken references; use different native layers with identical
+  visible pages and a raster PDF without native text. Native equality must not
+  bypass actual OCR, and absent native text must not disable rendered comparison.
+- Exercise same-region/same-visible-row correction alongside genuine word-order
+  swaps and table value swaps, with both updated and stale native layers.
+  Preserve within-word minus/decimal order and exact ownership/counting.
+- Cover shifted/resized/reflowed/repaginated controls, front/middle page removal,
+  inserted pages, repeated text and repeated table values. Inspect true locations,
+  not merely whether any alert exists. Matched movement is not a red edit;
+  unchanged context cannot cancel a changed value in another row.
+- Verify small additions, removals, number/punctuation changes, question-mark
+  references, garbled words, minus deletion and decimal deletion. Include edits
+  beside visual tolerances; mixed non-tolerated changes retain their original
+  span rather than being fragmented or partly excused.
+- Exercise all 38 direct groups, their raw text/rule/risk information, no
+  empty-string rule and no cross-group transitivity (8/B plus B/Greek Beta must
+  not imply 8/Greek Beta). Compare literal/core/broad controls where supported.
+  Real O/0, f/t, rn/m and S/5 edits and whitespace-only now here/nowhere or
+  1 1/11 changes are deliberate blind-spot cases, not detection successes.
+- Large rewrites, unrelated PDFs, absent context, empty OCR and local work
+  exhaustion remain unlocated/limited, not clean. Missing dependencies/models,
+  corrupt models, render/worker failure and timeout produce unavailable states
+  without runtime download or native-engine fallback. Verify offline operation
+  after explicit provisioning in the supported local and Docker/Linux runtimes.
+- Preserve complete one-to-one token/character accounting before display caps.
+  Do not use smaller counts or arbitrary zero-warning expectations as accuracy.
+  Recheck real pairs and explain residual OCR/order/formula limitations.
 
-Apply the canonical [corrective acceptance requirements](pdf_comparison.md#acceptance-handoff)
-to the actual engine, not only UI fixtures or injected evidence. Pin input hashes
-and reviewed finding identities before comparing outputs. Include segmented
-vertical filled table rules, repaired native/presentation mappings, unchanged
-script attachment, and genuine mutations beside each. Run metadata/document-ID
-transformations with no database or audit access and verify the content-preserving
-premise before judging the result. Both the byte-identical control and the
-changed-bytes case must be exercised. Adjudicate residual warning classes rather
-than treating zero warnings, a smaller count, or a green suite as acceptance.
-Exercise both exact vector-pair proof paths in the canonical contract, including
-the render-source closure's unsupported, duplicate and changed-resource cases.
-Keep the real author-comma baseline-to-superscript change and any unproved
-vector-to-font substitution visible; metadata-only controls do not justify
-clearing those findings from the original/corrected comparison.
-Recheck all real cases in the workspace, including the densest uncertainty case,
-at desktop and 320/768 pixel widths. Preserve publication/baseline selection and
-verify actual/reference pages, evidence, focus, legend and exact snapshot links.
-Confirm method-5 results require rebuilding rather than rendering under method 6.
+#### Document-First Browser Evidence
 
-Record actual-engine gate results and engine-owner release acceptance separately
-from synthetic UI checks. These instructions are acceptance scenarios, not a
-claim that they have all passed.
-State ZIP excludes comparison staging while retaining history/review
-artifacts. Ordinary cleanup preserves staging; Clear Database removes it.
+Use actual engine payloads, including the densest real result, at desktop and
+320/768 pixel widths. Record screenshots and nonblank page/crop pixel checks.
+
+1. Annotated pages appear as the primary view without a permanent findings
+   sidebar, initially Fit page. Red differences/arrows, amber unlocated ranges
+   without arrows and quiet information are distinct; filters/counts remain
+   usable and do not imply approval.
+2. Hover a mark: page selections and both scroll positions remain unchanged.
+   Move into the inspector, leave both surfaces, close explicitly and press
+   Escape. Verify crossing grace, keyboard focus/activation, touch access and
+   no hover persistence or host-state write-back loop.
+3. For a large unlocated range, verify actual pointer-local magnification on
+   the hovered side and independent opposite-side inspection. Crops must show
+   original image pixels, not OCR-generated text. Opposite candidate ranges
+   are not presented as character matches.
+4. Show only the active finding's connection; unlocated candidates are dashed
+   amber. Additions/removals without counterparts show no fabricated opposite
+   mark/link. Cover overlapping marks and multi-page findings.
+5. Explicit previous/next commands navigate actual finding pages. Linked page
+   browsing uses alignment evidence, not equal page numbers. Actual locations
+   remain distinct from reference pages. Filters, independent navigation,
+   magnification and exact snapshot PDF links remain accessible.
+6. Test loading/retry, stale/out-of-order image responses and failed crops:
+   old page evidence must not leak into a newly selected page. Coverage reasons,
+   zero counts, missing metadata, truncation, unavailable comparison and viewer
+   errors stay distinct. Render markup-like OCR/reasons literally and wrap long
+   content without overlap or horizontal page overflow.
+
+Manual figure, image-preservation, table, layout and full-math checks remain
+required regardless of counts. Record unresolved limitations and actual gate
+results before release; no fixture set provides a universal catch-all.
 
 ### Stage 5: Publication Export
 

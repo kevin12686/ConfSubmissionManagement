@@ -3,6 +3,7 @@ import zipfile
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from django.core.files.base import ContentFile
@@ -264,7 +265,9 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
         self.assertNotEqual(newer.pk, self.submission.pk)
 
     def test_comparison_snapshots_keep_the_exact_side_and_reject_changed_current_files(self):
-        payload = create_pdf_comparison(self.submission.pk)
+        from submissions.tests.ocr_fixtures import synthetic_ocr_worker
+        with patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker):
+            payload = create_pdf_comparison(self.submission.pk)
         for side, expected in (("before", self.original), ("after", self.corrected)):
             raw = reverse("submissions:formatting_comparison_pdf", args=[self.submission.pk, payload["token"], side])
             self.assertEqual(self.get_reader(raw).context["pdf_source"]["url"], raw)

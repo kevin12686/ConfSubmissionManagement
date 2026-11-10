@@ -1,4 +1,4 @@
-"""Isolated occurrence-level text, font and glyph comparison evidence.
+"""Isolated full-page RapidOCR comparison.
 
 No Django, filesystem writes or publication metadata access.
 """
@@ -13,7 +13,7 @@ import fitz
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 MAX_INPUT_BYTES = 64 * 1024 * 1024
-MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
 
 def read_pair(stream):
@@ -37,30 +37,28 @@ def resource_limits():
         import resource
     except ImportError:
         return
-    resource.setrlimit(resource.RLIMIT_CPU, (90, 95))
+    # CPU includes all four ONNX threads; wall time is independently 240s.
+    resource.setrlimit(resource.RLIMIT_CPU, (900, 920))
     if sys.platform.startswith("linux"):
-        resource.setrlimit(resource.RLIMIT_AS, (2 * 1024 ** 3, 2 * 1024 ** 3))
+        resource.setrlimit(resource.RLIMIT_AS, (6 * 1024 ** 3, 6 * 1024 ** 3))
 
 
 def inspect_pair(before, after):
-    from submissions.services.pdf_glyph_evidence import inspect_pdf_pair
-    from submissions.services.pdf_text_alignment import align_tokens
+    from submissions.services.rapidocr_comparison.result import VERSION, build_result, validate_result
+    from submissions.services.rapidocr_comparison.runtime import build_recognizer, extract_document
 
-    for data in (before, after):
-        with fitz.open(stream=data, filetype="pdf") as document:
-            if document.needs_pass:
-                return {"error": "password_protected"}
-            if not 0 < len(document) <= 100:
-                raise ValueError("Comparison page count exceeds safe bounds")
-    documents = inspect_pdf_pair(before, after)
-    # Native glyph inventories support attribution inside the worker. The web
-    # layer consumes bounded occurrence evidence, not the repeated native data.
-    result = [{key: document[key] for key in (
-        "tokens", "words", "pages", "controls", "coverage_reasons", "evidence_summary", "uncertain_regions",
-    )} for document in documents]
-    opcodes, limited = align_tokens(result[0]["tokens"], result[1]["tokens"], identical_bytes=before == after)
-    result[0]["alignment"] = {"opcodes": opcodes, "limited": limited}
-    return result
+    try:
+        recognizer = build_recognizer()
+    except Exception:
+        return {"version": VERSION, "error": "configuration"}
+    try:
+        pa, na = extract_document(before, recognizer)
+        pb, nb = extract_document(after, recognizer)
+        result = build_result(pa, pb, na, nb, identical_bytes=before == after)
+        validate_result(result)
+        return {"version": VERSION, "result": result}
+    except Exception:
+        return {"version": VERSION, "error": "ocr_failed"}
 
 
 if __name__ == "__main__":

@@ -457,70 +457,68 @@ the current panel context rather than retaining the previous worklist URL.
 
 Compare PDF is a contextual link beside saved Formatting PDFs, shared by all
 review modes. Open the separate workspace in a new tab so upload inputs and
-unsaved notes in the review card remain untouched. Reuse site typography,
-controls, surfaces, and the shared image loader/Ctrl magnifier; do not add a
-second document-viewer framework or embed the comparison inside narrow cards.
-Before/After identify source, filename, and page independently. Findings use
-advisory language, filter locally, and navigate the complete comparison rather
-than the main worklist. Matching text can link pages; an uncertain match must
-leave the other page unchanged. Small screens stack the documents and retain
-independent page selectors. Hide highlights while an image is loading, preserve
-its natural page aspect ratio, and never show an empty image as a successful
-preview. Figures/tables/layout remain manual checks, with no Review OK action
-or green completeness badge in this workspace.
+unsaved notes stay untouched. Use site typography, compact icon controls and
+existing image loading/magnification; do not embed the primary documents inside
+narrow cards or add a permanent result-list sidebar.
 
-Show content/pattern findings in one navigator using the existing Warning amber
-tokens, with Added / Changed / Removed and error-pattern filters. Exact matched
-reflow has no finding, highlight or Info badge. Total and displayed counts must
-be distinct when capped; a limited result must never look complete. Render
-`coverage_status` separately: complete means supported engine checks completed,
-not publication safety. Limited coverage retains reasons even with zero content
-findings. Missing metadata says not reported; parser failure says Comparison
-unavailable, and image-load failure remains a separate error. Do not derive a
-safety score from `evidence_summary`. Show its engine-named counts in expandable
-details. Keep limitations in one coverage notice, not stacked generic,
-uncertainty and text-unavailable disclaimers. The content total includes
-structure; do not show it again as an additional independent total.
-Keep the coverage heading and brief warning visible. Put the reason list in a
-closed-by-default Coverage details disclosure within that same notice, so long
-lists do not displace the findings. Evidence counts retain their own disclosure.
-See the [comparison contract](pdf_comparison.md) for the evidence contract.
-Use the same navigator for **Check text / formula** (Warning) and **Formatting
-information** (neutral Info), with independent totals above the workspace.
-Uncertain regions use amber dashed outlines, not a confirmed insertion/deletion
-color. Keep the compact mark legend inline above the pages, sharing the overlay
-palette: Before/After text, amber review outline and blue focus outline. It is
-not a separate panel and is hidden in text mode. Raw extracted text, font
-identity and the inspection reason belong in
-Finding evidence / extraction details. Show each `issues` explanation as plain
-text in every category, including structural findings and normalization Info.
-Render raw U+200B visibly as `[U+200B]` there; its information
-record has no content-change overlay. A zero content count alongside uncertainty
-must still direct the editor to check both PDFs. Automatic upload status must
-also say that text/formula verification is needed.
-`structure` findings belong to the content/structure Warning group with an
-independent filter and amber outlines, never the reference-error description.
-Neither approximate glyph/vector matches nor unsupported formula regions may
-be presented as unchanged. No UI result certifies image preservation or full
-mathematical structure.
-Evidence corrections belong in the engine. Do not relabel, suppress or cap away
-uncertainty to make a result look improved; retain supported coverage limitations
-and test the densest real result as well as small synthetic UI fixtures.
-Category headings are unfilled, non-interactive text with a bottom divider and
-space before the indented findings. Do not reuse item-style filled surfaces or
-left borders on these headings. Clickable findings retain restrained
-hover/selected surfaces and category-colored left borders; selection has a
-separate outline and text emphasis, while keyboard focus uses
-the standard primary outline. Do not recolor PDF difference overlays to imply
-severity. Do not label matching text as safe/unchanged layout.
-List actual passage pages independently on Before/After; a side without text
-says **No corresponding text** and labels its viewer as a reference page.
-Multi-page passages use side-specific finding-page selectors. Changing those
-selectors retains the selected finding; ordinary page browsing clears it.
-Use a compact, named/tooltip focus symbol per side to reveal the first actual
-highlight on that side's current finding page through the existing workspace
-reveal helper. Do not focus a reference page, unloaded image or normalization
-inventory. Keep the existing Ctrl magnifier; no new viewer/zoom framework.
+Show annotated Before/After pages immediately, initially Fit page. Each side
+keeps its own source, filename and page controls. Small screens retain both
+documents with independent navigation, readable controls and no horizontal page
+overflow. Preserve page aspect ratios. Loading/failure clears stale marks and
+inspection crops; an empty/broken image is not a successful preview.
+
+Use three distinct visual groups:
+- Text differences: red outlines and arrows, strongest emphasis.
+- Unlocated ranges: amber highlight/outline, no arrows; correspondence is not
+  established and manual review remains necessary.
+- Information: quiet neutral outlines for tolerated visual differences,
+  whitespace joins/splits and possible wrap hyphens. Do not turn these back into
+  warnings or label them verified unchanged.
+
+Keep totals/displayed counts distinct and filters local to the comparison.
+Do not infer paper counts, accuracy or safety scores. Preserve raw OCR text,
+contexts, locations, rule IDs, risks and plain-text reasons. Never rewrite OCR,
+invent character correspondence or reclassify engine findings in the browser.
+A mixed non-tolerated edit must not be hidden by visual-tolerance presentation.
+
+Hover/focus/tap opens a transient inspector showing the existing finding and
+two crops from actual page-image pixels, without turning pages or scrolling
+either document. Moving from a mark into the inspector keeps it open; use a
+short crossing grace period when leaving both. Support keyboard activation,
+touch taps, Escape and a named close control. Hover must not persist host state
+or create a host restoration/write-back loop.
+
+For large unlocated ranges, center the hovered side's crop on the actual pointer
+position. The other crop starts from its own recorded range and is explicitly
+not a character match; it can be inspected independently. Display overlapping
+findings without losing access to any item. Draw only the active finding's
+connection. Candidate unlocated links are dashed amber; one-sided additions or
+removals have no fabricated opposite mark or connection. Links are finding-level,
+not character-level.
+
+Explicit previous/next-result commands may navigate to actual recorded pages.
+Page synchronization uses page-alignment evidence only; uncertain/absent
+alignment cannot choose a false counterpart. Side-specific finding pages stay
+distinct from navigation-only reference pages. Do not focus unloaded images or
+invent locations. Ordinary browsing must not retain stale selection/crops.
+
+Keep coverage status/reasons and evidence counts separate from the three groups.
+Complete means supported execution completed, not publication safety; limited
+remains visible with zero findings, and missing metadata is not complete.
+Keep a brief notice visible and long reasons/counts in disclosures. Comparison
+unavailable and page-image failure are different states. No Review OK action,
+green approval badge or universal change-detection claim belongs here.
+Figures, tables, layout and full math still need manual review. The broad
+visual policy deliberately tolerates some real similar-character edits; it is
+not an exact-identity proof or Exceptions Center waiver. See the
+[comparison contract](pdf_comparison.md).
+
+Test actual engine payloads as well as UI fixtures, including the densest real
+case, empty/unlocated results, information-only results and one-sided changes.
+At desktop and narrow widths verify nonblank pages/crops, no hover movement,
+keyboard/touch access, crossing/dismissal, local pointer magnification,
+active-only connections and explicit navigation. Prototype browser checks alone
+do not establish production acceptance.
 
 ## Title/Author Evidence
 
