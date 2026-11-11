@@ -3,6 +3,14 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.29.1 - Unreleased
+
+- Move comparison inspection above the paired documents. Magnification stays fully
+  visible without an internal scrollbar; only the separate Evidence view scrolls.
+  Fit-page sizing uses the actual available viewport, with short-window crops
+  retaining their aspect ratio and pointer-relative magnification. No comparison,
+  file-selection, version-binding or publication rules change; archive stays v8.
+
 ## 1.29.0 - Unreleased
 
 - Classify same-case, same-base-letter diacritic differences as inspectable Info.

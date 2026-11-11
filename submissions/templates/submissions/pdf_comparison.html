@@ -95,12 +95,15 @@
             <details class="small mt-2"><summary>Compared file identities</summary><div class="text-break">Created: {{ comparison_data.created_at }}<br>Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>Temporary comparison expires after two hours. Publication files and review state are unchanged.</div></details>
         </div>
         <div class="alert alert-warning cfm-alert-stack" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
-        <section class="cfm-comparison-inspection" data-comparison-inspection aria-label="Page magnification and finding details">
+        <section class="cfm-comparison-inspection" data-comparison-inspection data-view="magnify" aria-label="Page magnification and finding details">
             <div class="cfm-comparison-toolbar">
                 <div class="btn-group" role="group" aria-label="Inspection view"><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="magnify" aria-pressed="true">Magnification</button><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="evidence" aria-pressed="false">Evidence</button></div>
                 <label>Position <select class="form-select form-select-sm" data-inspection-position aria-label="Magnification positioning"><option value="auto">Auto match</option><option value="relative">Relative position</option></select></label>
+                <span class="small text-muted" data-comparison-pair-status></span>
+                <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-close aria-label="Close inspection" title="Close inspection"><span class="cfm-comparison-icon-close" aria-hidden="true"></span></button>
             </div>
-            <div class="cfm-comparison-inspection-heading"><div><strong data-comparison-inspection-title></strong><div class="small text-muted" data-comparison-pair-status></div></div><button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-close aria-label="Close inspection" title="Close inspection"><span class="cfm-comparison-icon-close" aria-hidden="true"></span></button></div>
+            <div class="cfm-comparison-inspection-body">
+            <div class="cfm-comparison-inspection-heading"><strong data-comparison-inspection-title></strong></div>
             <label class="small" data-comparison-overlap-label hidden>Overlapping findings <select class="form-select form-select-sm" data-comparison-overlap aria-label="Overlapping findings"></select></label>
             <p class="small" data-comparison-description></p>
             <div class="cfm-comparison-crops">
@@ -108,6 +111,7 @@
                 <section><strong class="small">After <span data-comparison-crop-page="after"></span></strong><canvas data-comparison-crop="after" width="800" height="300" aria-label="After page relative-position magnification" hidden></canvas><p class="small" data-comparison-crop-status="after" role="status"></p></section>
             </div>
             <details class="cfm-comparison-evidence" data-comparison-evidence hidden><summary>Finding evidence / OCR details</summary><ul class="small" data-comparison-evidence-reason></ul><div class="cfm-comparison-evidence-text"><div><strong>Before · raw OCR text</strong><pre data-comparison-raw-before></pre></div><div><strong>After · raw OCR text</strong><pre data-comparison-raw-after></pre></div></div></details>
+            </div>
         </section>
     </div>
     {% else %}<div class="cfm-empty">Compare the saved PDFs. No review status is changed.</div>{% endif %}

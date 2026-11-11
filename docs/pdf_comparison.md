@@ -2,8 +2,10 @@
 
 ## Implemented Design
 
-The production integration uses temporary comparison method **8**, in app
-**1.29.0**, adding inspectable same-letter diacritic tolerance. This is the canonical engine/UI contract, not a test report or
+The production integration uses temporary comparison method **8**, introduced in
+app **1.29.0** with inspectable same-letter diacritic tolerance. App **1.29.1**
+reorganizes inspection layout without changing that method or signed snapshots.
+This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
 they must not be relabeled or reused as method-8 results. Historical method
 descriptions remain in the changelog, not as requirements for this engine.
@@ -353,7 +355,14 @@ Expose these distinct groups:
   details; do not count these as verified unchanged content.
 
 The documents are the primary workspace, not a permanent result-list sidebar.
-Show annotated page images immediately. The bounded in-flow inspection area has
+Show annotated page images immediately. The inspection area sits above the paired
+documents and stays at the viewport top when scrolling. Magnification has no
+internal scrollbar: compact controls and complete, aspect-correct crops remain
+visible. Crop height adapts to short windows without stretching source pixels.
+Evidence alone scrolls within the same reserved body height, so changing views or
+moving the pointer does not push documents around. Fit-page sizing measures the
+remaining viewport below each document's controls, not a fixed height deduction.
+The inspection area has
 Magnification and Evidence views. Auto match uses only unambiguous region pairs
 on displayed pages; the opposite crop follows pointer offsets beyond box edges.
 Ambiguous/unlocated regions use relative positioning; Relative position mode

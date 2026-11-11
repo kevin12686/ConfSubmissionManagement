@@ -14,7 +14,7 @@
         const state = {selected: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
         const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, pairing: null, candidate: null};
         const inspectionPanel = query("[data-comparison-inspection]");
-        query(".cfm-comparison-workspace").appendChild(inspectionPanel);
+        query(".cfm-comparison-workspace").insertBefore(inspectionPanel, query(".cfm-comparison-documents"));
         const groupOf = finding => finding.category === "formatting" ? finding.kind : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
         const markKind = finding => ["formatting", "tolerated"].includes(finding.category) ? "info" : finding.category === "uncertain" ? "review" : "change";
         const sides = {};
@@ -457,9 +457,9 @@
         }
         function renderInspection() {
             if (inspectionPanel.hidden) return;
-            query("[data-comparison-pair-status]").textContent = inspection.pairing && query("[data-inspection-position]").value !== "relative"
-                ? "Matched region anchor; surrounding pixels follow the pointer, not verified character correspondence."
-                : "Relative position on displayed pages, not a text correspondence.";
+            query("[data-comparison-pair-status]").textContent = !inspection.point ? "Move over a displayed page to inspect it." : inspection.pairing && query("[data-inspection-position]").value !== "relative"
+                ? "Matched region anchor · pointer offset"
+                : "Relative position · not a text correspondence";
             renderCrops();
         }
         function renderCrops() {
@@ -493,6 +493,8 @@
                 }
                 const width = image.naturalWidth, height = image.naturalHeight;
                 canvas.hidden = false;
+                // Match the visible crop's shape, including short viewports, without stretching pixels.
+                if (canvas.clientHeight > 0 && canvas.clientWidth > 0) canvas.height = Math.max(1, Math.round(canvas.width * canvas.clientHeight / canvas.clientWidth));
                 const displayedWidth = side.page.getBoundingClientRect().width;
                 if (!displayedWidth || !canvas.clientWidth) {
                     canvas.hidden = true;
@@ -548,9 +550,10 @@
         function resizePages() {
             for (const name of ["before", "after"]) {
                 const side = sides[name], page = data[`${name}_pages`][state[name] - 1];
+                const height = Math.max(160, window.innerHeight - side.scroll.getBoundingClientRect().top - 20);
+                side.scroll.style.maxHeight = `${height}px`;
                 if (!page) continue;
                 const available = side.scroll.clientWidth;
-                const height = Math.max(240, window.innerHeight - 460);
                 side.page.style.width = `${state.scale === "page" ? Math.min(available, height * page.width / page.height) : available * Number(state.scale)}px`;
             }
             drawConnection(); renderInspection();
@@ -611,6 +614,12 @@
             if (inspection.mode === "keyboard" && !inspectionPanel.contains(event.relatedTarget) && !event.relatedTarget?.closest(".cfm-comparison-mark")) closeInspection();
         });
         window.addEventListener("resize", resizePages);
+        // Layout changes only resize the document viewport; pointer motion never does.
+        if (window.ResizeObserver) {
+            const layoutObserver = new window.ResizeObserver(resizePages);
+            layoutObserver.observe(inspectionPanel);
+            layoutObserver.observe(query(".cfm-comparison-selection"));
+        }
         root.querySelectorAll("[data-comparison-mode]").forEach(button => button.addEventListener("click", () => {closeInspection(); state.mode = button.dataset.comparisonMode; renderPages();}));
         root.querySelectorAll("[data-comparison-step]").forEach(button => button.addEventListener("click", () => {
             const findings = visibleFindings();
@@ -657,6 +666,7 @@
         state.after = Number.isInteger(data.page_map["1"]) ? data.page_map["1"] : null;
         select(null);
         inspectionPanel.hidden = false;
+        resizePages();
         query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", "true");
         updatePosition();
     }

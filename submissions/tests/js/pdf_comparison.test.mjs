@@ -31,6 +31,7 @@ class Element {
     get childElementCount() { return this.children.length; }
     append(...children) { for (const child of children) { if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(item=>item!==child); child.parentElement = this; this.children.push(child); } }
     appendChild(child) { this.append(child); return child; }
+    insertBefore(child, reference) { this.append(child); this.children.splice(this.children.indexOf(child), 1); this.children.splice(this.children.indexOf(reference), 0, child); return child; }
     replaceChildren(...children) { this.text = ""; this.children = []; this.append(...children); }
     setAttribute(key, value) { this.attributes[key] = String(value); }
     getAttribute(key) { return this.attributes[key] ?? null; }
@@ -144,6 +145,35 @@ test("production markup has independent shared document panels and starts docume
     assert.equal(page.q(".cfm-comparison-findings").attributes.open, undefined);
     assert.equal(page.q("[data-comparison-position]").textContent, "1 displayed");
     assert.doesNotMatch(template, /structure|glyph|Check text \/ formula|frozen|prototype-data/);
+});
+test("inspection precedes documents and fit-page uses actual viewport space", () => {
+    const p = setup(), workspace = p.q('.cfm-comparison-workspace');
+    assert.ok(workspace.children.indexOf(p.panel) < workspace.children.indexOf(p.q('.cfm-comparison-documents')));
+    p.side('before').querySelector('.cfm-comparison-scroll').bounds = {top: 460};
+    p.win.innerHeight = 800; p.win.fire('resize');
+    assert.equal(p.side('before').querySelector('.cfm-comparison-scroll').style.maxHeight, '320px');
+    assert.equal(p.page('before').style.width, `${320 * 595 / 842}px`);
+    p.win.innerHeight = 400; p.win.fire('resize');
+    assert.equal(p.side('before').querySelector('.cfm-comparison-scroll').style.maxHeight, '160px');
+});
+test("short magnification windows retain undistorted two-times pixels and stable evidence", () => {
+    const p = setup(); p.loaded('before'); p.loaded('after'); p.next();
+    const raw = p.q('[data-comparison-raw-before]').textContent;
+    for (const height of [72, 110, 150]) {
+        for (const side of ['before', 'after']) { p.crop(side).clientWidth = 400; p.crop(side).clientHeight = height; }
+        p.hoverPoint('before', .5, .5); p.frame();
+        const [, , , cw, ch] = p.crop('before').draws[0];
+        assert.ok(Math.abs(cw / ch - 400 / height) < .02);
+        assert.equal((400 / cw) / (600 / 1190), 2);
+        assert.equal(p.q('[data-comparison-raw-before]').textContent, raw);
+    }
+    p.q('[data-inspection-view="evidence"]').fire('click');
+    assert.equal(p.q('[data-comparison-evidence]').hidden, false);
+    p.q('[data-inspection-view="magnify"]').fire('click');
+    assert.equal(p.crop('before').dataset.source, '/signed-before/1.png');
+    p.q('[data-comparison-close]').fire('click');
+    p.q('[data-comparison-inspector-toggle]').fire('click');
+    assert.match(p.q('[data-comparison-pair-status]').textContent, /Move over/);
 });
 test("all eligible current-page marks appear without selecting a finding", () => {
     const page = setup({findings: [finding(), finding({id: 1, category: "uncertain", kind: "author_review"}), finding({id: 2, category: "tolerated", kind: "ignored_visual"})]});

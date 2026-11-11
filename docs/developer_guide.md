@@ -242,6 +242,14 @@ separate instead of interleaving benchmark reports with operator instructions.
 
 ## Regression Commands
 
+For comparison layout changes, also exercise the real comparison page with
+isolated signed PDF snapshots in desktop, short and narrow viewports. Assert
+that the top inspection dock precedes documents, magnification has no internal
+overflow, Evidence alone can scroll, and switching views does not shift the
+document headers. Retain coverage for absent counterpart pages, image failures,
+paired-anchor boundaries, close/reopen and pointer-relative canvas aspect ratios.
+These layout changes must not modify the comparison method or file identities.
+
 Run these before finishing code changes:
 
 ```bash

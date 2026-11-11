@@ -41,7 +41,8 @@ one local application:
 - compares saved Original/revision PDFs with the selected publication PDF using
   rendered-page RapidOCR and bounded small-edit alignment. Annotated documents
   show text changes, unlocated ranges and inspectable visual-tolerance information;
-  a dedicated inspection area follows the pointer using an unambiguous region
+  a top-docked inspection area shows complete crops without internal scrolling
+  and follows the pointer using an unambiguous region
   anchor or relative positions. Selected evidence stays readable independently.
   Linked pages without a counterpart show an explicit empty state, not an unrelated PDF page.
   Headers/footers, formulas and image text remain in scope. A saved Formatting

@@ -1,5 +1,11 @@
 # Editorial Acceptance Runbook
 
+For PDF comparison inspection, verify the dock is above the documents, both
+magnification crops are fully visible without internal scrolling, and long
+Evidence scrolls independently. Test short/narrow windows, close/reopen, paired
+region edges and absent counterpart pages. View switches must not move the
+document headers or change signed PDF identities, comparison findings or reviews.
+
 This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
 
 Use a disposable conference data folder. Complete the automated command

@@ -496,7 +496,12 @@ contexts, locations, rule IDs, risks and plain-text reasons. Never rewrite OCR,
 invent character correspondence or reclassify engine findings in the browser.
 A mixed non-tolerated edit must not be hidden by visual-tolerance presentation.
 
-Use a bounded in-flow inspection area, not a transient overlay. Pointer motion
+Use a top-docked inspection area before the documents, not a transient overlay.
+Keep Magnification fully visible without internal scrolling; reserve equal body
+height for Evidence, which alone may scroll. Adapt crop height to the viewport
+and its canvas aspect ratio to the displayed shape; never stretch page pixels.
+Measure remaining document height instead of subtracting a fixed toolbar size.
+Pointer motion
 updates crops; clicking selects Evidence independently. Reading, text selection
 and internal scrolling must not dismiss or replace selected evidence. Evidence
 and Magnification use separate views. Preserve keyboard/touch and explicit close.

@@ -637,7 +637,11 @@ Counts are records, not affected papers or accuracy. Filters and explicit
 previous/next-result navigation let you inspect the relevant recorded pages.
 Browse all pages and open each exact snapshot PDF for manual review.
 
-The collapsible inspection area has Magnification and Evidence views. Auto match
+The collapsible inspection area is above the two documents and stays at the top
+while scrolling. Magnification shows both crops completely, without scrolling
+inside the area; short windows use a shallower crop. Evidence has its own scroll
+area for long text and does not replace or move the document workspace.
+The two views share the same reserved height. Auto match
 uses an unambiguous region anchor and follows pointer movement beyond its box;
 otherwise it uses relative positions. Choose Relative position to scan freely.
 Click a mark to select Evidence: later hover does not replace selected details.
