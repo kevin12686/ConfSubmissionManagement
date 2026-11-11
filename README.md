@@ -44,6 +44,8 @@ one local application:
   a top-docked inspection area shows complete crops without internal scrolling
   and follows the pointer using an unambiguous region
   anchor or relative positions. Selected evidence stays readable independently.
+  Retina-aware crops sharpen on a brief pointer pause from the same verified PDF
+  snapshot, independently of OCR and comparison evidence.
   Linked pages without a counterpart show an explicit empty state, not an unrelated PDF page.
   Headers/footers, formulas and image text remain in scope. A saved Formatting
   PDF upload automatically starts a separate Original comparison;

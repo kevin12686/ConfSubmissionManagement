@@ -249,6 +249,14 @@ overflow, Evidence alone can scroll, and switching views does not shift the
 document headers. Retain coverage for absent counterpart pages, image failures,
 paired-anchor boundaries, close/reopen and pointer-relative canvas aspect ratios.
 These layout changes must not modify the comparison method or file identities.
+For small Fit-page previews, assert the actual destination/source draw scale per
+PDF point, not just canvas-width/source-width (which ignores padding). Exercise
+both positioning modes, different PDF sizes, DPR and the canvas backing-size cap.
+Detail rendering must read through `comparison_pdf_bytes()`, never resolve a
+new publication source. Test DPR 1/2/3, rendering bounds/rotation, tampered and
+stale snapshots, pixel equality to the selected PDF, debouncing, timeouts and
+late responses. Assert the original preview/render hashes, signed result payload,
+review state and readiness remain unchanged after requesting detail images.
 
 Run these before finishing code changes:
 

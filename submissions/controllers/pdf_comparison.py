@@ -11,7 +11,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from submissions.models import FinalSubmission
 from submissions.forms import PDFComparisonForm
 from submissions.services.pdf_comparison import (
-    PDFComparisonError, StaleUploadComparison, comparison_page_png, comparison_pdf_bytes,
+    PDFComparisonError, StaleUploadComparison, comparison_page_png, comparison_pdf_bytes, comparison_detail_png,
     comparison_submission, create_pdf_comparison, load_pdf_comparison,
 )
 from submissions.services.file_manager import publication_pdf_info
@@ -104,6 +104,10 @@ def formatting_pdf_comparison(request, pk):
                 side: reverse("submissions:formatting_comparison_pdf", args=[pk, payload["token"], side])
                 for side in ("before", "after")
             },
+            "detail_urls": {
+                side: reverse("submissions:formatting_comparison_detail", args=[pk, payload["token"], side, 0])
+                for side in ("before", "after")
+            },
         }
     response = render(request, "submissions/pdf_comparison.html", {
         "submission": submission, "form": form, "back_url": back_url,
@@ -129,6 +133,20 @@ def formatting_comparison_page(request, pk, token, side, page_number):
         response = HttpResponse(comparison_page_png(pk, token, side, page_number), content_type="image/png")
     except (PDFComparisonError, OSError, ValueError) as exc:
         return JsonResponse({"error": str(exc)}, status=409)
+    response["Cache-Control"] = "no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@require_GET
+def formatting_comparison_detail(request, pk, token, side, page_number):
+    try:
+        box = request.GET.get("box", "").split(",")
+        response = HttpResponse(comparison_detail_png(
+            pk, token, side, page_number, box=box,
+            width=request.GET.get("width"), height=request.GET.get("height")), content_type="image/png")
+    except (PDFComparisonError, OSError, ValueError) as exc:
+        response = JsonResponse({"error": str(exc)}, status=409)
     response["Cache-Control"] = "no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response

@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.29.3 - Unreleased
+
+- Keep comparison magnification readable when Fit page shrinks the document:
+  retain 2x displayed zoom with a 1.5 CSS-pixels-per-PDF-point minimum, independent
+  of canvas density. Auto-match anchors and relative positioning are unchanged.
+- Group engine counts, visual policy and compared file identities under one
+  closed Technical details disclosure. Coverage warnings remain visible.
+
+## 1.29.2 - Unreleased
+
+- Make comparison magnification Retina-aware and sharpen stationary crops from
+  the same verified, signed PDF snapshots. Display-only bounded rendering never
+  changes OCR, comparison evidence, method 8 or publication selection. Superseded
+  requests are canceled, late images cannot replace another view, and unavailable
+  detail is labeled explicitly. State archive remains v8.
+
 ## 1.29.1 - Unreleased
 
 - Move comparison inspection above the paired documents. Magnification stays fully

@@ -157,8 +157,13 @@ whitespace-only changes can deliberately be missed; the
 
 The workspace is document-first: annotated pages, compact controls and an in-flow
 inspection area with independent selected evidence and pointer-following crops,
-not a permanent findings sidebar. Magnification uses only the currently loaded
-side-specific images, using unambiguous region anchors or relative positioning,
+not a permanent findings sidebar. Magnification starts from the currently loaded
+side-specific images, then sharpens a stationary crop through a bounded,
+display-only endpoint reading `comparison_pdf_bytes()` from the same verified
+snapshot. This renderer is independent of the shared evidence/render-hash
+contract and does not change OCR or signed findings. Retina canvases and canceled,
+identity-checked asynchronous requests keep detail aligned with the current view.
+Positioning uses unambiguous region anchors or relative positioning,
 never a counterpart-page substitution. Missing linked pages show an empty state.
 Finding metadata and its recorded marks remain separate from crop positioning.
 Red text changes, amber unlocated ranges and neutral information stay

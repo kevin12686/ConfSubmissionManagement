@@ -907,14 +907,23 @@ them; normal expiry and Clear Database remain responsible for removal.
 
 Hover inspection does not change pages or scroll either document. Use explicit
 result/page controls to navigate; existing linked-page behavior is unchanged.
-Move anywhere on either page to magnify that relative position on both displayed
-pages. Missing OCR counterparts do not hide a valid page crop. These are position
+Move anywhere on either page to magnify using the current region anchor, or
+relative position when no unambiguous anchor exists. Missing OCR counterparts do
+not hide a valid page crop. These are position
 previews, not matched-character regions. Keyboard/touch and the close control
 remain available. Missing counterparts have no fabricated connection. If a page
 or crop fails to load, retry rather than trusting stale image content.
 **No corresponding text** means any opposite reference page is navigation only.
 Review all actual locations and unresolved content; no count certifies layout,
 figures or full mathematical structure.
+
+Magnification first uses the immediate page preview, then sharpens on a short
+pointer pause. High detail means the same verified snapshot was rendered locally
+at the requested display density. Preview only means this extra render failed;
+it is not a new OCR failure. A changed/expired snapshot hides the crop and needs
+a rebuilt comparison, never a substituted PDF. Check the browser request to the
+comparison's `/detail/<page>.png` endpoint if detail consistently fails. Scanned
+PDFs or embedded raster figures remain limited by their original resolution.
 
 ### Need a completely clean conference
 

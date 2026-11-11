@@ -14,6 +14,7 @@
         const state = {selected: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
         const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, pairing: null, candidate: null};
         const inspectionPanel = query("[data-comparison-inspection]");
+        const detail = window.CFMComparisonDetail?.create();
         query(".cfm-comparison-workspace").insertBefore(inspectionPanel, query(".cfm-comparison-documents"));
         const groupOf = finding => finding.category === "formatting" ? finding.kind : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
         const markKind = finding => ["formatting", "tolerated"].includes(finding.category) ? "info" : finding.category === "uncertain" ? "review" : "change";
@@ -471,13 +472,16 @@
                 context.clearRect(0, 0, canvas.width, canvas.height);
                 delete canvas.dataset.source; delete canvas.dataset.findingId;
                 canvas.dataset.state = "empty";
+                canvas.dataset.resolution = "preview";
                 const status = query(`[data-comparison-crop-status="${name}"]`);
                 const label = query(`[data-comparison-crop-page="${name}"]`);
                 label.textContent = state[name] === null ? " / no corresponding page" : ` / page ${state[name]}`;
                 if (state[name] === null) {
+                    detail?.clear(name);
                     canvas.hidden = true; status.textContent = "No corresponding page. No unrelated page is substituted."; continue;
                 }
                 if (!side.ready || !image.complete || !image.naturalWidth || !image.naturalHeight || image.getAttribute("src") !== side.source) {
+                    detail?.clear(name);
                     canvas.hidden = true;
                     status.textContent = "Page image unavailable or loading. No other page is substituted.";
                     continue;
@@ -494,32 +498,68 @@
                 const width = image.naturalWidth, height = image.naturalHeight;
                 canvas.hidden = false;
                 // Match the visible crop's shape, including short viewports, without stretching pixels.
-                if (canvas.clientHeight > 0 && canvas.clientWidth > 0) canvas.height = Math.max(1, Math.round(canvas.width * canvas.clientHeight / canvas.clientWidth));
+                const cssWidth = canvas.clientWidth, cssHeight = canvas.clientHeight || cssWidth * canvas.height / canvas.width;
+                const requestedDensity = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+                const pixelWidth = Math.max(1, Math.min(3072, Math.round(cssWidth * requestedDensity)));
+                const pixelHeight = Math.max(1, Math.round(pixelWidth * cssHeight / Math.max(1, cssWidth)));
+                if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+                if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
                 const displayedWidth = side.page.getBoundingClientRect().width;
                 if (!displayedWidth || !canvas.clientWidth) {
                     canvas.hidden = true;
                     status.textContent = "Page preview is not visible.";
                     continue;
                 }
-                const cw = Math.min(width, width * canvas.clientWidth / displayedWidth / 2);
-                const ch = Math.min(height, cw * canvas.height / canvas.width);
+                const density = pixelWidth / cssWidth;
+                const pdfPage = data[`${name}_pages`][state[name] - 1];
+                // Shrinking Fit page must not shrink the lens's readable text along with it.
+                // Use PDF points for the floor, independently of preview resolution or DPR.
+                const minCssPixelsPerPoint = 1.5;
+                const cssScale = Math.max(2 * displayedWidth / width, minCssPixelsPerPoint * pdfPage.width / width);
+                const padding = 8 * density;
+                const scale = cssScale * density;
+                const cw = Math.min(width, Math.max(1, canvas.width - padding * 2) / scale);
+                const ch = Math.min(height, Math.max(1, canvas.height - padding * 2) / scale);
                 const sx = Math.max(0, Math.min(width - cw, point.x * width - cw / 2));
                 const sy = Math.max(0, Math.min(height - ch, point.y * height - ch / 2));
-                const scale = Math.min((canvas.width - 16) / cw, (canvas.height - 16) / ch);
                 const dx = (canvas.width - cw * scale) / 2, dy = (canvas.height - ch * scale) / 2;
-                context.drawImage(image, sx, sy, cw, ch, dx, dy, cw * scale, ch * scale);
-                context.save(); context.beginPath(); context.rect(dx, dy, cw * scale, ch * scale); context.clip();
-                if (finding && !root.classList.contains("cfm-comparison-no-highlights")) {
-                    context.strokeStyle = markKind(finding) === "change" ? "#b91e30" : markKind(finding) === "review" ? "#a26100" : "#71869a";
-                    context.lineWidth = 2;
-                    for (const {box: [x0, y0, x1, y1]} of locations(finding, name)) {
-                        context.strokeRect(dx + (x0 * width - sx) * scale, dy + (y0 * height - sy) * scale, (x1 - x0) * width * scale, (y1 - y0) * height * scale);
+                const draw = (pixels, x, y, w, h) => {
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(pixels, x, y, w, h, dx, dy, cw * scale, ch * scale);
+                    context.save(); context.beginPath(); context.rect(dx, dy, cw * scale, ch * scale); context.clip();
+                    if (finding && !root.classList.contains("cfm-comparison-no-highlights")) {
+                        context.strokeStyle = markKind(finding) === "change" ? "#b91e30" : markKind(finding) === "review" ? "#a26100" : "#71869a";
+                        context.lineWidth = 2 * density;
+                        for (const {box: [x0, y0, x1, y1]} of locations(finding, name)) {
+                            context.strokeRect(dx + (x0 * width - sx) * scale, dy + (y0 * height - sy) * scale, (x1 - x0) * width * scale, (y1 - y0) * height * scale);
+                        }
                     }
-                }
-                context.restore();
-                status.textContent = point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1 ? "Page edge reached; position is constrained to this page." : "";
+                    context.restore();
+                };
+                draw(image, sx, sy, cw, ch);
+                const edge = point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1;
+                status.textContent = edge ? "Page edge reached; position is constrained to this page." : "";
                 canvas.dataset.state = "ready";
                 canvas.dataset.source = side.source;
+                const base = data.detail_urls?.[name];
+                if (detail && base && inspectionPanel.dataset.view !== "evidence") {
+                    const box = [sx / width, sy / height, Math.min(1, (sx + cw) / width), Math.min(1, (sy + ch) / height)];
+                    const url = base.replace("/0.png", `/${state[name]}.png`) + `?box=${box.join(",")}&width=${Math.max(1, Math.floor(cw * scale))}&height=${Math.max(1, Math.floor(ch * scale))}`;
+                    canvas.dataset.detailKey = url;
+                    const current = () => !inspectionPanel.hidden && inspectionPanel.dataset.view !== "evidence" && canvas.dataset.detailKey === url && canvas.dataset.source === side.source;
+                    detail.request(name, url, bitmap => {
+                        if (!current()) return;
+                        draw(bitmap, 0, 0, bitmap.width, bitmap.height);
+                        canvas.dataset.resolution = "detail";
+                        status.textContent = edge ? "High detail · page edge" : "High detail";
+                    }, invalid => {
+                        if (!current()) return;
+                        if (invalid) {
+                            canvas.hidden = true;
+                            status.textContent = "Comparison changed or expired. Rebuild comparison.";
+                        } else status.textContent = "Preview only; high detail unavailable.";
+                    });
+                }
             }
         }
         function drawConnection() {
@@ -559,6 +599,7 @@
             drawConnection(); renderInspection();
         }
         function closeInspection() {
+            detail?.dispose();
             clearTimeout(inspection.timer);
             cancelAnimationFrame(inspection.frame); inspection.frame = null;
             Object.assign(inspection, {finding: null, mode: null, side: null, location: null, point: null});
@@ -584,6 +625,7 @@
         query("[data-inspection-position]").addEventListener("change", renderInspection);
         root.querySelectorAll("[data-inspection-view]").forEach(button => button.addEventListener("click", () => {
             const evidence = button.dataset.inspectionView === "evidence";
+            if (evidence) detail?.dispose();
             inspectionPanel.dataset.view = evidence ? "evidence" : "magnify";
             query(".cfm-comparison-crops").hidden = evidence;
             query("[data-comparison-evidence]").hidden = !evidence;
@@ -614,6 +656,7 @@
             if (inspection.mode === "keyboard" && !inspectionPanel.contains(event.relatedTarget) && !event.relatedTarget?.closest(".cfm-comparison-mark")) closeInspection();
         });
         window.addEventListener("resize", resizePages);
+        window.addEventListener("pagehide", () => detail?.dispose());
         // Layout changes only resize the document viewport; pointer motion never does.
         if (window.ResizeObserver) {
             const layoutObserver = new window.ResizeObserver(resizePages);

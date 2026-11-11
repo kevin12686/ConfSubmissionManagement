@@ -641,7 +641,16 @@ The collapsible inspection area is above the two documents and stays at the top
 while scrolling. Magnification shows both crops completely, without scrolling
 inside the area; short windows use a shallower crop. Evidence has its own scroll
 area for long text and does not replace or move the document workspace.
-The two views share the same reserved height. Auto match
+The two views share the same reserved height. Small Fit-page previews keep a
+minimum readable magnification instead of shrinking the lens text with the page.
+Engine counts, visual policy and file hashes are under Technical details, closed
+by default; coverage warnings remain visible. Auto match
+uses the current pointer position. On a brief pause, the magnifier sharpens from
+the same verified PDF snapshot and shows High detail. While moving it uses the
+immediate page preview. Preview only means detail retrieval failed; a changed or
+expired comparison instead requires rebuilding. This does not rerun OCR or
+change reviews. Scanned images cannot gain detail beyond their original pixels.
+Auto match
 uses an unambiguous region anchor and follows pointer movement beyond its box;
 otherwise it uses relative positions. Choose Relative position to scan freely.
 Click a mark to select Evidence: later hover does not replace selected details.

@@ -3,8 +3,9 @@
 ## Implemented Design
 
 The production integration uses temporary comparison method **8**, introduced in
-app **1.29.0** with inspectable same-letter diacritic tolerance. App **1.29.1**
-reorganizes inspection layout without changing that method or signed snapshots.
+app **1.29.0** with inspectable same-letter diacritic tolerance. Apps **1.29.1**
+through **1.29.3** improve inspection layout and display-only detail rendering without
+changing that method or signed snapshots.
 This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
 they must not be relabeled or reused as method-8 results. Historical method
@@ -355,6 +356,9 @@ Expose these distinct groups:
   details; do not count these as verified unchanged content.
 
 The documents are the primary workspace, not a permanent result-list sidebar.
+Engine evidence counts, Visual exception policy and Compared file identities are
+retained inside one closed Technical details disclosure. Coverage warnings and
+missing-preview errors stay outside it and remain visible.
 Show annotated page images immediately. The inspection area sits above the paired
 documents and stays at the viewport top when scrolling. Magnification has no
 internal scrollbar: compact controls and complete, aspect-correct crops remain
@@ -367,8 +371,26 @@ Magnification and Evidence views. Auto match uses only unambiguous region pairs
 on displayed pages; the opposite crop follows pointer offsets beyond box edges.
 Ambiguous/unlocated regions use relative positioning; Relative position mode
 explicitly bypasses anchors. Preserve each image's aspect ratio and edge bounds.
-The crop window adapts to the actual panel/page display widths for approximately
-two-times magnification on desktop and narrow screens, preserving aspect ratios.
+The crop window uses 2x the displayed page scale, with a minimum of 1.5 CSS pixels
+per PDF point. Thus shrinking Fit page does not shrink magnified text to an
+unreadable size. This is a display scale, not a matching rule. Crop sizes exclude
+canvas padding; source pixels retain their aspect ratio, including when the
+canvas backing-size cap lowers effective display density. Auto match and Relative
+position share the same scale policy and preserve their existing center/offsets.
+Canvas backing pixels follow display density (up to 3x and 3072 pixels wide).
+After a 160 ms pointer pause, a bounded local detail endpoint rasterizes only the
+requested region of the same signed snapshot PDF. It calls the existing snapshot
+reader, including expiry, submission ownership, live-source/upload binding and
+snapshot SHA256 checks. It never reads a different publication file or changes
+the shared evidence renderer, OCR, render hashes, engine contract or cache.
+Detail dimensions are capped at 3072 per side / four million requested pixels,
+and density at 8 PDF pixels per point. Original raster images inside PDFs still
+have their original resolution; higher-density rendering cannot invent detail.
+Each side debounces requests, aborts superseded work, times out after ten seconds,
+and keeps at most one decoded crop. Close, page changes and Evidence discard
+obsolete work. Late replies cannot draw into another view. High detail is labeled;
+network failures show Preview only, while rejected snapshots hide the crop and
+require rebuilding. No alternate PDF is substituted. No detail pixels are persisted.
 Clicking a mark selects Evidence independently of pointer magnification. Selected
 raw OCR is not replaced by later hovering. Moving into the inspection area freezes
 the last crops; departure and scrolling do not dismiss it.

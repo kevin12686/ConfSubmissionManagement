@@ -93,7 +93,7 @@ function finding(overrides = {}) {
         before_locations: [{page: 1, box: [.1, .2, .2, .3]}], after_locations: [{page: 1, box: [.1, .2, .2, .3]}],
         before_ocr: [], after_ocr: [], issues: [], ...overrides};
 }
-function setup(overrides = {}) {
+function setup(overrides = {}, windowOptions = {}) {
     const doc = markup(), root = doc.querySelector("[data-pdf-comparison]"), q = selector => root.querySelector(selector);
     const data = {coverage_status: "limited", coverage_reasons: ["OCR can miss content."], evidence_summary: {},
         findings: [finding()], text_available: true, total_findings: 1,
@@ -106,7 +106,7 @@ function setup(overrides = {}) {
         CFMImageLoader: {load(page, url) {
             const image = page.querySelector("img"); image.setAttribute("src", url); image.complete = false; image.naturalWidth = 0;
             page.classList.remove("is-ready", "is-error"); page.classList.add("is-loading"); loads.push(url);
-        }}, CFMContextExpansion: {reveal: target => reveals.push(target)}});
+        }}, CFMContextExpansion: {reveal: target => reveals.push(target)}, ...windowOptions});
     runInNewContext(script, {document: {readyState: "complete", querySelector: selector => doc.querySelector(selector),
         addEventListener: (type, handler) => doc.addEventListener(type, handler),
         getElementById: () => ({textContent: JSON.stringify(data)}), createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag)},
@@ -162,9 +162,9 @@ test("short magnification windows retain undistorted two-times pixels and stable
     for (const height of [72, 110, 150]) {
         for (const side of ['before', 'after']) { p.crop(side).clientWidth = 400; p.crop(side).clientHeight = height; }
         p.hoverPoint('before', .5, .5); p.frame();
-        const [, , , cw, ch] = p.crop('before').draws[0];
-        assert.ok(Math.abs(cw / ch - 400 / height) < .02);
-        assert.equal((400 / cw) / (600 / 1190), 2);
+        const [, , , cw, ch, , , dw, dh] = p.crop('before').draws[0];
+        assert.ok(Math.abs(dw / cw - dh / ch) < 1e-12);
+        assert.equal((dw / cw) / (600 / 1190), 2);
         assert.equal(p.q('[data-comparison-raw-before]').textContent, raw);
     }
     p.q('[data-inspection-view="evidence"]').fire('click');
@@ -174,6 +174,37 @@ test("short magnification windows retain undistorted two-times pixels and stable
     p.q('[data-comparison-close]').fire('click');
     p.q('[data-comparison-inspector-toggle]').fire('click');
     assert.match(p.q('[data-comparison-pair-status]').textContent, /Move over/);
+});
+test('Retina canvas tracks CSS geometry without changing crop coordinates or magnification',()=>{
+    const p=setup();p.loaded('before');p.loaded('after');
+    let original;
+    for(const density of [1,2,3,4]) {
+        p.win.devicePixelRatio=density;
+        for(const side of ['before','after']) {p.crop(side).clientWidth=600;p.crop(side).clientHeight=120;}
+        p.hoverPoint('before',.5,.5);p.frame();
+        assert.equal(p.crop('before').width,600*Math.min(density,3));
+        assert.equal(p.crop('before').height,120*Math.min(density,3));
+        const crop=p.crop('before').draws[0].slice(1,5);
+        if(original)assert.deepEqual(crop,original);else original=crop;
+    }
+});
+test('detail requests use only the signed displayed side/page and late crops cannot draw',()=>{
+    const requests=[];
+    const p=setup({detail_urls:{before:'/bound/before/detail/0.png',after:'/bound/after/detail/0.png'}},
+        {CFMComparisonDetail:{create:()=>({request:(...args)=>requests.push(args),clear(){},dispose(){}})}});
+    p.loaded('before');p.loaded('after');p.hoverPoint('before',.5,.5);
+    const [side,url,ready]=requests[0];
+    assert.equal(side,'before');assert.match(url,/^\/bound\/before\/detail\/1.png\?box=/);
+    const bitmap={width:1000,height:300};ready(bitmap);
+    assert.equal(p.crop('before').draws[0][0],bitmap);
+    p.navigate('before',2);
+    ready(bitmap);assert.equal(p.crop('before').draws.length,0);
+    p.loaded('before');p.loaded('after');p.hoverPoint('before',.5,.5);
+    const latest=requests.at(-2);
+    assert.match(latest[1],/^\/bound\/before\/detail\/2.png/);
+    latest[3](true);
+    assert.equal(p.crop('before').hidden,true);
+    assert.match(p.q('[data-comparison-crop-status="before"]').textContent,/Rebuild/);
 });
 test("all eligible current-page marks appear without selecting a finding", () => {
     const page = setup({findings: [finding(), finding({id: 1, category: "uncertain", kind: "author_review"}), finding({id: 2, category: "tolerated", kind: "ignored_visual"})]});
@@ -358,8 +389,8 @@ test("leaving a finding retains its evidence and anchor while pointers move beyo
     assert.equal(page.q("[data-comparison-raw-before]").textContent, raw);
     assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
     const [, sx, sy, cw, ch] = page.crop("before").draws[0];
-    assert.equal((sx + cw / 2) / 1190, .6);
-    assert.equal((sy + ch / 2) / 1684, .6);
+    assert.ok(Math.abs((sx + cw / 2) / 1190 - .6) < 1e-12);
+    assert.ok(Math.abs((sy + ch / 2) / 1684 - .6) < 1e-12);
 });
 
 test("relative position survives unequal image dimensions, display scale, scroll offset and reversed hover side", () => {
@@ -367,10 +398,10 @@ test("relative position survives unequal image dimensions, display scale, scroll
     page.page("after").bounds = {left: -320, top: -500, width: 900, height: 600};
     page.hoverPoint("after", .6, .7);
     for (const [side, w, h] of [["before", 1200, 1800], ["after", 1800, 1200]]) {
-        const [, sx, sy, cw, ch] = page.crop(side).draws[0];
+        const [, sx, sy, cw, ch, , , dw, dh] = page.crop(side).draws[0];
         assert.equal((sx + cw / 2) / w, .6);
         assert.equal((sy + ch / 2) / h, .7);
-        assert.equal(cw / ch, 8 / 3);
+        assert.ok(Math.abs(dw / cw - dh / ch) < 1e-12);
     }
 });
 
@@ -379,9 +410,42 @@ test("magnification remains two times the displayed page scale on narrow and wid
     for (const cropWidth of [150, 400]) {
         page.crop("before").clientWidth = cropWidth;
         page.hoverPoint("before", .5, .5); page.frame();
-        const cw = page.crop("before").draws[0][3];
-        assert.equal((cropWidth / cw) / (600 / 1190), 2);
+        const draw = page.crop("before").draws[0];
+        assert.equal((draw[7] / draw[3]) / (600 / 1190), 2);
     }
+});
+
+test('small Fit-page previews retain a PDF-point readability floor in both positioning modes',()=>{
+    for (const pdfWidth of [595,612,842]) {
+        const p=setup({before_pages:[{width:pdfWidth,height:842}],after_pages:[{width:pdfWidth,height:842}]});
+        p.loaded('before');p.loaded('after');
+        for(const mode of ['auto','relative']) for(const previewWidth of [80,120,320,900]) for(const cropWidth of [100,600,2000]) {
+            p.q('[data-inspection-position]').value=mode;
+            p.win.devicePixelRatio=3;
+            for(const side of ['before','after']) {
+                p.page(side).bounds={left:0,top:0,width:previewWidth,height:previewWidth*842/pdfWidth};
+                p.crop(side).clientWidth=cropWidth;p.crop(side).clientHeight=120;
+            }
+            p.hover('before');p.frame();
+            for(const side of ['before','after']) {
+                const [,sx,sy,cw,ch,dx,dy,dw,dh]=p.crop(side).draws[0];
+                const density=p.crop(side).width/cropWidth;
+                const pixelsPerPoint=dw/cw/density*1190/pdfWidth;
+                assert.ok(Math.abs(pixelsPerPoint-Math.max(1.5,2*previewWidth/pdfWidth))<1e-10);
+                assert.ok(Math.abs(dw/cw-dh/ch)<1e-10);
+                assert.ok(sx>=0&&sy>=0&&sx+cw<=1190&&sy+ch<=1684);
+                assert.ok(dx>=0&&dy>=0&&dx+dw<=p.crop(side).width&&dy+dh<=p.crop(side).height);
+            }
+        }
+    }
+});
+
+test('engine diagnostics are retained beneath one closed technical-details disclosure',()=>{
+    const p=setup(), technical=p.q('[data-comparison-technical]');
+    assert.equal(technical.attributes.open,undefined);
+    assert.ok(technical.contains(p.q('[data-comparison-evidence-summary]')));
+    assert.ok(technical.contains(p.q('[data-comparison-rules]')));
+    assert.equal(p.q('[data-comparison-coverage]').closest('[data-comparison-technical]'),undefined);
 });
 
 test("relative positioning explicitly bypasses region anchors for keyboard magnification", () => {

@@ -300,3 +300,34 @@ def comparison_page_png(submission_id, token, side, page_number):
             raise PDFComparisonError("This page does not exist in the compared PDF.")
         page = document[page_number - 1]
         return page_pixmap(page).tobytes("png")
+
+
+def comparison_detail_png(submission_id, token, side, page_number, *, box, width, height):
+    """Display-only crop of the verified snapshot; never changes evidence rendering."""
+    import math
+
+    try:
+        x0, y0, x1, y1 = (float(value) for value in box)
+        width, height = int(width), int(height)
+    except (TypeError, ValueError, OverflowError):
+        raise PDFComparisonError("Invalid detail region or dimensions.") from None
+    if (not all(math.isfinite(value) for value in (x0, y0, x1, y1))
+            or not 0 <= x0 < x1 <= 1 or not 0 <= y0 < y1 <= 1
+            or not 1 <= width <= 3072 or not 1 <= height <= 3072
+            or width * height > 4_000_000):
+        raise PDFComparisonError("Invalid detail region or dimensions.")
+    data = comparison_pdf_bytes(submission_id, token, side)
+    with fitz.open(stream=data, filetype="pdf") as document:
+        if not 1 <= page_number <= len(document):
+            raise PDFComparisonError("This page does not exist in the compared PDF.")
+        page = document[page_number - 1]
+        rect = page.rect
+        clip = fitz.Rect(rect.x0 + rect.width * x0, rect.y0 + rect.height * y0,
+                         rect.x0 + rect.width * x1, rect.y0 + rect.height * y1)
+        if clip.is_empty or clip.is_infinite:
+            raise PDFComparisonError("Invalid detail region.")
+        # Bound both density and output allocation, including pixel rounding at clip edges.
+        scale = min(width / clip.width, height / clip.height, 8)
+        if not math.isfinite(scale) or scale <= 0:
+            raise PDFComparisonError("Invalid detail scale.")
+        return page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip, alpha=False).tobytes("png")

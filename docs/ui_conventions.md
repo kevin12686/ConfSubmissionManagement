@@ -501,6 +501,14 @@ Keep Magnification fully visible without internal scrolling; reserve equal body
 height for Evidence, which alone may scroll. Adapt crop height to the viewport
 and its canvas aspect ratio to the displayed shape; never stretch page pixels.
 Measure remaining document height instead of subtracting a fixed toolbar size.
+Comparison canvases must match CSS dimensions and device pixel density without
+changing normalized crop coordinates. Display-only snapshot detail loading is
+debounced and bounded; retain immediate previews, reject stale replies, release
+decoded bitmaps, and identify unavailable detail. Never alter the evidence
+renderer or PDF selection to improve display quality. Use a PDF-point-based
+readability floor when Fit page shrinks the page; do not derive lens text size
+solely from a tiny thumbnail. Technical diagnostics belong under one closed
+disclosure, not three persistent rows; retain prominent coverage warnings.
 Pointer motion
 updates crops; clicking selects Evidence independently. Reading, text selection
 and internal scrolling must not dismiss or replace selected evidence. Evidence

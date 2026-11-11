@@ -15,7 +15,7 @@ from submissions.services.checks import publication_readiness_rows
 from submissions.services.formatting_history import capture_existing_formatting
 from submissions.services.pdf_comparison import (
     COMPARISON_VERSION, PDFComparisonError, comparison_page_png,
-    comparison_pdf_bytes, comparison_root, create_pdf_comparison, load_pdf_comparison,
+    comparison_pdf_bytes, comparison_root, create_pdf_comparison, load_pdf_comparison, comparison_detail_png,
 )
 from submissions.services.publication_read import publication_database_signature
 from submissions.tests.test_acceptance import EditorialAcceptanceTestCase
@@ -70,6 +70,61 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         self.submission.pdf_file.save("original.pdf", ContentFile(self.before))
         self.submission.formatted_pdf_file.save("corrected.pdf", ContentFile(self.after))
         self.url = reverse("submissions:formatting_pdf_comparison", args=[self.submission.pk])
+
+    def test_detail_renders_exact_snapshot_without_changing_evidence_or_state(self):
+        payload = create_pdf_comparison(self.submission.pk)
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        readiness = publication_readiness_rows(strict_hash=True)
+        original_preview = comparison_page_png(self.submission.pk, payload['token'], 'after', 1)
+        saved = (comparison_root() / payload['token'] / 'payload.json').read_bytes()
+        for side, pdf in [('before', self.before), ('after', self.after)]:
+            url = reverse('submissions:formatting_comparison_detail', args=[self.submission.pk, payload['token'], side, 1])
+            for box in ['0,0,0.5,0.5', '0.5,0.5,1,1', '0,0,1,1']:
+                response = self.client.get(url, {'box': box, 'width': 1600, 'height': 800})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response['Cache-Control'], 'no-store')
+                x0, y0, x1, y1 = map(float, box.split(','))
+                with fitz.open(stream=pdf, filetype='pdf') as doc:
+                    page = doc[0]
+                    clip = fitz.Rect(x0 * page.rect.width, y0 * page.rect.height, x1 * page.rect.width, y1 * page.rect.height)
+                    scale = min(1600 / clip.width, 800 / clip.height, 8)
+                    expected = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip, alpha=False).tobytes('png')
+                self.assertEqual(response.content, expected)
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+        self.assertEqual(publication_readiness_rows(strict_hash=True), readiness)
+        self.assertEqual((comparison_root() / payload['token'] / 'payload.json').read_bytes(), saved)
+        self.assertEqual(comparison_page_png(self.submission.pk, payload['token'], 'after', 1), original_preview)
+
+    def test_detail_rejects_invalid_regions_and_stale_or_wrong_snapshot(self):
+        payload = create_pdf_comparison(self.submission.pk)
+        url = reverse('submissions:formatting_comparison_detail', args=[self.submission.pk, payload['token'], 'after', 1])
+        for params in [dict(box=box, width=800, height=300) for box in ['nan,0,1,1', '0,0,inf,1', '-.1,0,1,1', '0,0,0,1', '1,0,0,1', '0,0,1,2', '0,1', 'x,0,1,1']] + [dict(box='0,0,1,1', width=w, height=h) for w,h in [(0,300),(3073,1),(3000,3000),('nan',300),('1.5',300)]]:
+            with self.subTest(params=params):
+                self.assertEqual(self.client.get(url, params).status_code, 409)
+        for side, page in [('unknown',1),('after',2),('after',0)]:
+            with self.assertRaises(PDFComparisonError):
+                comparison_detail_png(self.submission.pk, payload['token'], side, page, box=(0,0,1,1), width=800, height=300)
+        params = {'box':'0,0,1,1','width':800,'height':300}
+        wrong_owner = reverse('submissions:formatting_comparison_detail', args=[self.submission.pk + 1, payload['token'], 'after', 1])
+        self.assertEqual(self.client.get(wrong_owner, params).status_code,409)
+        with patch('django.core.signing.time.time', return_value=time.time() + 10800):
+            self.assertEqual(self.client.get(url, params).status_code,409)
+        self.assertEqual(self.client.post(url, params).status_code,405)
+        path = comparison_root() / payload['token'] / 'after.pdf'
+        old = path.read_bytes(); path.write_bytes(b'corrupt')
+        self.assertEqual(self.client.get(url, {'box':'0,0,1,1','width':800,'height':300}).status_code,409)
+        path.write_bytes(old)
+        self.submission.formatted_pdf_file.save('changed.pdf', ContentFile(make_pdf(['changed'])))
+        self.assertEqual(self.client.get(url, {'box':'0,0,1,1','width':800,'height':300}).status_code,409)
+
+    def test_detail_rotation_and_density_cap(self):
+        self.submission.formatted_pdf_file.save('rotated.pdf', ContentFile(make_pdf(['Rotated text'], rotation=90)))
+        payload = create_pdf_comparison(self.submission.pk)
+        for box in [(0,0,1,1),(.999,.999,1,1)]:
+            image = comparison_detail_png(self.submission.pk, payload['token'], 'after', 1, box=box, width=3072, height=1000)
+            pix = fitz.Pixmap(image)
+            self.assertGreater(pix.width,0); self.assertGreater(pix.height,0)
+            self.assertLessEqual(pix.width,3074); self.assertLessEqual(pix.height,1002)
 
     def test_build_is_audited_and_cannot_change_publication_or_review_state(self):
         self.mark_submission_publication_ready(self.submission)

@@ -90,9 +90,11 @@
                 {% if comparison_data.truncated %}<div>Showing {{ comparison_data.shown_findings }} of {{ comparison_data.total_findings }} findings.</div>{% endif %}
                 <div class="small">Not publication approval. Figures, image preservation, mathematical meaning and layout require manual review.</div>
             </div>
+            <details class="cfm-comparison-evidence small mt-2" data-comparison-technical><summary>Technical details</summary>
             <details class="cfm-comparison-evidence" data-comparison-evidence-summary hidden><summary>Engine evidence counts</summary><dl class="cfm-comparison-evidence-counts" data-comparison-evidence-counts></dl></details>
             <details class="cfm-comparison-evidence" data-comparison-rules hidden><summary>Visual exception policy</summary><pre data-comparison-rules-content></pre></details>
             <details class="small mt-2"><summary>Compared file identities</summary><div class="text-break">Created: {{ comparison_data.created_at }}<br>Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>Temporary comparison expires after two hours. Publication files and review state are unchanged.</div></details>
+            </details>
         </div>
         <div class="alert alert-warning cfm-alert-stack" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
         <section class="cfm-comparison-inspection" data-comparison-inspection data-view="magnify" aria-label="Page magnification and finding details">
@@ -116,5 +118,6 @@
     </div>
     {% else %}<div class="cfm-empty">Compare the saved PDFs. No review status is changed.</div>{% endif %}
 </div>
+<script src="{% static 'submissions/comparison_detail.js' %}?v={{ app_version }}" defer></script>
 <script src="{% static 'submissions/pdf_comparison.js' %}?v={{ app_version }}" defer></script>
 {% endblock %}
