@@ -141,7 +141,9 @@ class GatewayHTTPTests(SimpleTestCase):
             ), self.assertRaises(PDFComparisonError) as raised:
                 client.service_pdf_evidence(self.before, self.after)
             self.assertNotIn(self.headers["CF-Access-Client-Secret"], str(raised.exception))
-            self.assertEqual([(m, p) for m, p, h in self.seen], [("GET", "/v1/health")])
+            self.assertEqual(len(self.seen),1)
+            self.assertEqual(self.seen[0][0],"GET")
+            self.assertTrue(self.seen[0][1].startswith('/v1/jobs/'))
             self.assertEqual(self.uploads, [])
 
     def test_local_endpoint_never_receives_remote_gateway_headers(self):

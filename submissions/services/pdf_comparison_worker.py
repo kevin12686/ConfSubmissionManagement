@@ -68,10 +68,12 @@ def resource_limits():
             resource.setrlimit(resource.RLIMIT_AS, (6 * 1024 ** 3, 6 * 1024 ** 3))
 
 
-def inspect_pair(before, after, cache_directory=None):
+def inspect_pair(before, after, cache_directory=None, *, cache_only=False):
     from submissions.services.rapidocr_comparison.result import VERSION, build_result, validate_result
     from submissions.services.rapidocr_comparison.runtime import build_recognizer, extract_document
 
+    if cache_only and (not cache_directory or not (cache_directory / "pair.input.json").is_file()):
+        return {"version": VERSION, "cache_miss": True}
     try:
         recognizer = build_recognizer()
     except Exception:
@@ -105,6 +107,8 @@ def inspect_pair(before, after, cache_directory=None):
                     return {"version": VERSION, "result": result}
             except (ValueError, TypeError, KeyError, AttributeError):
                 pass
+        if cache_only:
+            return {"version": VERSION, "cache_miss": True}
         documents, memo = [], {}
         for side, data, digest in zip(("before", "after"), (before, after), hashes):
             document = None
@@ -151,11 +155,13 @@ if __name__ == "__main__":
     with redirect_stdout(sys.stderr):
         before, after = read_pair(sys.stdin.buffer)
         cache_directory = None
-        if len(sys.argv) == 3 and sys.argv[1] == "--cache-inputs":
-            cache_directory = Path(sys.argv[2])
-        elif len(sys.argv) != 1:
+        cache_only = "--cache-only" in sys.argv[1:]
+        arguments = [arg for arg in sys.argv[1:] if arg != "--cache-only"]
+        if len(arguments) == 2 and arguments[0] == "--cache-inputs":
+            cache_directory = Path(arguments[1])
+        elif arguments:
             raise ValueError("Invalid worker arguments")
-        evidence = inspect_pair(before, after, cache_directory=cache_directory)
+        evidence = inspect_pair(before, after, cache_directory=cache_directory, cache_only=cache_only)
         encoded = json.dumps(evidence, allow_nan=False).encode("utf-8")
         if len(encoded) > MAX_OUTPUT_BYTES:
             raise ValueError("Comparison evidence exceeds safe output bounds")

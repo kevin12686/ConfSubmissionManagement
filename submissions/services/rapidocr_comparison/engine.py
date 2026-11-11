@@ -20,6 +20,7 @@ def visual_alignment(a,b,profile):
     rules=symbols.rules(profile);ends=defaultdict(list)
     for ri,(left,right,rid) in enumerate(rules):ends[left[-1],right[-1]].append((ri,left,right))
     aa=''.join(u['char'] for u in a);bb=''.join(u['char'] for u in b)
+    accent_a,accent_b=symbols.letter_clusters(aa),symbols.letter_clusters(bb)
     n,m=len(a),len(b);cost=[array('I',[0])*(m+1) for _ in range(n+1)]
     back=[array('H',[0])*(m+1) for _ in range(n+1)]
     for i in range(1,n+1):cost[i][0]=i*SCALE;back[i][0]=3
@@ -30,6 +31,11 @@ def visual_alignment(a,b,profile):
             best=(cost[i-1][j-1]+(0 if same else SCALE),1 if same else 2)
             for candidate in ((cost[i-1][j]+SCALE,3),(cost[i][j-1]+SCALE,4)):
                 if candidate[0]<best[0]:best=candidate
+            if profile != 'literal' and i in accent_a and j in accent_b:
+                p,base_a=accent_a[i];q,base_b=accent_b[j]
+                if base_a == base_b and aa[p:i] != bb[q:j] and len({u['owner'] for u in a[p:i]+b[q:j]}) == 1:
+                    candidate=(cost[p][q]+1,65535)
+                    if candidate[0]<best[0]:best=candidate
             for ri,left,right in ends.get((aa[i-1],bb[j-1]),[]):
                 p,q=i-len(left),j-len(right)
                 if p<0 or q<0 or aa[p:i]!=left or bb[q:j]!=right:continue
@@ -41,7 +47,9 @@ def visual_alignment(a,b,profile):
     path=[];i,j=n,m
     while i or j:
         op=back[i][j];rid=None
-        if op>=5:
+        if op==65535:
+            p,_=accent_a[i];q,_=accent_b[j];rid='diacritics';kind='tolerated'
+        elif op>=5:
             left,right,rid=rules[op-5];p,q=i-len(left),j-len(right);kind='tolerated'
         else:p,q=i-(op!=4),j-(op!=3);kind={1:'equal',2:'change',3:'change',4:'change'}[op]
         path.append((kind,p,i,q,j,rid));i,j=p,q

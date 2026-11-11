@@ -618,7 +618,12 @@ active Publishing submission, normally Corrected. It never reads a debug copy,
 another submission, or a history file as publication input. A missing selected
 file is an error, not permission to fall back.
 
-Method 7 compares rendered pages with local RapidOCR. Native PDF geometry can
+Method 8 compares rendered pages with local RapidOCR. Same-letter diacritic
+changes (e/é/è) appear as Info with raw evidence; genuine accents may differ.
+Complete validated worker results are reused without CPU/GPU confirmation.
+Partial OCR cache still requires fresh computation and follows normal consent.
+Update CFM and all workers together; older method caches are not relabelled.
+Native PDF geometry can
 help order text within each document, but hidden/stale text cannot replace what
 OCR reads from the page. Image text, formulas, headers/footers and low-confidence
 recognition are not excluded. This remains an aid for small revisions, not an
@@ -632,15 +637,14 @@ Counts are records, not affected papers or accuracy. Filters and explicit
 previous/next-result navigation let you inspect the relevant recorded pages.
 Browse all pages and open each exact snapshot PDF for manual review.
 
-Hover anywhere on a page to magnify the same relative position on both currently
-displayed pages. Both crops remain available even when OCR has no counterpart;
-this is a position preview, not a claim that the text matches. Hover a mark for
-its reason and raw OCR details as well. This does not turn pages or scroll either
-document, and the existing Link pages behavior is unchanged. Move into the inspector to
-keep it open; keyboard focus/activation and touch taps also work. Escape or the
-close control dismisses it. Each crop labels its actual page number; an image
-still loading or unavailable shows an explicit status, never another page.
-Keyboard finding inspection uses the mark's center on both pages. Only the
+The collapsible inspection area has Magnification and Evidence views. Auto match
+uses an unambiguous region anchor and follows pointer movement beyond its box;
+otherwise it uses relative positions. Choose Relative position to scan freely.
+Click a mark to select Evidence: later hover does not replace selected details.
+Moving into the area freezes the last crops, and scrolling does not dismiss it.
+Linked pages with no counterpart show an explicit empty state, never page one or
+a retained unrelated page. Disable Link pages for manual comparison. Page images
+and crops label actual page numbers and never substitute another PDF. Only the
 active finding's connection is shown; an amber dashed connection is a candidate,
 not verified equality. Added/removed text has no fabricated opposite mark.
 
@@ -676,7 +680,7 @@ example after missing OCR models, worker timeout or parse/render failure. A
 viewer image-load failure is separate. Correct installation issues and retry;
 do not treat a failed comparison as an unchanged paper.
 
-Method-6 and older results must be rebuilt for method 7. Comparisons expire
+Method-7 and older results must be rebuilt for method 8. Comparisons expire
 after two hours and reject changed scope, selected identities/bytes, missing
 baselines or damaged snapshots. Size/page/token/work limits and display caps
 remain bounded (including 64 MiB, 40 pages and 30,000 tokens per PDF); consult

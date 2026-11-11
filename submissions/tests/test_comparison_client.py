@@ -78,12 +78,42 @@ class ComparisonClientTests(SimpleTestCase):
         self.assertEqual(diagnostics["worker"], "remote")
         self.assertEqual(self.compare()[0], result)
         self.assertEqual(sum(call[2] is not None for call in self.calls), 1)
-        self.assertEqual({call[0] for call in self.calls}, {"remote"})
+        self.assertEqual({call[0] for call in self.calls if call[2] is not None}, {"remote"})
+
+    def test_complete_local_cache_without_route_bypasses_confirmation_even_if_remote_is_ready(self):
+        self.jobs['local']=copy.deepcopy(self.complete)
+        result,diagnostics=self.compare()
+        self.assertEqual(result,self.result);self.assertEqual(diagnostics['worker'],'local')
+        self.assertFalse(any(c[2] is not None for c in self.calls))
+        self.assertFalse(any(c[1]=='/v1/health' for c in self.calls))
+
+    def test_other_worker_complete_cache_does_not_move_or_restart_accepted_route(self):
+        self.compare()
+        path=next((self.root/'data/formatting_comparison_previews/compute').glob('*.json'))
+        from django.core import signing
+        original=signing.loads(path.read_text(),salt=client.ROUTE_SALT)
+        self.jobs['remote']={**copy.deepcopy(self.complete),'state':'running'}
+        self.jobs['local']=copy.deepcopy(self.complete)
+        self.calls.clear()
+        self.assertEqual(self.compare()[1]['worker'],'local')
+        self.assertEqual(signing.loads(path.read_text(),salt=client.ROUTE_SALT)['endpoint'],original['endpoint'])
+        self.assertFalse(any(c[2] is not None for c in self.calls))
+
+    def test_complete_cache_available_with_remote_offline_and_wrong_or_partial_cache_does_not_authorize_compute(self):
+        self.health['remote']='offline'
+        for field,value in [('state','running'),('hashes',['wrong','hashes']),('contract','wrong'),('render_hashes',{}),('result',{})]:
+            with self.subTest(field=field):
+                self.jobs['local']={**copy.deepcopy(self.complete),field:value}
+                with self.assertRaises(LocalComparisonConfirmationRequired): self.compare()
+                self.assertFalse(any(c[2] is not None for c in self.calls))
+        self.jobs['local']=copy.deepcopy(self.complete)
+        self.assertEqual(self.compare()[1]['worker'],'local')
 
     def test_preacceptance_offline_or_not_ready_needs_explicit_local_choice(self):
         for state in ("offline", "not_ready"):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as root, override_settings(BASE_DIR=Path(root)):
                 self.health["remote"] = state
+                self.jobs.clear()
                 self.calls.clear()
                 with self.assertRaises(LocalComparisonConfirmationRequired):
                     self.compare()
@@ -95,7 +125,7 @@ class ComparisonClientTests(SimpleTestCase):
     def test_busy_remote_is_not_offline(self):
         self.health["remote"] = "busy"
         self.compare()
-        self.assertEqual({c[0] for c in self.calls}, {"remote"})
+        self.assertEqual({c[0] for c in self.calls if c[2] is not None}, {"remote"})
 
     def test_lost_submission_response_reconciles_same_job(self):
         self.post_error = client.TransportUnavailable()
@@ -109,7 +139,7 @@ class ComparisonClientTests(SimpleTestCase):
         self.health["remote"] = "offline"
         with self.assertRaises(ComparisonInProgress):
             self.compare()
-        self.assertEqual({c[0] for c in self.calls}, {"remote"})
+        self.assertEqual({c[0] for c in self.calls if c[2] is not None}, {"remote"})
 
     def test_configuration_change_cannot_reroute_an_uncertain_job(self):
         self.compare()
@@ -122,7 +152,7 @@ class ComparisonClientTests(SimpleTestCase):
         with override_settings(CFM_COMPARISON_REMOTE_HEADERS='{"X-API-Key":"new-secret"}'):
             self.assertTrue(self.compare()[1]["resumed"])
         self.assertEqual(sum(c[2] is not None for c in self.calls), 1)
-        self.assertEqual({c[0] for c in self.calls}, {"remote"})
+        self.assertEqual({c[0] for c in self.calls if c[2] is not None}, {"remote"})
 
     def test_invalid_headers_do_not_select_local_or_submit(self):
         for raw in ('{"Authorization":"secret"}', '{"X-Key":"secret\\n"}', '[]'):
@@ -153,7 +183,7 @@ class ComparisonClientTests(SimpleTestCase):
         with patch.object(client.time, "time", return_value=now + client.ROUTE_SECONDS + 60):
             with self.assertRaises(ComparisonInProgress):
                 self.compare()
-        self.assertEqual({c[0] for c in self.calls}, {"remote"})
+        self.assertEqual({c[0] for c in self.calls if c[2] is not None}, {"remote"})
 
     def test_idle_route_lease_expires_after_all_possible_old_work(self):
         now = client.time.time()
@@ -169,7 +199,7 @@ class ComparisonClientTests(SimpleTestCase):
         self.jobs["remote"] = {**self.complete, "state": "failed", "error": "ocr_failed"}
         with self.assertRaisesRegex(PDFComparisonError, "could not complete"):
             self.compare()
-        self.assertFalse(any(c[0] == "local" for c in self.calls))
+        self.assertFalse(any(c[0] == "local" and c[2] is not None for c in self.calls))
 
     def test_only_explicit_retry_resubmits_failed_job(self):
         self.jobs["remote"] = {**self.complete, "state": "failed", "error": "comparison_failed"}
@@ -247,7 +277,7 @@ class ComparisonClientTests(SimpleTestCase):
     def test_local_only_configuration_keeps_normal_execution(self):
         with override_settings(CFM_COMPARISON_REMOTE_URL="", CFM_COMPARISON_REMOTE_TOKEN=""):
             self.assertEqual(self.compare()[1]["worker"], "local")
-        self.assertEqual({c[0] for c in self.calls}, {"local"})
+        self.assertEqual({c[0] for c in self.calls if c[2] is not None}, {"local"})
 
     def test_old_local_route_does_not_authorize_new_or_pending_cpu_work(self):
         self.health["remote"] = "offline"

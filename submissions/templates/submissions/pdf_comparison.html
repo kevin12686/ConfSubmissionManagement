@@ -39,6 +39,7 @@
             <label><input type="checkbox" data-comparison-connections checked> Selected connection</label>
             <label><input type="checkbox" data-comparison-link checked> Link pages</label>
             <label>Zoom <select class="form-select form-select-sm" data-comparison-scale aria-label="Document zoom"><option value="page">Fit page</option><option value="1">Fit width</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-inspector-toggle aria-expanded="true">Inspection</button>
         </div>
         <div class="cfm-comparison-mark-filters" aria-label="Visible finding groups">
             <label><input type="checkbox" data-comparison-group-filter="attention" checked><i class="cfm-comparison-mark-key" aria-hidden="true"></i> OCR text changes <strong>{{ comparison_data.content_count }}</strong></label>
@@ -94,7 +95,11 @@
             <details class="small mt-2"><summary>Compared file identities</summary><div class="text-break">Created: {{ comparison_data.created_at }}<br>Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>Temporary comparison expires after two hours. Publication files and review state are unchanged.</div></details>
         </div>
         <div class="alert alert-warning cfm-alert-stack" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
-        <section class="cfm-comparison-inspection" data-comparison-inspection role="dialog" aria-label="Page magnification and finding details" hidden>
+        <section class="cfm-comparison-inspection" data-comparison-inspection aria-label="Page magnification and finding details">
+            <div class="cfm-comparison-toolbar">
+                <div class="btn-group" role="group" aria-label="Inspection view"><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="magnify" aria-pressed="true">Magnification</button><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="evidence" aria-pressed="false">Evidence</button></div>
+                <label>Position <select class="form-select form-select-sm" data-inspection-position aria-label="Magnification positioning"><option value="auto">Auto match</option><option value="relative">Relative position</option></select></label>
+            </div>
             <div class="cfm-comparison-inspection-heading"><div><strong data-comparison-inspection-title></strong><div class="small text-muted" data-comparison-pair-status></div></div><button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-close aria-label="Close inspection" title="Close inspection"><span class="cfm-comparison-icon-close" aria-hidden="true"></span></button></div>
             <label class="small" data-comparison-overlap-label hidden>Overlapping findings <select class="form-select form-select-sm" data-comparison-overlap aria-label="Overlapping findings"></select></label>
             <p class="small" data-comparison-description></p>

@@ -28,7 +28,7 @@ from submissions.services.comparison_protocol import page_pixmap, contract_id
 
 TTL = timedelta(hours=2)
 SALT = "submissions.pdf-comparison.v1"
-COMPARISON_VERSION = 7
+COMPARISON_VERSION = 8
 MAX_BYTES = 64 * 1024 * 1024
 
 
@@ -138,6 +138,9 @@ def _pdf_evidence(before, after, *, diagnostics=None, retry_failed=False, allow_
     transport = getattr(settings, "CFM_COMPARISON_TRANSPORT", "embedded")
     if transport == "embedded":
         if getattr(settings, "CFM_COMPARISON_REMOTE_URL", "").strip() and not allow_local:
+            cached = local_pdf_evidence(before, after, diagnostics=diagnostics, cache_only=True)
+            if cached is not None:
+                return cached
             raise LocalComparisonConfirmationRequired("Embedded mode does not use the configured remote worker. Correct the deployment mode, or explicitly confirm local CPU execution.")
         return local_pdf_evidence(before, after, diagnostics=diagnostics)
     if transport == "service":

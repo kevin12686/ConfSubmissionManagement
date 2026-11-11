@@ -41,6 +41,23 @@ class VisualTests(unittest.TestCase):
         a=[{'char':'8','owner':None}];b=[{'char':'Β','owner':None}]
         self.assertTrue(any(p[0]=='change' for p in engine.visual_alignment(a,b,'broad')))
 
+    def test_diacritics_only_are_inspectable_info_but_other_edits_remain(self):
+        for left,right in [('cafe','café'),('café','cafè'),('Müller','Muller'),('Ångström','Angstrom'),('α','ά')]:
+            with self.subTest(left=left,right=right):
+                r=self.compare('The name is '+left+' here.','The name is '+right+' here.')
+                self.assertFalse(r['findings']);self.assertTrue(r['ignored_visual'])
+                self.assertTrue(any(row['rule_id']=='diacritics' for row in r['ignored_visual']))
+        r=self.compare('The café used 23 trials.','The cafe used 99 trials.')
+        self.assertTrue(r['findings']);self.assertTrue(r['ignored_visual'])
+        canonical=self.compare('The café was checked.','The cafe\u0301 was checked.')
+        self.assertFalse(canonical['findings'])
+
+    def test_accents_do_not_enable_case_script_overlay_digit_or_missing_letter_equivalence(self):
+        for left,right in [('é','E'),('é','a'),('é',''),('ø','o'),('α','a'),('1','¹'),('=','≠'),('o','o\u0338')]:
+            with self.subTest(left=left,right=right):
+                self.assertTrue(self.compare('The name is '+left+' here.','The name is '+right+' here.')['findings'])
+        self.assertTrue(self.compare('The café was checked.','The cafe was checked.','literal')['findings'])
+
     def test_owner_cannot_be_cancelled(self):
         a=[{'char':'0','owner':'Dose A'}];b=[{'char':'O','owner':'Dose B'}]
         self.assertTrue(any(p[0]=='change' for p in engine.visual_alignment(a,b,'broad')))
@@ -265,7 +282,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
         empty = dict(page(''), page=2, ocr={'status': 'completed', 'lines': []})
         result = build_result([page('The reference was Figure 2.')],
                               [page('Error! Reference source not found.'), empty])
-        return {'version': 7, 'result': result}
+        return {'version': 8, 'result': result}
 
     def test_worker_timeout_oserror_and_nonzero_are_unavailable(self):
         from submissions.services.pdf_comparison import PDFComparisonError, compare_pdf_bytes
@@ -290,7 +307,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
 
         for error in ('configuration', 'ocr_failed', 'unknown_failure'):
             with self.subTest(error=error), self.assertRaises(PDFComparisonError):
-                self.compare_response(json.dumps({'version': 7, 'error': error}).encode())
+                self.compare_response(json.dumps({'version': 8, 'error': error}).encode())
 
     def test_empty_and_oversized_input_reject_before_worker(self):
         from submissions.services.pdf_comparison import MAX_BYTES, PDFComparisonError, compare_pdf_bytes

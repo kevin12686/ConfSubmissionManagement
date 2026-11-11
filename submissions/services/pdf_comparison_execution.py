@@ -19,7 +19,7 @@ from .pdf_comparison_cache import ComparisonCacheBusy, comparison_cache_job
 from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
 
 
-def local_pdf_evidence(before, after, *, diagnostics=None):
+def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False):
     from .rapidocr_comparison.result import VERSION, validate_result
     from .rapidocr_comparison.runtime import WALL_SECONDS
 
@@ -38,6 +38,8 @@ def local_pdf_evidence(before, after, *, diagnostics=None):
             result = None
             try:
                 command = [executable, "-B", str(Path(__file__).with_name("pdf_comparison_worker.py"))]
+                if cache_only:
+                    command.append("--cache-only")
                 if job:
                     command.extend(["--cache-inputs", str(job.directory)])
                 with tempfile.TemporaryFile() as stderr:
@@ -51,6 +53,8 @@ def local_pdf_evidence(before, after, *, diagnostics=None):
                 payload = json.loads(response.stdout)
                 if not isinstance(payload, dict) or payload.get("version") != VERSION:
                     raise ValueError("Invalid OCR response version")
+                if cache_only and payload.get("cache_miss") is True:
+                    return None
                 if "error" in payload:
                     errors = {
                         "configuration": "Local OCR models or dependencies are unavailable. Run prepare_rapidocr_models and install requirements.txt.",

@@ -2,10 +2,10 @@
 
 ## Implemented Design
 
-The production integration uses temporary comparison method **7**, in app
-**1.24.0** (method 7 was introduced in 1.22.0). This is the canonical engine/UI contract, not a test report or
-release acceptance record. Method-6 and older signed results must be rebuilt;
-they must not be relabeled or reused as method-7 results. Historical method
+The production integration uses temporary comparison method **8**, in app
+**1.29.0**, adding inspectable same-letter diacritic tolerance. This is the canonical engine/UI contract, not a test report or
+release acceptance record. Method-7 and older signed results must be rebuilt;
+they must not be relabeled or reused as method-8 results. Historical method
 descriptions remain in the changelog, not as requirements for this engine.
 
 Comparison is advisory and read-only. After comes from the publication helper
@@ -109,7 +109,7 @@ by Clear Database. Review images and immutable revisions are not this cache.
 Rendering now hands RapidOCR the identical 300-DPI BGR pixel array directly,
 without the former lossless PNG encode/decode roundtrip. Models, recognition
 batching, reading order, comparison rules and result schema remain unchanged.
-Method 7 and State archive v8 therefore remain unchanged. First-time extraction
+That pixel-transfer optimization is retained by method 8; State archive remains v8. First-time extraction
 on CPU can exceed the existing wall limit; reuse is not a promise that every
 cold comparison finishes. Service deployment below changes the execution
 boundary, not the comparison algorithm.
@@ -140,7 +140,18 @@ Before submitting a new pair, CFM checks protocol/code compatibility and
 readiness. With a remote configured, an unreachable, not-ready or incompatible
 remote pauses the comparison; no new CPU work starts automatically. Manual and
 post-upload builds use the same rule. Local-only service mode remains automatic.
-An explicit local choice carries a five-minute signed confirmation bound to the
+Before new work, use authenticated read-only job lookups to find a complete
+result on either configured worker. Validate the current contract, ordered PDF
+hashes, result schema/identity and every page render hash. A verified complete
+cache needs no local-compute confirmation, even when the preferred remote is
+unavailable. A signed accepted route is never moved or resubmitted when another
+worker supplies completed evidence. Authentication/redirect failures remain
+explicit, not a way to bypass a gateway. Partial/running/failed/wrong-version
+results do not count as a complete cache. Embedded mode similarly probes only
+its signed full-pair cache, validating models/runtime before reuse; its cache-only
+worker path must return a miss without OCR or fresh comparison.
+
+An explicit local choice for fresh computation carries a five-minute signed confirmation bound to the
 submission, baseline, ordered PDF hashes, target revision/upload time, upload
 receipt (if any), engine contract and deployment configuration. GET/health
 requests cannot grant consent. Revalidate before dispatch; never substitute
@@ -165,7 +176,7 @@ Do not delete a route or move accepted work to a different worker. A new CPU
 confirmation permits local use for this comparison, not a persistent preference.
 Authentication, redirect and malformed-evidence failures do not become CPU
 fallback opportunities. Embedded mode with a remote URL requires correcting the
-mode or explicit local confirmation; it never quietly ignores remote intent.
+mode or explicit local confirmation on a full-pair cache miss; it never quietly ignores remote intent.
 
 Formatting List/Single/Focus share one compact service-status strip outside the
 HTMX worklist. It observes authenticated health only: refresh ten seconds after
@@ -342,28 +353,30 @@ Expose these distinct groups:
   details; do not count these as verified unchanged content.
 
 The documents are the primary workspace, not a permanent result-list sidebar.
-Show annotated page images immediately. Hovering anywhere on either page opens
-two actual page-pixel crops at the same normalized page position (x/width,
-y/height). Moving the pointer updates both crops, regardless of OCR matching,
-finding filters or missing counterpart regions. Each crop uses its own displayed
-image and aspect ratio; clamp its window at that image's edges.
+Show annotated page images immediately. The bounded in-flow inspection area has
+Magnification and Evidence views. Auto match uses only unambiguous region pairs
+on displayed pages; the opposite crop follows pointer offsets beyond box edges.
+Ambiguous/unlocated regions use relative positioning; Relative position mode
+explicitly bypasses anchors. Preserve each image's aspect ratio and edge bounds.
 The crop window adapts to the actual panel/page display widths for approximately
 two-times magnification on desktop and narrow screens, preserving aspect ratios.
-Hovering a mark also shows its existing finding and raw OCR in the evidence
-disclosure, not as text supposedly belonging to the opposite crop. Moving into the inspector keeps
-it open; leaving the page and inspector uses a short crossing grace period.
+Clicking a mark selects Evidence independently of pointer magnification. Selected
+raw OCR is not replaced by later hovering. Moving into the inspection area freezes
+the last crops; departure and scrolling do not dismiss it.
 Keyboard activation, touch, Escape and an explicit close control are supported.
 Escape/Control dismiss an open inspector even when hover has left keyboard
 focus on the surrounding page; inactive inspection does not consume keys.
-Hover is transient and must not persist host state.
+Inspection state is page-local and must not persist host state.
 
 Magnification never changes pages or scroll positions. It labels both current
 page numbers and explicitly does not imply text correspondence. Keyboard
-finding inspection uses the focused mark's center as the shared relative point;
+finding inspection uses the focused mark's center with the chosen positioning mode;
 touch can inspect a mark or any page position. Missing/loading page pixels show
 an explicit status, not a blank crop or a substituted matching page. Draw only
 the active finding's connection: dashed amber for unlocated candidates and none for a
-missing counterpart. Connections are finding-level, never invented
+missing counterpart. An absent linked page-map entry clears the opposite page,
+marks and crop with an explicit empty state, never page one or a retained page.
+Manual page selection remains available. Connections are finding-level, never invented
 character-by-character alignment. Explicit previous/next-result commands may
 navigate to recorded pages. Page synchronization uses alignment evidence only
 for navigation, not as a finding location or equality proof. Fit page is the

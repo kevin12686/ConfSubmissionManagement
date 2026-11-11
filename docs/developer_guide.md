@@ -28,7 +28,7 @@ macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windo
 
 ## PDF Comparison Runtime
 
-Method 7 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
+Method 8 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
 `requirements.txt`, with the approved PP-OCRv6 small detection/recognition models.
 Use the application's Python environment on macOS/Linux/Windows; a successful
 installation on one host does not establish Linux/container compatibility.
@@ -385,7 +385,7 @@ Put reusable workflow behavior in services:
   on Original/verified revision readers. Builds use audited POSTs; GETs only
   validate/read existing signed snapshots. Never call processing, Formatting
   save, author-cache rebuild or workflow recomputation from comparison.
-  Method 7 uses rendered-page RapidOCR, not the retired method-6 font/glyph
+  Method 8 uses rendered-page RapidOCR, not the retired method-6 font/glyph
   proof engine. Native geometry guides region/row order only; it never supplies
   OCR text or an equality shortcut. Preserve raw OCR text, scores and boxes,
   headers/footers, image/formula text and low-confidence recognition.
@@ -410,8 +410,9 @@ Put reusable workflow behavior in services:
   Keep differences, unlocated ranges and information separately counted; coverage
   metadata and display caps cannot imply safety. The document-first UI consumes
   actual side-specific locations, raw text and explanations without reclassifying
-  evidence. Magnify the same normalized pointer position on the two displayed
-  images, independently of finding locations or counterpart availability. Keep
+  evidence. Keep selected Evidence independent of pointer motion; use unambiguous
+  region anchors with persistent offsets or relative positioning. Missing linked
+  pages must clear opposite images, marks and crops. Keep
   crop labels/status distinct from recorded finding evidence; never load a
   different page to fill a crop. Hover inspection must not navigate or scroll
   either PDF. Cover unmarked/zero-finding pages, one-sided and off-page findings,

@@ -822,7 +822,7 @@ must actually initialize CUDA; a failed CUDA setup cannot silently claim GPU
 execution while doing CPU OCR. Shared-worker storage and credentials are not
 restored from a conference System State ZIP.
 
-Method 7 uses rendered-page RapidOCR, not the former method-6 glyph-proof
+Method 8 uses rendered-page RapidOCR, not the former method-6 glyph-proof
 engine. **Text differences** are OCR-localized candidate edits; **unlocated
 ranges** need manual confirmation; **information** includes tolerated visual
 differences and spacing/wrap records. Inspect actual page pixels, raw OCR and
@@ -866,7 +866,7 @@ cache/job storage is separate: Clear Database does not delete worker namespaces.
 Worker TTL and quotas bound retention; remove service storage only through a
 deliberate maintenance operation, never conference cleanup.
 
-Rebuild method-6 and older cached results for method 7. If unexpected differences
+Rebuild method-7 and older cached results for method 8. If unexpected differences
 remain, retain input hashes, runtime/model versions, raw OCR, actual locations
 and tolerance rule IDs for diagnosis. Do not edit source PDFs, suppress all
 unlocated ranges or add paper-specific rules to reduce counts. The

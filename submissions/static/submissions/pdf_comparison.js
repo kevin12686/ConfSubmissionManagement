@@ -12,8 +12,9 @@
         const data = JSON.parse(script.textContent);
         const query = (selector) => root.querySelector(selector);
         const state = {selected: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
-        const inspection = {finding: null, mode: null, side: null, location: null, point: null, anchor: null, timer: null, frame: null, blocked: false};
+        const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, pairing: null, candidate: null};
         const inspectionPanel = query("[data-comparison-inspection]");
+        query(".cfm-comparison-workspace").appendChild(inspectionPanel);
         const groupOf = finding => finding.category === "formatting" ? finding.kind : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
         const markKind = finding => ["formatting", "tolerated"].includes(finding.category) ? "info" : finding.category === "uncertain" ? "review" : "change";
         const sides = {};
@@ -29,6 +30,12 @@
                 scroll: panel.querySelector(".cfm-comparison-scroll"),
                 ready: false, source: "", failed: false,
             };
+            const empty = document.createElement("div");
+            empty.className = "cfm-comparison-page-empty";
+            empty.dataset.comparisonPageEmpty = "";
+            empty.setAttribute("role", "status"); empty.hidden = true;
+            empty.textContent = "No corresponding page found. Select a page manually or turn off Link pages for manual comparison.";
+            sides[name].scroll.appendChild(empty);
             sides[name].page.querySelector(":scope > img").addEventListener("error", function () {
                 sides[name].ready = false;
                 sides[name].failed = true;
@@ -56,10 +63,10 @@
             sides[name].input.addEventListener("change", () => navigate(name, Number(sides[name].input.value)));
             sides[name].findingPages.addEventListener("change", () => navigate(name, Number(sides[name].findingPages.value), true));
             panel.querySelectorAll("[data-comparison-page-step]").forEach(button => button.addEventListener("click", () => navigate(name, state[name] + Number(button.dataset.comparisonPageStep))));
-            sides[name].scroll.addEventListener("scroll", () => { drawConnection(); if (inspection.mode === "hover") closeInspection(); }, {passive: true});
+            sides[name].scroll.addEventListener("scroll", drawConnection, {passive: true});
             sides[name].page.addEventListener("pointerenter", event => hoverPage(name, event));
             sides[name].page.addEventListener("pointermove", event => hoverPage(name, event));
-            sides[name].page.addEventListener("pointerleave", () => { inspection.blocked = false; scheduleClose(); });
+            sides[name].page.addEventListener("pointerleave", () => { inspection.blocked = false; clearTimeout(inspection.timer); inspection.candidate = null; });
             sides[name].page.addEventListener("click", event => {
                 if (event.ctrlKey || event.target.closest(".cfm-comparison-mark") || !sides[name].ready) return;
                 openInspection(null, name, null, "touch", event);
@@ -175,7 +182,15 @@
             if (legend) legend.hidden = state.mode !== "pages";
             for (const name of ["before", "after"]) {
                 const side = sides[name];
-                side.input.value = state[name];
+                side.input.value = state[name] || "";
+                side.panel.querySelector("[data-comparison-page-empty]").hidden = state[name] !== null;
+                if (state[name] === null) {
+                    side.ready = false; side.source = ""; side.page.hidden = true; side.text.hidden = true;
+                    side.layer.replaceChildren(); side.focus.disabled = true;
+                    side.panel.querySelector(".cfm-comparison-passage").hidden = true;
+                    side.panel.querySelectorAll("[data-comparison-page-step]").forEach(button => button.disabled = true);
+                    continue;
+                }
                 side.panel.querySelector(".cfm-comparison-page-controls").hidden = state.mode !== "pages";
                 const pages = data[`${name}_pages`];
                 const page = pages[state[name] - 1];
@@ -243,15 +258,16 @@
             root.classList.toggle("cfm-comparison-uncertain-selected", finding?.category === "uncertain");
             root.classList.toggle("cfm-comparison-info-selected", ["formatting", "tolerated"].includes(finding?.category));
             if (finding) {
-                state.before = finding.before_page || finding.before_reference_page || state.before;
-                state.after = finding.after_page || finding.after_reference_page || state.after;
+                state.before = finding.before_page || finding.before_reference_page || null;
+                state.after = finding.after_page || finding.after_reference_page || null;
             }
             query("[data-comparison-heading]").textContent = finding?.label || "Document comparison";
-            query("[data-comparison-location]").textContent = finding ? `Before ${pageLabel(finding, "before")} / After ${pageLabel(finding, "after")}` : `Before page ${state.before} / After page ${state.after}`;
+            query("[data-comparison-location]").textContent = finding ? `Before ${pageLabel(finding, "before")} / After ${pageLabel(finding, "after")}` : `Before ${state.before === null ? "no corresponding page" : "page " + state.before} / After ${state.after === null ? "no corresponding page" : "page " + state.after}`;
             updatePosition();
             renderList(); renderPages();
+            renderEvidence(finding);
             if (finding) openInspection(finding, null, null, "manual");
-            else closeInspection();
+            else resetInspection();
             if (reveal) {
                 for (const name of ["before", "after"]) {
                     const mark = selectedMark(name, state.selected);
@@ -281,8 +297,8 @@
                 item.textContent = reason;
                 reasons.appendChild(item);
             }
-            evidence.hidden = !finding;
-            evidence.open = false;
+            evidence.hidden = inspectionPanel.dataset.view !== "evidence";
+            evidence.open = true;
             for (const side of ["before", "after"]) {
                 let raw = (finding?.[`${side}_raw`] || "No recognized passage.").replace(/\u200b/g, "[U+200B]");
                 if (finding?.[`${side}_ocr`]?.length) raw += `\n\nOCR lines / scores\n${JSON.stringify(finding[`${side}_ocr`], null, 2)}`;
@@ -294,21 +310,24 @@
                 sides[name].input.value = state[name];
                 return;
             }
-            const previousPages = [state.before, state.after];
-            closeInspection();
+            state.driver = name;
+            resetInspection();
             state[name] = page;
             let matched = null;
             if (state.linked && !keepFinding) {
                 matched = (name === "before" ? data.page_map : data.inverse_map)[String(page)];
                 const other = name === "before" ? "after" : "before";
                 if (Number.isInteger(matched) && matched >= 1 && matched <= data[`${other}_pages`].length) state[other] = matched;
-                else matched = null;
+                else { matched = null; state[other] = null; }
             }
-            if (!keepFinding && (state.before !== previousPages[0] || state.after !== previousPages[1])) select(null);
-            if (state.selected === null) query("[data-comparison-location]").textContent = `Before page ${state.before} / After page ${state.after}`;
-            query("[data-comparison-map-status]").textContent = !state.linked ? "Pages are independently selected." : matched ? "Linked using matching text on these pages." : "No reliable text match for this page. The other page has not been changed.";
+            if (!keepFinding) select(null);
+            if (state.selected === null) query("[data-comparison-location]").textContent = `Before ${state.before === null ? "no corresponding page" : "page " + state.before} / After ${state.after === null ? "no corresponding page" : "page " + state.after}`;
+            query("[data-comparison-map-status]").textContent = !state.linked ? "Manual comparison: pages are independently selected." : matched ? "Linked using matching text on these pages." : "No corresponding page found. No unrelated page is displayed.";
             renderPages();
-            if (keepFinding && state.selected !== null) openInspection(data.findings.find(item => item.id === state.selected), null, null, "manual");
+            if (keepFinding && state.selected !== null) {
+                const finding = data.findings.find(item => item.id === state.selected);
+                renderEvidence(finding); openInspection(finding, null, null, "manual");
+            }
         }
         function locations(finding, name) {
             if (!finding[`${name}_pages`].includes(state[name])) return [];
@@ -342,6 +361,8 @@
                     });
                     mark.addEventListener("click", event => {
                         if (event.ctrlKey) return;
+                        state.selected = finding.id;
+                        renderEvidence(finding); renderList();
                         openInspection(finding, name, location, event.detail === 0 ? "keyboard" : "touch", event);
                     });
                     side.layer.appendChild(mark);
@@ -355,21 +376,34 @@
             return {x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))};
         }
         function hoverPage(name, event) {
-            if (state.mode !== "pages" || !sides[name].ready || event.pointerType === "touch" || event.ctrlKey
+            if (inspection.collapsed || state.mode !== "pages" || !sides[name].ready || event.pointerType === "touch" || event.ctrlKey
                 || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
             const point = pointerPoint(name, event);
             if (!point) { closeInspection(); return; }
             const mark = event.target.closest(".cfm-comparison-mark");
-            const finding = mark ? data.findings.find(item => String(item.id) === mark.dataset.findingId) : null;
+            let finding = mark ? data.findings.find(item => String(item.id) === mark.dataset.findingId) : null;
             const location = mark?.location || null;
             if (inspection.blocked === (location || sides[name].page)) return;
             inspection.blocked = false;
-            clearTimeout(inspection.timer);
-            if (inspectionPanel.hidden || inspection.mode !== "hover" || inspection.side !== name
-                || inspection.location !== location || inspection.finding !== finding) {
-                openInspection(finding, name, location, "hover", event);
-                return;
+            if (inspection.point === null) openInspection(finding, name, location, "hover", event);
+            if (finding && inspection.finding && finding !== inspection.finding) {
+                if (inspection.candidate !== finding) {
+                    clearTimeout(inspection.timer); inspection.candidate = finding;
+                    inspection.timer = setTimeout(() => {
+                        inspection.candidate = null;
+                        const currentPoint = inspection.point;
+                        openInspection(finding, name, location, "hover", event);
+                        inspection.point = currentPoint; renderInspection();
+                    }, 300);
+                }
+            } else {
+                clearTimeout(inspection.timer); inspection.candidate = null;
+                if (finding && (inspection.finding !== finding || inspection.side !== name)) {
+                    openInspection(finding, name, location, "hover", event);
+                }
             }
+            if (inspectionPanel.hidden) return;
+            inspection.side = name; inspection.mode = "hover";
             inspection.point = point;
             if (inspection.frame === null) inspection.frame = requestAnimationFrame(() => {
                 inspection.frame = null;
@@ -386,7 +420,16 @@
                 : ["hover", "touch"].includes(mode) && inspection.side === name && inspection.location === location ? inspection.point : null;
             inspection.point = point || (box ? {x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2} : {x: .5, y: .5});
             Object.assign(inspection, {finding, side: name, location, mode});
-            inspection.anchor = Number.isFinite(event?.clientY) ? {top: event.clientY, bottom: event.clientY} : mark?.getBoundingClientRect();
+            inspection.pairing = null;
+            if (finding && name && location && finding.category !== "uncertain") {
+                const other = name === "before" ? "after" : "before";
+                const here = locations(finding, name), there = locations(finding, other);
+                // Only an unambiguous region pair is a usable magnification anchor.
+                if (here.length === 1 && there.length === 1) {
+                    const center = box => ({x:(box[0]+box[2])/2,y:(box[1]+box[3])/2});
+                    inspection.pairing = {side:name, from:center(location.box), to:center(there[0].box)};
+                }
+            }
             const overlaps = query("[data-comparison-overlap]");
             overlaps.replaceChildren();
             const candidates = name && location ? visibleFindings().filter(item => locations(item, name).some(({box}) =>
@@ -400,8 +443,11 @@
             overlaps.value = finding?.id ?? "";
             query("[data-comparison-overlap-label]").hidden = candidates.length < 2;
             inspectionPanel.hidden = false;
+            inspection.collapsed = false;
+            query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", "true");
             inspectionPanel.dataset.interaction = mode;
-            renderEvidence(finding); renderInspection(); highlightMarks(); drawConnection(); placeInspection();
+            if (state.selected === null && finding) renderEvidence(finding);
+            renderInspection(); highlightMarks(); drawConnection();
         }
         function highlightMarks() {
             const id = inspection.finding?.id ?? state.selected;
@@ -411,7 +457,9 @@
         }
         function renderInspection() {
             if (inspectionPanel.hidden) return;
-            query("[data-comparison-pair-status]").textContent = "Same relative position on the displayed pages, not a text correspondence.";
+            query("[data-comparison-pair-status]").textContent = inspection.pairing && query("[data-inspection-position]").value !== "relative"
+                ? "Matched region anchor; surrounding pixels follow the pointer, not verified character correspondence."
+                : "Relative position on displayed pages, not a text correspondence.";
             renderCrops();
         }
         function renderCrops() {
@@ -425,7 +473,10 @@
                 canvas.dataset.state = "empty";
                 const status = query(`[data-comparison-crop-status="${name}"]`);
                 const label = query(`[data-comparison-crop-page="${name}"]`);
-                label.textContent = ` / page ${state[name]}`;
+                label.textContent = state[name] === null ? " / no corresponding page" : ` / page ${state[name]}`;
+                if (state[name] === null) {
+                    canvas.hidden = true; status.textContent = "No corresponding page. No unrelated page is substituted."; continue;
+                }
                 if (!side.ready || !image.complete || !image.naturalWidth || !image.naturalHeight || image.getAttribute("src") !== side.source) {
                     canvas.hidden = true;
                     status.textContent = "Page image unavailable or loading. No other page is substituted.";
@@ -433,7 +484,13 @@
                 }
                 // Share a page-relative center, never a finding's counterpart.
                 // Each image keeps its own aspect ratio and actual source pixels.
-                const point = inspection.point;
+                let point = inspection.point;
+                const pair = inspection.pairing;
+                if (pair && query("[data-inspection-position]").value !== "relative") {
+                    const reverse = inspection.side !== pair.side;
+                    const from = reverse ? pair.to : pair.from, to = reverse ? pair.from : pair.to;
+                    if (name !== inspection.side) point = {x:to.x+point.x-from.x,y:to.y+point.y-from.y};
+                }
                 const width = image.naturalWidth, height = image.naturalHeight;
                 canvas.hidden = false;
                 const displayedWidth = side.page.getBoundingClientRect().width;
@@ -458,7 +515,7 @@
                     }
                 }
                 context.restore();
-                status.textContent = "";
+                status.textContent = point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1 ? "Page edge reached; position is constrained to this page." : "";
                 canvas.dataset.state = "ready";
                 canvas.dataset.source = side.source;
             }
@@ -488,32 +545,22 @@
             path.dataset.kind = markKind(finding);
             svg.appendChild(path);
         }
-        function placeInspection() {
-            if (inspectionPanel.hidden) return;
-            const bounds = root.getBoundingClientRect();
-            const anchor = inspection.anchor || query(".cfm-comparison-documents").getBoundingClientRect();
-            const height = inspectionPanel.offsetHeight;
-            const bottom = Math.min(window.innerHeight, bounds.bottom) - 12;
-            let top = anchor.bottom + 12;
-            if (top + height > bottom) top = anchor.top - height - 12;
-            top = Math.max(Math.max(8, bounds.top), Math.min(bottom - height, top));
-            inspectionPanel.style.top = `${top - bounds.top}px`;
-        }
         function resizePages() {
             for (const name of ["before", "after"]) {
                 const side = sides[name], page = data[`${name}_pages`][state[name] - 1];
                 if (!page) continue;
                 const available = side.scroll.clientWidth;
-                const height = Math.max(240, Math.min(860, window.innerHeight * .7));
+                const height = Math.max(240, window.innerHeight - 460);
                 side.page.style.width = `${state.scale === "page" ? Math.min(available, height * page.width / page.height) : available * Number(state.scale)}px`;
             }
-            drawConnection(); placeInspection();
+            drawConnection(); renderInspection();
         }
         function closeInspection() {
             clearTimeout(inspection.timer);
             cancelAnimationFrame(inspection.frame); inspection.frame = null;
             Object.assign(inspection, {finding: null, mode: null, side: null, location: null, point: null});
             inspectionPanel.hidden = true;
+            query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", "false");
             for (const name of ["before", "after"]) {
                 const canvas = query(`[data-comparison-crop="${name}"]`);
                 canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
@@ -522,17 +569,36 @@
             }
             highlightMarks(); drawConnection();
         }
-        function scheduleClose() {
-            clearTimeout(inspection.timer);
-            if (inspection.mode === "hover") inspection.timer = setTimeout(closeInspection, 240);
+        function resetInspection() {
+            const wasHidden = inspectionPanel.hidden;
+            closeInspection(); inspection.pairing = null; inspection.candidate = null;
+            inspectionPanel.hidden = wasHidden;
+            query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", String(!wasHidden));
+            for (const name of ["before", "after"]) query(`[data-comparison-crop-status="${name}"]`).textContent = "Move over a displayed page to inspect it.";
+            renderEvidence(null);
         }
-        inspectionPanel.addEventListener("pointerenter", () => clearTimeout(inspection.timer));
-        inspectionPanel.addEventListener("pointerleave", scheduleClose);
+        inspectionPanel.addEventListener("pointerenter", () => { clearTimeout(inspection.timer); inspection.candidate = null; });
+        query("[data-inspection-position]").addEventListener("change", renderInspection);
+        root.querySelectorAll("[data-inspection-view]").forEach(button => button.addEventListener("click", () => {
+            const evidence = button.dataset.inspectionView === "evidence";
+            inspectionPanel.dataset.view = evidence ? "evidence" : "magnify";
+            query(".cfm-comparison-crops").hidden = evidence;
+            query("[data-comparison-evidence]").hidden = !evidence;
+            root.querySelectorAll("[data-inspection-view]").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+            renderInspection();
+        }));
+        query("[data-comparison-inspector-toggle]").addEventListener("click", event => {
+            inspectionPanel.hidden = !inspectionPanel.hidden;
+            inspection.collapsed = inspectionPanel.hidden;
+            inspection.blocked = inspectionPanel.hidden ? inspection.location || (inspection.side && sides[inspection.side].page) : false;
+            event.currentTarget.setAttribute("aria-expanded", String(!inspectionPanel.hidden));
+            renderInspection();
+        });
         function dismissInspection() {
             inspection.blocked = inspection.mode === "hover" ? inspection.location || sides[inspection.side].page : null;
             closeInspection();
         }
-        query("[data-comparison-close]").addEventListener("click", dismissInspection);
+        query("[data-comparison-close]").addEventListener("click", () => { inspection.collapsed = true; dismissInspection(); });
         query("[data-comparison-overlap]").addEventListener("change", event => {
             const finding = data.findings.find(item => String(item.id) === String(event.target.value));
             openInspection(finding, inspection.side, inspection.location, inspection.mode);
@@ -544,9 +610,7 @@
         root.addEventListener("focusout", event => {
             if (inspection.mode === "keyboard" && !inspectionPanel.contains(event.relatedTarget) && !event.relatedTarget?.closest(".cfm-comparison-mark")) closeInspection();
         });
-        window.addEventListener("blur", closeInspection);
         window.addEventListener("resize", resizePages);
-        window.addEventListener("scroll", () => { if (inspection.mode === "hover") closeInspection(); else placeInspection(); }, {passive: true});
         root.querySelectorAll("[data-comparison-mode]").forEach(button => button.addEventListener("click", () => {closeInspection(); state.mode = button.dataset.comparisonMode; renderPages();}));
         root.querySelectorAll("[data-comparison-step]").forEach(button => button.addEventListener("click", () => {
             const findings = visibleFindings();
@@ -572,7 +636,14 @@
             closeInspection();
             for (const name of ["before", "after"]) updateFocus(name);
         });
-        query("[data-comparison-link]").addEventListener("change", event => {state.linked = event.target.checked;});
+        query("[data-comparison-link]").addEventListener("change", event => {
+            state.linked = event.target.checked;
+            if (state.linked) {
+                const driver = state.driver || (state.before === null ? "after" : "before");
+                navigate(driver, state[driver] || 1);
+            }
+            else { resetInspection(); select(null); query("[data-comparison-map-status]").textContent = "Manual comparison: pages are independently selected."; }
+        });
         query("[data-comparison-connections]").addEventListener("change", drawConnection);
         query("[data-comparison-scale]").addEventListener("change", event => {state.scale = event.target.value; closeInspection(); resizePages();});
         query("[data-comparison-manual]").addEventListener("click", () => {state.mode = "pages"; select(null, true);});
@@ -583,7 +654,10 @@
             root.querySelectorAll("[data-comparison-step]").forEach(button => button.disabled = findings.length === 0);
         }
         renderCoverage();
+        state.after = Number.isInteger(data.page_map["1"]) ? data.page_map["1"] : null;
         select(null);
+        inspectionPanel.hidden = false;
+        query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", "true");
         updatePosition();
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, {once: true});

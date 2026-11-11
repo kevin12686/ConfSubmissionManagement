@@ -6,7 +6,46 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
-## Latest Regression Scope (1.27.0)
+## Latest Regression Scope (1.29.0 / Method 8)
+
+- Native: 992 Django tests, 105 JavaScript tests and standalone discovery
+  (107 tests, two opt-in skips) passed. Django checks, migration drift,
+  documentation validation, compilation and diff checks passed.
+- Disposable ARM64 Linux Docker: 992 Django tests passed with six existing
+  platform skips, no conference mounts or existing-service updates.
+- Actual native OCR on a generated one-page PDF pair took 3.73 seconds cold and
+  0.72 seconds for the complete validated cache. Warm reuse with a configured
+  remote bypassed local consent and reported a pair hit. Removing only the
+  pair cache retained document caches but required consent without starting OCR.
+  Source hashes were unchanged. This is not a three-paper or GPU benchmark.
+- Boundary coverage includes diacritic-only Info, adjacent true edits, canonical
+  Unicode forms, case/script/overlay/digit exclusions, old-method rejection,
+  wrong hashes/render evidence, stale runtime, partial/corrupt caches, gateway
+  refusal, and completed evidence from another worker without route mutation
+  or new submission. Publication and upload-revision binding regressions passed.
+- Update CFM and workers together: method 8 has a new code contract; old results
+  must be rebuilt, never relabelled. State archive remains v8. The earlier supplied
+  three PDF pairs remain unavailable at their original Downloads paths.
+
+## Earlier UI Regression Scope (1.28.0)
+
+- Native: 984 Django tests, 105 JavaScript tests and standalone discovery
+  (107 tests, two opt-in skips) passed. Django checks, migration drift,
+  documentation validation, compilation and diff checks passed.
+- Disposable ARM64 Linux Docker: 984 Django tests passed with the six existing
+  platform skips. No conference volumes were mounted or existing services updated.
+- Browser acceptance used production templates/assets with generated page images
+  and finding payloads, no conference database. It exercised four leading
+  unmatched pages, page five to after page one, selected long Evidence, scrolling,
+  positioning modes, manual navigation and desktop/narrow layouts. Unit tests
+  cover anchor edges, ambiguous regions, selection persistence, stale images and
+  crop integrity. No new OCR accuracy benchmark is claimed.
+- The three previously supplied PDF pairs were unavailable at their original
+  Downloads paths; they were not rerun. Publication readers, signed file/version
+  binding, inference and review-reset code are unchanged; existing byte-integrity
+  and wrong-version regression remains in the full suite. Archive remains v8.
+
+## Earlier Regression Scope (1.27.0)
 
 - Native: 984 Django tests and 101 JavaScript tests passed. Standalone
   deployment discovery ran 107 tests (105 passed, two opt-in Docker skips).

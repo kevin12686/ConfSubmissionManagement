@@ -41,8 +41,9 @@ one local application:
 - compares saved Original/revision PDFs with the selected publication PDF using
   rendered-page RapidOCR and bounded small-edit alignment. Annotated documents
   show text changes, unlocated ranges and inspectable visual-tolerance information;
-  hover inspection magnifies the same relative position on both displayed pages
-  without moving them, even without matched text. Finding details retain raw OCR.
+  a dedicated inspection area follows the pointer using an unambiguous region
+  anchor or relative positions. Selected evidence stays readable independently.
+  Linked pages without a counterpart show an explicit empty state, not an unrelated PDF page.
   Headers/footers, formulas and image text remain in scope. A saved Formatting
   PDF upload automatically starts a separate Original comparison;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
@@ -66,7 +67,8 @@ avoid repeated OCR; first-time work can still time out. Cache reuse never skips
 current-file or upload-revision checks. Native startup defaults to embedded CPU
 execution. Docker can use a host-shared comparison worker, with an optional
 preferred remote CPU/GPU worker. With a remote configured, new local CPU work
-requires explicit confirmation instead of a silent fallback. Formatting shows
+requires explicit confirmation instead of a silent fallback, but validated complete
+cache results are reused directly without starting computation. Formatting shows
 both services' status every ten seconds while visible, and comparisons label
 their recorded worker/backend. See the
 [compute service contract](docs/pdf_comparison.md#shared-comparison-service) and
@@ -79,8 +81,8 @@ These headers supplement the worker token and never go to the local CPU worker.
 Worker requests identify CFM with a shared application User-Agent; gateway
 errors retain safe HTTP/Cloudflare codes instead of suggesting every rejection
 is a bad token.
-Method 7's broad visual policy can deliberately tolerate real similar-character
-edits such as O/0, f/t and rn/m; whitespace-only changes can also be missed.
+Method 8's broad visual policy can deliberately tolerate real similar-character
+edits such as O/0, f/t, rn/m and same-letter diacritics (e/é/è); whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image
 preservation, tables, layout and full mathematical structure require manual review.
 

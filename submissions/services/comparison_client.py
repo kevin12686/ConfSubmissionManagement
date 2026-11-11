@@ -138,7 +138,47 @@ def probe_endpoint(endpoint, contract, *, timeout=None):
     return {"state": "not_ready", "backend": backend, "message": f"Worker is not ready{detail}. HTTP {status}."}
 
 
-def _select(endpoints, contract, *, allow_local=False):
+def _completed_result(payload, key, hashes, contract, before, after):
+    _validate_identity(payload, key, hashes, contract)
+    result = validate_result(payload.get("result"))
+    if payload.get("state") != "completed" or result["identical_bytes"] != (before == after):
+        raise PDFComparisonError("Invalid completed comparison identity.")
+    if payload.get("render_hashes") != {"before": page_render_hashes(before), "after": page_render_hashes(after)}:
+        raise PDFComparisonError("Comparison unavailable: worker and viewer render these PDFs differently. No potentially misplaced overlays were accepted. Align the rendering runtime and retry.")
+    return result
+
+
+def _find_completed(endpoints, contract, pair):
+    before, after, key, hashes = pair
+    for endpoint in endpoints:
+        try:
+            status, payload = endpoint.call(f"/v1/jobs/{key}")
+        except TransportUnavailable:
+            continue
+        # Authentication/redirect failures are not permission to bypass the
+        # configured gateway, even during cache-only discovery.
+        try:
+            if status == 200 and payload.get("state") == "completed":
+                result = _completed_result(payload, key, hashes, contract, before, after)
+                return endpoint, result, payload
+        except (PDFComparisonError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+    return None
+
+
+def _record_execution(diagnostics, endpoint, key, resumed, payload):
+    if diagnostics is not None:
+        diagnostics.update({"transport":"service", "worker":endpoint.name,"job_id":key,"resumed":resumed})
+        details = payload.get("diagnostics", {})
+        if isinstance(details, dict):
+            diagnostics["worker_execution"] = {k:details[k] for k in ("runtime","pair_hit","document_hits","backend") if k in details}
+
+
+def _select(endpoints, contract, *, allow_local=False, pair=None):
+    if pair is not None:
+        cached = _find_completed(endpoints, contract, pair)
+        if cached:
+            return cached[0]
     remote = next((endpoint for endpoint in endpoints if endpoint.name == "remote"), None)
     local = next((endpoint for endpoint in endpoints if endpoint.name == "local"), None)
     if remote:
@@ -176,7 +216,7 @@ def _route_lock():
             locks.unlock(handle)
 
 
-def _route(key, endpoints, contract, *, allow_local=False):
+def _route(key, endpoints, contract, *, allow_local=False, pair=None):
     with _route_lock() as root:
         routes = list(islice(root.glob("*.json"), 513))
         for old in routes:
@@ -207,7 +247,7 @@ def _route(key, endpoints, contract, *, allow_local=False):
         if endpoint is None:
             if sum(1 for _ in islice(root.glob("*.json"), 512)) >= 512:
                 raise ComparisonInProgress("Too many recent comparison requests. Let current jobs finish and older requests expire.")
-            endpoint = _select(endpoints, contract, allow_local=allow_local)
+            endpoint = _select(endpoints, contract, allow_local=allow_local, pair=pair)
         # Persist intent before POST, so a lost response can be reconciled safely.
         temporary = root / (uuid.uuid4().hex + ".tmp")
         try:
@@ -234,7 +274,16 @@ def service_pdf_evidence(before, after, *, diagnostics=None, retry_failed=False,
     hashes = [hashlib.sha256(data).hexdigest() for data in (before, after)]
     key = job_key(hashes, contract)
     endpoints = _endpoints()
-    endpoint, resumed = _route(key, endpoints, contract, allow_local=allow_local)
+    endpoint, resumed = _route(key, endpoints, contract, allow_local=allow_local, pair=(before, after, key, hashes))
+    if resumed:
+        # Reusing completed evidence on another host is not rerouting accepted
+        # computation: the signed lease stays on its original endpoint.
+        ordered = [endpoint] + [item for item in endpoints if item is not endpoint]
+        cached = _find_completed(ordered, contract, (before, after, key, hashes))
+        if cached:
+            owner, result, payload = cached
+            _record_execution(diagnostics, owner, key, resumed, payload)
+            return result
     deadline = time.monotonic() + WAIT_SECONDS
     try:
         status, payload = endpoint.call(f"/v1/jobs/{key}")
@@ -277,16 +326,8 @@ def service_pdf_evidence(before, after, *, diagnostics=None, retry_failed=False,
                 raise ComparisonInProgress("The comparison is still queued or running. Retry to retrieve the same job; no duplicate was started.")
             time.sleep(1)
             status, payload = endpoint.call(f"/v1/jobs/{key}")
-        result = validate_result(payload.get("result"))
-        if result["identical_bytes"] != (before == after):
-            raise ValueError("Incorrect snapshot identity")
-        if payload.get("render_hashes") != {"before": page_render_hashes(before), "after": page_render_hashes(after)}:
-            raise PDFComparisonError("Comparison unavailable: worker and viewer render these PDFs differently. No potentially misplaced overlays were accepted. Align the rendering runtime and retry.")
-        if diagnostics is not None:
-            diagnostics.update({"transport": "service", "worker": endpoint.name, "job_id": key, "resumed": resumed})
-            details = payload.get("diagnostics", {})
-            if isinstance(details, dict):
-                diagnostics["worker_execution"] = {k: details[k] for k in ("runtime", "pair_hit", "document_hits", "backend") if k in details}
+        result = _completed_result(payload, key, hashes, contract, before, after)
+        _record_execution(diagnostics, endpoint, key, resumed, payload)
         return result
     except TransportUnavailable as exc:
         raise ComparisonInProgress("The connection to the selected worker was interrupted. Retry to check the same job; no local duplicate was started and the saved files are unchanged.") from exc

@@ -354,7 +354,12 @@ Use disposable records/files and hash-pinned reviewed expectations.
    the originating tab. Reject another submission's revision, missing/corrupt
    files, stale tokens, changed scope, ambiguous active versions and mutations
    during/after build. Verify exact snapshot links and no fallback.
-4. Rebuild method-6 and older signed results; never relabel them method 7.
+4. Rebuild method-7 and older signed results; never relabel them method 8.
+   Compare same-letter diacritics (e/é/è) and a neighboring true numeric edit:
+   diacritics must remain inspectable Info, while the numeric edit stays Warning.
+   A validated complete cache on either worker must bypass local confirmation;
+   wrong hashes/method/runtime, partial OCR and unfinished jobs must not start
+   new local computation without consent. Existing signed routes remain pinned.
    Check expiry, display/input/work limits and malformed worker payloads.
    Unresolved remainder and undisplayed counts remain explicit.
 5. Compare database/review flags, readiness, selected publication paths and

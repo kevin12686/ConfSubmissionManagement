@@ -1,5 +1,27 @@
 """Explicit direct visual substitutions, never spelling correction or a skeleton."""
 from itertools import combinations
+import unicodedata
+
+# Canonical letter diacritics only: no compatibility folding, case folding,
+# enclosing marks, variation selectors or mathematical overlay strokes.
+DIACRITICS = frozenset(chr(n) for n in (
+    0x300,0x301,0x302,0x303,0x304,0x306,0x307,0x308,0x309,0x30A,0x30B,0x30C,
+    0x30F,0x311,0x31B,0x323,0x324,0x325,0x326,0x327,0x328,0x32D,0x32E,0x330,0x331,0x342,
+))
+
+
+def letter_clusters(text):
+    """Map cluster end offsets to start/base; retain original OCR strings."""
+    out = {}
+    start = 0
+    for end in range(1, len(text)+1):
+        if end < len(text) and unicodedata.combining(text[end]):
+            continue
+        value = unicodedata.normalize('NFD', text[start:end])
+        if value and unicodedata.category(value[0]).startswith('L') and all(c in DIACRITICS for c in value[1:]):
+            out[end] = (start, value[0])
+        start = end
+    return out
 
 # Font-dependent research choices, not a universal assertion of equal glyphs.
 GROUPS=[
@@ -56,4 +78,7 @@ def rules(profile):
 
 def table():
     return [{'id':i,'label':l,'forms':list(f),'tier':t,'risk':r,
-             'codepoints':[[f'U+{ord(c):04X}' for c in v] for v in f]} for i,l,f,t,r in GROUPS]
+             'codepoints':[[f'U+{ord(c):04X}' for c in v] for v in f]} for i,l,f,t,r in GROUPS] + [
+        {'id':'diacritics','label':'Same letter, different diacritics','forms':[],
+         'tier':'core','risk':'Real accent changes may be tolerated. Base letter and case must remain identical.',
+         'codepoints':[[f'U+{ord(c):04X}'] for c in sorted(DIACRITICS)]}]

@@ -3,6 +3,27 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.29.0 - Unreleased
+
+- Classify same-case, same-base-letter diacritic differences as inspectable Info.
+  Preserve raw OCR, rule/risk evidence, and adjacent real changes. No case,
+  compatibility, script or mathematical-overlay folding is added.
+- Reuse verified complete results on either worker before asking for local
+  computation consent. Cache reads cannot submit jobs or move accepted routes.
+  Embedded full-pair cache misses never silently start OCR before consent.
+- Advance comparison method to 8; rebuild method-7 and older results and update
+  workers together. Publication selection/review rules and State archive v8 stay unchanged.
+
+## 1.28.0 - Unreleased
+
+- Replace comparison overlays with a bounded in-flow inspection area and separate
+  Magnification/Evidence views with independent evidence selection.
+- Follow pointer offsets from unambiguous region anchors beyond box edges;
+  retain explicit relative positioning. Clear unmatched linked pages rather than
+  retaining an unrelated page. Manual page selection remains available.
+- Preserve OCR results, publication selection, signed version binding and archive
+  v8. No migration is required.
+
 ## 1.27.0 - Unreleased
 
 - Require a PDF/revision/configuration-bound explicit choice before new local

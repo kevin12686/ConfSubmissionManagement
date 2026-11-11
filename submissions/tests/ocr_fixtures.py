@@ -22,7 +22,9 @@ def ocr_pages(text, *, count=1, score=0.99):
 
 def synthetic_ocr_worker(command, *, input, **kwargs):
     """Use PDF page metadata only; returned OCR words are fixed test data."""
-    from submissions.services.rapidocr_comparison.result import build_result
+    from submissions.services.rapidocr_comparison.result import build_result, VERSION
+    if "--cache-only" in command:
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"version":VERSION,"cache_miss":True}).encode())
 
     left_length, right_length = struct.unpack(">QQ", input[:16])
     before = input[16:16 + left_length]
@@ -42,4 +44,4 @@ def synthetic_ocr_worker(command, *, input, **kwargs):
     result = build_result(ocr_pages(left, count=before_count),
                           ocr_pages(left if before == after else right, count=after_count),
                           identical_bytes=before == after)
-    return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"version": 7, "result": result}).encode())
+    return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"version": VERSION, "result": result}).encode())

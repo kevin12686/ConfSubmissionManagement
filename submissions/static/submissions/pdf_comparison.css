@@ -52,7 +52,7 @@
 .cfm-comparison-page-controls { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .cfm-comparison-page-controls label { display: flex; gap: .4rem; align-items: center; }
 .cfm-comparison-page-controls input { width: 4rem; }
-.cfm-comparison-scroll { overflow: auto; max-height: min(70dvh, 860px); background: var(--cfm-surface); padding: 5px; min-width: 0; }
+.cfm-comparison-scroll { overflow: auto; max-height: max(240px, calc(100dvh - 460px)); background: var(--cfm-surface); padding: 5px; min-width: 0; }
 .cfm-comparison-page { position: relative; margin-inline: auto; background: #fff; outline: 1px solid var(--cfm-border); border-radius: 0; }
 .cfm-comparison-page > img { display: block; width: 100%; height: auto; }
 .cfm-comparison-mark-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -84,7 +84,12 @@
 .cfm-comparison-icon-next { mask-image: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-pageDown.svg); }
 .cfm-comparison-icon-close { mask-image: url(vendor/pdfjs-6.4.299/legacy/web/images/pages_closeButton.svg); }
 .cfm-comparison-icon-focus { mask-image: url(vendor/pdfjs-6.4.299/legacy/web/images/toolbarButton-currentOutlineItem.svg); }
-.cfm-comparison-inspection { position: absolute; z-index: 30; left: 50%; transform: translateX(-50%); width: min(850px, calc(100% - 16px)); max-height: calc(100dvh - 24px); overflow: auto; background: var(--cfm-surface); color: var(--cfm-text); border: 1px solid var(--cfm-border-strong); border-radius: 6px; box-shadow: 0 8px 26px #0003; padding: .75rem; }
+.cfm-comparison-inspection { height: clamp(190px, 30dvh, 280px); overflow: auto; overscroll-behavior: contain; background: var(--cfm-surface); color: var(--cfm-text); border-block: 1px solid var(--cfm-border-strong); padding: .65rem; margin-top: .5rem; }
+.cfm-comparison-inspection .cfm-comparison-evidence pre { max-height: none; overflow: visible; }
+.cfm-comparison-inspection > .cfm-comparison-toolbar { position: sticky; top: -.65rem; background: var(--cfm-surface); z-index: 1; padding-block: .25rem; }
+.cfm-comparison-inspection[data-view="evidence"] [data-comparison-pair-status], .cfm-comparison-inspection[data-view="evidence"] [data-comparison-description] { display: none; }
+.cfm-comparison-inspection .cfm-comparison-evidence > summary { display: none; }
+.cfm-comparison-page-empty { min-height: 12rem; padding: 2rem; background: var(--cfm-surface); border: 1px dashed var(--cfm-border); }
 .cfm-comparison-inspection-heading { display: flex; justify-content: space-between; gap: .75rem; margin-bottom: .5rem; }
 .cfm-comparison-inspection label { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .cfm-comparison-inspection label select { min-width: 0; }

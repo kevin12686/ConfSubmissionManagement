@@ -32,7 +32,7 @@ def in_process_worker(command, *, input, **kwargs):
     import io
     before, after = worker.read_pair(io.BytesIO(input))
     directory = Path(command[-1]) if "--cache-inputs" in command else None
-    result = worker.inspect_pair(before, after, directory)
+    result = worker.inspect_pair(before, after, directory, cache_only="--cache-only" in command)
     return subprocess.CompletedProcess(command, 0, json.dumps(result).encode())
 
 
@@ -59,6 +59,28 @@ class PDFComparisonCacheTests(SimpleTestCase):
         self.assertEqual(self.extract.call_count, 2)
         self.assertEqual(self.engine.call_count, 2)
         self.assertEqual(self.process.call_args.kwargs["timeout"], 240)
+
+    def test_full_cache_precedes_local_confirmation_but_miss_partial_and_runtime_change_never_compute(self):
+        from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired
+        expected,_=self.compare()
+        count=self.extract.call_count
+        with override_settings(CFM_COMPARISON_REMOTE_URL='http://remote.example'):
+            self.assertEqual(self.compare()[0],expected)
+            self.assertEqual(self.extract.call_count,count)
+            with self.assertRaises(LocalComparisonConfirmationRequired):self.compare(after=b'new-correction')
+            self.assertEqual(self.extract.call_count,count)
+            self.fingerprint.return_value='b'*64
+            with self.assertRaises(LocalComparisonConfirmationRequired):self.compare()
+            self.assertEqual(self.extract.call_count,count)
+
+    def test_corrupt_full_cache_never_starts_ocr_before_confirmation(self):
+        from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired
+        self.compare()
+        for path in cache._root().joinpath('entries').glob('p-*.json'):path.write_text('corrupt')
+        count=self.extract.call_count
+        with override_settings(CFM_COMPARISON_REMOTE_URL='http://remote.example'):
+            with self.assertRaises(LocalComparisonConfirmationRequired):self.compare()
+        self.assertEqual(self.extract.call_count,count)
 
     def test_new_corrected_bytes_reuse_only_the_unchanged_document(self):
         self.compare()

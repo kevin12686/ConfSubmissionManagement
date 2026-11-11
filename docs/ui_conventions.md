@@ -468,7 +468,9 @@ Do not repeat it per paper, expose credentials or imply available means selected
 Keep last-seen hardware visibly qualified. Poll ten seconds between completed
 requests while visible, without overlap; pause on hide/navigation and resume on
 return. Keep errors persistent here rather than in a disappearing toast.
-Remote unavailability pauses new comparison work with a Recheck action and,
+Verified full-result caches on either worker are displayed without compute
+confirmation; partial caches and unfinished jobs are not complete results.
+Remote unavailability on a complete-cache miss pauses new comparison work with a Recheck action and,
 only when permitted, a distinct local confirmation action warning it may take
 longer. That choice is not a saved default or an upload failure. The per-upload
 status and completed comparison show small recorded worker/backend labels;
@@ -494,22 +496,20 @@ contexts, locations, rule IDs, risks and plain-text reasons. Never rewrite OCR,
 invent character correspondence or reclassify engine findings in the browser.
 A mixed non-tolerated edit must not be hidden by visual-tolerance presentation.
 
-Hover anywhere on a page to open a transient inspector with two crops from
-actual displayed-page pixels, centered on the same normalized pointer position.
-Finding matches are not a prerequisite for either crop. Hovering a mark also
-shows its existing finding; raw OCR stays in the evidence disclosure, separate
-from position-based pixels. Do not turn pages or scroll either document.
-Moving from a page into the inspector keeps it open; use a
-short crossing grace period when leaving both. Support keyboard activation,
-touch taps, Escape and a named close control. Hover must not persist host state
-or create a host restoration/write-back loop.
+Use a bounded in-flow inspection area, not a transient overlay. Pointer motion
+updates crops; clicking selects Evidence independently. Reading, text selection
+and internal scrolling must not dismiss or replace selected evidence. Evidence
+and Magnification use separate views. Preserve keyboard/touch and explicit close.
+Inspection never writes host state or moves pages/scroll positions.
 Handle inspector dismissal at document level while it is visible: a pure hover
 can leave focus on `body`, outside the comparison root. Escape and Control must
 still close the panel without intercepting keys when it is already closed.
 
-The same relative point drives both crops, including unlocated ranges, added or
-removed text and unmarked pages. Label both displayed page numbers and state
-that position is not text correspondence. Preserve aspect ratios and clamp at
+Auto match uses only unambiguous region pairs on the displayed pages. Preserve
+anchor offsets when leaving box edges; briefly crossing another mark must not
+switch immediately. Relative positioning is the explicit alternative and the
+fallback for ambiguous/unlocated regions. Empty linked pages never show an
+unrelated image or crop. Label actual page numbers and positioning mode. Preserve aspect ratios and clamp at
 image edges; loading failures hide the empty canvas and show a status rather
 than use another page. Keyboard inspection starts at the focused mark's center;
 touch inspection may start anywhere on the page. Display overlapping

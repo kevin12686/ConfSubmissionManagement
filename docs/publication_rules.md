@@ -319,7 +319,7 @@ and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
 corrected files or historical baselines never trigger a substitute. A comparison
 with no findings is not proof of intact figures, tables, equations, or layout.
 Headers/footers, image text and formulas remain in rendered-page OCR scope.
-Method 7 uses native geometry only for order/ownership guidance, not native
+Method 8 uses native geometry only for order/ownership guidance, not native
 strings as proof of equality. Context alignment preserves one-to-one occurrence
 accounting; reference-page navigation is not a text match. Unlocated or empty-OCR
 ranges remain explicit and require manual review.
@@ -331,9 +331,9 @@ can require fresh OCR or leave comparison unavailable, not approve publication.
 No source, review, exception or readiness rule changes through reuse.
 
 The approved broad policy tolerates complete local differences covered by 38
-direct visual groups and existing whitespace rules. Raw OCR, locations, rule
+direct visual groups, same-base/same-case letter diacritics and existing whitespace rules. Raw OCR, locations, rule
 IDs and risks remain inspectable as information. Real similar-character edits
-(such as O/0, f/t and rn/m) and whitespace-only edits can be missed. These are
+(such as O/0, f/t, rn/m and e/é/è) and whitespace-only edits can be missed. These are
 comparison tolerances, **not Exceptions Center decisions**, and cannot waive a
 publication blocker. A mixed non-tolerated edit must not disappear with a
 neighboring tolerated character.

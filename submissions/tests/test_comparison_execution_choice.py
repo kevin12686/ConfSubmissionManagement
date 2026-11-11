@@ -83,9 +83,21 @@ class ExecutionChoiceTests(EditorialAcceptanceTestCase):
             create_pdf_comparison(self.submission.pk, local_confirmation=token)
 
     def test_refusal_happens_before_native_inference(self):
-        with patch("submissions.services.pdf_comparison.local_pdf_evidence") as infer:
+        with patch("submissions.services.pdf_comparison.local_pdf_evidence", return_value=None) as infer:
             self.choice()
-        infer.assert_not_called()
+        self.assertEqual(infer.call_count,1)
+        self.assertTrue(infer.call_args.kwargs['cache_only'])
+
+    def test_complete_embedded_cache_bypasses_choice_without_changing_review_state(self):
+        from submissions.services.rapidocr_comparison.result import build_result
+        from submissions.tests.ocr_fixtures import ocr_pages
+        result=build_result(ocr_pages('Before'),ocr_pages('After'),identical_bytes=False)
+        state=FinalSubmission.objects.values().get(pk=self.submission.pk)
+        with patch('submissions.services.pdf_comparison.local_pdf_evidence',return_value=result) as lookup:
+            payload=create_pdf_comparison(self.submission.pk)
+        self.assertEqual(payload['result'],result)
+        self.assertTrue(lookup.call_args.kwargs['cache_only'])
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk),state)
 
     def test_legacy_result_execution_is_unknown_not_inferred_from_current_settings(self):
         self.assertEqual(execution_display(None)["label"], "Worker not recorded")

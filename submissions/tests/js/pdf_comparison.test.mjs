@@ -29,14 +29,14 @@ class Element {
     get textContent() { return (this.text || "") + this.children.map(child => child.textContent).join(""); }
     get firstElementChild() { return this.children[0] || null; }
     get childElementCount() { return this.children.length; }
-    append(...children) { for (const child of children) { child.parentElement = this; this.children.push(child); } }
+    append(...children) { for (const child of children) { if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(item=>item!==child); child.parentElement = this; this.children.push(child); } }
     appendChild(child) { this.append(child); return child; }
     replaceChildren(...children) { this.text = ""; this.children = []; this.append(...children); }
     setAttribute(key, value) { this.attributes[key] = String(value); }
     getAttribute(key) { return this.attributes[key] ?? null; }
     addEventListener(type, handler) { this.listeners.set(type, [...(this.listeners.get(type) || []), handler]); }
     fire(type, props = {}) {
-        const event = {target: this, ...props};
+        const event = {target: this, ...props, currentTarget:this};
         for (const handler of this.listeners.get(type) || []) handler.call(this, event);
         if (["pointermove", "click"].includes(type)) this.parentElement?.fire(type, event);
     }
@@ -98,7 +98,7 @@ function setup(overrides = {}) {
         findings: [finding()], text_available: true, total_findings: 1,
         before_pages: [{width: 595, height: 842}, {width: 595, height: 842}],
         after_pages: [{width: 595, height: 842}, {width: 595, height: 842}, {width: 595, height: 842}],
-        page_urls: {before: "/signed-before/0.png", after: "/signed-after/0.png"}, page_map: {1: 2, 2: 3}, inverse_map: {2: 1, 3: 2}, ...overrides};
+        page_urls: {before: "/signed-before/0.png", after: "/signed-after/0.png"}, page_map: {1: 1, 2: 3}, inverse_map: {1: 1, 3: 2}, ...overrides};
     const loads = [], reveals = [], timers = new Map(), frames = new Map(); let timerId = 0;
     const win = new Element("window");
     Object.assign(win, {innerHeight: 1000, matchMedia: () => ({matches: true}),
@@ -140,7 +140,7 @@ function setup(overrides = {}) {
 test("production markup has independent shared document panels and starts document-first", () => {
     const page = setup({findings: [finding({before_page: 2, before_pages: [2]})]});
     assert.deepEqual(page.loads, ["/signed-before/1.png", "/signed-after/1.png"]);
-    assert.equal(page.panel.hidden, true);
+    assert.equal(page.panel.hidden, false);
     assert.equal(page.q(".cfm-comparison-findings").attributes.open, undefined);
     assert.equal(page.q("[data-comparison-position]").textContent, "1 displayed");
     assert.doesNotMatch(template, /structure|glyph|Check text \/ formula|frozen|prototype-data/);
@@ -150,7 +150,7 @@ test("all eligible current-page marks appear without selecting a finding", () =>
     assert.equal(page.marks("before").length, 0);
     page.loaded("before");
     assert.deepEqual(page.marks("before").map(mark => mark.dataset.kind), ["change", "review", "info"]);
-    assert.equal(page.panel.hidden, true);
+    assert.equal(page.panel.hidden, false);
 });
 test("hover opens both pixel crops without navigation, scrolling or selected-state changes", () => {
     const page = setup(); page.loaded("before"); page.loaded("after"); page.hover("before");
@@ -164,13 +164,13 @@ test("hover opens both pixel crops without navigation, scrolling or selected-sta
         assert.equal(page.crop(name).draws[0][0], page.side(name).querySelector("img"));
     }
 });
-test("crossing into the panel cancels delayed close; leaving it closes and clears crops", () => {
+test("fixed inspection stays available across pointer crossing and document scroll", () => {
     const page = setup(); page.loaded("before"); page.loaded("after"); page.hover("before");
     page.page("before").fire("pointerleave"); page.panel.fire("pointerenter"); page.tick();
     assert.equal(page.panel.hidden, false);
     page.panel.fire("pointerleave"); page.tick();
-    assert.equal(page.panel.hidden, true); assert.equal(page.crop("before").draws.length, 0);
-    assert.equal(page.crop("before").dataset.source, undefined);
+    page.win.fire("scroll"); page.side("before").querySelector(".cfm-comparison-scroll").fire("scroll");
+    assert.equal(page.panel.hidden, false); assert.equal(page.crop("before").draws.length, 1);
 });
 test("one-sided finding magnifies both displayed pages without fabricating a counterpart mark or connection", () => {
     const page = setup({findings: [finding({kind: "added", before_pages: [], before_locations: [], before_page: null, before_reference_page: 1, before_text: ""})]});
@@ -208,7 +208,7 @@ test("new page immediately clears old marks/crops and late old source cannot dra
     page.marks("before")[0].fire("pointermove", {clientX: 150, clientY: 500});
     page.navigate("before", 2);
     assert.equal(page.frames.size, 0); page.frame();
-    assert.equal(page.panel.hidden, true); assert.equal(page.marks("before").length, 0); assert.equal(page.crop("before").draws.length, 0);
+    assert.equal(page.panel.hidden, false); assert.equal(page.marks("before").length, 0); assert.equal(page.crop("before").draws.length, 0);
     const image = page.side("before").querySelector("img"); image.setAttribute("src", "/signed-before/1.png"); page.loaded("before");
     assert.equal(page.marks("before").length, 0);
     assert.equal(page.crop("before").dataset.source, undefined);
@@ -227,13 +227,27 @@ test("explicit navigation uses recorded pages and independent multipage selector
     page.next(); page.navigate("before", 2, true);
     assert.equal(page.side("after").querySelector("[data-comparison-page]").value, 1);
     assert.equal(page.q("[data-comparison-heading]").textContent, "OCR text difference");
+    assert.equal(page.q("[data-comparison-raw-before]").textContent,"old");
     page.navigate("before", 1);
     assert.equal(page.q("[data-comparison-heading]").textContent, "Document comparison");
 });
+
+test("manual after-page navigation drives relinking and explicit close stays collapsed on hover",()=>{
+    const p=setup();p.loaded('before');p.loaded('after');
+    const link=p.q('[data-comparison-link]');link.checked=false;link.fire('change');
+    p.navigate('after',3);link.checked=true;link.fire('change');
+    assert.equal(p.side('before').querySelector('[data-comparison-page]').value,2);
+    assert.equal(p.q('[data-comparison-raw-before]').textContent,'No recognized passage.');
+    p.loaded('before');p.loaded('after');
+    p.q('[data-comparison-close]').fire('click');p.hoverPoint('before',.4,.4);
+    assert.equal(p.panel.hidden,true);
+    p.q('[data-comparison-inspector-toggle]').fire('click');p.hoverPoint('before',.4,.4);
+    assert.equal(p.panel.hidden,false);assert.equal(p.crop('after').dataset.state,'ready');
+});
 test("unreliable page map never substitutes equal page numbers", () => {
     const page = setup({page_map: {}}); page.navigate("before", 2);
-    assert.equal(page.side("after").querySelector("[data-comparison-page]").value, 1);
-    assert.match(page.q("[data-comparison-map-status]").textContent, /other page has not been changed/);
+    assert.equal(page.side("after").querySelector("[data-comparison-page]").value, "");
+    assert.match(page.q("[data-comparison-map-status]").textContent, /No corresponding page/);
 });
 test("three Info kinds stay separate, neutral and independently filterable", () => {
     const page = setup({findings: [finding({id: 0, category: "tolerated", kind: "ignored_visual", rule_id: "round", rule_risk: "Real edits may be missed"}),
@@ -265,7 +279,7 @@ test("limited or missing coverage stays explicit at zero findings; counts are no
 });
 test("keyboard, touch, Escape and Ctrl preserve accessible inspection without hover requirements", () => {
     const page = setup(); page.loaded("before"); page.loaded("after");
-    const mark = page.marks("before")[0]; mark.fire("pointerenter", {pointerType: "touch"}); assert.equal(page.panel.hidden, true);
+    const mark = page.marks("before")[0]; mark.fire("pointerenter", {pointerType: "touch"}); assert.equal(page.crop("before").draws.length, 0);
     mark.fire("click", {detail: 1, pointerType: "touch", clientX: 100, clientY: 400}); assert.equal(page.panel.hidden, false);
     page.doc.fire("keydown", {key: "Escape"}); assert.equal(page.panel.hidden, true);
     mark.focusVisible = true; mark.fire("focus"); assert.equal(page.panel.dataset.interaction, "keyboard");
@@ -305,13 +319,13 @@ test("zero findings and hidden marks still allow whole-page relative magnificati
     assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
 });
 
-test("leaving a finding for unmarked text clears its details, and pointers are not clamped to its box", () => {
+test("leaving a finding retains its evidence and anchor while pointers move beyond its box", () => {
     const page = setup(); page.loaded("before"); page.loaded("after"); page.hover("before");
-    assert.equal(page.q("[data-comparison-evidence]").hidden, false);
+    const raw = page.q("[data-comparison-raw-before]").textContent;
     page.hoverPoint("before", .6, .6); page.frame();
     assert.equal(page.q("[data-comparison-evidence]").hidden, true);
     assert.equal(page.q("[data-comparison-overlap-label]").hidden, true);
-    assert.equal(page.q("[data-comparison-evidence-reason]").childElementCount, 0);
+    assert.equal(page.q("[data-comparison-raw-before]").textContent, raw);
     assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
     const [, sx, sy, cw, ch] = page.crop("before").draws[0];
     assert.equal((sx + cw / 2) / 1190, .6);
@@ -340,8 +354,9 @@ test("magnification remains two times the displayed page scale on narrow and wid
     }
 });
 
-test("keyboard magnification uses the focused mark center on both pages, never its matched region", () => {
+test("relative positioning explicitly bypasses region anchors for keyboard magnification", () => {
     const page = setup({findings: [finding({before_locations: [{page: 1, box: [.3, .4, .5, .6]}], after_locations: [{page: 1, box: [.6, .7, .8, .9]}]})]});
+    page.q("[data-inspection-position]").value="relative";
     page.loaded("before"); page.loaded("after");
     const mark = page.marks("before")[0]; mark.focusVisible = true; mark.fire("focus");
     for (const side of ["before", "after"]) {
@@ -386,8 +401,8 @@ test("loading or failed opposite image has an explicit status, then uses only th
 
 test("generic inspection dismisses with Escape, resumes after leave and supports touch without hover", () => {
     const page = setup({findings: []}); page.loaded("before"); page.loaded("after");
-    page.hoverPoint("before", .5, .5, {ctrlKey: true}); assert.equal(page.panel.hidden, true);
-    page.hoverPoint("before", .5, .5, {pointerType: "touch"}); assert.equal(page.panel.hidden, true);
+    page.hoverPoint("before", .5, .5, {ctrlKey: true}); assert.equal(page.crop("before").draws.length, 0);
+    page.hoverPoint("before", .5, .5, {pointerType: "touch"}); assert.equal(page.crop("before").draws.length, 0);
     page.page("before").fire("click", {detail: 1, clientX: 300, clientY: 600});
     assert.equal(page.panel.dataset.interaction, "touch");
     page.doc.fire("keydown", {key: "Escape"}); assert.equal(page.panel.hidden, true);
@@ -406,4 +421,43 @@ test("Escape closes hover inspection without a focused control inside the compar
     assert.equal(page.crop("before").draws.length, 0);
     page.doc.fire("keydown", {key: "Escape", target: new Element("input")});
     assert.equal(page.panel.hidden, true);
+});
+
+test("four leading unmatched pages stay empty until the fifth maps to after page one", () => {
+    const p=setup({before_pages:Array(6).fill({width:595,height:842}),page_map:{5:1,6:2},inverse_map:{1:5,2:6}});
+    for(let n=1;n<=4;n++) {
+        p.navigate('before',n);p.loaded('before');p.hoverPoint('before',.5,.5);
+        assert.equal(p.side('after').querySelector('[data-comparison-page-empty]').hidden,false);
+        assert.equal(p.crop('after').hidden,true);
+        assert.equal(p.marks('after').length,0);
+        assert.ok(!p.loads.includes('/signed-after/1.png'));
+    }
+    p.navigate('before',5);p.loaded('before');p.loaded('after');
+    assert.equal(p.side('after').querySelector('[data-comparison-page]').value,1);
+    assert.equal(p.side('after').querySelector('[data-comparison-page-empty]').hidden,true);
+    p.navigate('after',3);
+    assert.equal(p.side('before').querySelector('[data-comparison-page-empty]').hidden,false);
+});
+
+test("paired anchor survives all box edges and follows pointer offset instead of snapping to relative position", () => {
+    const p=setup({findings:[finding({before_locations:[{page:1,box:[.3,.3,.4,.4]}],after_locations:[{page:1,box:[.5,.5,.6,.6]}]})]});
+    p.loaded('before');p.loaded('after');p.hover('before');
+    for(const [x,y] of [[.29,.35],[.41,.35],[.35,.29],[.35,.41],[.41,.41]]) {
+        p.hoverPoint('before',x,y);p.frame();
+        const [,sx,sy,cw,ch]=p.crop('after').draws[0];
+        assert.ok(Math.abs((sx+cw/2)/1190-(x+.2))<.0001);
+        assert.ok(Math.abs((sy+ch/2)/1684-(y+.2))<.0001);
+    }
+    p.q('[data-inspection-position]').value='relative';p.q('[data-inspection-position]').fire('change');
+    const [,sx,,cw]=p.crop('after').draws[0];assert.ok(Math.abs((sx+cw/2)/1190-.41)<.0001);
+});
+
+test("selected evidence survives other hover, panel scrolling, and multiple ambiguous regions use relative fallback",()=>{
+    const p=setup({findings:[finding(),finding({id:1,before_raw:'other',before_locations:[{page:1,box:[.4,.4,.5,.5]},{page:1,box:[.6,.6,.7,.7]}]})]});
+    p.loaded('before');p.loaded('after');p.marks('before')[0].fire('click',{detail:1});
+    const raw=p.q('[data-comparison-raw-before]').textContent;
+    p.hover('before',1);p.tick();p.panel.fire('pointerenter');p.panel.fire('scroll');p.win.fire('scroll');
+    assert.equal(p.q('[data-comparison-raw-before]').textContent,raw);
+    assert.equal(p.panel.hidden,false);
+    assert.match(p.q('[data-comparison-pair-status]').textContent,/Relative position/);
 });

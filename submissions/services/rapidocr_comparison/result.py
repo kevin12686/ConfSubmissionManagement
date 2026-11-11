@@ -5,7 +5,7 @@ import re
 
 from . import engine, symbols
 
-VERSION = 7
+VERSION = 8
 LIMITATIONS = [
     "OCR compares recognized visible text, not PDF metadata or native text. Identical OCR errors and missed text can hide real changes.",
     "Whitespace split/join and the listed direct visual substitutions are tolerated; genuine similar-character edits can be missed.",

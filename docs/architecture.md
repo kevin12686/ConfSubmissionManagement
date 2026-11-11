@@ -59,7 +59,7 @@ belong in the audience-specific guides listed on the
 - Templates stay server-rendered Django pages using locally pinned Tabler 1.4.0 with Bootstrap-compatible markup; there is no React or separate frontend build.
 
 Formatting comparison is a separate read-only service/controller/workspace,
-not a branch of PDF processing or Formatting save. Method 7 renders each exact
+not a branch of PDF processing or Formatting save. Method 8 renders each exact
 saved PDF independently and compares local RapidOCR output. The current
 publication helper selects After; Before is the same submission's Original or a
 hash-verified Formatting revision. No FinalSubmission or mirrored state is
@@ -89,6 +89,8 @@ nor worker is allowed to select publication files. `comparison_protocol.py`
 binds code/model contract, ordered PDF hashes and inspection render checks.
 CPU/GPU cache profiles remain separate. Remote unavailability pauses new work
 unless a bound short-lived local-execution confirmation is supplied;
+verified full-result cache reads on either worker do not require compute consent.
+Read-only reuse on another worker never moves or restarts an accepted route.
 busy/uncertain accepted jobs stay pinned to one worker. Old local routes do not
 implicitly authorize new submissions or waiting for unfinished local work.
 Completed evidence remains reusable with all existing identity/render checks.
@@ -153,16 +155,17 @@ normalization or exact visual proof. Real similar-character edits and
 whitespace-only changes can deliberately be missed; the
 [comparison contract](pdf_comparison.md) records the policy and risks.
 
-The workspace is document-first: annotated pages, compact controls and transient
-hover/focus/tap inspection with synchronized relative-position page-pixel crops,
+The workspace is document-first: annotated pages, compact controls and an in-flow
+inspection area with independent selected evidence and pointer-following crops,
 not a permanent findings sidebar. Magnification uses only the currently loaded
-side-specific images, never OCR matches or a counterpart-page substitution.
-Finding metadata and its recorded marks remain separate from the shared crop
-center. Red text changes, amber unlocated ranges and neutral information stay
+side-specific images, using unambiguous region anchors or relative positioning,
+never a counterpart-page substitution. Missing linked pages show an empty state.
+Finding metadata and its recorded marks remain separate from crop positioning.
+Red text changes, amber unlocated ranges and neutral information stay
 distinct. Hover cannot move pages or scroll either document; explicit result
 navigation can. Only the active finding is connected, with no fabricated
 counterpart. Coverage and evidence totals never certify figures, layout or full
-math. Temporary method 7 requires rebuilding method-6 and older results,
+math. Temporary method 8 requires rebuilding method-7 and older results,
 independently of System State archive v8.
 
 Automatic upload comparison orchestration belongs to
