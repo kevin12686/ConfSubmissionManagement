@@ -1,5 +1,15 @@
 # Publication Rules
 
+## Comparison Compute Boundary
+
+Local/remote comparison workers are advisory compute only. They receive exact
+snapshot bytes, never choose a publication candidate, and cannot write reviews,
+exceptions, source files or export packages. CFM validates returned evidence
+and rechecks current scope, file hashes and upload revision before retaining a
+comparison. Cache hits, completed jobs, failover or GPU execution never bypass
+these rules. Missing selected Corrected files still block rather than falling
+back. Worker failure is not proof of unchanged content or publication approval.
+
 This document is the canonical description of publication-facing behavior.
 Operator and developer documentation may summarize these rules, but changes to
 publication scope, active versions, file resolution, readiness, or export must
@@ -313,6 +323,12 @@ Method 7 uses native geometry only for order/ownership guidance, not native
 strings as proof of equality. Context alignment preserves one-to-one occurrence
 accounting; reference-page navigation is not a text match. Unlocated or empty-OCR
 ranges remain explicit and require manual review.
+
+Local CPU caches are optional execution evidence, never publication authority.
+Reuse requires exact PDF hashes and the validated engine/model/runtime; cached
+results still pass all live file, scope and upload-revision checks. Cache failure
+can require fresh OCR or leave comparison unavailable, not approve publication.
+No source, review, exception or readiness rule changes through reuse.
 
 The approved broad policy tolerates complete local differences covered by 38
 direct visual groups and existing whitespace rules. Raw OCR, locations, rule

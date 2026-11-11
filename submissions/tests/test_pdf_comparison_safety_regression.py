@@ -48,7 +48,7 @@ from submissions.tests.ocr_fixtures import synthetic_ocr_worker
 class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
     def setUp(self):
         super().setUp()
-        self.enterContext(patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker))
+        self.enterContext(patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=synthetic_ocr_worker))
         self.enterContext(override_settings(BASE_DIR=self.root.resolve()))
         self.master = create_master_paper()
         self.original = make_pdf(["Original result: 12 participants."] + [""] * 7)
@@ -306,8 +306,8 @@ class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
                 original = query.values(*change).get()
                 expected = []
 
-                def compare_then_change(*args):
-                    result = compare_pdf_bytes(*args)
+                def compare_then_change(*args, **kwargs):
+                    result = compare_pdf_bytes(*args, **kwargs)
                     query.update(**change)
                     expected.append(self._state())
                     return result
@@ -330,8 +330,8 @@ class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
                 receipts = []
                 tokens = self._comparison_tokens()
 
-                def compare_then_upload(*args):
-                    result = compare_pdf_bytes(*args)
+                def compare_then_upload(*args, **kwargs):
+                    result = compare_pdf_bytes(*args, **kwargs)
                     receipts.append(self._save(pdf=newer)[1])
                     expected.append(self._state())
                     return result
@@ -353,8 +353,8 @@ class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
         _, entry = self._save(pdf=self.corrected)
         expected = []
 
-        def compare_then_upload_source(*args):
-            result = compare_pdf_bytes(*args)
+        def compare_then_upload_source(*args, **kwargs):
+            result = compare_pdf_bytes(*args, **kwargs)
             _, source_receipt = self._save(source=b"New source-only revision")
             self.assertIsNone(source_receipt)
             expected.append(self._state())
@@ -388,7 +388,7 @@ class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
         )
         for failure in failures:
             with self.subTest(failure=failure):
-                with patch("submissions.services.pdf_comparison.subprocess.run", **failure) as worker:
+                with patch("submissions.services.pdf_comparison_execution.subprocess.run", **failure) as worker:
                     response = self.client.post(endpoint, {"token": entry["token"], "retry": "1"})
                     self.assertTrue(worker.called)
                 self.assertEqual(response.status_code, 422)
@@ -418,3 +418,85 @@ class PDFComparisonSafetyRegressionTests(EditorialAcceptanceTestCase):
         self.assertEqual(self._publication_contents(), package_before)
         self.assertEqual(self._crosscheck_contents("SNAPSHOTAFTER"), crosscheck_before)
         self.assertEqual(self._state(), state)
+
+    def test_warm_cpu_cache_preserves_exports_and_rechecks_live_binding(self):
+        from submissions.services import pdf_comparison as service
+        from submissions.services.rapidocr_comparison import runtime
+        from submissions.services.rapidocr_comparison import cache as evidence_cache
+        from submissions.tests.test_pdf_comparison_cache import document, in_process_worker
+        package = self._publication_contents()
+        crosscheck = self._crosscheck_contents("CACHEBEFORE")
+        state = self._state()
+        with (
+            patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=in_process_worker),
+            patch.object(runtime, "build_recognizer", return_value=object()),
+            patch.object(runtime, "extract_document", side_effect=lambda data, engine: document(data)) as extract,
+            patch.object(evidence_cache, "runtime_fingerprint", return_value="a" * 64),
+        ):
+            cold = create_pdf_comparison(self.submission.pk)
+            warm = create_pdf_comparison(self.submission.pk)
+            self.assertEqual(cold["result"], warm["result"])
+            self.assertEqual(extract.call_count, 2)
+            self.assertEqual(self._state(), state)
+            self.assertEqual(self._publication_contents(), package)
+            self.assertEqual(self._crosscheck_contents("CACHEAFTER"), crosscheck)
+            original_compare = service.compare_pdf_bytes
+            def concurrent_change(*args, **kwargs):
+                result = original_compare(*args, **kwargs)
+                FinalSubmission.objects.filter(pk=self.submission.pk).update(active_version=False)
+                return result
+            with patch.object(service, "compare_pdf_bytes", side_effect=concurrent_change):
+                with self.assertRaises(PDFComparisonError):
+                    create_pdf_comparison(self.submission.pk)
+            self.assertEqual(extract.call_count, 2)
+            FinalSubmission.objects.filter(pk=self.submission.pk).update(active_version=True)
+            Path(self.submission.formatted_pdf_file.path).unlink()
+            with self.assertRaisesRegex(PDFComparisonError, "missing"):
+                create_pdf_comparison(self.submission.pk)
+            self.assertEqual(extract.call_count, 2)
+
+    def test_service_transport_preserves_exports_and_rejects_late_or_wrong_results(self):
+        from submissions.services import comparison_client
+        from submissions.services.comparison_protocol import contract_id, job_key, page_render_hashes
+        from submissions.services.pdf_comparison_execution import local_pdf_evidence
+        contract = contract_id()
+        hashes = [hashlib.sha256(data).hexdigest() for data in (self.original, self.corrected)]
+        result = local_pdf_evidence(self.original, self.corrected)
+        evidence = {
+            "protocol": 1, "contract": contract, "key": job_key(hashes, contract),
+            "hashes": hashes, "state": "completed", "result": result,
+            "render_hashes": {"before": page_render_hashes(self.original), "after": page_render_hashes(self.corrected)},
+        }
+        def reply(endpoint, path, **kwargs):
+            if path == "/v1/health":
+                return 200, {"protocol": 1, "contract": contract, "state": "ready"}
+            return 200, evidence
+        state = self._state()
+        publication = self._publication_contents()
+        crosscheck = self._crosscheck_contents("SERVICEBEFORE")
+        with (
+            override_settings(CFM_COMPARISON_TRANSPORT="service", CFM_COMPARISON_LOCAL_URL="http://worker:8091", CFM_COMPARISON_LOCAL_TOKEN="t" * 32),
+            patch.object(comparison_client.Endpoint, "call", autospec=True, side_effect=reply) as transport,
+        ):
+            first = create_pdf_comparison(self.submission.pk)
+            self.assertEqual(first["result"], result)
+            self.assertEqual(self._state(), state)
+            self.assertEqual(self._publication_contents(), publication)
+            self.assertEqual(self._crosscheck_contents("SERVICEAFTER"), crosscheck)
+            evidence["hashes"] = list(reversed(hashes))
+            with self.assertRaisesRegex(PDFComparisonError, "does not match"):
+                create_pdf_comparison(self.submission.pk)
+            self.assertEqual(self._state(), state)
+            evidence["hashes"] = hashes
+            def late_reply(endpoint, path, **kwargs):
+                response = reply(endpoint, path, **kwargs)
+                if path.startswith("/v1/jobs/"):
+                    FinalSubmission.objects.filter(pk=self.submission.pk).update(active_version=False)
+                return response
+            transport.side_effect = late_reply
+            with self.assertRaisesRegex(PDFComparisonError, "no longer a current"):
+                create_pdf_comparison(self.submission.pk)
+            FinalSubmission.objects.filter(pk=self.submission.pk).update(active_version=True)
+            Path(self.submission.formatted_pdf_file.path).unlink()
+            with self.assertRaisesRegex(PDFComparisonError, "missing"):
+                create_pdf_comparison(self.submission.pk)

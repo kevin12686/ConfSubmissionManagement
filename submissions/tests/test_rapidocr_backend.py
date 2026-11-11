@@ -143,7 +143,7 @@ class OCRWorkerRuntimeTests(SimpleTestCase):
         result = build_result(ocr_pages("Identical recognized text."), ocr_pages("Identical recognized text."), identical_bytes=True)
         response = subprocess.CompletedProcess([], 0, json.dumps({"version": 7, "result": result}).encode())
         with tempfile.TemporaryDirectory() as temporary, override_settings(BASE_DIR=temporary), patch.dict(os.environ, {}, clear=True):
-            with patch.object(pdf_comparison.subprocess, "run", return_value=response) as run:
+            with patch("submissions.services.pdf_comparison_execution.subprocess.run", return_value=response) as run:
                 pdf_comparison.compare_pdf_bytes(b"same", b"same")
             self.assertEqual(run.call_args.kwargs["timeout"], 240)
             self.assertEqual(run.call_args.kwargs["env"][runtime.MODEL_ENV], str(Path(temporary) / "runtime/rapidocr-models"))

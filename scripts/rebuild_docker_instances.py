@@ -28,6 +28,8 @@ from docker_instance_tools import (  # noqa: E402
     exclusive_lock,
     inspect_compose_containers,
     matching_instances,
+    require_comparison_network,
+    preflight_compose_runtime,
     run,
     temporary_env_file,
     wait_until_ready,
@@ -87,8 +89,7 @@ def main() -> int:
                 )
                 print(
                     "Start an instance first, for example: "
-                    "docker compose --env-file .env.conference-a "
-                    "-p sms-conf-a up -d --build",
+                    "python3 scripts/update_docker_instances.py --create-missing",
                     file=sys.stderr,
                 )
                 return 1
@@ -157,6 +158,7 @@ def rebuild_instance(
     if dry_run:
         return
 
+    require_comparison_network(env_values, runner=run)
     status = GatewayOperationStatus(instance, "update")
     status.start("build")
     cutover_started = False
@@ -186,6 +188,8 @@ def rebuild_instance(
                 cwd=root,
                 capture=False,
             )
+            preflight_compose_runtime(root, env_file, instance["project"],
+                                      bind_override=bind_override, runner=run)
             status.update("apply")
             cutover_started = True
             run(

@@ -266,7 +266,7 @@ class PDFViewerTests(EditorialAcceptanceTestCase):
 
     def test_comparison_snapshots_keep_the_exact_side_and_reject_changed_current_files(self):
         from submissions.tests.ocr_fixtures import synthetic_ocr_worker
-        with patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker):
+        with patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=synthetic_ocr_worker):
             payload = create_pdf_comparison(self.submission.pk)
         for side, expected in (("before", self.original), ("after", self.corrected)):
             raw = reverse("submissions:formatting_comparison_pdf", args=[self.submission.pk, payload["token"], side])

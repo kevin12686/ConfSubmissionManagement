@@ -57,6 +57,30 @@ diagnosis, and recovery. Docker procedures are centralized in the
 
 ## Startup
 
+### Startup preflight failed
+
+Launchers now reject missing prerequisites before migrating the conference or
+opening its browser page. Do not remove `data/` or bypass the checker.
+
+- Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
+  and provision the two pinned OCR models using the Developer Guide. Run
+  `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.
+- Docker worker: use `scripts/start_comparison_slave.py --env-file <worker.env>`.
+  Check the private `clients.json` (0600), read-only model directory and explicit
+  CPU/GPU selection. A missing CUDA provider is not silently replaced by CPU.
+- Docker conference: start the shared worker first, use the same network name,
+  and set its dedicated token. A configured local fallback must be healthy and
+  compatible even if a preferred remote is online. An unreachable optional
+  remote is a warning when local is ready; invalid authentication is an error.
+- Update/migration failures during preflight leave the old web running. Backup
+  checks new-image restart prerequisites before stopping it. After fixing the
+  worker/configuration, retry the normal operation; do not delete volumes.
+
+Successful preflight verifies configuration, dependencies/model sessions and
+authenticated service readiness at that time. It cannot promise uninterrupted
+network availability or that every long OCR job finishes within 240 seconds.
+Optional GROBID and CrossCheck remain optional; this check does not log in to them.
+
 ### Python was not found
 
 Install Python 3.12 or newer.
@@ -738,6 +762,23 @@ afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
 
 ### PDF comparison unavailable or unexpectedly noisy
 
+In service mode, first check the configured local/remote worker endpoint, API
+token, worker model provisioning and exact application/worker code compatibility.
+Do not substitute embedded execution or change models to hide an unavailable
+worker. An explicit authentication error needs the correct namespace token.
+Busy means queued/running, not offline. After a lost response, Retry checks the
+same job on the same worker; restoring connectivity is preferable to starting
+another copy. Deployment changes during that job are rejected until the original
+configuration is restored or its routing lease expires (130 minutes after its
+last use). The lease deliberately outlives a job's two-hour retention boundary.
+
+If CFM reports a rendering mismatch, the worker and viewer produced different
+inspection pixels for the same bytes. Align the PyMuPDF/rendering runtime and
+retest; do not remove the hash check or apply shifted overlays. A GPU backend
+must actually initialize CUDA; a failed CUDA setup cannot silently claim GPU
+execution while doing CPU OCR. Shared-worker storage and credentials are not
+restored from a conference System State ZIP.
+
 Method 7 uses rendered-page RapidOCR, not the former method-6 glyph-proof
 engine. **Text differences** are OCR-localized candidate edits; **unlocated
 ranges** need manual confirmation; **information** includes tolerated visual
@@ -758,14 +799,29 @@ OCR/render failure or worker timeout; it must not appear as zero differences.
 A page-image display error is separate. Model files must be provisioned before
 requests, with no automatic request-time download or native-text fallback. Check
 `BASE_DIR/runtime/rapidocr-models` by default, or the explicitly configured
-`CFM_RAPIDOCR_MODEL_DIR` when present. Existing Compose exposes the default as
+`CFM_RAPIDOCR_MODEL_DIR` when present. For embedded execution, conference Compose exposes the default as
 `/app/runtime/rapidocr-models` through its app mount; do not add another mount just
 for that default. External overrides require a container-visible mount and the
 container environment variable. Check for a stale override before changing the
-default files; an invalid override does not fall back. See
+default files; an invalid override does not fall back. Service mode instead uses
+the worker's read-only `/opt/rapidocr-models` mount, not the conference app's model
+folder. See
 [local setup](developer_guide.md#pdf-comparison-runtime) and
 [Docker setup](docker_guide.md#pdf-comparison-runtime). The research environment
 under a temporary directory is not a production dependency.
+
+The optional CPU evidence cache is keyed by PDF bytes and validated runtime, not
+Paper ID alone. A model/runtime/thread change or corrupt/expired cache triggers
+fresh OCR. A busy identical pair must finish or fail before retry. Cache storage
+errors do not invalidate saved files; computation proceeds fresh where possible.
+Completed Original extraction can survive a later corrected-side timeout, so a
+retry may be faster, but first-time work can still time out at 240 seconds. Never
+increase confidence merely because a cache hit is fast. The seven-day, 512-MiB
+embedded cache is excluded from backups and emptied by Clear Database. Ordinary
+cleanup preserves it, independently of review images and revisions. Shared-worker
+cache/job storage is separate: Clear Database does not delete worker namespaces.
+Worker TTL and quotas bound retention; remove service storage only through a
+deliberate maintenance operation, never conference cleanup.
 
 Rebuild method-6 and older cached results for method 7. If unexpected differences
 remain, retain input hashes, runtime/model versions, raw OCR, actual locations
@@ -794,6 +850,11 @@ absent after System State restore.
 
 Scanned/textless PDFs can be recognized from pixels; empty OCR is not proof of a
 blank page. Password-protected or over-limit PDFs may need manual comparison.
+Some inputs can also crash the native OCR library. Isolated macOS testing found
+a generated two-page blank PDF with a rotated first page fails in both the
+pre-optimization and optimized workers. The parent reports Comparison unavailable;
+do not interpret that as equality or skip manual PDF inspection. Cache reuse does
+not repair this native-runtime availability limitation.
 Matched movement/reflow is not a red edit. Unlocated ranges can reflect large
 rewrites, repetition, absent anchors, formulas or unreliable OCR/order; they
 are neither confirmed deletion nor equality. Bounded work and display limits

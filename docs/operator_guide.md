@@ -1,5 +1,12 @@
 # Operator Guide
 
+Startup now validates the selected PDF-comparison runtime before migrations.
+On a new computer, provision the approved OCR models first; on Docker, start
+the shared worker and configure a dedicated token for each conference first.
+See the [Docker Guide](docker_guide.md) for the worker launcher and safe
+conference updater. Missing prerequisites stop startup with instructions,
+without deleting conference data. GROBID/CrossCheck remain optional services.
+
 ## PDF Reader
 
 PDF open links use the shared reader at `/pdf-viewer/`. This includes Organized
@@ -580,8 +587,10 @@ new tab automatically, and never advances to the next paper.
 
 Comparison is a separate browser-triggered request after save. A comparison
 failure does not undo the upload or its normal review resets: the status says
-the files remain saved. No worker or polling runs in the background; leaving
-the page may interrupt the comparison. On refresh, a valid cached result is
+the files remain saved. The browser does not run periodic background polling.
+Embedded execution can be interrupted when the request ends. In service mode,
+an accepted job continues independently; Retry retrieves the same worker job
+instead of starting another one. On refresh, a valid cached result is
 reused. Only the latest upload receipt auto-starts if still pending; older
 receipts can be explicitly retried. Source-only/status/notes changes create no
 new PDF-comparison request. Start2 imports and Editor Upload are not included.
@@ -672,11 +681,32 @@ need manual comparison. No failed OCR/model check silently substitutes native
 text. See [setup](developer_guide.md#pdf-comparison-runtime) and
 [Docker setup](docker_guide.md#pdf-comparison-runtime).
 
+Local CPU work reuses completed Original OCR and identical-pair results when
+PDF bytes and the validated runtime match. Keep using the same Compare PDF / Retry
+controls; no new mode is needed. An already-running identical pair reports busy.
+Reuse does not select another version or waive any current-file/revision checks.
+First-time comparisons may still time out. The optional seven-day cache is not
+backed up, is protected from ordinary cleanup and is emptied by Clear Database;
+it is separate from preserved review images/revisions. See the
+[cache contract](pdf_comparison.md#local-cpu-evidence-reuse).
+
+For shared-worker deployments, these same controls use the configured compute
+service; there is no separate publication workflow. CFM prefers a ready compatible
+remote worker, otherwise uses the shared local CPU worker. Busy work stays on its
+selected worker. If the connection drops after submission, use Retry to retrieve
+that job; the app does not submit a second copy locally. A running/queued message
+is not completion. An unavailable result never changes the saved Formatting files.
+Worker credentials/routing are configured by the operator in the deployment env
+file, not in conference settings or backups. Shared-worker storage is independent:
+Clear Database clears this CFM's receipts/cache, not the shared service's other
+clients. See [service contract](pdf_comparison.md#shared-comparison-service).
+
 No comparison changes Review OK, review flags, exceptions,
 publication selection, or export eligibility. Temporary comparisons are not
 backups or retained review evidence; the build itself is recorded in Audit Log.
 Expired staging folders are removed when another comparison is built; there
-is no background polling or deletion timer.
+is no browser background polling or deletion timer. The independent shared worker
+has its own bounded job scheduler and retention.
 
 ## Plagiarism / CrossCheck Workflow
 

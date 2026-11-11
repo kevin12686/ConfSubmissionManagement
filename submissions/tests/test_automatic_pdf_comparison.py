@@ -32,7 +32,7 @@ from submissions.tests.ocr_fixtures import synthetic_ocr_worker
 class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
     def setUp(self):
         super().setUp()
-        self.enterContext(patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker))
+        self.enterContext(patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=synthetic_ocr_worker))
         self.enterContext(override_settings(BASE_DIR=self.root.resolve()))
         self.make_master_paper()
         self.submission = self.make_final_submission(format_status="pending")
@@ -99,6 +99,30 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertIsInstance(legacy, FinalSubmission)
         self.assertEqual(FormattingRevision.objects.count(), 1)
 
+    def test_manual_and_upload_comparison_share_cpu_cache_without_rebinding(self):
+        from submissions.services import pdf_comparison as service
+        from submissions.services.rapidocr_comparison import runtime
+        from submissions.services.rapidocr_comparison import cache as evidence_cache
+        from submissions.tests.test_pdf_comparison_cache import document, in_process_worker
+        result, entry = self.receipt()
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        with (
+            patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=in_process_worker),
+            patch.object(runtime, "build_recognizer", return_value=object()),
+            patch.object(runtime, "extract_document", side_effect=lambda data, engine: document(data)) as extract,
+            patch.object(evidence_cache, "runtime_fingerprint", return_value="a" * 64),
+        ):
+            manual = service.create_pdf_comparison(self.submission.pk)
+            automatic = self.build(entry)
+            self.assertEqual(manual["result"], automatic["result"])
+            self.assertEqual(automatic["upload_binding"]["revision_id"], result.revision.pk)
+            self.assertEqual(extract.call_count, 2)
+            self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+            self.receipt(make_pdf(["A later PDF revision must invalidate the previous receipt."]))
+            with self.assertRaises(PDFComparisonError):
+                self.build(entry)
+            self.assertEqual(extract.call_count, 2)
+
     def test_get_is_read_only_and_post_builds_once_then_reuses_the_same_result(self):
         result, entry = self.receipt()
         saved_state = FinalSubmission.objects.values().get(pk=self.submission.pk)
@@ -153,8 +177,8 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
         _, entry = self.receipt()
         from submissions.services.pdf_comparison import compare_pdf_bytes
         newer = make_pdf(["Concurrent new version must remain saved."])
-        def concurrent_save(*args):
-            result = compare_pdf_bytes(*args)
+        def concurrent_save(*args, **kwargs):
+            result = compare_pdf_bytes(*args, **kwargs)
             self.save(newer)
             return result
         with patch("submissions.services.pdf_comparison.compare_pdf_bytes", side_effect=concurrent_save):

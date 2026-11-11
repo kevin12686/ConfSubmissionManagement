@@ -256,7 +256,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
         from submissions.services.pdf_comparison import compare_pdf_bytes
 
         response = subprocess.CompletedProcess('ocr-worker', 0, stdout=payload)
-        with patch('submissions.services.pdf_comparison.subprocess.run', return_value=response):
+        with patch('submissions.services.pdf_comparison_execution.subprocess.run', return_value=response):
             return compare_pdf_bytes(b'before PDF bytes', b'after PDF bytes')
 
     def valid_response(self):
@@ -273,7 +273,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
         for failure in (subprocess.TimeoutExpired('ocr-worker', 240), OSError('unavailable'),
                         subprocess.CalledProcessError(1, 'ocr-worker', stderr=b'OCR failed')):
             with self.subTest(failure=type(failure).__name__):
-                with patch('submissions.services.pdf_comparison.subprocess.run', side_effect=failure):
+                with patch('submissions.services.pdf_comparison_execution.subprocess.run', side_effect=failure):
                     with self.assertRaises(PDFComparisonError):
                         compare_pdf_bytes(b'before', b'after')
 
@@ -296,7 +296,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
         from submissions.services.pdf_comparison import MAX_BYTES, PDFComparisonError, compare_pdf_bytes
 
         for data in (b'', b'x' * (MAX_BYTES + 1)):
-            with self.subTest(size=len(data)), patch('submissions.services.pdf_comparison.subprocess.run') as worker:
+            with self.subTest(size=len(data)), patch('submissions.services.pdf_comparison_execution.subprocess.run') as worker:
                 with self.assertRaises(PDFComparisonError):
                     compare_pdf_bytes(data, b'other PDF')
                 worker.assert_not_called()

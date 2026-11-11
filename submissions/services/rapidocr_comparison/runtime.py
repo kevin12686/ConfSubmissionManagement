@@ -2,6 +2,8 @@
 
 Native text strings never leave extraction: only geometry can guide OCR order.
 """
+import copy
+import ctypes
 import hashlib
 import importlib.metadata
 import math
@@ -24,6 +26,46 @@ MAX_CHARACTERS = 300_000
 WALL_SECONDS = 240
 MAX_THREADS = 8
 THREAD_ENV = "CFM_RAPIDOCR_THREADS"
+BACKEND_ENV = "CFM_OCR_BACKEND"
+_validated_cuda_identity = None
+
+
+def ocr_backend():
+    value = os.environ.get(BACKEND_ENV, "cpu")
+    if value not in ("cpu", "cuda"):
+        raise ValueError(f"{BACKEND_ENV} must be cpu or cuda.")
+    return value
+
+
+def cuda_device_identity():
+    """Query the selected visible device through the real NVIDIA driver."""
+    driver = ctypes.CDLL("libcuda.so.1")
+
+    def call(name, *args):
+        if getattr(driver, name)(*args) != 0:
+            raise ValueError(f"Cannot identify CUDA device: {name} failed.")
+
+    call("cuInit", 0)
+    device, version, major, minor = (ctypes.c_int() for _ in range(4))
+    call("cuDeviceGet", ctypes.byref(device), 0)
+    call("cuDriverGetVersion", ctypes.byref(version))
+    call("cuDeviceComputeCapability", ctypes.byref(major), ctypes.byref(minor), device)
+    name = ctypes.create_string_buffer(256)
+    identifier = ctypes.create_string_buffer(16)
+    call("cuDeviceGetName", name, len(name), device)
+    uuid_api = "cuDeviceGetUuid_v2" if hasattr(driver, "cuDeviceGetUuid_v2") else "cuDeviceGetUuid"
+    call(uuid_api, ctypes.byref(identifier), device)
+    return {"name": name.value.decode("utf-8"), "uuid": identifier.raw.hex(),
+            "driver": version.value, "compute_capability": [major.value, minor.value]}
+
+
+def backend_identity():
+    backend = ocr_backend()
+    if backend == "cpu":
+        return {"backend": backend, "providers": ["CPUExecutionProvider"]}
+    if _validated_cuda_identity is None:
+        raise ValueError("CUDA runtime identity requires validated detection and recognition sessions.")
+    return copy.deepcopy(_validated_cuda_identity)
 
 
 def ocr_thread_count():
@@ -55,16 +97,32 @@ def validate_models(directory=None):
 
 
 def build_recognizer():
+    global _validated_cuda_identity
+    _validated_cuda_identity = None
     root = validate_models()
-    for name, version in (("rapidocr", "3.10.0"), ("onnxruntime", "1.31.1")):
+    backend = ocr_backend()
+    package = "onnxruntime-gpu" if backend == "cuda" else "onnxruntime"
+    other = "onnxruntime" if backend == "cuda" else "onnxruntime-gpu"
+    for name, version in (("rapidocr", "3.10.0"), (package, "1.31.1")):
         if importlib.metadata.version(name) != version:
-            raise ValueError(f"OCR requires {name}=={version}; install requirements.txt.")
+            raise ValueError(f"OCR requires {name}=={version} in its backend-specific environment.")
+    try:
+        importlib.metadata.distribution(other)
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    else:
+        raise ValueError(f"OCR {backend} requires only {package}, not {other}; use separate environments.")
     from rapidocr import RapidOCR
     import onnxruntime
     onnxruntime.disable_telemetry_events()
+    if backend == "cuda":
+        if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
+            raise ValueError("CUDAExecutionProvider is unavailable; CPU fallback is not permitted.")
+        # The GPU image installs ORT's CUDA/cuDNN extras, not a second ORT wheel.
+        onnxruntime.preload_dlls(directory="")
 
     # Explicit model paths avoid RapidOCR's model-directory download branch.
-    return RapidOCR(params={
+    params = {
         "Global.model_root_dir": str(root), "Global.text_score": 0.0,
         "Global.max_side_len": MAX_SIDE, "Global.use_cls": False,
         "Det.model_path": str(root / "PP-OCRv6_det_small.onnx"),
@@ -72,7 +130,28 @@ def build_recognizer():
         "Det.limit_side_len": 2560, "Det.limit_type": "max",
         "EngineConfig.onnxruntime.intra_op_num_threads": ocr_thread_count(),
         "EngineConfig.onnxruntime.inter_op_num_threads": 1,
-    })
+    }
+    if backend == "cuda":
+        params.update({"EngineConfig.onnxruntime.use_cuda": True,
+                       "EngineConfig.onnxruntime.cuda_ep_cfg.device_id": 0,
+                       "EngineConfig.onnxruntime.cuda_ep_cfg.use_tf32": 0})
+    recognizer = RapidOCR(params=params)
+    if backend == "cuda":
+        sessions = {}
+        # RapidOCR 3.10.0 is lazy and its provider verifier only logs fallback.
+        for name, load in (("det", recognizer._load_det_model), ("rec", recognizer._load_rec_model)):
+            session = load().session.session
+            providers = session.get_providers()
+            if not providers or providers[0] != "CUDAExecutionProvider":
+                raise ValueError(f"CUDA {name} session fell back to CPU; comparison unavailable.")
+            session.disable_fallback()
+            sessions[name] = {"providers": providers, "options": session.get_provider_options()}
+        _validated_cuda_identity = {
+            "backend": backend, "sessions": sessions, "device": cuda_device_identity(),
+            "libraries": {dist.metadata["Name"]: dist.version for dist in importlib.metadata.distributions()
+                          if dist.metadata.get("Name", "").lower().startswith("nvidia-")},
+        }
+    return recognizer
 
 
 def rectangle(value, width, height):
@@ -128,7 +207,13 @@ def extract_document(data, recognizer):
             if min(width, height) <= 0 or max(width, height) > MAX_SIDE or width * height > MAX_PIXELS:
                 raise ValueError("PDF page exceeds the full-resolution OCR raster limit.")
             pix = page.get_pixmap(dpi=300, alpha=False, colorspace=fitz.csRGB)
-            ocr = recognize_page(recognizer, pix.tobytes("png"), pix.width, pix.height)
+            # RapidOCR treats ndarray inputs as BGR; its PNG path converts RGB
+            # to exactly this array. Avoid lossless encoding and decoding.
+            import cv2
+            import numpy as np
+            rgb = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+            image = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            ocr = recognize_page(recognizer, image, pix.width, pix.height)
             characters += sum(len(line["text"]) for line in ocr["lines"])
             if characters > MAX_CHARACTERS:
                 raise ValueError("OCR character work limit exceeded.")

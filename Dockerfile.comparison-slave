@@ -1,0 +1,37 @@
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    CFM_SLAVE_ROOT=/worker-data \
+    CFM_SLAVE_CLIENTS_FILE=/run/secrets/clients.json \
+    CFM_RAPIDOCR_MODEL_DIR=/opt/rapidocr-models
+
+WORKDIR /app
+RUN python -m pip install --upgrade pip \
+    && python -m pip install 'Django>=5.2,<7.0' 'rapidocr==3.10.0' 'PyMuPDF>=1.27.2,<1.28' 'gunicorn>=23.0,<24.0'
+
+# Copy only the standalone protocol/server and inference code, never Django
+# settings, conference databases, media, runtime models or local artifacts.
+COPY comparison_slave /app/comparison_slave
+COPY submissions/__init__.py /app/submissions/__init__.py
+COPY submissions/services/__init__.py /app/submissions/services/__init__.py
+COPY submissions/services/pdf_comparison_worker.py /app/submissions/services/pdf_comparison_worker.py
+COPY submissions/services/comparison_protocol.py submissions/services/pdf_comparison_execution.py submissions/services/pdf_comparison_errors.py submissions/services/pdf_comparison_cache.py /app/submissions/services/
+COPY submissions/services/rapidocr_comparison /app/submissions/services/rapidocr_comparison
+
+EXPOSE 8091
+ENTRYPOINT ["python", "-m", "comparison_slave.entrypoint"]
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:8091", "--timeout", "30", "comparison_slave.server:application"]
+
+FROM base AS gpu
+COPY requirements-slave-gpu.txt /app/requirements-slave-gpu.txt
+RUN python -m pip install -r /app/requirements-slave-gpu.txt \
+    && python -m pip check
+ENV CFM_OCR_BACKEND=cuda
+
+# Last target is also the safe default for a direct docker build.
+FROM base AS cpu
+RUN python -m pip install 'onnxruntime==1.31.1' \
+    && python -m pip check
+ENV CFM_OCR_BACKEND=cpu

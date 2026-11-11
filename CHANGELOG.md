@@ -3,6 +3,50 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.24.1 - Unreleased
+
+- Validate native Python/venv, dependencies and actual comparison model sessions
+  before migrations or opening the browser. Service deployments authenticate
+  and validate worker compatibility/readiness instead of discovering missing
+  prerequisites on the first comparison.
+- Add a standalone worker deployment launcher with disposable CPU/CUDA runtime
+  preflight and bounded health waiting. Failed candidate checks leave the
+  existing worker running; no models or credentials are silently generated.
+- Check candidate conference images before create/update/migration cutover,
+  and check restart prerequisites before stopping a new-image instance for
+  backup. Preserve legacy-image backup behavior and conference data.
+- Publication file selection, OCR quality, comparison timeouts, review rules
+  and State archive v8 are unchanged.
+
+## 1.24.0 - Unreleased
+
+- Separate comparison compute into an independently deployed, authenticated
+  CPU/GPU worker shared by multiple conference installations. Keep native
+  embedded CPU operation available and make deployment settings explicit.
+- Add client-isolated persistent job/cache storage, bounded scheduling, an
+  idempotent HTTP protocol and pre-acceptance remote-to-local routing. A lost
+  response stays pinned to its original job; busy does not mean unavailable.
+- Validate input hashes, engine contract, result schema and inspection-render
+  hashes before accepting remote evidence. Recheck current publication scope,
+  PDF bytes and upload revision after compute, as before.
+- Keep the comparison UI and publication/readiness/reset rules unchanged.
+  Worker data and credentials are deployment state, not conference backups.
+  State archive remains v8; comparison method remains 7.
+
+## 1.23.0 - Unreleased
+
+- Reuse signed, byte- and runtime-bound CPU OCR evidence across saved PDF
+  comparisons; share identical-pair deduplication between manual and automatic
+  builds. Retain a completed original extraction even if the corrected side fails.
+- Pass the same rendered BGR pixels directly to RapidOCR instead of encoding and
+  decoding PNG between rendering and recognition. Keep models, DPI, batching,
+  threads, time/resource limits and method-7 comparison rules unchanged.
+- Bound the optional local cache to seven days, 512 MiB and 512 entries. Exclude
+  it from System State, protect it from ordinary cleanup and clear its contents
+  with Clear Database. Cache failures fall back to fresh computation, not approval.
+- Preserve current-file/revision checks on every cache hit. State archive v8,
+  publication selection, readiness, review flags and stored source files are unchanged.
+
 ## 1.22.1 - Unreleased
 
 - Allow an explicit, validated `CFM_RAPIDOCR_THREADS` deployment setting (1-8,

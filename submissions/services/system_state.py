@@ -62,6 +62,7 @@ PATH_TEXT_FIELDS = {
 TEMP_SNAPSHOT_EXCLUDED_DIRS = {
     "secrets",
     "formatting_comparison_previews",
+    "pdf_comparison_cache",
     "formatting_upload_previews",
     "import_previews",
     "record_edit_previews",

@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from submissions.services.audit import audit_failure
 from submissions.services.pdf_comparison import (
-    PDFComparisonError, StaleUploadComparison, TTL, comparison_identity,
+    ComparisonInProgress, PDFComparisonError, StaleUploadComparison, TTL, comparison_identity,
     comparison_root, comparison_submission, create_pdf_comparison,
     load_pdf_comparison, validate_upload_binding,
 )
@@ -22,10 +22,6 @@ logger = logging.getLogger(__name__)
 SESSION_KEY = "formatting_upload_comparisons"
 REQUEST_SALT = "submissions.formatting-upload-comparison.v1"
 CACHE_SALT = "submissions.formatting-upload-comparison-cache.v1"
-
-
-class ComparisonInProgress(PDFComparisonError):
-    pass
 
 
 def remember_upload_comparison(session, result):
@@ -172,7 +168,7 @@ def get_upload_comparison(submission_id, token, *, build=False, retry=False, req
                 return payload
             _write_cache(directory, binding)
             creating = True
-            payload = create_pdf_comparison(submission_id, "original", request=request, expected_upload=binding)
+            payload = create_pdf_comparison(submission_id, "original", request=request, expected_upload=binding, retry_failed=retry)
             created = True
             _write_cache(directory, binding, payload["token"])
             return _cached_result(directory, binding)

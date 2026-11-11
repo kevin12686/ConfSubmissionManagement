@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.22.1"
+APP_VERSION = "1.24.1"
 STATE_ARCHIVE_VERSION = 8
 
 
@@ -32,6 +32,13 @@ def _env_path(name, default):
 
 
 SECRET_KEY = os.environ.get("SMS_SECRET_KEY", "local-dev-only-change-if-exposed")
+
+# Compute deployment is machine-local configuration, never conference state.
+CFM_COMPARISON_TRANSPORT = os.environ.get("CFM_COMPARISON_TRANSPORT", "embedded")
+CFM_COMPARISON_REMOTE_URL = os.environ.get("CFM_COMPARISON_REMOTE_URL", "")
+CFM_COMPARISON_REMOTE_TOKEN = os.environ.get("CFM_COMPARISON_REMOTE_TOKEN", "")
+CFM_COMPARISON_LOCAL_URL = os.environ.get("CFM_COMPARISON_LOCAL_URL", "")
+CFM_COMPARISON_LOCAL_TOKEN = os.environ.get("CFM_COMPARISON_LOCAL_TOKEN", "")
 DEBUG = _env_bool("SMS_DEBUG", True)
 ALLOWED_HOSTS = _env_list(
     "SMS_ALLOWED_HOSTS", ["127.0.0.1", "localhost", "testserver"]

@@ -1,5 +1,38 @@
 # Editorial Acceptance Runbook
 
+## Deployment Preflight Acceptance
+
+Use disposable projects/volumes and generated data, never a live conference.
+Test native Python/venv/dependency failures and actual model loading. Confirm
+failures occur before migration/browser opening. Validate worker dry-run,
+missing models, invalid private clients, CPU/CUDA selection and a successful
+healthy start. A failed worker update must preserve the prior container.
+Test conference creation with missing/wrong tokens and incompatible/offline
+workers: no database migration may run. Test failed update/migration before
+cutover and failed backup restart preflight before stop. Compare container IDs
+and database/managed-file hashes. Successful create/update must pass health,
+static-module and same-origin CSRF checks. Record Windows/GPU hardware limits
+honestly; mocked orchestration does not prove native platform inference.
+
+## Shared Comparison Worker Acceptance
+
+Use disposable worker storage, credentials, conference DB/media and ports.
+Never attach a production conference volume to the worker. Check two namespaces
+cannot read each other's jobs/cache; identical POSTs produce one job; queue and
+retention are bounded; interrupted/restarted or timed-out jobs never become clean
+results. Exercise remote ready, busy, unavailable, incompatible and unauthorized
+states. Lose a POST response and confirm Retry retrieves the same job rather than
+launching local work. Validate malformed, swapped-hash and wrong-render responses
+are rejected, including when the publication revision changes during execution.
+
+Run three real PDF pairs plus additions/deletions/reference errors, metadata-only,
+reflow, blank/rotated and corrupt-input controls with unchanged models/300 DPI.
+Record actual backend/runtime and cold/warm reuse separately. Verify unchanged
+publication ZIP and CrossCheck bytes, readiness and all review flags. Browser QA
+uses the existing manual/upload comparison controls and both annotated documents;
+the worker must not introduce a second file selector or publication path. Record
+GPU tests separately from CPU/mock tests and disclose untested hardware.
+
 ## Shared PDF Reader Acceptance
 
 Use disposable data, never mutate the operator's live conference for browser QA.
@@ -302,6 +335,18 @@ Use disposable records/files and hash-pinned reviewed expectations.
    revision/review artifacts with State archive v8 unchanged.
 
 #### Actual Engine Evidence
+
+For local CPU optimization, compare complete pre-change results with cold,
+warm-pair and Original-only reuse on all three real pairs and authored controls.
+Require exact JSON equality, including scores, boxes, raw OCR, locations, counts
+and limitations. Verify direct BGR/old PNG-decoder pixel equality on colored,
+blank and rotated pages. Test cache/runtime/model invalidation, malformed and
+expired entries, active-lock pruning, disk failure and timeout recovery. A partial
+document may be retained, never a failed pair. Warm hits must still reject stale
+upload/scope/file evidence and preserve publication/CrossCheck bytes, readiness
+and review state. Verify cache exclusion from State ZIP, ordinary-cleanup
+protection and Clear Database removal. Record timing without claiming a cold
+Docker full-document pass from a warm or native-host run.
 
 Use actual PDF rendering and the provisioned RapidOCR models, not only injected
 OCR strings. Record runtime/model versions, input hashes, expected finding

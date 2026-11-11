@@ -42,9 +42,14 @@ and proxies all other requests to `web`. Keep one Gunicorn worker with SQLite.
 
 Create one environment file per conference:
 
+Start the [shared comparison slave](#shared-comparison-slave) first. It creates
+the external Docker network required by conference `web` containers. This is
+also required before updating an older conference to this Compose layout.
+
 ```bash
 cp .env.example .env.conference-a
-docker compose --env-file .env.conference-a up -d --build
+python3 scripts/update_docker_instances.py --create-missing --dry-run
+python3 scripts/update_docker_instances.py --create-missing
 ```
 
 The default endpoint is <http://127.0.0.1:8000/>.
@@ -75,7 +80,202 @@ data ownership.
 
 ## PDF Comparison Runtime
 
-Method-7 comparison uses local CPU inference with `rapidocr==3.10.0`,
+### Shared Comparison Slave
+
+Run **one shared worker per trusted host**, in its own Compose project. It is
+independent of every conference project and can run from a standalone checkout
+of this repository without starting the conference app. Do not add its Compose
+file to a conference's Compose invocation. The worker has its own image, job
+ledger, signing secret and persistent `worker_data` volume; it has no conference
+database, migration entrypoint or media mount. It uses Django signing utilities
+with an empty application/database configuration, not the conference settings.
+
+Native launchers default to `CFM_COMPARISON_TRANSPORT=embedded`. Conference
+Compose defaults explicitly to `service`, with these per-conference settings:
+
+| Setting | Default / purpose |
+| --- | --- |
+| `CFM_COMPARISON_TRANSPORT` | `service` in Compose; `embedded` explicitly opts into local isolated worker execution |
+| `CFM_COMPARISON_NETWORK` | `cfm-comparison`; shared Docker network created by the slave project |
+| `CFM_COMPARISON_LOCAL_URL` | `http://comparison-slave:8091` on the shared Docker network |
+| `CFM_COMPARISON_LOCAL_TOKEN` | Blank; this conference's local-worker bearer token |
+| `CFM_COMPARISON_REMOTE_URL` | Blank; optional trusted remote worker |
+| `CFM_COMPARISON_REMOTE_TOKEN` | Blank; separate token for that remote worker |
+
+URLs alone do not select service mode for a native launcher. Missing tokens,
+unreachable services or invalid runtimes mean Comparison unavailable, not a
+silent switch to embedded OCR. Set tokens separately in each conference env
+file and each endpoint. They are deployment secrets, not System State data.
+
+Prepare the same checksum-approved models described in the
+[Developer Guide](developer_guide.md#pdf-comparison-runtime). A slave-only host
+can receive the two already-validated model files from the provisioning machine;
+it does not need a conference database or a running app to install them.
+The worker validates their pinned checksums again and never downloads models.
+Create `runtime/comparison-slave/clients.json` as a JSON object mapping stable
+conference namespaces to distinct random bearer tokens, each at least 32
+characters. For example, generate each value separately with
+`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`:
+
+```json
+{"conference-a": "REPLACE_WITH_A_UNIQUE_RANDOM_TOKEN_AT_LEAST_32_CHARS"}
+```
+
+Do not use that placeholder as a credential. The clients source must be a
+regular non-symlink file with mode `0600` and at most 64 KiB. Set
+`chmod 600 runtime/comparison-slave/clients.json` on the host. Compose file-backed
+secrets retain host ownership; declaring secret `uid`/`mode` does not remap it.
+The container entrypoint therefore reads this source without modifying it,
+validates its private mode and bounded content, and atomically writes a
+worker-owned `0600` effective configuration at `/worker-data/clients.effective.json`.
+Only after validation does it set the server's `CFM_SLAVE_CLIENTS_FILE` to that
+effective path. This permits a host-UID-1000 secret with a container-UID-0 worker
+without loosening the server's file-ownership checks. Native launchers bypass
+the container initializer and must supply a private file owned by their own UID.
+Protect env files from other users too. The secret is mounted read-only at
+`/run/secrets/clients.json`. Authentication determines the namespace, not a
+namespace supplied by the client. Restart the worker after editing credentials.
+
+```bash
+mkdir -p runtime/comparison-slave
+cp .env.slave.example runtime/comparison-slave/worker.env
+# Provision clients.json and approved models; edit worker.env for this host.
+python3 scripts/start_comparison_slave.py \
+  --env-file runtime/comparison-slave/worker.env --dry-run
+python3 scripts/start_comparison_slave.py \
+  --env-file runtime/comparison-slave/worker.env
+```
+
+The launcher validates Compose ownership, private clients and the read-only
+model mount, builds the candidate, and loads the actual CPU/CUDA model sessions
+in a disposable preflight container before replacing the existing worker. It
+then waits for Docker health, not just a successful `up` command. Missing models,
+invalid credentials or an unavailable provider fail before replacement. Dry run
+does not build, start containers or infer; it cannot certify provider readiness.
+Models and client tokens must be explicitly provisioned, never auto-downloaded
+or overwritten. Rerun the launcher after editing credentials; successful deployment
+recreates the worker so file-backed secrets are reloaded. Allow current jobs to
+finish first; interrupted jobs are not automatically moved to another worker.
+
+The default project is `cfm-comparison-slave`, distinct from all conference
+projects. `CFM_SLAVE_PROJECT_NAME` controls that project; keep the identity stable
+and do not set a conference's `COMPOSE_PROJECT_NAME` in the worker environment.
+The command is `gunicorn --workers 1 --threads 4 --bind 0.0.0.0:8091
+--timeout 30 comparison_slave.server:application`. The HTTP timeout is not the
+OCR job budget; inference remains isolated and bounded at 240 seconds.
+Compose's 30-second health check authenticates to loopback `/v1/health` using
+the effective private config, primes lazy service startup, and accepts only
+ready/busy states. Its command arguments and output never contain the token.
+Allow the 60-second startup grace period and wait for Docker health to become
+healthy before sending the first comparison. A not-ready/failed runtime stays
+unhealthy instead of silently selecting another backend.
+
+`CFM_SLAVE_ROOT=/worker-data` is the dedicated volume. It persists worker identity,
+namespace caches, signing material and the job ledger across container recreation.
+The image entrypoint initializes only this directory's mode to `0700`, after
+verifying it is a real directory owned by the current UID. It does not recursively
+change or delete files. Identity and signing material are created automatically;
+do not generate or supply a worker identity by hand. `CFM_SLAVE_SECRET` is an
+optional server signing-secret file path, not the clients-file path.
+Never use `down -v` when updating it. Keep this volume separate from `sms_data`,
+and do not clone it to create another worker identity. Rebuild/update the worker
+with the explicit commands above, separately from conference maintenance.
+Store the operational env file outside the root `.env.*` discovery pattern.
+The conference updater excludes the reserved `.env.slave` and `.env.slave.*`
+names, including `.env.slave.example`; it never starts or updates the worker.
+It retains comparison transport, network, URLs and separate tokens during
+conference recreation, and masks both tokens in update/rebuild plans.
+
+The worker creates the named bridge network `cfm-comparison` and the DNS alias
+`comparison-slave`. Every conference `web` joins this external network as well
+as its own project-default network; `proxy` remains only on its default network.
+Set `CFM_COMPARISON_NETWORK` identically in the worker and conference env files
+if changing the shared network name. Do not use `host.docker.internal` for this
+default: Linux's host gateway cannot reach a host-loopback-only published port.
+Start the shared worker before starting/updating conferences. Stop conferences
+before removing its network; routine worker updates use the launcher above, not
+`down`. Explicit embedded-only or remote-only Docker installations still need
+this external network provisioned once (`docker network create cfm-comparison`)
+even when no local worker is started.
+
+The conference create/rebuild/migration tools check this network and run the
+candidate image's `scripts/check_comparison_runtime.py` without its migration
+entrypoint, followed by Django system checks against temporary in-memory SQLite,
+before cutover. Local tokens/readiness/contract compatibility are
+checked even when a preferred remote is online, so the configured fallback is
+usable. An unreachable optional remote is a warning when local is ready;
+authentication/configuration errors stop deployment. Failed preflight leaves
+the existing conference container running. Raw `docker compose up` is not a safe
+update substitute: its web entrypoint checks before migrating, but Compose may
+already have replaced an old container. Use the updater for existing conferences.
+
+Raw backup checks restart prerequisites before stopping running web images that
+declare startup-preflight support. Legacy images retain their prior backup
+behavior. Checks never migrate or inspect publication data. If an external
+dependency fails after validation, normal bounded health/error handling still
+applies; preflight is not a promise of permanent network/service availability.
+
+The separate published port remains loopback-only for native clients, which
+can explicitly use `http://127.0.0.1:8091`. For authorized remote clients choose
+a private host bind and firewall rules explicitly. No public `0.0.0.0` bind is
+required for same-host conference containers. Bearer tokens over HTTP
+are only appropriate on the trusted host/private network; use a trusted TLS
+gateway for other deployments. This is not a hardened public service.
+
+### Optional GPU Override
+
+CPU is the default image and backend. GPU is opt-in on an NVIDIA Linux host
+with the NVIDIA Container Toolkit, a compatible driver and finite container
+memory enforcement. Use the same project and volume, adding the override on
+**every** GPU configuration/build/update command:
+
+```bash
+python3 scripts/start_comparison_slave.py \
+  --env-file runtime/comparison-slave/worker.env --gpu --dry-run
+python3 scripts/start_comparison_slave.py \
+  --env-file runtime/comparison-slave/worker.env --gpu
+```
+
+The GPU target alone installs `onnxruntime-gpu[cuda,cudnn]==1.31.1`; it never
+installs the CPU `onnxruntime` wheel beside it. The CPU target never installs
+GPU dependencies. `CFM_SLAVE_GPU_DEVICE` selects one host index or UUID; the
+selected device is visible as ordinal 0 inside the container. The override sets
+`CFM_OCR_BACKEND=cuda`. Other backend names are rejected, not auto-detected.
+ORT's CUDA/cuDNN extras supply runtime libraries; the host still needs a
+compatible NVIDIA driver. Check the pinned wheel's requirements against the
+[official CUDA provider requirements](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html).
+
+RapidOCR 3.10.0's installed `config.yaml` and `onnxruntime/provider_config.py`
+define `EngineConfig.onnxruntime.use_cuda` and `cuda_ep_cfg.device_id`. This
+backend sets those explicit keys, preloads the installed CUDA libraries, loads
+both approved models and requires `CUDAExecutionProvider` first in both actual
+session provider lists. Missing libraries/devices or CPU fallback cause failure;
+listing CUDA among available providers alone is not acceptance. Session options,
+device UUID/name/compute capability, driver and NVIDIA library versions enter
+the cache fingerprint. CPU/GPU, hardware, package, code and thread changes
+cannot share cached evidence. GPU uses the same models, 300 DPI, OCR thresholds
+and result rules, with TF32 disabled; it is not asserted to have byte-identical
+CPU results.
+
+CUDA virtual-address reservations are incompatible with the CPU worker's 6 GiB
+`RLIMIT_AS`. GPU therefore requires a readable finite Linux cgroup v2
+`memory.max` or v1 `memory.limit_in_bytes` instead. Compose sets `mem_limit`
+and `memswap_limit` to `CFM_SLAVE_MEMORY_LIMIT` (default `8g`, no extra swap).
+An unlimited/missing controller fails closed; do not remove the limit to make
+GPU work. This bounds host memory, not device VRAM. The CPU-time and wall-clock
+bounds remain unchanged for both backends.
+
+An isolated Quadro RTX 5000 smoke test exercised actual CUDA detection and
+recognition, a generated intentional text edit, cold/warm comparison and
+container recreation with an 8-GiB cgroup limit and no swap. It did not send
+conference papers to the GPU host. This is not full-article GPU acceptance;
+before production use, validate the intended article workload on the deployed
+provider/runtime. Do not infer throughput or complete detection from a small
+smoke test, a passing CPU suite or a successful image build.
+
+### Embedded CPU Setup
+
+For explicit `CFM_COMPARISON_TRANSPORT=embedded`, Method-7 uses CPU inference with `rapidocr==3.10.0`,
 `onnxruntime==1.31.1` and the approved PP-OCRv6 small detection/recognition model
 pair. Rebuild the Linux image with the pinned requirements and verify that both
 packages import in the container; a host virtual environment is not used by
@@ -91,10 +291,20 @@ already mounts `.:/app`, so those host files are visible at
 environment variable or Compose change is needed for this default setup.**
 The directory is outside the separate `/app/data` named-volume mount.
 
-Alternatively run `python manage.py prepare_rapidocr_models` in a one-off `web`
-container, with an absolute path to the approved source visible in that container
-and `--destination /app/runtime/rapidocr-models`. This writes the default model
-directory through the existing app mount. The command imports local files only;
+Alternatively use a one-off `web` container with its startup entrypoint explicitly
+replaced; the normal entrypoint requires models already provisioned. Build the
+image and create the configured comparison network first, then run:
+
+```bash
+docker compose --env-file .env.conference-a build web
+docker compose --env-file .env.conference-a run --rm --no-deps \
+  --entrypoint python -v /absolute/path/to/approved-models:/provision:ro \
+  web manage.py prepare_rapidocr_models --source /provision \
+  --destination /app/runtime/rapidocr-models
+```
+
+Replace the absolute host source with your approved model directory. This writes
+the default model directory through the existing app mount. The command imports local files only;
 it never downloads them. The default is a lookup location, not automatic
 provisioning: the validated files must actually exist there.
 
@@ -133,10 +343,15 @@ host and research results.
 
 Docker Desktop's CPU allocation limits what the Linux VM can use. Increasing
 the VM allocation does not automatically change CFM's OCR thread count. Set
-`CFM_RAPIDOCR_THREADS` in the conference environment file (default `4`, valid
-`1`-`8`, within the visible CPU count); Compose passes it to `web`, and the
-unified updater retains it during recreation. Preview the update as usual.
+`CFM_RAPIDOCR_THREADS` in the worker environment file for service mode, or the
+conference environment file for embedded mode (default `4`, valid
+`1`-`8`, within the visible CPU count). The standalone Compose file passes it
+to the worker; conference Compose passes it to `web` for embedded execution,
+and the unified updater retains that setting during recreation. Preview the
+conference update as usual.
 This is a machine/runtime option, not an AppSetting or System State field.
+In service mode, update/recreate the standalone worker with its own Compose
+files; changing conference thread settings does not retune the shared service.
 
 Compare 4/6/8 sequentially, not as competing OCR jobs. Check full text, boxes,
 scores, locations and authored edit controls as well as timing. Logical threads
@@ -151,7 +366,67 @@ Research PDFs, screenshots and local models must not be baked into the image.
 Provision models separately as described above. A passing image build or unit
 suite is not evidence that full PDFs complete within the runtime limit.
 
+### Local CPU Cache
+
+Manual and automatic builds can reuse signed document/pair evidence under
+`data/pdf_comparison_cache/`; the worker still validates actual dependencies,
+models and runtime fingerprint. Host/container, architecture, package, thread or
+code changes invalidate reuse. No cache is baked into images or State ZIPs;
+CPU installs need no GPU package. Shared-service caches instead live in the
+worker's namespace directories on `worker_data`; the persisted worker identity
+excludes ephemeral container hostname/MAC values while retaining runtime and
+hardware details. See the
+[cache contract](pdf_comparison.md#local-cpu-evidence-reuse). Keep the same resource
+and timeout bounds. Repeated comparisons may be fast, but this does not resolve
+all cold full-document timeouts documented below.
+
 ### Validation Record: 2026-11-10
+
+**1.24.0 shared service acceptance:** 910 Django tests and 86 JavaScript tests
+passed, plus Django check, migration drift, documentation validation, compilation
+and diff checks. The native HTTP worker ran the three supplied PDF pairs and
+12 generated controls twice (first execution and completed-job reuse): all 30
+full result JSONs matched the frozen pre-change native results. First execution
+of the real pairs took 117.27, 88.86 and 84.83 seconds. Source fixture hashes
+were unchanged; no conference database was configured for compute acceptance.
+Corrupt input and the known native rotated-two-blank-pages failure returned
+unavailable, never a clean result.
+
+A disposable ARM64 Linux worker and separate client container exercised the
+shared bridge network, authenticated readiness and two-client isolation. All
+12 generated controls matched fresh embedded execution on the same Linux
+runtime, including full JSON, both before and after worker-container recreation.
+Completed HTTP results survived recreation; files/models were mounted read-only
+and all worker storage was independent of conference volumes. Browser acceptance
+used a disposable CFM database: unavailable-worker messaging, manual Build,
+both page images, text/reference marks and inspection details worked with no
+browser console errors. Publication regression tests verified unchanged ZIP/
+CrossCheck bytes and review/readiness state, including stale/wrong result rejection.
+
+Actual GPU smoke on a Quadro RTX 5000 used CUDA first in both ONNX sessions,
+TF32 disabled, an 8-GiB memory limit and no swap. A generated alpha/beta edit
+took 3.53 seconds cold and 1.77 seconds through the inference cache, with identical
+result hashes. Recreated service retrieval preserved runtime identity and exact
+HTTP response bytes. Three full articles were **not** tested on that GPU in this
+round. After the final readiness/TTL fixes, the updated service modules were
+verified by hash; GET-only retrieval and another container recreation preserved
+the exact response, runtime identity and ledger rows without re-running jobs.
+CPU/GPU evidence caches remain separate.
+
+These service tests do not overturn the full-document ARM64 CPU timeout record
+below. The per-job 240-second OCR bound is unchanged; a shared queue makes work
+recoverable and isolated, not intrinsically faster. Native results and small GPU
+controls must not be presented as a full-article Docker/GPU performance pass.
+
+**Earlier CPU performance acceptance:**
+
+The 1.23.0 cache follow-up separately passed a network-disabled ARM64 Linux
+single-page control: pre-change 20.02 seconds, new cold 19.48 seconds, warm pair
+0.91 seconds, Original-only reuse 10.24 seconds. All three new results exactly
+matched that Linux pre-change worker's full JSON. It used read-only code/model/
+fixture mounts and a disposable QA output directory, with no conference data
+mount. This is cache/runtime smoke evidence, not a new full-document availability
+pass or an Intel Ubuntu benchmark.
 
 The isolated ARM64 Docker Desktop test used 8 allocated CPUs, approximately
 8 GiB RAM, Python 3.12.16, PyMuPDF 1.27.2.3, RapidOCR 3.10.0 and ONNX Runtime
@@ -183,6 +458,26 @@ describe these results as a full Docker performance pass. Before accepting this
 comparison workload, resolve/validate its execution-time lifecycle without
 lowering resolution, replacing models or weakening publication checks.
 
+## Deployment Preflight Validation (2026-11-10)
+
+Disposable ARM64 Docker projects verified fresh worker/conference startup,
+missing-model and wrong-token rejection, credential-only worker updates,
+conference update/rebuild, verified raw backup, and bind-to-volume migration.
+Failed candidate checks preserved the running container IDs and conference-data
+hashes. Successful standalone preflight (including Django checks) left an empty
+conference volume empty. Explicit remote-only configuration also authenticated
+successfully. A generated alpha/beta PDF pair completed real HTTP OCR with the
+expected ordered input hashes. Existing conference containers/data were not used.
+
+Native regression: 945 Django tests and 19 standalone deployment tests passed;
+86 JavaScript tests passed. The clean Linux image passed the same 945-test suite
+with five expected skips (four host Docker-CLI config checks and one
+case-insensitive-filesystem test), plus the 19 deployment tests. The four Compose
+checks passed on the host. Windows batch coverage is static only, not Windows
+machine acceptance; this deployment pass did not repeat GPU inference or the
+three full real-paper comparisons. Prior CPU/GPU evidence and the unchanged
+240-second first-time CPU limit remain described above.
+
 ## Update Existing Instances
 
 After changing code or any `.env` / `.env.*` setting, preview the complete
@@ -200,7 +495,7 @@ The updater:
 3. rejects duplicate project names, overlapping endpoints, shared data
    folders, foreign checkout ownership, and changes to an existing
    `SMS_DATA_DIR`;
-4. builds before cutover;
+4. builds and preflights the candidate runtime before cutover;
 5. replaces only `web`, and reloads or recreates `proxy` only when required;
 6. waits for readiness;
 7. verifies the loaded Nginx Host directive, one static asset, and a

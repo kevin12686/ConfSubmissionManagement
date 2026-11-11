@@ -24,6 +24,12 @@ services:
       SMS_WEB_THREADS: ${SMS_WEB_THREADS:-4}
       SMS_WEB_TIMEOUT: ${SMS_WEB_TIMEOUT:-300}
       CFM_RAPIDOCR_THREADS: ${CFM_RAPIDOCR_THREADS:-4}
+      CFM_COMPARISON_TRANSPORT: ${CFM_COMPARISON_TRANSPORT:-service}
+      CFM_COMPARISON_NETWORK: ${CFM_COMPARISON_NETWORK:-cfm-comparison}
+      CFM_COMPARISON_LOCAL_URL: ${CFM_COMPARISON_LOCAL_URL-http://comparison-slave:8091}
+      CFM_COMPARISON_LOCAL_TOKEN: ${CFM_COMPARISON_LOCAL_TOKEN:-}
+      CFM_COMPARISON_REMOTE_URL: ${CFM_COMPARISON_REMOTE_URL:-}
+      CFM_COMPARISON_REMOTE_TOKEN: ${CFM_COMPARISON_REMOTE_TOKEN:-}
       SMS_CROSSCHECK_WEB_USERNAME: ${SMS_CROSSCHECK_WEB_USERNAME:-}
       SMS_CROSSCHECK_WEB_PASSWORD: ${SMS_CROSSCHECK_WEB_PASSWORD:-}
       SMS_CROSSCHECK_IEEE_USERNAME: ${SMS_CROSSCHECK_IEEE_USERNAME:-}
@@ -32,6 +38,9 @@ services:
       - .:/app
       - sms_data:/app/data
       - sms_static:/app/staticfiles
+    networks:
+      - default
+      - comparison
     healthcheck:
       test:
         - CMD
@@ -73,6 +82,12 @@ services:
       timeout: 5s
       retries: 6
       start_period: 5s
+
+networks:
+  default:
+  comparison:
+    name: ${CFM_COMPARISON_NETWORK:-cfm-comparison}
+    external: true
 
 volumes:
   sms_data:

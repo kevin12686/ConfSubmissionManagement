@@ -59,6 +59,15 @@ one local application:
 The PDF comparison shows engine coverage status, limitation reasons,
 evidence counts and unlocated ranges; see the
 [comparison contract](docs/pdf_comparison.md).
+Local CPU comparisons reuse signed evidence only for identical PDF bytes and
+the same validated runtime. Repeated comparisons and unchanged originals can
+avoid repeated OCR; first-time work can still time out. Cache reuse never skips
+current-file or upload-revision checks. Native startup defaults to embedded CPU
+execution. Docker can use a host-shared comparison worker, with an optional
+preferred remote CPU/GPU worker and local CPU fallback. See the
+[compute service contract](docs/pdf_comparison.md#shared-comparison-service) and
+[Docker setup](docs/docker_guide.md). Workers never select publication files or
+access conference databases.
 Method 7's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t and rn/m; whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image
@@ -113,8 +122,9 @@ conflicts block the final package instead of being guessed around.
 
 Python 3.12 or newer is required. The first run needs internet access to install
 Python packages; normal local operation is offline afterward. PDF comparison
-also requires explicitly provisioned local OCR models before use; requests never
-download models. See [PDF comparison setup](docs/developer_guide.md#pdf-comparison-runtime)
+also requires explicitly provisioned local OCR models before startup; requests
+and launchers never download models. Startup fails before migrations if its
+comparison runtime is unavailable. See [PDF comparison setup](docs/developer_guide.md#pdf-comparison-runtime)
 and [Docker setup](docs/docker_guide.md#pdf-comparison-runtime).
 
 macOS or Linux:
@@ -132,15 +142,24 @@ start_windows.bat
 ```
 
 Open <http://127.0.0.1:8000/>. The startup scripts create `.venv`, install
-requirements, apply migrations, and prepare the local data folders.
+requirements, validate dependencies and the comparison runtime, then apply
+migrations and prepare local data folders. A broken or older-Python virtual
+environment produces recovery instructions without deleting conference data.
 
 ### Docker
 
 Docker is optional and intended for trusted local or LAN operation:
 
+First provision the OCR models and start the shared worker using the
+[shared comparison service setup](docs/docker_guide.md#shared-comparison-slave).
+It creates the shared Docker network. Give each conference a separate worker
+API token; copy that token into its environment file before starting it.
+
 ```bash
 cp .env.example .env.conference-a
-docker compose --env-file .env.conference-a up -d --build
+# Set this conference's worker token, project name, port and data directory.
+python3 scripts/update_docker_instances.py --create-missing --dry-run
+python3 scripts/update_docker_instances.py --create-missing
 ```
 
 Use a unique `COMPOSE_PROJECT_NAME`, port, and data mirror for every conference.
@@ -228,6 +247,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+# Provision the approved OCR models as described in the Developer Guide first.
+python scripts/check_comparison_runtime.py
 python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```

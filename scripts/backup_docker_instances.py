@@ -20,6 +20,7 @@ from docker_instance_tools import (  # noqa: E402
     exclusive_lock,
     inspect_compose_containers,
     matching_instances,
+    preflight_instance_restart,
     start_instance,
     stop_instance,
     transfer_data,
@@ -138,6 +139,7 @@ def backup_instance(
     if dry_run:
         return
 
+    preflight_instance_restart(instance)
     started_at = datetime.now(timezone.utc)
     success = False
     status = GatewayOperationStatus(instance, "backup")

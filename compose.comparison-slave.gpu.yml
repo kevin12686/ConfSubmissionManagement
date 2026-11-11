@@ -1,0 +1,15 @@
+services:
+  comparison-slave:
+    build:
+      target: gpu
+    image: cfm-comparison-slave:gpu
+    environment:
+      CFM_OCR_BACKEND: cuda
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${CFM_SLAVE_GPU_DEVICE:-0}"]
+              capabilities: [gpu]

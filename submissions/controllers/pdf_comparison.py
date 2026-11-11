@@ -71,7 +71,7 @@ def formatting_pdf_comparison(request, pk):
     try:
         comparison_submission(pk)
         if request.method == "POST" and form.is_valid():
-            payload = create_pdf_comparison(pk, form.cleaned_data["baseline"], request=request)
+            payload = create_pdf_comparison(pk, form.cleaned_data["baseline"], request=request, retry_failed=True)
             return redirect(reverse("submissions:formatting_pdf_comparison", args=[pk]) + "?" + urlencode({"comparison": payload["token"], "baseline": payload["baseline"]["key"], "next": back_url}))
         if request.method == "GET" and request.GET.get("comparison"):
             payload = load_pdf_comparison(pk, request.GET["comparison"])

@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+LABEL com.conferencefinalmanager.startup-preflight="1"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -11,7 +13,8 @@ RUN python -m venv /venv
 
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r /app/requirements.txt
+    && python -m pip install -r /app/requirements.txt \
+    && python -m pip check
 
 COPY docker/entrypoint.sh /usr/local/bin/sms-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/sms-entrypoint \

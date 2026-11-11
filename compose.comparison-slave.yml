@@ -1,0 +1,54 @@
+name: ${CFM_SLAVE_PROJECT_NAME:-cfm-comparison-slave}
+
+services:
+  comparison-slave:
+    build:
+      context: .
+      dockerfile: Dockerfile.comparison-slave
+      target: cpu
+    image: cfm-comparison-slave:cpu
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${CFM_SLAVE_BIND_HOST:-127.0.0.1}:${CFM_SLAVE_PORT:-8091}:8091"
+    mem_limit: ${CFM_SLAVE_MEMORY_LIMIT:-8g}
+    memswap_limit: ${CFM_SLAVE_MEMORY_LIMIT:-8g}
+    pids_limit: 256
+    healthcheck:
+      test: [CMD, python, -m, comparison_slave.entrypoint, --healthcheck]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    environment:
+      CFM_OCR_BACKEND: cpu
+      CFM_SLAVE_ROOT: /worker-data
+      CFM_SLAVE_CLIENTS_FILE: /run/secrets/clients.json
+      CFM_RAPIDOCR_MODEL_DIR: /opt/rapidocr-models
+      CFM_RAPIDOCR_THREADS: ${CFM_RAPIDOCR_THREADS:-4}
+    volumes:
+      - worker_data:/worker-data
+      - type: bind
+        source: ${CFM_SLAVE_MODEL_DIR:-./runtime/rapidocr-models}
+        target: /opt/rapidocr-models
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - source: clients
+        target: clients.json
+    networks:
+      comparison:
+        aliases:
+          - comparison-slave
+
+networks:
+  comparison:
+    name: ${CFM_COMPARISON_NETWORK:-cfm-comparison}
+
+secrets:
+  clients:
+    file: ${CFM_SLAVE_CLIENTS_SOURCE:-./runtime/comparison-slave/clients.json}
+
+volumes:
+  worker_data:

@@ -21,6 +21,8 @@ from docker_instance_tools import (  # noqa: E402
     inspect_compose_containers,
     matching_instances,
     planned_volume_name,
+    preflight_compose_runtime,
+    require_comparison_network,
     run,
     start_instance,
     stop_instance,
@@ -140,6 +142,7 @@ def migrate_instance(
         if dry_run:
             return
 
+        require_comparison_network(env_values, runner=run)
         status = GatewayOperationStatus(instance, "migration")
         status.start("build")
         cutover_attempted = False
@@ -156,6 +159,7 @@ def migrate_instance(
                 cwd=root,
                 capture=False,
             )
+            preflight_compose_runtime(root, env_file, instance["project"], runner=run)
             ensure_compose_volume(instance["project"], volume_name)
             status.update("pre_sync")
             pre_sync = transfer_data(
@@ -264,6 +268,9 @@ def migrate_instance(
             )
         except Exception:
             status.fail()
+            if not cutover_attempted and not web_stopped:
+                status.close(clear=True)
+                raise
             try:
                 rollback_to_bind_mount(
                     instance,

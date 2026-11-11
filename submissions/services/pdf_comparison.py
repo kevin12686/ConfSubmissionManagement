@@ -2,13 +2,8 @@
 
 import hashlib
 import json
-import os
 import re
 import shutil
-import subprocess
-import sys
-import struct
-import tempfile
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -25,20 +20,15 @@ from submissions.services.file_manager import publication_pdf_info
 from submissions.services.formatting_history import open_revision_file
 from submissions.services.preview_storage import PREVIEW_TOKEN_PATTERN, purge_expired_preview_directories
 from submissions.services.publication_decisions import publication_master_paper_ids
+from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError, StaleUploadComparison
+from submissions.services.pdf_comparison_execution import local_pdf_evidence
+from submissions.services.comparison_protocol import page_pixmap
 
 
 TTL = timedelta(hours=2)
 SALT = "submissions.pdf-comparison.v1"
 COMPARISON_VERSION = 7
 MAX_BYTES = 64 * 1024 * 1024
-
-
-class PDFComparisonError(ValueError):
-    pass
-
-
-class StaleUploadComparison(PDFComparisonError):
-    pass
 
 
 def comparison_root(*, create=False):
@@ -143,54 +133,21 @@ def _read_baseline(submission, baseline):
 
 
 
-def _pdf_evidence(before, after):
-    from submissions.services.rapidocr_comparison.result import VERSION, validate_result
-    from submissions.services.rapidocr_comparison.runtime import WALL_SECONDS
-
-    if not all(0 < len(data) <= MAX_BYTES for data in (before, after)):
-        raise PDFComparisonError("Comparison requires two non-empty PDFs of at most 64 MiB each.")
-    environment = os.environ.copy()
-    environment.setdefault("CFM_RAPIDOCR_MODEL_DIR", str(Path(settings.BASE_DIR) / "runtime" / "rapidocr-models"))
-    executable = environment.get("CFM_RAPIDOCR_PYTHON", sys.executable)
-    if not Path(executable).is_absolute():
-        raise PDFComparisonError("Comparison unavailable: CFM_RAPIDOCR_PYTHON must be an absolute executable path.")
-    try:
-        with tempfile.TemporaryFile() as diagnostics:
-            response = subprocess.run(
-                [executable, "-B", str(Path(__file__).with_name("pdf_comparison_worker.py"))],
-                input=struct.pack(">QQ", len(before), len(after)) + before + after,
-                stdout=subprocess.PIPE, stderr=diagnostics, timeout=WALL_SECONDS, check=True,
-                env=environment,
-            )
-        if len(response.stdout) > 8 * 1024 * 1024:
-            raise ValueError("OCR response exceeds the safe output limit")
-        payload = json.loads(response.stdout)
-        if not isinstance(payload, dict) or payload.get("version") != VERSION:
-            raise ValueError("Invalid OCR response version")
-        if "error" in payload:
-            errors = {
-                "configuration": "Local OCR models or dependencies are unavailable. Run prepare_rapidocr_models and install requirements.txt.",
-                "ocr_failed": "OCR could not complete safely. Review both PDFs manually; no native-text fallback was used.",
-            }
-            raise PDFComparisonError("Comparison unavailable: " + errors.get(payload["error"], "OCR worker failed."))
-        result = validate_result(payload.get("result"))
-        if result["identical_bytes"] != (before == after):
-            raise ValueError("Incorrect snapshot identity")
-        return result
-    except PDFComparisonError:
-        raise
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError) as exc:
-        raise PDFComparisonError(
-            "Comparison unavailable: OCR failed, exceeded its 240-second runtime or input limits, "
-            "or returned invalid evidence. No complete comparison is available; review both PDFs manually."
-        ) from exc
+def _pdf_evidence(before, after, *, diagnostics=None, retry_failed=False):
+    transport = getattr(settings, "CFM_COMPARISON_TRANSPORT", "embedded")
+    if transport == "embedded":
+        return local_pdf_evidence(before, after, diagnostics=diagnostics)
+    if transport == "service":
+        from submissions.services.comparison_client import service_pdf_evidence
+        return service_pdf_evidence(before, after, diagnostics=diagnostics, retry_failed=retry_failed)
+    raise PDFComparisonError("Comparison unavailable: choose embedded or service transport in deployment settings.")
 
 
-def compare_pdf_bytes(before_data, after_data):
-    return _pdf_evidence(before_data, after_data)
+def compare_pdf_bytes(before_data, after_data, *, diagnostics=None, retry_failed=False):
+    return _pdf_evidence(before_data, after_data, diagnostics=diagnostics, retry_failed=retry_failed)
 
 
-def create_pdf_comparison(submission_id, baseline="original", *, request=None, expected_upload=None):
+def create_pdf_comparison(submission_id, baseline="original", *, request=None, expected_upload=None, retry_failed=False):
     token = uuid.uuid4().hex
     directory = None
     submission = None
@@ -206,7 +163,8 @@ def create_pdf_comparison(submission_id, baseline="original", *, request=None, e
         if expected_upload is not None:
             validate_upload_binding(submission, expected_upload, pdf_sha256=hashlib.sha256(after).hexdigest())
         before, baseline_info = _read_baseline(submission, baseline)
-        result = compare_pdf_bytes(before, after)
+        cache_diagnostics = {}
+        result = compare_pdf_bytes(before, after, diagnostics=cache_diagnostics, **({"retry_failed": True} if retry_failed else {}))
         current = comparison_submission(submission_id)
         current_info = publication_pdf_info(current, include_url=False)
         if comparison_identity(current) != identity or hashlib.sha256(_live_bytes(current_info)).digest() != hashlib.sha256(after).digest():
@@ -247,6 +205,7 @@ def create_pdf_comparison(submission_id, baseline="original", *, request=None, e
             result_counts={"findings": result["total_findings"], "content": result["content_count"], "uncertain": result["uncertain_count"], "limited": result["coverage_status"] == "limited"},
             extra={"baseline": baseline_info, "publication_pdf_source": target_info["source"],
                    "comparison_method": COMPARISON_VERSION, "coverage_status": result["coverage_status"],
+                   "execution": cache_diagnostics,
                    **({"automatic": True, "revision_id": expected_upload["revision_id"]} if expected_upload else {})},
         )
         return payload
@@ -312,5 +271,4 @@ def comparison_page_png(submission_id, token, side, page_number):
         if not 1 <= page_number <= len(document):
             raise PDFComparisonError("This page does not exist in the compared PDF.")
         page = document[page_number - 1]
-        scale = min(1400 / page.rect.width, 2000 / page.rect.height, 2)
-        return page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False).tobytes("png")
+        return page_pixmap(page).tobytes("png")

@@ -6856,9 +6856,13 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         generated_path = None
         commands = []
 
-        def inspect_generated_env(command, *, cwd, capture, check=True):
+        def inspect_generated_env(command, *, cwd=None, capture, check=True):
             nonlocal generated_path
             commands.append(command)
+            if command[:3] == ["docker", "network", "inspect"]:
+                self.assertIsNone(generated_path)
+                self.assertEqual(command[3], "cfm-comparison")
+                return type("CommandResult", (), {"stdout": "[]"})()
             generated_path = Path(command[command.index("--env-file") + 1])
             with generated_path.open(encoding="utf-8") as handle:
                 contents = handle.read()

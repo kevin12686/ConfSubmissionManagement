@@ -61,7 +61,7 @@ def reflow_pair(*, header="2 N. Silvis-Cividjian", extra_pages=0):
 class PDFComparisonTests(EditorialAcceptanceTestCase):
     def setUp(self):
         super().setUp()
-        self.enterContext(patch("submissions.services.pdf_comparison.subprocess.run", side_effect=synthetic_ocr_worker))
+        self.enterContext(patch("submissions.services.pdf_comparison_execution.subprocess.run", side_effect=synthetic_ocr_worker))
         self.enterContext(override_settings(BASE_DIR=self.root.resolve()))
         self.make_master_paper()
         self.submission = self.make_final_submission()
@@ -213,8 +213,8 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
     def test_compare_detects_concurrent_file_change_without_publishing_stale_result(self):
         from submissions.services.pdf_comparison import compare_pdf_bytes as compare
         before = FinalSubmission.objects.values().get(pk=self.submission.pk)
-        def compare_then_replace(*args):
-            result = compare(*args)
+        def compare_then_replace(*args, **kwargs):
+            result = compare(*args, **kwargs)
             Path(self.submission.formatted_pdf_file.path).write_bytes(make_pdf(["Concurrent bytes"]))
             return result
         with patch("submissions.services.pdf_comparison.compare_pdf_bytes", side_effect=compare_then_replace):
@@ -317,6 +317,7 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         snapshot = export_system_state()
         with zipfile.ZipFile(snapshot["path"]) as archive:
             self.assertFalse(any("formatting_comparison_previews" in name for name in archive.namelist()))
+            self.assertFalse(any("pdf_comparison_cache" in name for name in archive.namelist()))
         self.assertTrue((comparison_root() / payload["token"] / "after.pdf").exists())
 
     def test_cleanup_protects_open_comparison_and_clear_database_removes_it(self):
@@ -326,9 +327,13 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         setting = AppSetting.load()
         setting.reports_folder = str(self.root / "data")
         setting.save()
+        cpu_cache = self.root / "data" / "pdf_comparison_cache"
+        (cpu_cache / "generated-report.zip").write_bytes(b"rebuildable cache test")
         inventory = build_storage_inventory()
         self.assertFalse(any("formatting_comparison_previews" in str(row["path"]) for row in inventory["report_export_cleanup_candidates"]))
+        self.assertFalse(any("pdf_comparison_cache" in str(row["path"]) for row in inventory["report_export_cleanup_candidates"]))
         setting.reports_folder = str(self.root / "reports")
         setting.save()
         self.client.post(reverse("submissions:clear_database"), {"confirmation": "CLEAR DATABASE"})
         self.assertFalse((comparison_root() / payload["token"]).exists())
+        self.assertFalse(list(cpu_cache.iterdir()))

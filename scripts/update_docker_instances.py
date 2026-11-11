@@ -26,6 +26,8 @@ from docker_instance_tools import (  # noqa: E402
     exclusive_lock,
     inspect_compose_containers,
     matching_instances,
+    require_comparison_network,
+    preflight_compose_runtime,
     run,
     wait_until_ready,
 )
@@ -219,7 +221,8 @@ def discover_env_specs(root: Path) -> list[dict]:
     paths.extend(
         path
         for path in sorted(root.glob(".env.*"))
-        if path.name != ".env.example" and path.is_file()
+        if path.name not in {".env.example", ".env.slave"}
+        and not path.name.startswith(".env.slave.") and path.is_file()
     )
     specs = []
     for path in paths:
@@ -516,6 +519,7 @@ def apply_update_plans(
 def create_instance(plan: dict, root: Path) -> None:
     env_file = plan["env_path"]
     project = plan["project"]
+    require_comparison_network(plan["desired"]["env_values"], runner=run)
     print(f"Creating project: {project}")
     with compose_file_precedence():
         run(
@@ -540,6 +544,7 @@ def create_instance(plan: dict, root: Path) -> None:
             cwd=root,
             capture=False,
         )
+        preflight_compose_runtime(root, env_file, project, runner=run)
         run(
             compose_command(
                 root,

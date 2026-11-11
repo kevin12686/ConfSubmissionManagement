@@ -73,6 +73,24 @@ unchanged because retained state/artifact contracts do not change.
 
 The isolated worker performs rendering, local OCR and bounded alignment; the
 parent service owns source selection, audit, snapshots and revision binding.
+`pdf_comparison_cache.py` owns signed, bounded CPU evidence reuse shared by
+manual and automatic builds. The worker validates the actual model/runtime
+fingerprint before accepting byte-identical document/pair evidence, and can
+exchange bounded JSON only through a private parent-created temporary directory.
+Completed document evidence can survive a later failure; failed pair results
+cannot. Cache hits still pass live source/revision checks and create new inspection
+snapshots. Direct BGR input removes only the lossless PNG roundtrip, not rendering
+or OCR. See [cache contract](pdf_comparison.md#local-cpu-evidence-reuse) for bounds,
+invalidation and lifecycle. Embedded execution is the native default. Service
+mode delegates this same computation to `comparison_slave`, an independent
+single-scheduler HTTP service with a private job ledger and per-client cache.
+`comparison_client.py` owns routing/idempotent reconciliation; neither client
+nor worker is allowed to select publication files. `comparison_protocol.py`
+binds code/model contract, ordered PDF hashes and inspection render checks.
+CPU/GPU cache profiles remain separate. Remote unavailability before acceptance
+can select local CPU; busy/uncertain accepted jobs stay pinned to one worker.
+The shared worker Compose has no conference volume and is not recreated by
+per-conference updates. See the [service contract](pdf_comparison.md#shared-comparison-service).
 RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
 comparison request. The default lookup is `BASE_DIR/runtime/rapidocr-models`,
@@ -116,8 +134,10 @@ two-hour request in the session (up to 20, one per submission). It contains
 revision ID/key, saved corrected SHA256, and file identity, not an instruction
 to look up the latest row later. After redirect, the shared status component
 uses GET to read cached status and a separate CSRF-protected POST to build a
-pending latest-upload comparison. No worker threads, polling, or GET builds
-are introduced. Other receipts require an explicit Retry if not already built.
+pending latest-upload comparison. No browser polling or GET builds are
+introduced. In service mode that POST polls a separate worker job within the
+existing bounded wait; a queued/running job can be retrieved by Retry. Other
+receipts require an explicit Retry if not already built.
 `formatting_comparison_previews/requests/<revision-key>/` holds signed cached
 result references and a portable Django OS file lock. A completed result is
 revalidated and reused; process exit releases the lock. A failed comparison
@@ -459,6 +479,15 @@ application backups.
 
 Deployment, update, backup, migration, and rollback procedures are centralized
 in the [Docker Guide](docker_guide.md).
+
+Comparison deployment checks are outside conference state. The shared runtime
+checker loads embedded model sessions in a bounded child or checks authenticated
+worker readiness/contract compatibility. Native and container startup run it
+before migrations. Candidate-image probes run before conference update/migration
+cutover; worker probes use disposable storage before replacing a worker. Backup
+checks restart prerequisites only for images declaring the startup-preflight
+capability. These boundaries never select publication files or modify review
+state. Readiness at deployment time is not a guarantee of later service uptime.
 
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the

@@ -25,6 +25,17 @@ import update_docker_instances
 
 
 class DockerDataTransferTests(TestCase):
+    def test_missing_worker_network_fails_before_cutover(self):
+        with patch.object(docker_instance_tools, "run", side_effect=docker_instance_tools.DockerCommandError([], 1)) as runner:
+            with self.assertRaisesRegex(RuntimeError, "No conference cutover"):
+                docker_instance_tools.require_comparison_network({})
+            runner.assert_called_once_with(["docker", "network", "inspect", "cfm-comparison"], capture=True)
+
+    def test_shared_network_name_is_honored(self):
+        with patch.object(docker_instance_tools, "run") as runner:
+            docker_instance_tools.require_comparison_network({"CFM_COMPARISON_NETWORK": "isolated-test-worker"})
+            runner.assert_called_once_with(["docker", "network", "inspect", "isolated-test-worker"], capture=True)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -730,7 +741,7 @@ class DockerMigrationOrchestrationTests(TestCase):
         }
         commands = []
 
-        def record_run(command, *, cwd, capture, check=True):
+        def record_run(command, *, cwd=None, capture, check=True):
             commands.append(command)
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 

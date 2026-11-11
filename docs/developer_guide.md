@@ -18,6 +18,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+# Provision the approved models below, then check the selected runtime.
+python scripts/check_comparison_runtime.py
 python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```
@@ -71,7 +73,8 @@ do not authorize fallback to another model directory. Docker uses container
 paths, as described below. No external-directory override is necessary for the
 normal checkout-local setup.
 
-No comparison request downloads models or calls network inference. Missing,
+No comparison request downloads models. Embedded mode does not call network
+inference; service mode explicitly uses the configured trusted worker. Missing,
 corrupt or mismatched models/dependencies cause Comparison unavailable, never
 native-text fallback. Local inference and actual rendered-PDF acceptance must be
 verified after provisioning. Model installation is a machine prerequisite, not
@@ -86,7 +89,61 @@ Container CPU allocation and hyperthreads do not imply linear speedup. Preserve
 the wall timeout, bounded Linux CPU-time accounting across threads, and explicit
 failure behavior. Test Docker environment retention when changing this setting.
 
+## CPU Comparison Cache Acceptance
+
+CPU comparison optimization is owned by `pdf_comparison_cache.py` and the
+worker's bounded job-artifact protocol. See the
+[cache contract](pdf_comparison.md#local-cpu-evidence-reuse). Never use a cache
+hit to bypass model checks, publication scope, current-file hashing or saved
+revision binding. Preserve byte-identical BGR rendering and recognition batching.
+Changes require cold, warm-pair and original-only reuse acceptance against frozen
+pre-change results, including OCR scores/coordinates, plus corrupt/expired cache,
+concurrency, failure and publication ZIP/CrossCheck byte-integrity tests. Record
+actual timing separately from semantic accuracy; a faster retry does not prove
+that a first-time CPU comparison will finish within 240 seconds.
+
+## Shared Compute Development
+
+`pdf_comparison_execution.py` is the common isolated execution entry point.
+It depends on minimal settings for signed cache storage, not application models.
+`comparison_slave/` owns its independent job ledger, bounded scheduler and
+authenticated namespace storage. Do not reuse the conference SQLite database,
+mount its media, or import publication services from the worker.
+
+`comparison_client.py` owns transport only. Preserve pre/post source/revision
+checks in `pdf_comparison.py`, including missing-Corrected fail-closed behavior.
+Keep protocol, ordered byte hashes, schema validation and inspection-render
+checks mandatory. Add tests for authentication, per-client isolation, duplicate
+POSTs, queue bounds, restart/interruption, lost responses, incompatible code,
+CPU/GPU identity, corrupt results and source changes during compute. Verify
+publication ZIP/CrossCheck bytes and readiness/review state remain unchanged.
+
+Service mode may not silently execute embedded OCR when routing fails. Never
+retry an uncertain accepted remote request on a second worker. Deployment
+credentials and worker caches are not conference backup contents. Run the
+standalone Docker smoke in disposable volumes; never reuse conference containers
+or existing service volumes for acceptance. GPU acceptance must state the actual
+provider/hardware tested; mocked CUDA setup tests are not GPU inference tests.
+
 ## Docker Development Boundary
+
+Deployment preflight lives in `scripts/check_comparison_runtime.py`, outside
+conference Django initialization. Native launchers and the Docker web entrypoint
+call it before migrations; create/rebuild/migration scripts run it in the
+candidate image before stopping/replacing the existing web container.
+Candidate probes also run Django system checks against in-memory SQLite without
+migrations, so form-import queries cannot create a conference database. Embedded
+mode actually loads both pinned OCR sessions in a bounded child. Service mode
+uses authenticated health/contract checks, requiring a configured local fallback
+even when the preferred remote is available. It never submits papers or reads
+conference data. Optional GROBID/CrossCheck services are not startup prerequisites.
+
+`scripts/start_comparison_slave.py` owns independent worker build/preflight/start.
+Its disposable preflight must not change persistent worker identity, clients or
+jobs. Keep CPU/GPU selection explicit. Backup uses the image's
+`com.conferencefinalmanager.startup-preflight=1` capability label to check restart
+prerequisites before stopping a new-image web; legacy images retain their former
+backup behavior. These checks do not change publication rules.
 
 Docker procedures are centralized in the [Docker Guide](docker_guide.md).
 Developers should use that guide for instance creation, environment ownership,
@@ -119,7 +176,9 @@ Run these before finishing code changes:
 .venv/bin/python manage.py makemigrations --check --dry-run
 .venv/bin/python scripts/check_docs.py
 .venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+node --test submissions/tests/js/*.test.mjs
+.venv/bin/python -m compileall -q submissions conference_final_manager comparison_slave manage.py scripts
 ```
 
 For documentation-only changes, run at least:

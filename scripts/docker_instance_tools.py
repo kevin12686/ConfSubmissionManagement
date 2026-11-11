@@ -36,13 +36,21 @@ ENV_KEYS = (
     "SMS_WEB_THREADS",
     "SMS_WEB_TIMEOUT",
     "CFM_RAPIDOCR_THREADS",
+    "CFM_COMPARISON_TRANSPORT",
+    "CFM_COMPARISON_NETWORK",
+    "CFM_COMPARISON_LOCAL_URL",
+    "CFM_COMPARISON_LOCAL_TOKEN",
+    "CFM_COMPARISON_REMOTE_URL",
+    "CFM_COMPARISON_REMOTE_TOKEN",
     "SMS_PROXY_MAX_BODY_SIZE",
     "SMS_CROSSCHECK_WEB_USERNAME",
     "SMS_CROSSCHECK_WEB_PASSWORD",
     "SMS_CROSSCHECK_IEEE_USERNAME",
     "SMS_CROSSCHECK_IEEE_PASSWORD",
 )
-SENSITIVE_ENV_KEYS = {"SMS_SECRET_KEY", "SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD"}
+SENSITIVE_ENV_KEYS = {"SMS_SECRET_KEY", "SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD"} | {
+    key for key in ENV_KEYS if key.endswith("_TOKEN")
+}
 
 
 class DockerCommandError(RuntimeError):
@@ -75,6 +83,39 @@ def run(
     if check and result.returncode:
         raise DockerCommandError(command, result.returncode, result.stderr or "")
     return result
+
+
+def require_comparison_network(env_values: dict, *, runner=None) -> None:
+    """Fail before any conference cutover if shared infrastructure is absent."""
+    name = env_values.get("CFM_COMPARISON_NETWORK") or "cfm-comparison"
+    try:
+        (runner or run)(["docker", "network", "inspect", name], capture=True)
+    except DockerCommandError as exc:
+        raise RuntimeError(
+            "The shared comparison network is unavailable. Start compose.comparison-slave.yml "
+            "with the matching CFM_COMPARISON_NETWORK before updating conferences. "
+            "No conference cutover was started."
+        ) from exc
+
+
+def preflight_compose_runtime(root, env_file, project, *, bind_override=False, runner=None):
+    """Check candidate image/env/network without invoking the migration entrypoint."""
+    for arguments in (("scripts/check_comparison_runtime.py",), ("manage.py", "check")):
+        # Django checks can initialize SQLite while importing form choices.
+        # Validate application imports against memory, never the conference DB.
+        environment = ["-e", "SMS_DATABASE_PATH=:memory:"] if arguments[0] == "manage.py" else []
+        (runner or run)(compose_command(
+            root, env_file, project, "run", "--rm", "--no-deps", "-T",
+            "--entrypoint", "python", *environment, "web", *arguments,
+            bind_override=bind_override,
+        ), cwd=root, capture=False)
+
+
+def preflight_instance_restart(instance: dict, *, runner=None) -> None:
+    """Check new-image restart prerequisites before a backup stops a live web."""
+    if instance.get("running") and instance.get("startup_preflight") == "1":
+        (runner or run)(["docker", "exec", instance["id"], "python",
+                        "scripts/check_comparison_runtime.py"], capture=False)
 
 
 def inspect_compose_containers() -> list[dict]:
@@ -188,6 +229,7 @@ def instance_from_containers(
         "name": web_container.get("Name", "").lstrip("/"),
         "image": web_container.get("Config", {}).get("Image", ""),
         "running": bool(web_container.get("State", {}).get("Running")),
+        "startup_preflight": labels.get("com.conferencefinalmanager.startup-preflight", ""),
         "proxy_id": proxy_container.get("Id", "") if proxy_container else "",
         "proxy_name": (
             proxy_container.get("Name", "").lstrip("/") if proxy_container else ""
