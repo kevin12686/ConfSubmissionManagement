@@ -4,7 +4,7 @@
 
 The production integration uses temporary comparison method **8**, introduced in
 app **1.29.0** with inspectable same-letter diacritic tolerance. Apps **1.29.1**
-through **1.29.3** improve inspection layout and display-only detail rendering without
+through **1.29.4** improve inspection layout and display-only detail rendering without
 changing that method or signed snapshots.
 This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
@@ -367,10 +367,21 @@ Evidence alone scrolls within the same reserved body height, so changing views o
 moving the pointer does not push documents around. Fit-page sizing measures the
 remaining viewport below each document's controls, not a fixed height deduction.
 The inspection area has
-Magnification and Evidence views. Auto match uses only unambiguous region pairs
-on displayed pages; the opposite crop follows pointer offsets beyond box edges.
-Ambiguous/unlocated regions use relative positioning; Relative position mode
-explicitly bypasses anchors. Preserve each image's aspect ratio and edge bounds.
+Magnification and Evidence views. Connection rendering, focus controls and Auto
+match share one current region pair, identified by finding and side-specific
+locations on the displayed pages. Next/Previous and list selection initialize it
+even without a hovered mark. For multi-region findings, explicit hover/click
+selects that endpoint, preserving the other endpoint when valid; initial
+selection uses the first available region on each current page. This is a
+representative finding connection, not a newly inferred word-level match.
+Candidate connections also supply positioning but retain their dashed amber line
+and unverified status. With a pair, the opposite crop follows the pointer offset
+from those same endpoints, including beyond box edges and reversed-side hover.
+Without a pair, use relative positioning. The explicit Relative position mode
+bypasses an existing pair. Hiding the line or scrolling an endpoint offscreen
+does not erase its logical pair. Changed finding/pages revalidate the endpoints;
+absent counterparts never cause page substitution. Preserve aspect ratios and
+edge bounds. Selected Evidence remains independent of hovered connections.
 The crop window uses 2x the displayed page scale, with a minimum of 1.5 CSS pixels
 per PDF point. Thus shrinking Fit page does not shrink magnified text to an
 unreadable size. This is a display scale, not a matching rule. Crop sizes exclude

@@ -3,6 +3,17 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.29.4 - Unreleased
+
+- Share one current region connection between the comparison line, focus controls
+  and magnification. Next/Previous, multi-region and candidate connections now
+  use their displayed endpoints in Auto match; only absent pairs fall back to
+  relative positioning. Candidate links remain explicitly unverified.
+- Retain paired pointer offsets across box edges, reversed hover, hidden lines
+  and offscreen endpoints. Reject stale detail callbacks from another finding.
+  No OCR, signed comparison, file selection, review or publication rule changes;
+  comparison method and State archive remain v8.
+
 ## 1.29.3 - Unreleased
 
 - Keep comparison magnification readable when Fit page shrinks the document:

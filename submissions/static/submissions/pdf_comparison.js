@@ -11,8 +11,8 @@
         if (!root || !script) return;
         const data = JSON.parse(script.textContent);
         const query = (selector) => root.querySelector(selector);
-        const state = {selected: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
-        const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, pairing: null, candidate: null};
+        const state = {selected: null, connection: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
+        const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, candidate: null};
         const inspectionPanel = query("[data-comparison-inspection]");
         const detail = window.CFMComparisonDetail?.create();
         query(".cfm-comparison-workspace").insertBefore(inspectionPanel, query(".cfm-comparison-documents"));
@@ -56,7 +56,7 @@
             sides[name].focus.addEventListener("click", () => {
                 updateFocus(name);
                 if (sides[name].focus.disabled) return;
-                const mark = selectedMark(name, state.selected);
+                const mark = selectedMark(name, activeFinding()?.id);
                 root.querySelectorAll(".cfm-comparison-mark.is-focused").forEach(item => item.classList.remove("is-focused"));
                 mark.classList.add("is-focused");
                 window.CFMContextExpansion?.reveal(mark);
@@ -133,7 +133,7 @@
         function updateFocus(name) {
             const side = sides[name];
             const image = side.page.querySelector(":scope > img");
-            side.focus.disabled = state.mode !== "pages" || !selectedMark(name, state.selected)
+            side.focus.disabled = state.mode !== "pages" || !selectedMark(name, activeFinding()?.id)
                 || !side.ready || !image.complete || !image.naturalWidth || root.classList.contains("cfm-comparison-no-highlights");
         }
         function visibleFindings() {
@@ -339,7 +339,34 @@
         function selectedMark(name, id) {
             if (id === null || id === undefined) return null;
             const marks = [...sides[name].layer.children].filter(mark => mark.dataset.findingId === String(id));
-            return marks.find(mark => inspection.side === name && mark.location === inspection.location) || marks[0] || null;
+            const connection = currentConnection();
+            const location = connection?.findingId === id ? connection[name] : inspection.side === name ? inspection.location : null;
+            return marks.find(mark => mark.location === location) || marks[0] || null;
+        }
+        const center = location => ({x: (location.box[0] + location.box[2]) / 2, y: (location.box[1] + location.box[3]) / 2});
+        function activeFinding() {
+            return inspection.finding || data.findings.find(item => item.id === state.selected);
+        }
+        function resolveConnection(finding, name = null, location = null) {
+            const previous = state.connection;
+            state.connection = null;
+            if (!finding) return null;
+            const endpoints = {};
+            for (const side of ["before", "after"]) {
+                const available = locations(finding, side);
+                if (!available.length) return null;
+                // A multi-region connection is representative, not a new word-level match.
+                endpoints[side] = side === name && available.includes(location) ? location
+                    : previous?.findingId === finding.id && available.includes(previous[side]) ? previous[side] : available[0];
+            }
+            return state.connection = {findingId: finding.id, candidate: finding.category === "uncertain", ...endpoints};
+        }
+        function currentConnection() {
+            const finding = activeFinding();
+            const connection = state.connection;
+            if (finding && connection?.findingId === finding.id
+                && ["before", "after"].every(side => locations(finding, side).includes(connection[side]))) return connection;
+            return resolveConnection(finding);
         }
         function renderMarks(name) {
             const side = sides[name];
@@ -399,7 +426,7 @@
                 }
             } else {
                 clearTimeout(inspection.timer); inspection.candidate = null;
-                if (finding && (inspection.finding !== finding || inspection.side !== name)) {
+                if (finding && (inspection.finding !== finding || inspection.side !== name || inspection.location !== location)) {
                     openInspection(finding, name, location, "hover", event);
                 }
             }
@@ -414,23 +441,18 @@
         function openInspection(finding, name, location, mode, event) {
             clearTimeout(inspection.timer);
             cancelAnimationFrame(inspection.frame); inspection.frame = null;
-            const mark = name && finding ? selectedMark(name, finding.id)
-                : finding ? selectedMark("before", finding.id) || selectedMark("after", finding.id) : null;
-            const box = location?.box || mark?.location.box;
+            finding = finding || inspection.finding || data.findings.find(item => item.id === state.selected) || null;
+            const connection = resolveConnection(finding, name, location);
+            if (!name && finding) {
+                name = locations(finding, "before").length ? "before" : locations(finding, "after").length ? "after" : null;
+                location = name ? connection?.[name] || locations(finding, name)[0] : null;
+            }
+            if (name && finding && !locations(finding, name).includes(location)) location = connection?.[name] || locations(finding, name)[0] || null;
+            const box = location?.box;
             const point = name && event && mode !== "keyboard" ? pointerPoint(name, event)
                 : ["hover", "touch"].includes(mode) && inspection.side === name && inspection.location === location ? inspection.point : null;
             inspection.point = point || (box ? {x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2} : {x: .5, y: .5});
             Object.assign(inspection, {finding, side: name, location, mode});
-            inspection.pairing = null;
-            if (finding && name && location && finding.category !== "uncertain") {
-                const other = name === "before" ? "after" : "before";
-                const here = locations(finding, name), there = locations(finding, other);
-                // Only an unambiguous region pair is a usable magnification anchor.
-                if (here.length === 1 && there.length === 1) {
-                    const center = box => ({x:(box[0]+box[2])/2,y:(box[1]+box[3])/2});
-                    inspection.pairing = {side:name, from:center(location.box), to:center(there[0].box)};
-                }
-            }
             const overlaps = query("[data-comparison-overlap]");
             overlaps.replaceChildren();
             const candidates = name && location ? visibleFindings().filter(item => locations(item, name).some(({box}) =>
@@ -451,15 +473,17 @@
             renderInspection(); highlightMarks(); drawConnection();
         }
         function highlightMarks() {
-            const id = inspection.finding?.id ?? state.selected;
-            for (const side of Object.values(sides)) {
+            const id = activeFinding()?.id;
+            for (const [name, side] of Object.entries(sides)) {
                 for (const mark of side.layer.children) mark.classList.toggle("is-selected", String(id) === mark.dataset.findingId);
+                updateFocus(name);
             }
         }
         function renderInspection() {
             if (inspectionPanel.hidden) return;
-            query("[data-comparison-pair-status]").textContent = !inspection.point ? "Move over a displayed page to inspect it." : inspection.pairing && query("[data-inspection-position]").value !== "relative"
-                ? "Matched region anchor · pointer offset"
+            const connection = currentConnection();
+            query("[data-comparison-pair-status]").textContent = !inspection.point ? "Move over a displayed page to inspect it." : connection && query("[data-inspection-position]").value !== "relative"
+                ? connection.candidate ? "Candidate connection · pointer offset; not verified correspondence" : "Selected connection · pointer offset"
                 : "Relative position · not a text correspondence";
             renderCrops();
         }
@@ -486,13 +510,11 @@
                     status.textContent = "Page image unavailable or loading. No other page is substituted.";
                     continue;
                 }
-                // Share a page-relative center, never a finding's counterpart.
-                // Each image keeps its own aspect ratio and actual source pixels.
+                // Apply the shared connection offset, sampling only each displayed page's pixels.
                 let point = inspection.point;
-                const pair = inspection.pairing;
+                const pair = currentConnection();
                 if (pair && query("[data-inspection-position]").value !== "relative") {
-                    const reverse = inspection.side !== pair.side;
-                    const from = reverse ? pair.to : pair.from, to = reverse ? pair.from : pair.to;
+                    const from = center(pair[inspection.side || "before"]), to = center(pair[name]);
                     if (name !== inspection.side) point = {x:to.x+point.x-from.x,y:to.y+point.y-from.y};
                 }
                 const width = image.naturalWidth, height = image.naturalHeight;
@@ -546,7 +568,9 @@
                     const box = [sx / width, sy / height, Math.min(1, (sx + cw) / width), Math.min(1, (sy + ch) / height)];
                     const url = base.replace("/0.png", `/${state[name]}.png`) + `?box=${box.join(",")}&width=${Math.max(1, Math.floor(cw * scale))}&height=${Math.max(1, Math.floor(ch * scale))}`;
                     canvas.dataset.detailKey = url;
-                    const current = () => !inspectionPanel.hidden && inspectionPanel.dataset.view !== "evidence" && canvas.dataset.detailKey === url && canvas.dataset.source === side.source;
+                    const current = () => !inspectionPanel.hidden && inspectionPanel.dataset.view !== "evidence"
+                        && inspection.finding === finding && canvas.width === pixelWidth && canvas.height === pixelHeight
+                        && canvas.dataset.detailKey === url && canvas.dataset.source === side.source;
                     detail.request(name, url, bitmap => {
                         if (!current()) return;
                         draw(bitmap, 0, 0, bitmap.width, bitmap.height);
@@ -566,9 +590,10 @@
             const svg = query("[data-comparison-connection-layer]");
             svg.replaceChildren();
             if (state.mode !== "pages" || !query("[data-comparison-connections]").checked || root.classList.contains("cfm-comparison-no-highlights")) return;
-            const finding = inspection.finding || data.findings.find(item => item.id === state.selected);
-            if (!finding) return;
-            const a = selectedMark("before", finding.id), b = selectedMark("after", finding.id);
+            const connection = currentConnection();
+            if (!connection) return;
+            const finding = data.findings.find(item => item.id === connection.findingId);
+            const a = selectedMark("before", connection.findingId), b = selectedMark("after", connection.findingId);
             if (!a || !b || !sides.before.ready || !sides.after.ready) return;
             const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
             for (const [name, rect] of [["before", ar], ["after", br]]) {
@@ -615,7 +640,7 @@
         }
         function resetInspection() {
             const wasHidden = inspectionPanel.hidden;
-            closeInspection(); inspection.pairing = null; inspection.candidate = null;
+            closeInspection(); state.connection = null; inspection.candidate = null;
             inspectionPanel.hidden = wasHidden;
             query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", String(!wasHidden));
             for (const name of ["before", "after"]) query(`[data-comparison-crop-status="${name}"]`).textContent = "Move over a displayed page to inspect it.";

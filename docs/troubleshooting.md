@@ -907,8 +907,12 @@ them; normal expiry and Clear Database remain responsible for removal.
 
 Hover inspection does not change pages or scroll either document. Use explicit
 result/page controls to navigate; existing linked-page behavior is unchanged.
-Move anywhere on either page to magnify using the current region anchor, or
-relative position when no unambiguous anchor exists. Missing OCR counterparts do
+Move anywhere on either page to magnify using the current connection's region
+pair, or relative position only when no current-page pair exists. Next/Previous,
+multi-region and candidate connections use the same endpoints as magnification.
+Candidate positioning is explicitly unverified. A hidden/offscreen line does not
+remove its logical pair; choose Relative position to deliberately bypass it.
+Missing OCR counterparts do
 not hide a valid page crop. These are position
 previews, not matched-character regions. Keyboard/touch and the close control
 remain available. Missing counterparts have no fabricated connection. If a page

@@ -249,19 +249,21 @@ test("an off-page finding does not hide the currently displayed opposite page or
     assert.equal(page.q('[data-comparison-crop-page="after"]').textContent, " / page 1");
     assert.equal(page.loads.length, 2);
 });
-test("unlocated pointer movement updates both relative crops in one animation frame, connections remain candidates", () => {
-    const page = setup({findings: [finding({category: "uncertain", kind: "author_review", before_locations: [{page: 1, box: [0, 0, 1, 1]}]})]});
+test("unlocated pointer movement follows the candidate connection in one frame without certifying a match", () => {
+    const page = setup({findings: [finding({category: "uncertain", kind: "author_review", before_locations: [{page: 1, box: [.3, .3, .4, .4]}],after_locations:[{page:1,box:[.6,.6,.7,.7]}]})]});
     page.loaded("before"); page.loaded("after"); page.hover("before");
     const before = page.crop("before").draws[0].slice(1), after = page.crop("after").draws[0].slice(1);
-    page.marks("before")[0].fire("pointermove", {clientX: 500, clientY: 850});
-    page.marks("before")[0].fire("pointermove", {clientX: 520, clientY: 860});
+    page.marks("before")[0].fire("pointermove", {clientX: 240, clientY: 520});
+    page.marks("before")[0].fire("pointermove", {clientX: 246, clientY: 528});
     assert.equal(page.frames.size, 1);
     assert.deepEqual(page.crop("before").draws[0].slice(1), before);
     page.frame();
     assert.notDeepEqual(page.crop("before").draws[0].slice(1), before);
     assert.notDeepEqual(page.crop("after").draws[0].slice(1), after);
-    assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
-    assert.match(page.q("[data-comparison-pair-status]").textContent, /not a text correspondence/);
+    const [,x,y,w,h]=page.crop('after').draws[0];
+    assert.ok(Math.abs((x+w/2)/1190-.71)<1e-10);
+    assert.ok(Math.abs((y+h/2)/1684-.71)<1e-10);
+    assert.match(page.q("[data-comparison-pair-status]").textContent, /Candidate connection.*not verified/);
     assert.equal(page.q("[data-comparison-connection-layer]").firstElementChild.dataset.kind, "review");
 });
 test("new page immediately clears old marks/crops and late old source cannot draw", () => {
@@ -546,12 +548,106 @@ test("paired anchor survives all box edges and follows pointer offset instead of
     const [,sx,,cw]=p.crop('after').draws[0];assert.ok(Math.abs((sx+cw/2)/1190-.41)<.0001);
 });
 
-test("selected evidence survives other hover, panel scrolling, and multiple ambiguous regions use relative fallback",()=>{
+test("selected evidence survives other hover and multi-region connections stay paired",()=>{
     const p=setup({findings:[finding(),finding({id:1,before_raw:'other',before_locations:[{page:1,box:[.4,.4,.5,.5]},{page:1,box:[.6,.6,.7,.7]}]})]});
     p.loaded('before');p.loaded('after');p.marks('before')[0].fire('click',{detail:1});
     const raw=p.q('[data-comparison-raw-before]').textContent;
     p.hover('before',1);p.tick();p.panel.fire('pointerenter');p.panel.fire('scroll');p.win.fire('scroll');
     assert.equal(p.q('[data-comparison-raw-before]').textContent,raw);
     assert.equal(p.panel.hidden,false);
-    assert.match(p.q('[data-comparison-pair-status]').textContent,/Relative position/);
+    assert.match(p.q('[data-comparison-pair-status]').textContent,/Selected connection/);
+});
+
+const pairFixture = overrides => finding({before_locations:[{page:1,box:[.3,.3,.4,.4]}],after_locations:[{page:1,box:[.6,.6,.7,.7]}],...overrides});
+function cropCenter(p, side) {
+    const [,x,y,w,h]=p.crop(side).draws[0];return [(x+w/2)/1190,(y+h/2)/1684];
+}
+function near(actual, expected) { actual.forEach((n,i)=>assert.ok(Math.abs(n-expected[i])<1e-10,`${actual} != ${expected}`)); }
+function regionGeometry(p) {
+    for(const side of ['before','after']) for(const mark of p.marks(side)) {
+        const r=p.page(side).getBoundingClientRect(), b=mark.location.box;
+        mark.bounds={left:r.left+b[0]*r.width,right:r.left+b[2]*r.width,top:r.top+b[1]*r.height,bottom:r.top+b[3]*r.height,width:(b[2]-b[0])*r.width,height:(b[3]-b[1])*r.height};
+    }
+}
+test('Next/Previous, click and keyboard use the same connection endpoints as magnification',()=>{
+    for(const action of ['next','previous','click','keyboard']) {
+        const p=setup({findings:[pairFixture()]});p.loaded('before');p.loaded('after');regionGeometry(p);
+        if(action==='next')p.next();
+        if(action==='previous')p.q('[data-comparison-step="-1"]').fire('click');
+        if(action==='click')p.marks('before')[0].fire('click',{detail:1,clientX:210,clientY:480});
+        if(action==='keyboard'){const m=p.marks('before')[0];m.focusVisible=true;m.fire('focus');}
+        regionGeometry(p);p.win.fire('resize');
+        near(cropCenter(p,'before'),[.35,.35]);near(cropCenter(p,'after'),[.65,.65]);
+        assert.equal(p.q('[data-comparison-connection-layer]').firstElementChild.getAttribute('d'),'M240 280 C650 280,650 520,1060 520');
+    }
+});
+test('multi-region selection retains both endpoints, including reverse hover and leaving the frame',()=>{
+    const p=setup({findings:[pairFixture({before_locations:[{page:1,box:[.3,.3,.4,.4]},{page:1,box:[.4,.4,.5,.5]}],after_locations:[{page:1,box:[.6,.6,.7,.7]},{page:1,box:[.5,.5,.6,.6]}]})]});
+    p.loaded('before');p.loaded('after');p.hover('before',0);p.hover('before',1);
+    near(cropCenter(p,'before'),[.45,.45]);near(cropCenter(p,'after'),[.65,.65]);
+    p.hover('after',1);
+    near(cropCenter(p,'before'),[.45,.45]);near(cropCenter(p,'after'),[.55,.55]);
+    p.hoverPoint('after',.57,.57);p.frame();
+    near(cropCenter(p,'before'),[.47,.47]);near(cropCenter(p,'after'),[.57,.57]);
+    regionGeometry(p);p.win.fire('resize');
+    assert.equal(p.q('[data-comparison-connection-layer]').firstElementChild.getAttribute('d'),'M300 360 C650 360,650 440,1000 440');
+});
+test('hiding a connection, scrolling it offscreen, and reopening do not discard its logical pair',()=>{
+    const p=setup({findings:[pairFixture()]});p.loaded('before');p.loaded('after');p.next();
+    const checkbox=p.q('[data-comparison-connections]');checkbox.checked=false;checkbox.fire('change');
+    assert.equal(p.q('[data-comparison-connection-layer]').children.length,0);
+    near(cropCenter(p,'after'),[.65,.65]);
+    checkbox.checked=true;checkbox.fire('change');
+    p.marks('after')[0].bounds={left:700,right:800,top:1500,bottom:1600,width:100,height:100};
+    p.side('after').querySelector('.cfm-comparison-scroll').fire('scroll');
+    assert.equal(p.q('[data-comparison-connection-layer]').children.length,0);
+    p.hoverPoint('before',.36,.36);p.frame();near(cropCenter(p,'after'),[.66,.66]);
+    p.q('[data-comparison-close]').fire('click');p.q('[data-comparison-inspector-toggle]').fire('click');
+    p.hoverPoint('before',.36,.36);p.frame();near(cropCenter(p,'after'),[.66,.66]);
+});
+test('no counterpart uses relative positions and explicit Relative bypasses a valid pair',()=>{
+    for(const after_locations of [[],[{page:2,box:[.6,.6,.7,.7]}]]) {
+        const p=setup({findings:[pairFixture({after_locations})]});p.loaded('before');p.loaded('after');p.hover('before');
+        near(cropCenter(p,'after'),[.35,.35]);assert.equal(p.q('[data-comparison-connection-layer]').children.length,0);
+        assert.match(p.q('[data-comparison-pair-status]').textContent,/Relative position/);
+    }
+    const p=setup({findings:[pairFixture()]});p.loaded('before');p.loaded('after');p.next();
+    const select=p.q('[data-inspection-position]');select.value='relative';select.fire('change');
+    near(cropCenter(p,'after'),[.35,.35]);assert.equal(p.q('[data-comparison-connection-layer]').children.length,1);
+    select.value='auto';select.fire('change');near(cropCenter(p,'after'),[.65,.65]);
+});
+test('changing findings or passage pages cannot reuse old connection endpoints',()=>{
+    const p=setup({findings:[pairFixture(),pairFixture({id:1,before_page:2,before_pages:[2],after_page:3,after_pages:[3],before_locations:[{page:2,box:[.4,.4,.5,.5]}],after_locations:[{page:3,box:[.5,.5,.6,.6]}]})]});
+    p.loaded('before');p.loaded('after');p.next();near(cropCenter(p,'after'),[.65,.65]);
+    p.next();p.loaded('before');p.loaded('after');
+    near(cropCenter(p,'before'),[.45,.45]);near(cropCenter(p,'after'),[.55,.55]);
+    p.navigate('after',1,true);p.loaded('after');
+    near(cropCenter(p,'after'),[.45,.45]);assert.equal(p.q('[data-comparison-connection-layer]').children.length,0);
+    p.navigate('after',3,true);p.loaded('after');near(cropCenter(p,'after'),[.55,.55]);
+});
+test('clicking a non-first region in a new finding selects that exact connection endpoint',()=>{
+    const p=setup({findings:[pairFixture(),pairFixture({id:1,before_locations:[{page:1,box:[.3,.3,.4,.4]},{page:1,box:[.4,.4,.5,.5]}]})]});
+    p.loaded('before');p.loaded('after');p.next();
+    p.marks('before')[2].fire('click',{detail:0});
+    near(cropCenter(p,'before'),[.45,.45]);near(cropCenter(p,'after'),[.65,.65]);
+});
+test('late detail pixels from a different finding cannot overwrite a shared crop URL',()=>{
+    const requests=[];
+    const p=setup({detail_urls:{before:'/bound/before/detail/0.png',after:'/bound/after/detail/0.png'},findings:[pairFixture(),pairFixture({id:1,after_locations:[{page:1,box:[.5,.5,.6,.6]}]})]},
+        {CFMComparisonDetail:{create:()=>({request:(...args)=>requests.push(args),clear(){},dispose(){}})}});
+    p.loaded('before');p.loaded('after');p.next();const old=requests.at(-2);
+    p.next();const latest=requests.at(-2);
+    assert.equal(old[1],latest[1]);
+    const currentPixels=p.crop('before').draws[0][0];
+    old[2]({width:1000,height:300});assert.equal(p.crop('before').draws[0][0],currentPixels);
+    const bitmap={width:1000,height:300};latest[2](bitmap);assert.equal(p.crop('before').draws[0][0],bitmap);
+});
+test('focus controls follow the active connection without replacing pinned evidence',()=>{
+    const p=setup({findings:[pairFixture(),pairFixture({id:1,before_raw:'hovered result',before_locations:[{page:1,box:[.4,.4,.5,.5]}]})]});
+    p.loaded('before');p.loaded('after');p.next();
+    const raw=p.q('[data-comparison-raw-before]').textContent;
+    p.hover('before',1);p.tick();
+    p.side('before').querySelector('[data-comparison-focus]').fire('click');
+    assert.equal(p.reveals.at(-1),p.marks('before')[1]);
+    assert.equal(p.q('[data-comparison-raw-before]').textContent,raw);
 });

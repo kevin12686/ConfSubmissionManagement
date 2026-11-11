@@ -163,8 +163,13 @@ display-only endpoint reading `comparison_pdf_bytes()` from the same verified
 snapshot. This renderer is independent of the shared evidence/render-hash
 contract and does not change OCR or signed findings. Retina canvases and canceled,
 identity-checked asynchronous requests keep detail aligned with the current view.
-Positioning uses unambiguous region anchors or relative positioning,
-never a counterpart-page substitution. Missing linked pages show an empty state.
+One current finding/region pair supplies connection endpoints, focus controls and
+Auto-match crop centers. Explicitly selected multi-region endpoints are retained;
+initial selection uses the first available region on each displayed page.
+Candidate links remain unverified positioning aids. Relative positioning is used
+only without a pair or when explicitly requested. Hiding an SVG line does not
+discard the logical pair. Endpoints are revalidated against current pages; no
+counterpart page is substituted. Missing linked pages show an empty state.
 Finding metadata and its recorded marks remain separate from crop positioning.
 Red text changes, amber unlocated ranges and neutral information stay
 distinct. Hover cannot move pages or scroll either document; explicit result

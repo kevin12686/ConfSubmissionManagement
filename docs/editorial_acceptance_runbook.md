@@ -5,6 +5,12 @@ magnification crops are fully visible without internal scrolling, and long
 Evidence scrolls independently. Test short/narrow windows, close/reopen, paired
 region edges and absent counterpart pages. View switches must not move the
 document headers or change signed PDF identities, comparison findings or reviews.
+Check actual SVG endpoints and detail-crop centers for direct hover, Next/Previous,
+multi-region selection, candidate links, reverse hover and box-edge movement.
+Auto match must use the same pair as the connection; only absent pairs fall back
+to relative positions. Explicit Relative is the manual override. Hiding a line
+must not discard its pair, candidate links remain unverified, and changing pages
+must not reuse stale endpoints or detail pixels. Pinned Evidence stays readable.
 
 This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
 

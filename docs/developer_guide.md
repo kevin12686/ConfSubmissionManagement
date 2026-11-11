@@ -249,6 +249,10 @@ overflow, Evidence alone can scroll, and switching views does not shift the
 document headers. Retain coverage for absent counterpart pages, image failures,
 paired-anchor boundaries, close/reopen and pointer-relative canvas aspect ratios.
 These layout changes must not modify the comparison method or file identities.
+For connection positioning, verify real SVG endpoints and actual crop centers,
+not only status labels. Cover Next/Previous, keyboard/click, multi-region and
+candidate connections, reverse hover, edges, hidden/offscreen lines, current-page
+changes and stale detail callbacks (including identical URLs for different findings).
 For small Fit-page previews, assert the actual destination/source draw scale per
 PDF point, not just canvas-width/source-width (which ignores padding). Exercise
 both positioning modes, different PDF sizes, DPR and the canvas backing-size cap.

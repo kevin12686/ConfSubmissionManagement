@@ -518,10 +518,15 @@ Handle inspector dismissal at document level while it is visible: a pure hover
 can leave focus on `body`, outside the comparison root. Escape and Control must
 still close the panel without intercepting keys when it is already closed.
 
-Auto match uses only unambiguous region pairs on the displayed pages. Preserve
-anchor offsets when leaving box edges; briefly crossing another mark must not
-switch immediately. Relative positioning is the explicit alternative and the
-fallback for ambiguous/unlocated regions. Empty linked pages never show an
+Use one current region-pair resolver for both connection endpoints and Auto match,
+including Next/Previous selection, multi-region findings and candidate links.
+Candidate positioning is not verified correspondence. Preserve endpoint choices
+and pointer offsets when reversing sides or leaving box edges; briefly crossing
+another finding must not switch immediately. Relative positioning is the explicit
+alternative and fallback only when a current-page pair is absent. Hiding lines
+or scrolling endpoints offscreen does not discard a valid logical pair. Revalidate
+on finding/page changes and never accept stale detail from another finding.
+Empty linked pages never show an
 unrelated image or crop. Label actual page numbers and positioning mode. Preserve aspect ratios and clamp at
 image edges; loading failures hide the empty canvas and show a status rather
 than use another page. Keyboard inspection starts at the focused mark's center;

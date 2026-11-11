@@ -651,8 +651,12 @@ immediate page preview. Preview only means detail retrieval failed; a changed or
 expired comparison instead requires rebuilding. This does not rerun OCR or
 change reviews. Scanned images cannot gain detail beyond their original pixels.
 Auto match
-uses an unambiguous region anchor and follows pointer movement beyond its box;
-otherwise it uses relative positions. Choose Relative position to scan freely.
+uses the same pair of regions as the current connection, including when selecting
+Next/Previous or a multi-region finding. Hover/click a different region to choose
+that endpoint. It follows pointer movement beyond box edges and in either
+direction; only absent pairs fall back to relative positions. Candidate connections
+are still unverified, not confirmed text matches. Hiding the line does not disable
+the pair. Choose Relative position to scan freely.
 Click a mark to select Evidence: later hover does not replace selected details.
 Moving into the area freezes the last crops, and scrolling does not dismiss it.
 Linked pages with no counterpart show an explicit empty state, never page one or
