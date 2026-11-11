@@ -1,11 +1,87 @@
 # Operator Guide
 
+This guide is for editors running the local system to prepare final submissions for publication.
+
+It explains what to do and what result to expect. For the authoritative rules
+that determine publication scope, active versions, selected files, readiness,
+and export safety, see [Publication Rules](publication_rules.md). For setup or
+failure recovery, see [Troubleshooting](troubleshooting.md). Return to the
+[Documentation Home](README.md) to choose a different guide.
+
+## Start And Restore
+
 Startup now validates the selected PDF-comparison runtime before migrations.
-On a new computer, provision the approved OCR models first; on Docker, start
-the shared worker and configure a dedicated token for each conference first.
+On a new Docker computer, use the unified deployer to download pinned models,
+register private per-conference credentials and start the shared CPU worker.
+Native/manual startup still requires the approved models provisioned first.
 See the [Docker Guide](docker_guide.md) for the worker launcher and safe
 conference updater. Missing prerequisites stop startup with instructions,
 without deleting conference data. GROBID/CrossCheck remain optional services.
+
+1. For native operation, use `start.command`, `start_windows.bat`, or
+   `./scripts/start_local.sh`. For Docker, follow
+   [Unified Deployment](docker_guide.md#unified-deployment).
+2. Open <http://127.0.0.1:8000/>.
+3. If continuing an existing conference on a new machine, go to `/integrations/system-state/` and preview the System State ZIP before applying it.
+4. Set the conference name and limits in `/settings/`.
+
+The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar. The navigation bar uses the high-resolution app icon so it remains sharp on high-density displays.
+
+The two-level navigation separates context from work. The top identity row shows
+the application and current conference. The workflow row keeps `Dashboard` and
+`Organized List` as direct links; `Submissions` contains Paper Master, Final
+Submission, Editor Upload, and Not Publishing records; `Reviews` contains ID,
+PDF, title/author, formatting, and exception work; `Reports & Output` contains
+readiness reports, versions, exports, and CrossCheck/plagiarism; `Administration`
+contains Audit Log, System State backup/restore, and Settings. Each dropdown item
+includes a short purpose statement, and the current page is marked by a blue
+underline and soft blue background.
+
+Ordinary navigation belongs in the Navbar rather than being repeated at the
+upper-right of every page. Page-header buttons are therefore limited to local
+commands such as Add, Import, extraction, view switching, Note Summary, or Back.
+Cross-workflow links appear beside the state that requires them: blocked
+Dashboard readiness opens Error Report, clear readiness opens the anchored
+publication-package section, Process PDFs exposes PDF Issues only when they
+exist, and plagiarism review appears after score/report data is updated.
+
+## Page Map
+
+| Page | URL | Main use |
+| --- | --- | --- |
+| Dashboard | `/` | Final-package readiness and current editorial actions |
+| Paper Master List | `/papers/` | Official paper scope, publication decisions, titles, authors, acceptance status, editorial notes |
+| Final Submissions | `/submissions/` | Imported Start2 submissions, uploaded files, editor uploads, discarded versions |
+| Editor Upload | `/submissions/editor-upload/` | Add email-provided replacement versions |
+| Organized List | `/submissions/organized/` | Publication checklist by Paper Master record |
+| Process PDFs | `/processing/pdfs/` | Page count, hash, thumbnails, and publication PDF debug copies |
+| Verify Paper IDs | `/reviews/paper-ids/` | Correct author-entered IDs and verify mapping |
+| Title/Author Review | `/reviews/title-authors/` | Extract and review title, authors, image evidence, and title comparison together |
+| Formatting Review | `/reviews/formatting/` | Review first-page title/author formatting and upload corrected files |
+| Not Publishing List | `/reviews/not-publishing/` | Track paid/published scope exclusions |
+| Exceptions | `/reviews/exceptions/` | Approve rare page/author/plagiarism exceptions |
+| Error Report | `/reports/errors/` | Critical, Medium, and Info readiness issues |
+| Author Count | `/reports/author-count/` | Per-author publication paper counts |
+| Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
+| Export Reports | `/reports/` | Excel exports and publication package ZIPs |
+| Compact candidates | `/submissions/organized/?view=compact` | Compact read-only roster inside the same Organized List publication scope |
+| Plagiarism / CrossCheck | `/integrations/crosscheck/` | Prepare publication PDFs and import scores/reports |
+| System Backup / Restore | `/integrations/system-state/` | Download or preview/apply a complete system snapshot |
+
+Organized List keeps the main table compact. Open a paper's `Details` to review
+its publication metadata, the complete extracted author list and extraction
+status, current publication PDF/source files, optional debug copy, and editorial
+notes in one publication-record view. Routine pages show file actions and source
+labels rather than machine-specific absolute paths.
+
+Its summary is split into `Publication blockers` and `Tracked information`. Blocker cards link to focused filters and only appear when the current view contains that issue. Tracked information remains visible without competing with work that can stop final export.
+
+`Source File Issues` identifies a missing source or a source-integrity problem
+after Review OK. An available Original or Corrected source with Formatting still
+Pending/Needs edit is shown only under `Format Not OK`; both categories appear
+together only when both the file and the Formatting workflow need attention.
+
+Use the `Checklist / Compact candidates` control to switch views. Both use the same active Paper Master publication rows and publication-facing Corrected-to-Original file helpers. The old `/reports/active-versions/` link redirects to Compact candidates.
 
 ## PDF Reader
 
@@ -86,79 +162,6 @@ revisions. Its Revisions per page controls affect that history alone, not the
 main Formatting worklist. Smaller histories do not repeat the main list's
 pagination controls. This applies in Formatting Review, Final Submission edit
 and the standalone history page.
-
-This guide is for editors running the local system to prepare final submissions for publication.
-
-It explains what to do and what result to expect. For the authoritative rules
-that determine publication scope, active versions, selected files, readiness,
-and export safety, see [Publication Rules](publication_rules.md). For setup or
-failure recovery, see [Troubleshooting](troubleshooting.md). Return to the
-[Documentation Home](README.md) to choose a different guide.
-
-## Start And Restore
-
-1. Start the app with `start.command`, `start_windows.bat`, or `./scripts/start_local.sh`.
-2. Open <http://127.0.0.1:8000/>.
-3. If continuing an existing conference on a new machine, go to `/integrations/system-state/` and preview the System State ZIP before applying it.
-4. Set the conference name and limits in `/settings/`.
-
-The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar. The navigation bar uses the high-resolution app icon so it remains sharp on high-density displays.
-
-The two-level navigation separates context from work. The top identity row shows
-the application and current conference. The workflow row keeps `Dashboard` and
-`Organized List` as direct links; `Submissions` contains Paper Master, Final
-Submission, Editor Upload, and Not Publishing records; `Reviews` contains ID,
-PDF, title/author, formatting, and exception work; `Reports & Output` contains
-readiness reports, versions, exports, and CrossCheck/plagiarism; `Administration`
-contains Audit Log, System State backup/restore, and Settings. Each dropdown item
-includes a short purpose statement, and the current page is marked by a blue
-underline and soft blue background.
-
-Ordinary navigation belongs in the Navbar rather than being repeated at the
-upper-right of every page. Page-header buttons are therefore limited to local
-commands such as Add, Import, extraction, view switching, Note Summary, or Back.
-Cross-workflow links appear beside the state that requires them: blocked
-Dashboard readiness opens Error Report, clear readiness opens the anchored
-publication-package section, Process PDFs exposes PDF Issues only when they
-exist, and plagiarism review appears after score/report data is updated.
-
-## Page Map
-
-| Page | URL | Main use |
-| --- | --- | --- |
-| Dashboard | `/` | Final-package readiness and current editorial actions |
-| Paper Master List | `/papers/` | Official paper scope, publication decisions, titles, authors, acceptance status, editorial notes |
-| Final Submissions | `/submissions/` | Imported Start2 submissions, uploaded files, editor uploads, discarded versions |
-| Editor Upload | `/submissions/editor-upload/` | Add email-provided replacement versions |
-| Organized List | `/submissions/organized/` | Publication checklist by Paper Master record |
-| Process PDFs | `/processing/pdfs/` | Page count, hash, thumbnails, and publication PDF debug copies |
-| Verify Paper IDs | `/reviews/paper-ids/` | Correct author-entered IDs and verify mapping |
-| Title/Author Review | `/reviews/title-authors/` | Extract and review title, authors, image evidence, and title comparison together |
-| Formatting Review | `/reviews/formatting/` | Review first-page title/author formatting and upload corrected files |
-| Not Publishing List | `/reviews/not-publishing/` | Track paid/published scope exclusions |
-| Exceptions | `/reviews/exceptions/` | Approve rare page/author/plagiarism exceptions |
-| Error Report | `/reports/errors/` | Critical, Medium, and Info readiness issues |
-| Author Count | `/reports/author-count/` | Per-author publication paper counts |
-| Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
-| Export Reports | `/reports/` | Excel exports and publication package ZIPs |
-| Compact candidates | `/submissions/organized/?view=compact` | Compact read-only roster inside the same Organized List publication scope |
-| Plagiarism / CrossCheck | `/integrations/crosscheck/` | Prepare publication PDFs and import scores/reports |
-| System Backup / Restore | `/integrations/system-state/` | Download or preview/apply a complete system snapshot |
-
-Organized List keeps the main table compact. Open a paper's `Details` to review
-its publication metadata, the complete extracted author list and extraction
-status, current publication PDF/source files, optional debug copy, and editorial
-notes in one publication-record view. Routine pages show file actions and source
-labels rather than machine-specific absolute paths.
-
-Its summary is split into `Publication blockers` and `Tracked information`. Blocker cards link to focused filters and only appear when the current view contains that issue. Tracked information remains visible without competing with work that can stop final export.
-
-`Source File Issues` identifies a missing source or a source-integrity problem
-after Review OK. An available Original or Corrected source with Formatting still
-Pending/Needs edit is shown only under `Format Not OK`; both categories appear
-together only when both the file and the Formatting workflow need attention.
-
-Use the `Checklist / Compact candidates` control to switch views. Both use the same active Paper Master publication rows and publication-facing Corrected-to-Original file helpers. The old `/reports/active-versions/` link redirects to Compact candidates.
 
 ## Dashboard And Readiness
 

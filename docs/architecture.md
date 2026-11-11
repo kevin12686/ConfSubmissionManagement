@@ -89,11 +89,19 @@ nor worker is allowed to select publication files. `comparison_protocol.py`
 binds code/model contract, ordered PDF hashes and inspection render checks.
 CPU/GPU cache profiles remain separate. Remote unavailability before acceptance
 can select local CPU; busy/uncertain accepted jobs stay pinned to one worker.
-The shared worker Compose has no conference volume and is not recreated by
-per-conference updates. See the [service contract](pdf_comparison.md#shared-comparison-service).
+The shared worker Compose has no conference volume. The lower-level conference
+updater does not recreate it; the unified deployer manages its lifecycle
+separately when code/configuration or client enrollment requires an update,
+and reuses an unchanged healthy worker. See the
+[service contract](pdf_comparison.md#shared-comparison-service).
 RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
-comparison request. The default lookup is `BASE_DIR/runtime/rapidocr-models`,
+comparison request. The unified deployment provisioner can download missing
+models from fixed HTTPS URLs and verifies the canonical pinned SHA256 policy
+before installing them. Existing invalid models are preserved and rejected,
+not silently replaced. Offline and dry-run never download. This is host
+deployment state, not a publication or extraction workflow.
+The default lookup is `BASE_DIR/runtime/rapidocr-models`,
 already exposed in Docker by the existing `.:/app` mount. An optional absolute
 `CFM_RAPIDOCR_MODEL_DIR` overrides it; external Docker directories need an explicit
 mount and container environment setting. Dependencies and models belong to the

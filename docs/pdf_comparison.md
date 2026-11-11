@@ -343,6 +343,10 @@ Prototype browser checks are UI evidence only. Neither is the production gate.
 
 ## Acceptance Handoff
 
+Measured CPU/GPU Docker outcomes belong in
+[Deployment Validation](deployment_validation.md). Keep those versioned results
+separate from the comparison contract and the acceptance procedure below.
+
 Run the [developer gate](developer_guide.md#regression-commands), comparison
 Node tests, and [browser/engine scenarios](editorial_acceptance_runbook.md#formatting-pdf-comparison-acceptance).
 Record commands, fixture hashes, actual locations, unresolved limitations and

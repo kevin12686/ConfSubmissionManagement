@@ -12,6 +12,7 @@ current task instead of reading the set in order.
 | Conference editor | [Operator Guide](operator_guide.md) | Normal editorial workflow and expected results |
 | Operator diagnosing a problem | [Troubleshooting](troubleshooting.md) | Symptom-based diagnosis and recovery |
 | Docker operator | [Docker Guide](docker_guide.md) | Docker deployment, update, backup, migration, and rollback |
+| Deployment/release reviewer | [Deployment Validation](deployment_validation.md) | Measured CPU/GPU Docker results, test scope and known limits |
 | Developer | [Developer Guide](developer_guide.md) | Local development, code ownership, tests, and releases |
 | Maintainer reviewing design | [Architecture Notes](architecture.md) | System boundaries, data flow, concurrency, and safety rationale |
 | Maintainer reviewing PDF comparison | [PDF Comparison](pdf_comparison.md) | Method-7 OCR, visual-tolerance risks, document-first UI and acceptance |
@@ -47,9 +48,14 @@ manuals.
 
 ### Operating Docker
 
-1. [Docker Guide](docker_guide.md)
-2. [Troubleshooting](troubleshooting.md) for a specific symptom
-3. [Architecture Notes](architecture.md#docker-runtime-boundary) when the
+1. [Unified deployment](docker_guide.md#unified-deployment) for first setup,
+   shared CPU workers and per-conference GPU enrollment
+2. [Updates](docker_guide.md#update-existing-instances) or
+   [backups](docker_guide.md#back-up-docker-data) for ongoing operations
+3. [Deployment Validation](deployment_validation.md) for what was actually tested,
+   especially full-document GPU timing versus earlier CPU timeout evidence
+4. [Troubleshooting](troubleshooting.md) for a specific symptom
+5. [Architecture Notes](architecture.md#docker-runtime-boundary) when the
    proxy, storage, or recovery design needs explanation
 
 ## Content Ownership
@@ -62,6 +68,7 @@ kind of information has one canonical home:
 | Product purpose and first launch | Repository README |
 | Editorial steps and expected outcomes | Operator Guide |
 | Docker procedures and commands | Docker Guide |
+| Measured deployment results, hardware, timings and acceptance limits | Deployment Validation |
 | Publication scope, active versions, file priority, readiness, export | Publication Rules |
 | Shared UI, worklists, navigation, accessibility | UI Conventions |
 | Internal components and design rationale | Architecture Notes |

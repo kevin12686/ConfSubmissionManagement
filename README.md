@@ -120,10 +120,16 @@ conflicts block the final package instead of being guessed around.
 
 ## Quick Start
 
+Choose native startup or Docker deployment; they are separate installation paths.
+
+### Native Startup
+
 Python 3.12 or newer is required. The first run needs internet access to install
 Python packages; normal local operation is offline afterward. PDF comparison
-also requires explicitly provisioned local OCR models before startup; requests
-and launchers never download models. Startup fails before migrations if its
+also requires checksum-verified local OCR models before startup. The unified
+Docker deployer downloads missing pinned models automatically during setup;
+comparison requests and low-level/native launchers never download models.
+Startup fails before migrations if its
 comparison runtime is unavailable. See [PDF comparison setup](docs/developer_guide.md#pdf-comparison-runtime)
 and [Docker setup](docs/docker_guide.md#pdf-comparison-runtime).
 
@@ -150,21 +156,23 @@ environment produces recovery instructions without deleting conference data.
 
 Docker is optional and intended for trusted local or LAN operation:
 
-First provision the OCR models and start the shared worker using the
-[shared comparison service setup](docs/docker_guide.md#shared-comparison-slave).
-It creates the shared Docker network. Give each conference a separate worker
-API token; copy that token into its environment file before starting it.
+Use the unified deployment entry point described in the
+[Docker Guide](docs/docker_guide.md). It prepares missing models, private client
+tokens and the shared CPU worker before creating the conference. Existing
+configuration and data are preserved; invalid/conflicting settings are rejected.
 
 ```bash
-cp .env.example .env.conference-a
-# Set this conference's worker token, project name, port and data directory.
-python3 scripts/update_docker_instances.py --create-missing --dry-run
-python3 scripts/update_docker_instances.py --create-missing
+python3 scripts/deploy.py conference --name conference-a --port 8000 --dry-run
+python3 scripts/deploy.py conference --name conference-a --port 8000
 ```
 
 Use a unique `COMPOSE_PROJECT_NAME`, port, and data mirror for every conference.
 See the [Docker Guide](docs/docker_guide.md) before updating, backing up,
 migrating, or recovering a Docker instance.
+Remote GPU setup and one-time private enrollment are covered in
+[Unified Deployment](docs/docker_guide.md#unified-deployment). Measured full-PDF
+GPU Docker timings and known network/CPU limits live in
+[Deployment Validation](docs/deployment_validation.md), not the installation steps.
 
 ## Publication Safety
 
@@ -203,6 +211,7 @@ Do not select publication input by browsing or copying files from `data/`.
 | Run the conference workflow | [Operator Guide](docs/operator_guide.md) |
 | Diagnose an error or unexpected result | [Troubleshooting](docs/troubleshooting.md) |
 | Install, update, back up, or recover Docker | [Docker Guide](docs/docker_guide.md) |
+| Review actual GPU Docker timings and tested deployment limits | [Deployment Validation](docs/deployment_validation.md) |
 | Understand publication scope, versions, files, and export rules | [Publication Rules](docs/publication_rules.md) |
 | Develop or review code changes | [Developer Guide](docs/developer_guide.md) |
 | Understand service boundaries and safety design | [Architecture Notes](docs/architecture.md) |

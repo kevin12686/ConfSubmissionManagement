@@ -1,20 +1,5 @@
 # Docker Guide
 
-## PDF Reader Static Assets
-
-The shared PDF.js reader runs locally in the browser. The image collects its
-pinned `.mjs` display/worker/viewer modules, CMaps, fonts, WASM decoders and ICC
-resources through the existing `collectstatic` step. There is no Node service
-or runtime npm install. Nginx's static location includes the standard MIME map
-and explicitly adds `.mjs` as `application/javascript`, retaining CSS, font and
-WASM types. Do not remove this module mapping or apply it to media downloads.
-
-After an update, verify a PDF opens in the shared reader, including module
-worker loading, not just that the HTML page returns 200. Missing static assets
-or incorrect module MIME types produce a visible reader failure; Open directly
-and Download PDF continue to use the original PDF endpoint. Publication file
-selection and export never depend on PDF.js or its static cache.
-
 Use this guide to create, update, back up, migrate, or recover a Docker
 conference instance.
 
@@ -38,7 +23,117 @@ Nginx serves `/static/`, serves `/media/` from a read-only view of `sms_data`,
 and proxies all other requests to `web`. Keep one Gunicorn worker with SQLite.
 `SMS_DEBUG` controls Django diagnostics, not whether static or media files load.
 
-## Create An Instance
+## Start Here
+
+| Task | Section |
+| --- | --- |
+| Create a conference and shared CPU worker | [Unified Deployment](#unified-deployment) |
+| Add a remote GPU worker | [Unified Deployment](#unified-deployment) |
+| Update an existing deployment | [Update Existing Instances](#update-existing-instances) |
+| Inspect runtime settings or deploy manually | [PDF Comparison Runtime](#pdf-comparison-runtime) |
+| Back up conference data | [Back Up Docker Data](#back-up-docker-data) |
+| Migrate or recover older storage | [Migrate A Legacy Bind Mount](#migrate-a-legacy-bind-mount) |
+| Review tested hardware, timing and limitations | [Deployment Validation](deployment_validation.md) |
+
+Normal setup uses `scripts/deploy.py`. The lower-level commands are maintenance
+interfaces, not additional required steps after unified setup.
+
+## Unified Deployment
+
+`scripts/deploy.py` is the operator entry point. It runs on the Docker host
+with Python's standard library; a conference virtual environment/database is
+not needed to prepare a worker. Docker/Compose and, for GPU, a working NVIDIA
+driver/Container Toolkit remain host prerequisites. The script does not install
+drivers, change firewall rules, open public bind addresses or log in to SSH.
+
+The deployer automatically provisions missing pinned models, creates private
+per-conference worker credentials and delegates validated container lifecycle
+work to the existing worker/conference scripts. It does not change publication
+selection, scope, review flags, upload files, OCR thresholds or deadlines.
+
+Existing project names, data paths, secrets, client credentials and explicit
+settings are preserved. Conflicting or corrupt existing values cause an
+actionable error instead of replacement. Generated environment defaults are
+filled only when absent. Dry-run does not download, write settings, generate
+credentials or start/stop containers. Offline mode requires the pinned models
+already present; an invalid existing model is never automatically replaced.
+Deployment requests/results are appended without credentials to private
+`runtime/deployment.log`; this host-maintenance log is separate from the
+conference Audit Log and is not System State data. Failure to record a request
+prevents deployment; a success-log failure explicitly reports that completed
+deployment side effects were not rolled back.
+Running workers must belong to this checkout; an ambiguous or foreign Compose
+project is rejected rather than automatically replaced. To use an externally
+managed worker, retain its explicit URL/token and manage its lifecycle from
+the owning checkout.
+
+Remote GPU enrollment is explicit and per conference, not an unauthenticated
+registration API. The GPU host exports a private enrollment file for a specific
+conference project; the CFM host imports that trusted file once. Different
+conference projects must not share enrollment credentials. Transfer enrollment
+files through a trusted channel such as SSH, keep mode 0600, and do not commit
+or include them in conference backups. No manual token editing is necessary.
+
+Worker updates require a maintenance window without new comparison submissions.
+The deployer checks for busy work before recreation, but this is not a distributed
+atomic drain: a newly arriving request can race an idle check. Do not advertise
+an unconditional no-interruption guarantee. Failed or interrupted comparisons
+never change publication files or review decisions.
+
+First conference (this also prepares the shared CPU worker):
+
+```bash
+python3 scripts/deploy.py conference --name conference-a --port 8000 --dry-run
+python3 scripts/deploy.py conference --name conference-a --port 8000
+python3 scripts/deploy.py conference --name conference-b --port 8001
+```
+
+`--name` is the actual Compose project identity. New env files are named
+`.env.<name>`; existing managed env files with that project are discovered and
+reused, even when their filenames differ. If needed, specify the existing file
+with `--env-file .env.conference-a`. Never rename a project's identity to upgrade.
+Repeated setup preserves tokens and reuses an unchanged healthy shared worker.
+Worker-source/configuration changes are tracked in private deployment metadata
+and require a validated update before the conference is updated.
+
+On the GPU host, set a private LAN address explicitly and name the conference
+projects allowed to use it (example IP only):
+
+```bash
+python3 scripts/deploy.py worker --gpu --bind-host 192.168.4.90 \
+  --client conference-a --client conference-b
+```
+
+This creates private `runtime/comparison-slave/enrollments/conference-a.json`
+and `conference-b.json`, containing separate credentials. Copy each needed file
+to the CFM host through a trusted channel, retain mode 0600, then enroll once:
+
+```bash
+python3 scripts/deploy.py conference --name conference-a \
+  --remote-enrollment /private/path/conference-a.json
+```
+
+The enrollment namespace must match the conference's Compose project name.
+Remote settings already present must agree; they are not silently replaced.
+Use `--endpoint http://private-host:8091` when the advertised URL differs from
+the bind address; wildcard bind addresses cannot be advertised as endpoints.
+Remote enrollment files are not general administrator keys and cannot register
+new clients through the HTTP API. Adding another remote conference is an explicit
+trusted GPU-host `worker --client <project>` operation, not manual token editing.
+
+Later, on each host run the appropriate unified command again. On the CFM host:
+
+```bash
+python3 scripts/deploy.py update --dry-run
+python3 scripts/deploy.py update
+```
+
+Use `--project conference-a` to limit conference updates, or `--offline` to
+require models already installed. Low-level maintenance commands remain
+available but do not perform automatic provisioning. Do not mix the worker's
+Compose file with a conference Compose invocation.
+
+## Lower-Level Conference Creation
 
 Create one environment file per conference:
 
@@ -81,6 +176,10 @@ data ownership.
 ## PDF Comparison Runtime
 
 ### Shared Comparison Slave
+
+This section explains the runtime and manual provisioning interface. Normal
+[unified deployment](#unified-deployment) already performs model/client setup;
+do not repeat these manual steps or regenerate existing credentials.
 
 Run **one shared worker per trusted host**, in its own Compose project. It is
 independent of every conference project and can run from a standalone checkout
@@ -152,8 +251,9 @@ in a disposable preflight container before replacing the existing worker. It
 then waits for Docker health, not just a successful `up` command. Missing models,
 invalid credentials or an unavailable provider fail before replacement. Dry run
 does not build, start containers or infer; it cannot certify provider readiness.
-Models and client tokens must be explicitly provisioned, never auto-downloaded
-or overwritten. Rerun the launcher after editing credentials; successful deployment
+This lower-level launcher does not provision models/client credentials; the
+unified deployer does so before invoking it. Neither interface overwrites
+existing credentials or silently replaces corrupt models. Rerun the launcher after editing credentials; successful deployment
 recreates the worker so file-backed secrets are reloaded. Allow current jobs to
 finish first; interrupted jobs are not automatically moved to another worker.
 
@@ -224,6 +324,9 @@ gateway for other deployments. This is not a hardened public service.
 
 ### Optional GPU Override
 
+Normal GPU setup uses the [unified deployer](#unified-deployment). The following
+commands describe the lower-level override for already provisioned deployments.
+
 CPU is the default image and backend. GPU is opt-in on an NVIDIA Linux host
 with the NVIDIA Container Toolkit, a compatible driver and finite container
 memory enforcement. Use the same project and volume, adding the override on
@@ -265,13 +368,10 @@ An unlimited/missing controller fails closed; do not remove the limit to make
 GPU work. This bounds host memory, not device VRAM. The CPU-time and wall-clock
 bounds remain unchanged for both backends.
 
-An isolated Quadro RTX 5000 smoke test exercised actual CUDA detection and
-recognition, a generated intentional text edit, cold/warm comparison and
-container recreation with an 8-GiB cgroup limit and no swap. It did not send
-conference papers to the GPU host. This is not full-article GPU acceptance;
-before production use, validate the intended article workload on the deployed
-provider/runtime. Do not infer throughput or complete detection from a small
-smoke test, a passing CPU suite or a successful image build.
+Actual Linux Docker CUDA results, including three full PDF pairs, cold/warm
+cache timings and the unchanged timeout test, are recorded separately in
+[Deployment Validation](deployment_validation.md#gpu-full-document-docker-acceptance).
+These measurements do not guarantee every future PDF meets its deadline.
 
 ### Embedded CPU Setup
 
@@ -378,107 +478,32 @@ excludes ephemeral container hostname/MAC values while retaining runtime and
 hardware details. See the
 [cache contract](pdf_comparison.md#local-cpu-evidence-reuse). Keep the same resource
 and timeout bounds. Repeated comparisons may be fast, but this does not resolve
-all cold full-document timeouts documented below.
+all cold full-document timeouts in the [validation record](deployment_validation.md).
 
-### Validation Record: 2026-11-10
+### Validation Records
 
-**1.24.0 shared service acceptance:** 910 Django tests and 86 JavaScript tests
-passed, plus Django check, migration drift, documentation validation, compilation
-and diff checks. The native HTTP worker ran the three supplied PDF pairs and
-12 generated controls twice (first execution and completed-job reuse): all 30
-full result JSONs matched the frozen pre-change native results. First execution
-of the real pairs took 117.27, 88.86 and 84.83 seconds. Source fixture hashes
-were unchanged; no conference database was configured for compute acceptance.
-Corrupt input and the known native rotated-two-blank-pages failure returned
-unavailable, never a clean result.
-
-A disposable ARM64 Linux worker and separate client container exercised the
-shared bridge network, authenticated readiness and two-client isolation. All
-12 generated controls matched fresh embedded execution on the same Linux
-runtime, including full JSON, both before and after worker-container recreation.
-Completed HTTP results survived recreation; files/models were mounted read-only
-and all worker storage was independent of conference volumes. Browser acceptance
-used a disposable CFM database: unavailable-worker messaging, manual Build,
-both page images, text/reference marks and inspection details worked with no
-browser console errors. Publication regression tests verified unchanged ZIP/
-CrossCheck bytes and review/readiness state, including stale/wrong result rejection.
-
-Actual GPU smoke on a Quadro RTX 5000 used CUDA first in both ONNX sessions,
-TF32 disabled, an 8-GiB memory limit and no swap. A generated alpha/beta edit
-took 3.53 seconds cold and 1.77 seconds through the inference cache, with identical
-result hashes. Recreated service retrieval preserved runtime identity and exact
-HTTP response bytes. Three full articles were **not** tested on that GPU in this
-round. After the final readiness/TTL fixes, the updated service modules were
-verified by hash; GET-only retrieval and another container recreation preserved
-the exact response, runtime identity and ledger rows without re-running jobs.
-CPU/GPU evidence caches remain separate.
-
-These service tests do not overturn the full-document ARM64 CPU timeout record
-below. The per-job 240-second OCR bound is unchanged; a shared queue makes work
-recoverable and isolated, not intrinsically faster. Native results and small GPU
-controls must not be presented as a full-article Docker/GPU performance pass.
-
-**Earlier CPU performance acceptance:**
-
-The 1.23.0 cache follow-up separately passed a network-disabled ARM64 Linux
-single-page control: pre-change 20.02 seconds, new cold 19.48 seconds, warm pair
-0.91 seconds, Original-only reuse 10.24 seconds. All three new results exactly
-matched that Linux pre-change worker's full JSON. It used read-only code/model/
-fixture mounts and a disposable QA output directory, with no conference data
-mount. This is cache/runtime smoke evidence, not a new full-document availability
-pass or an Intel Ubuntu benchmark.
-
-The isolated ARM64 Docker Desktop test used 8 allocated CPUs, approximately
-8 GiB RAM, Python 3.12.16, PyMuPDF 1.27.2.3, RapidOCR 3.10.0 and ONNX Runtime
-1.31.1. **Full-document comparison availability did not pass.** All three real
-PDF pairs timed out at the unchanged 240-second wall limit at each of 4, 6 and
-8 threads (nine sequential runs). Their page counts were 12/12, 14/10 and
-10/10. No timed-out run was accepted as a complete result or substituted a PDF.
-
-The nine representative-page recognitions retained identical full OCR outputs
-across thread settings; 6/8 threads improved page timing versus 4 but did not
-resolve the full-document limit. All 24 fresh authored edge controls passed
-(eight at each setting). Both Linux ARM64 and emulated x86-64 images passed
-809 Django tests with one existing filesystem-specific skip. Host tests passed
-all 809; 86 JavaScript tests passed. Browser acceptance included a fresh Linux
-one-page result and separately labelled dense, precomputed Mac OCR UI fixtures;
-the latter are not Linux full-document engine acceptance.
-
-The real 240-second stalled-worker rejection, worker reaping and service
-recovery passed. A separate test-only 3-second Nginx deadline exercised the
-fallback response; production proxy/Gunicorn deadlines stayed 300 seconds.
-Model/input failure paths, signed-source HTTP rejection, unchanged QA workflow
-state and exact corrected PDF bytes in both CrossCheck ZIP scopes were verified.
-Unreviewed QA records still blocked final publication export.
-
-An emulated x86-64 real one-page pair passed the production worker including
-Linux resource limits. It proves that smoke case only, not complete-article
-performance on the intended i7-4790 Ubuntu host, which was not accessed. Do not
-describe these results as a full Docker performance pass. Before accepting this
-comparison workload, resolve/validate its execution-time lifecycle without
-lowering resolution, replacing models or weakening publication checks.
-
-## Deployment Preflight Validation (2026-11-10)
-
-Disposable ARM64 Docker projects verified fresh worker/conference startup,
-missing-model and wrong-token rejection, credential-only worker updates,
-conference update/rebuild, verified raw backup, and bind-to-volume migration.
-Failed candidate checks preserved the running container IDs and conference-data
-hashes. Successful standalone preflight (including Django checks) left an empty
-conference volume empty. Explicit remote-only configuration also authenticated
-successfully. A generated alpha/beta PDF pair completed real HTTP OCR with the
-expected ordered input hashes. Existing conference containers/data were not used.
-
-Native regression: 945 Django tests and 19 standalone deployment tests passed;
-86 JavaScript tests passed. The clean Linux image passed the same 945-test suite
-with five expected skips (four host Docker-CLI config checks and one
-case-insensitive-filesystem test), plus the 19 deployment tests. The four Compose
-checks passed on the host. Windows batch coverage is static only, not Windows
-machine acceptance; this deployment pass did not repeat GPU inference or the
-three full real-paper comparisons. Prior CPU/GPU evidence and the unchanged
-240-second first-time CPU limit remain described above.
+See [Deployment Validation](deployment_validation.md) for the latest measured
+scope and clearly separated earlier CPU/service/preflight results. In particular,
+the older ARM64 CPU timeout record is not a result for the later CUDA deployment.
 
 ## Update Existing Instances
+
+Use the unified entry point for normal updates, from the owning checkout:
+
+```bash
+python3 scripts/deploy.py update --dry-run
+python3 scripts/deploy.py update
+```
+
+Limit the conference operation with `--project <existing-project>`. On a
+worker-only host, repeat its `deploy.py worker` command instead; `update` targets
+conferences and does not operate a remote host through SSH. Keep existing project
+identities and perform worker changes during a maintenance window.
+
+### Lower-Level Conference Updater
+
+The following interface assumes worker/models/credentials are already managed.
+It does not perform unified provisioning or worker-source updates.
 
 After changing code or any `.env` / `.env.*` setting, preview the complete
 update plan:
@@ -608,6 +633,21 @@ Dynamic responses use bounded Nginx response buffering. Large ZIPs may spill to
 request-scoped temporary storage while a slow client downloads them. This is
 not `proxy_cache`: data is not reused between requests, and publication file
 selection remains entirely in Django.
+
+### PDF Reader Static Assets
+
+The shared PDF.js reader runs locally in the browser. The image collects its
+pinned `.mjs` display/worker/viewer modules, CMaps, fonts, WASM decoders and ICC
+resources through the existing `collectstatic` step. There is no Node service
+or runtime npm install. Nginx's static location includes the standard MIME map
+and explicitly adds `.mjs` as `application/javascript`, retaining CSS, font and
+WASM types. Do not remove this module mapping or apply it to media downloads.
+
+After an update, verify a PDF opens in the shared reader, including module
+worker loading, not just that the HTML page returns 200. Missing static assets
+or incorrect module MIME types produce a visible reader failure; Open directly
+and Download PDF continue to use the original PDF endpoint. Publication file
+selection and export never depend on PDF.js or its static cache.
 
 ## Operation Lock And Recovery Files
 

@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.25.0 - Unreleased
+
+- Consolidate normal deployment around the unified CLI, distinguish lower-level
+  maintenance commands, and separate measured CPU/GPU validation records from
+  installation instructions. Record full-document Linux Docker CUDA acceptance
+  and the distinct Docker Desktop LAN-routing limitation.
+- Introduce a unified deployment entry point for shared CPU/GPU workers and
+  conference instances, including missing-only model provisioning and private
+  per-conference credential enrollment. Preserve existing deployment identities,
+  secrets, settings and conference data; invalid existing files fail closed.
+- Download only the pinned model pair during explicit deployment, verify both
+  SHA256 values before installation, and retain offline/dry-run operation.
+  Comparison requests and low-level runtime entrypoints never download models.
+- Keep publication selection, version binding, OCR quality/deadlines and State
+  archive v8 unchanged.
+
 ## 1.24.1 - Unreleased
 
 - Validate native Python/venv, dependencies and actual comparison model sessions

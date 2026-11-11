@@ -1,6 +1,43 @@
 # Editorial Acceptance Runbook
 
+This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
+
+Use a disposable conference data folder. Complete the automated command
+checklist first, then work through each stage in order. Expected publication
+behavior is defined in [Publication Rules](publication_rules.md); shared
+responsive and worklist behavior is defined in
+[UI Conventions](ui_conventions.md). Docker procedures are centralized in the
+[Docker Guide](docker_guide.md).
+
+## Run Order
+
+1. Run the automated gate below.
+2. Create the disposable dataset.
+3. Complete Manual Stages 1-8 in order.
+4. Confirm the grouped acceptance checks before handoff.
+
+### Automated Gate
+
+Run every command in the canonical
+[Developer Regression Gate](developer_guide.md#regression-commands), including
+the standalone deployment tests, JavaScript tests and compilation. Do not use
+a shorter copied command list that omits newly added components.
+
+The Docker-specific manual checks use disposable instances and the procedures
+in the [Docker Guide](docker_guide.md).
+
+The deployment/worker/reader checks below supplement the manual stages when
+those components are affected. Record measured results separately in
+[Deployment Validation](deployment_validation.md), identifying hardware, version
+and untested cases rather than presenting a checklist as evidence of a pass.
+
 ## Deployment Preflight Acceptance
+
+Unified setup must also cover online missing-model provisioning, offline and
+write-free dry-run, preservation of existing env comments/settings/secrets,
+per-conference enrollment isolation, repeated setup, multiple conferences on
+one worker, invalid/conflicting credentials, busy-worker refusal and partial
+deployment retry. Readiness/ZIP/CrossCheck regression remains mandatory.
 
 Use disposable projects/volumes and generated data, never a live conference.
 Test native Python/venv/dependency failures and actual model loading. Confirm
@@ -93,35 +130,6 @@ Use disposable data, never mutate the operator's live conference for browser QA.
     URLs must remain unchanged. A thumbnail failure must not block the main PDF;
     closing/reopening retries. Compare DB signatures and selected/revision file
     bytes before and after; thumbnails must not create managed media files.
-
-This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
-
-Use a disposable conference data folder. Complete the automated command
-checklist first, then work through each stage in order. Expected publication
-behavior is defined in [Publication Rules](publication_rules.md); shared
-responsive and worklist behavior is defined in
-[UI Conventions](ui_conventions.md). Docker procedures are centralized in the
-[Docker Guide](docker_guide.md).
-
-## Run Order
-
-1. Run the automated gate below.
-2. Create the disposable dataset.
-3. Complete Manual Stages 1-8 in order.
-4. Confirm the grouped acceptance checks before handoff.
-
-### Automated Gate
-
-```bash
-.venv/bin/python manage.py check
-.venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python scripts/check_docs.py
-.venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py scripts
-```
-
-The Docker-specific manual checks use disposable instances and the procedures
-in the [Docker Guide](docker_guide.md).
 
 ## Dummy Conference Dataset
 

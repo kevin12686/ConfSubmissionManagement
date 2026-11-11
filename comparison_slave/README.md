@@ -7,6 +7,12 @@ authenticated client's bounded upload. Comparison remains advisory evidence.
 
 ## Deployment
 
+The normal operator entry point is now `scripts/deploy.py`; see the Docker Guide
+for automatic model provisioning, private client enrollment and conference setup.
+The commands below remain the lower-level worker lifecycle interface: they
+require already provisioned files and deliberately do not download models or
+generate credentials themselves.
+
 For Docker deployment or update, provision the clients file and approved models
 first, then use the standalone wrapper from the checkout:
 
@@ -172,6 +178,10 @@ failed/interrupted; queued jobs survive, and interrupted work is never reported
 as successful. A second process for the same root fails closed.
 
 ## Verification And Ownership
+
+Current measured Docker/CPU/GPU outcomes and their limits are recorded in
+[Deployment Validation](../docs/deployment_validation.md); installation and
+upgrade procedures are owned by the [Docker Guide](../docs/docker_guide.md).
 
 Run `.venv/bin/python -m unittest discover -s tests -p test_worker_deployment.py`
 for mocked deployment ordering, preflight failure, project ownership, CPU/GPU

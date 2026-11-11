@@ -34,7 +34,15 @@ Use the application's Python environment on macOS/Linux/Windows; a successful
 installation on one host does not establish Linux/container compatibility.
 Do not use a temporary research environment or silently substitute other models.
 
-Obtain the approved files through the deployment's explicit provisioning process:
+The unified Docker deployer provisions missing models automatically during
+deployment. `scripts/deployment_provision.py` reads the canonical `MODEL_HASHES`
+literal without importing native dependencies, uses bounded HTTPS downloads,
+stages/checksums both models, and installs missing regular files without
+overwriting existing paths. Keep model/version policy in the inference runtime;
+do not duplicate it in launchers. Tests must cover offline/dry-run, corruption,
+truncation, concurrent provisioning, symlinks and preservation of existing files.
+
+For native/manual provisioning, obtain the approved files explicitly:
 `PP-OCRv6_det_small.onnx` and `PP-OCRv6_rec_small.onnx`. RapidOCR 3.10.0's
 `default_models.yaml` lists these versioned upstream downloads:
 
@@ -139,7 +147,14 @@ even when the preferred remote is available. It never submits papers or reads
 conference data. Optional GROBID/CrossCheck services are not startup prerequisites.
 
 `scripts/start_comparison_slave.py` owns independent worker build/preflight/start.
-Its disposable preflight must not change persistent worker identity, clients or
+`scripts/deploy.py` orchestrates first setup and updates around that interface
+and the existing conference updater. Its private per-project enrollment files,
+worker-source fingerprint and deployment log are host state under `runtime/`,
+not conference models or System State contents. Preserve existing user values
+and token bytes; tests must reject conflicting enrollments and exercise
+failure restoration and busy-worker refusal. The idle check is not an atomic
+drain, so maintenance must exclude new comparison submissions.
+Worker disposable preflight must not change persistent identity, clients or
 jobs. Keep CPU/GPU selection explicit. Backup uses the image's
 `com.conferencefinalmanager.startup-preflight=1` capability label to check restart
 prerequisites before stopping a new-image web; legacy images retain their former
@@ -158,7 +173,9 @@ The development-facing boundaries are:
 - Nginx must preserve the public Host header, serve static/media independently
   of `SMS_DEBUG`, and never participate in publication file selection.
 - Code or environment changes are applied through
-  `scripts/update_docker_instances.py`, beginning with `--dry-run`.
+  `scripts/deploy.py update`, beginning with `--dry-run`; the lower-level
+  `scripts/update_docker_instances.py` remains available for already provisioned
+  deployments and does not manage worker provisioning.
 - The Docker operation scripts share a lock and must retain the current data
   mount type until an explicit migration or rollback.
 - Never use `docker compose down -v` for a conference instance.
@@ -166,6 +183,9 @@ The development-facing boundaries are:
 Changes to Compose, Nginx, gateway behavior, or the Docker management scripts
 must update the Docker Guide, affected troubleshooting entries, architecture
 rationale, and Stage 8 of the acceptance runbook.
+Record measured acceptance outcomes and hardware limitations in
+[Deployment Validation](deployment_validation.md), keeping historical runs
+separate instead of interleaving benchmark reports with operator instructions.
 
 ## Regression Commands
 

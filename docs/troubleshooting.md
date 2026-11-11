@@ -1,53 +1,5 @@
 # Troubleshooting
 
-## PDF Reader Cannot Display A File
-
-The dedicated reader intentionally fills the window and omits the work pages'
-Navbar/footer. Close its tab or use browser Back to return to the prior page.
-Fit width and Fit page control the document zoom, not the reader's viewport
-size. On a small window the toolbar wraps and the PDF fills the remaining area.
-The default Single page layout uses wheel gestures to turn pages without
-continuous scrolling. At zoomed-page boundaries, pause briefly and start a new
-wheel gesture; the previous gesture's momentum is intentionally ignored.
-Previous/Next and the page number remain available, as does Continuous scrolling
-in the toolbar. Horizontal/modified gestures are not intercepted. A new reader starts in
-Fit page + Single page; layout/zoom are not saved to conference settings.
-
-Keyboard page navigation works in the PDF area, not while a search/page-number
-input or another control has focus. Click the PDF or Tab back to its region.
-Left/Right turn pages, Home/End jump to first/last, and vertical/page keys pan
-before turning at a boundary in Single page mode. Release a held key before
-crossing another page. Continuous mode keeps native vertical-key scrolling.
-
-The page-thumbnail sidebar starts closed on narrow windows. Use the thumbnail
-icon at the toolbar's left to open it; its list scrolls separately from the PDF.
-Unseen thumbnails are not all rendered in advance. `Preview unavailable` affects
-only that page's thumbnail: the button still navigates, and closing/reopening
-the panel retries failures. The main reader's missing/corrupt/stale-file rules
-remain authoritative. Browser thumbnails do not use or regenerate DB review
-images, and they are not publication evidence.
-
-Use Open directly to check the same endpoint with the browser's PDF viewer, or
-Download PDF for a local PDF reader. A missing Corrected file is not replaced
-with Original, and an expired/corrupt revision or comparison must be handled
-through its owning workflow. Rebuilding the reader page cannot repair a missing
-file or reapprove a review. Live publication links resolve again when fetched;
-they are not permanent historical snapshots.
-
-If the runtime fails to load after an update, refresh the page and check that
-all pinned PDF.js static files were deployed/collected, including the module
-worker, CMaps, fonts, WASM/ICC resources and viewer CSS/images. The display,
-worker and viewer versions must match. Static `.mjs` files need a JavaScript
-MIME type and `.wasm` files need `application/wasm`; use the supported
-Django/WhiteNoise setup or the Nginx template's explicit `.mjs` mapping. No npm install or CDN is needed on the
-operator's machine. Direct opening remains available when JavaScript is off.
-
-Search uses the PDF's text layer; scans may have no searchable text. Rendering
-in PDF.js is not proof that figures, references, fonts or layout are unchanged;
-inspect the full PDF and use the read-only comparison workspace as appropriate.
-
-Use this guide when the local app behaves unexpectedly.
-
 For normal task order, use the [Operator Guide](operator_guide.md). For the
 rules behind publication blockers and selected files, use
 [Publication Rules](publication_rules.md). This guide focuses on symptoms,
@@ -59,13 +11,32 @@ diagnosis, and recovery. Docker procedures are centralized in the
 
 ### Startup preflight failed
 
+For automatic Docker setup use `python3 scripts/deploy.py conference --name
+<project> --port <port>`. Existing managed project settings are discovered and
+retained. Never change a project's name/data directory to bypass an error.
+The unified deployer downloads missing approved models, but preserves and
+rejects a corrupt existing model; move aside only that explicitly identified
+model after inspection, or provision the verified files and use `--offline`.
+An interrupted model-provision lock must be removed only after confirming no
+provisioner still runs. Busy-worker errors require a maintenance window, not
+forced interruption. Inspect private `runtime/deployment.log` for operation IDs
+and outcomes; it contains no tokens or PDF content.
+
+Remote GPU enrollment must be private mode 0600, match COMPOSE_PROJECT_NAME,
+and agree with existing remote credentials/URL. Import the trusted GPU-host
+file instead of editing tokens. If deliberately changing a worker's bind
+address, stop that idle worker first: an already-running server is still on
+its old address and the deployer will not guess a new health-check target.
+
 Launchers now reject missing prerequisites before migrating the conference or
 opening its browser page. Do not remove `data/` or bypass the checker.
 
 - Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
   and provision the two pinned OCR models using the Developer Guide. Run
   `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.
-- Docker worker: use `scripts/start_comparison_slave.py --env-file <worker.env>`.
+- Docker worker: use `scripts/deploy.py worker` for automatic first setup, or
+  `scripts/start_comparison_slave.py --env-file <worker.env>` for lower-level
+  lifecycle operations with already provisioned files.
   Check the private `clients.json` (0600), read-only model directory and explicit
   CPU/GPU selection. A missing CUDA provider is not silently replaced by CPU.
 - Docker conference: start the shared worker first, use the same network name,
@@ -118,6 +89,54 @@ The first run needs internet access. Retry after checking network access:
 ```bash
 .venv/bin/python -m pip install -r requirements.txt
 ```
+
+## PDF Reader Cannot Display A File
+
+The dedicated reader intentionally fills the window and omits the work pages'
+Navbar/footer. Close its tab or use browser Back to return to the prior page.
+Fit width and Fit page control the document zoom, not the reader's viewport
+size. On a small window the toolbar wraps and the PDF fills the remaining area.
+The default Single page layout uses wheel gestures to turn pages without
+continuous scrolling. At zoomed-page boundaries, pause briefly and start a new
+wheel gesture; the previous gesture's momentum is intentionally ignored.
+Previous/Next and the page number remain available, as does Continuous scrolling
+in the toolbar. Horizontal/modified gestures are not intercepted. A new reader starts in
+Fit page + Single page; layout/zoom are not saved to conference settings.
+
+Keyboard page navigation works in the PDF area, not while a search/page-number
+input or another control has focus. Click the PDF or Tab back to its region.
+Left/Right turn pages, Home/End jump to first/last, and vertical/page keys pan
+before turning at a boundary in Single page mode. Release a held key before
+crossing another page. Continuous mode keeps native vertical-key scrolling.
+
+The page-thumbnail sidebar starts closed on narrow windows. Use the thumbnail
+icon at the toolbar's left to open it; its list scrolls separately from the PDF.
+Unseen thumbnails are not all rendered in advance. `Preview unavailable` affects
+only that page's thumbnail: the button still navigates, and closing/reopening
+the panel retries failures. The main reader's missing/corrupt/stale-file rules
+remain authoritative. Browser thumbnails do not use or regenerate DB review
+images, and they are not publication evidence.
+
+Use Open directly to check the same endpoint with the browser's PDF viewer, or
+Download PDF for a local PDF reader. A missing Corrected file is not replaced
+with Original, and an expired/corrupt revision or comparison must be handled
+through its owning workflow. Rebuilding the reader page cannot repair a missing
+file or reapprove a review. Live publication links resolve again when fetched;
+they are not permanent historical snapshots.
+
+If the runtime fails to load after an update, refresh the page and check that
+all pinned PDF.js static files were deployed/collected, including the module
+worker, CMaps, fonts, WASM/ICC resources and viewer CSS/images. The display,
+worker and viewer versions must match. Static `.mjs` files need a JavaScript
+MIME type and `.wasm` files need `application/wasm`; use the supported
+Django/WhiteNoise setup or the Nginx template's explicit `.mjs` mapping. No npm install or CDN is needed on the
+operator's machine. Direct opening remains available when JavaScript is off.
+
+Search uses the PDF's text layer; scans may have no searchable text. Rendering
+in PDF.js is not proof that figures, references, fonts or layout are unchanged;
+inspect the full PDF and use the read-only comparison workspace as appropriate.
+
+Use this guide when the local app behaves unexpectedly.
 
 ## Imports
 
