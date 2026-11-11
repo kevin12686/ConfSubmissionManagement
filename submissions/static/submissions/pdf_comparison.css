@@ -6,6 +6,8 @@
 .cfm-comparison-source-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 1rem; align-items: end; border-block: 1px solid var(--cfm-border); padding: 1rem 0; margin-block: .5rem; }
 .cfm-comparison-current-file { display: flex; gap: .5rem; align-items: start; min-height: 2.4rem; }
 .cfm-comparison-current-file > span:last-child { min-width: 0; }
+.cfm-comparison-execution-choice { grid-column: 1 / -1; display: grid; gap: .5rem; border-left: 3px solid var(--cfm-warning-border); padding-left: .75rem; overflow-wrap: anywhere; }
+.cfm-comparison-execution-choice .btn { justify-self: start; white-space: normal; }
 [data-pdf-comparison] { position: relative; min-width: 0; }
 .cfm-comparison-toolbar, .cfm-comparison-mark-filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin-bottom: .65rem; font-size: .85rem; }
 .cfm-comparison-toolbar label, .cfm-comparison-mark-filters label { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
@@ -16,7 +18,7 @@
 .cfm-comparison-notices .alert { margin-bottom: .5rem; padding: .6rem .8rem; font-size: .85rem; }
 .cfm-comparison-notices details { margin-top: .4rem; }
 .cfm-comparison-evidence-text { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.cfm-comparison-evidence pre, .cfm-comparison-crops pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--cfm-text); background: transparent; margin: .4rem 0; max-height: 10rem; overflow: auto; font-size: .8rem; }
+.cfm-comparison-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--cfm-text); background: transparent; margin: .4rem 0; max-height: 10rem; overflow: auto; font-size: .8rem; }
 .cfm-comparison-evidence li, [data-comparison-coverage-reasons] li { overflow-wrap: anywhere; }
 .cfm-comparison-evidence-counts { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem 1rem; max-width: 40rem; font-size: .85rem; }
 .cfm-comparison-evidence-counts dt { font-weight: 400; overflow-wrap: anywhere; }
@@ -90,7 +92,6 @@
 .cfm-comparison-crops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .cfm-comparison-crops > section { min-width: 0; }
 .cfm-comparison-crops canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 3; background: white; border: 1px solid var(--cfm-border); }
-.cfm-comparison-crops pre { max-height: 4rem; }
 @media (max-width: 767.98px) {
     .cfm-comparison-main { padding: .5rem; }
     .cfm-comparison-source-form, .cfm-comparison-documents, .cfm-comparison-evidence-text { grid-template-columns: minmax(0, 1fr); }

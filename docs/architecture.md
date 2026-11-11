@@ -87,8 +87,16 @@ single-scheduler HTTP service with a private job ledger and per-client cache.
 `comparison_client.py` owns routing/idempotent reconciliation; neither client
 nor worker is allowed to select publication files. `comparison_protocol.py`
 binds code/model contract, ordered PDF hashes and inspection render checks.
-CPU/GPU cache profiles remain separate. Remote unavailability before acceptance
-can select local CPU; busy/uncertain accepted jobs stay pinned to one worker.
+CPU/GPU cache profiles remain separate. Remote unavailability pauses new work
+unless a bound short-lived local-execution confirmation is supplied;
+busy/uncertain accepted jobs stay pinned to one worker. Old local routes do not
+implicitly authorize new submissions or waiting for unfinished local work.
+Completed evidence remains reusable with all existing identity/render checks.
+`comparison_execution_choice.py` owns consent binding and sanitized execution
+labels; successful snapshots retain this metadata independently of live health.
+`comparison_health.py` owns bounded, briefly cached observations for Formatting's
+ten-second visible-tab status polling. This observer cannot submit jobs, renew
+routes or authorize fallback. The dispatcher always checks independently.
 The shared worker Compose has no conference volume. Both conference update
 commands use one orchestration layer to prepare it once for the selected batch
 when code/configuration or client enrollment requires an update, reusing an
@@ -112,8 +120,8 @@ The standard-library `comparison_http.py` shares application User-Agent and safe
 HTTP diagnostics between worker clients and host checks. It reports status,
 allowlisted provider codes and bounded Ray IDs, not arbitrary response prose,
 cookies, redirect URLs or credentials. These headers/diagnostics are not part
-of the inference contract or signed route identity. Existing unavailable-before-
-acceptance fallback and accepted-job pinning remain unchanged.
+of the inference contract or signed route identity. Accepted-job pinning remains
+unchanged; local selection after remote unavailability now requires consent.
 RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
 comparison request. The unified deployment provisioner can download missing
@@ -146,8 +154,11 @@ whitespace-only changes can deliberately be missed; the
 [comparison contract](pdf_comparison.md) records the policy and risks.
 
 The workspace is document-first: annotated pages, compact controls and transient
-hover/focus/tap inspection with page-pixel crops, not a permanent findings
-sidebar. Red text changes, amber unlocated ranges and neutral information stay
+hover/focus/tap inspection with synchronized relative-position page-pixel crops,
+not a permanent findings sidebar. Magnification uses only the currently loaded
+side-specific images, never OCR matches or a counterpart-page substitution.
+Finding metadata and its recorded marks remain separate from the shared crop
+center. Red text changes, amber unlocated ranges and neutral information stay
 distinct. Hover cannot move pages or scroll either document; explicit result
 navigation can. Only the active finding is connected, with no fabricated
 counterpart. Coverage and evidence totals never certify figures, layout or full

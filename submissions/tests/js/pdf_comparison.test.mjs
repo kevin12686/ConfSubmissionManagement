@@ -35,7 +35,11 @@ class Element {
     setAttribute(key, value) { this.attributes[key] = String(value); }
     getAttribute(key) { return this.attributes[key] ?? null; }
     addEventListener(type, handler) { this.listeners.set(type, [...(this.listeners.get(type) || []), handler]); }
-    fire(type, props = {}) { for (const handler of this.listeners.get(type) || []) handler.call(this, {target: this, ...props}); }
+    fire(type, props = {}) {
+        const event = {target: this, ...props};
+        for (const handler of this.listeners.get(type) || []) handler.call(this, event);
+        if (["pointermove", "click"].includes(type)) this.parentElement?.fire(type, event);
+    }
     contains(target) { return target === this || this.children.some(child => child.contains(target)); }
     closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector); }
     matches(selector) {
@@ -56,6 +60,7 @@ class Element {
     }
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
     getBoundingClientRect() {
+        if (this.bounds) return this.bounds;
         const after = this.closest('[data-comparison-side="after"]');
         const left = after ? 700 : 0;
         return {left, top: 200, right: left + 600, bottom: 1000, width: 600, height: 800};
@@ -113,12 +118,21 @@ function setup(overrides = {}) {
         tick() { for (const [id, fn] of timers) { timers.delete(id); fn(); } },
         frame() { for (const [id, fn] of frames) { frames.delete(id); fn(); } },
         frames,
-        loaded(name) { const side = this.side(name), image = side.querySelector("img"); image.complete = true; image.naturalWidth = 1190; image.naturalHeight = 1684; side.querySelector(".cfm-comparison-page").classList.add("is-ready"); image.fire("load"); },
+        loaded(name, width = 1190, height = 1684) { const side = this.side(name), image = side.querySelector("img"); image.complete = true; image.naturalWidth = width; image.naturalHeight = height; side.querySelector(".cfm-comparison-page").classList.add("is-ready"); image.fire("load"); },
         marks(name) { return this.side(name).querySelector(".cfm-comparison-mark-layer").children; },
         next() { q('[data-comparison-step="1"]').fire("click"); },
         category(value) { const input = q("[data-comparison-category]"); input.value = value; input.fire("change"); },
         navigate(name, value, findingPage = false) { const input = this.side(name).querySelector(findingPage ? "[data-comparison-finding-pages]" : "[data-comparison-page]"); input.value = value; input.fire("change"); },
-        hover(name, index = 0) { this.marks(name)[index].fire("pointerenter", {pointerType: "mouse", clientX: 100, clientY: 450}); },
+        page(name) { return this.side(name).querySelector(".cfm-comparison-page"); },
+        hover(name, index = 0) {
+            const mark = this.marks(name)[index], rect = this.page(name).getBoundingClientRect();
+            const box = mark.location.box;
+            this.page(name).fire("pointerenter", {target: mark, pointerType: "mouse", clientX: rect.left + (box[0] + box[2]) / 2 * rect.width, clientY: rect.top + (box[1] + box[3]) / 2 * rect.height});
+        },
+        hoverPoint(name, x, y, props = {}) {
+            const rect = this.page(name).getBoundingClientRect();
+            this.page(name).fire("pointermove", {pointerType: "mouse", clientX: rect.left + x * rect.width, clientY: rect.top + y * rect.height, ...props});
+        },
     };
     return api;
 }
@@ -152,28 +166,29 @@ test("hover opens both pixel crops without navigation, scrolling or selected-sta
 });
 test("crossing into the panel cancels delayed close; leaving it closes and clears crops", () => {
     const page = setup(); page.loaded("before"); page.loaded("after"); page.hover("before");
-    page.marks("before")[0].fire("pointerleave"); page.panel.fire("pointerenter"); page.tick();
+    page.page("before").fire("pointerleave"); page.panel.fire("pointerenter"); page.tick();
     assert.equal(page.panel.hidden, false);
     page.panel.fire("pointerleave"); page.tick();
     assert.equal(page.panel.hidden, true); assert.equal(page.crop("before").draws.length, 0);
     assert.equal(page.crop("before").dataset.source, undefined);
 });
-test("one-sided finding never fabricates a counterpart, crop or connection", () => {
+test("one-sided finding magnifies both displayed pages without fabricating a counterpart mark or connection", () => {
     const page = setup({findings: [finding({kind: "added", before_pages: [], before_locations: [], before_page: null, before_reference_page: 1, before_text: ""})]});
     page.loaded("before"); page.loaded("after"); page.hover("after");
-    assert.equal(page.marks("before").length, 0); assert.equal(page.crop("before").draws.length, 0);
+    assert.equal(page.marks("before").length, 0); assert.equal(page.crop("before").draws.length, 1);
     assert.equal(page.q("[data-comparison-connection-layer]").childElementCount, 0);
-    assert.match(page.q("[data-comparison-pair-status]").textContent, /One-sided/);
+    assert.match(page.q("[data-comparison-pair-status]").textContent, /not a text correspondence/);
     assert.equal(page.crop("after").dataset.source, "/signed-after/1.png");
 });
-test("hover never loads an off-page counterpart", () => {
+test("an off-page finding does not hide the currently displayed opposite page or navigate to its match", () => {
     const page = setup({findings: [finding({after_pages: [2], after_page: 2, after_locations: [{page: 2, box: [.2, .4, .4, .5]}]})]});
     page.loaded("before"); page.loaded("after"); page.hover("before");
-    assert.equal(page.crop("after").draws.length, 0);
-    assert.match(page.q('[data-comparison-crop-status="after"]').textContent, /page 2/);
+    assert.equal(page.crop("after").draws.length, 1);
+    assert.equal(page.crop("after").dataset.source, "/signed-after/1.png");
+    assert.equal(page.q('[data-comparison-crop-page="after"]').textContent, " / page 1");
     assert.equal(page.loads.length, 2);
 });
-test("unlocated pointer movement changes only its own crop, and connections remain candidates", () => {
+test("unlocated pointer movement updates both relative crops in one animation frame, connections remain candidates", () => {
     const page = setup({findings: [finding({category: "uncertain", kind: "author_review", before_locations: [{page: 1, box: [0, 0, 1, 1]}]})]});
     page.loaded("before"); page.loaded("after"); page.hover("before");
     const before = page.crop("before").draws[0].slice(1), after = page.crop("after").draws[0].slice(1);
@@ -183,8 +198,9 @@ test("unlocated pointer movement changes only its own crop, and connections rema
     assert.deepEqual(page.crop("before").draws[0].slice(1), before);
     page.frame();
     assert.notDeepEqual(page.crop("before").draws[0].slice(1), before);
-    assert.deepEqual(page.crop("after").draws[0].slice(1), after);
-    assert.match(page.q("[data-comparison-pair-status]").textContent, /not a verified correspondence/);
+    assert.notDeepEqual(page.crop("after").draws[0].slice(1), after);
+    assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
+    assert.match(page.q("[data-comparison-pair-status]").textContent, /not a text correspondence/);
     assert.equal(page.q("[data-comparison-connection-layer]").firstElementChild.dataset.kind, "review");
 });
 test("new page immediately clears old marks/crops and late old source cannot draw", () => {
@@ -267,7 +283,118 @@ test("dismissed explicit selection does not block subsequent hover", () => {
     page.hover("before"); assert.equal(page.panel.hidden, false);
     page.doc.fire("keydown", {key: "Escape"});
     page.hover("before"); assert.equal(page.panel.hidden, true);
-    page.marks("before")[0].fire("pointerleave"); page.hover("before"); assert.equal(page.panel.hidden, false);
+    page.page("before").fire("pointerleave"); page.hover("before"); assert.equal(page.panel.hidden, false);
+});
+
+test("zero findings and hidden marks still allow whole-page relative magnification with no fabricated OCR", () => {
+    const page = setup({findings: []}); page.loaded("before"); page.loaded("after");
+    page.hoverPoint("before", .4, .6);
+    assert.equal(page.panel.hidden, false);
+    assert.equal(page.q("[data-comparison-inspection-title]").textContent, "Page magnification");
+    assert.equal(page.q("[data-comparison-evidence]").hidden, true);
+    assert.equal(page.q("[data-comparison-description]").hidden, true);
+    for (const side of ["before", "after"]) {
+        assert.equal(page.crop(side).dataset.state, "ready");
+        assert.equal(page.crop(side).dataset.findingId, undefined);
+        assert.equal(page.marks(side).length, 0);
+    }
+    const input = page.q("[data-comparison-highlights]"); input.checked = false; input.fire("change");
+    page.hoverPoint("after", .6, .4);
+    assert.equal(page.panel.hidden, false);
+    assert.equal(page.crop("before").dataset.state, "ready");
+    assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
+});
+
+test("leaving a finding for unmarked text clears its details, and pointers are not clamped to its box", () => {
+    const page = setup(); page.loaded("before"); page.loaded("after"); page.hover("before");
+    assert.equal(page.q("[data-comparison-evidence]").hidden, false);
+    page.hoverPoint("before", .6, .6); page.frame();
+    assert.equal(page.q("[data-comparison-evidence]").hidden, true);
+    assert.equal(page.q("[data-comparison-overlap-label]").hidden, true);
+    assert.equal(page.q("[data-comparison-evidence-reason]").childElementCount, 0);
+    assert.deepEqual(page.crop("before").draws[0].slice(1), page.crop("after").draws[0].slice(1));
+    const [, sx, sy, cw, ch] = page.crop("before").draws[0];
+    assert.equal((sx + cw / 2) / 1190, .6);
+    assert.equal((sy + ch / 2) / 1684, .6);
+});
+
+test("relative position survives unequal image dimensions, display scale, scroll offset and reversed hover side", () => {
+    const page = setup({findings: []}); page.loaded("before", 1200, 1800); page.loaded("after", 1800, 1200);
+    page.page("after").bounds = {left: -320, top: -500, width: 900, height: 600};
+    page.hoverPoint("after", .6, .7);
+    for (const [side, w, h] of [["before", 1200, 1800], ["after", 1800, 1200]]) {
+        const [, sx, sy, cw, ch] = page.crop(side).draws[0];
+        assert.equal((sx + cw / 2) / w, .6);
+        assert.equal((sy + ch / 2) / h, .7);
+        assert.equal(cw / ch, 8 / 3);
+    }
+});
+
+test("magnification remains two times the displayed page scale on narrow and wide crop panels", () => {
+    const page = setup({findings: []}); page.loaded("before"); page.loaded("after");
+    for (const cropWidth of [150, 400]) {
+        page.crop("before").clientWidth = cropWidth;
+        page.hoverPoint("before", .5, .5); page.frame();
+        const cw = page.crop("before").draws[0][3];
+        assert.equal((cropWidth / cw) / (600 / 1190), 2);
+    }
+});
+
+test("keyboard magnification uses the focused mark center on both pages, never its matched region", () => {
+    const page = setup({findings: [finding({before_locations: [{page: 1, box: [.3, .4, .5, .6]}], after_locations: [{page: 1, box: [.6, .7, .8, .9]}]})]});
+    page.loaded("before"); page.loaded("after");
+    const mark = page.marks("before")[0]; mark.focusVisible = true; mark.fire("focus");
+    for (const side of ["before", "after"]) {
+        const [, sx, sy, cw, ch] = page.crop(side).draws[0];
+        assert.equal((sx + cw / 2) / 1190, .4);
+        assert.equal((sy + ch / 2) / 1684, .5);
+    }
+});
+
+test("hidden or zero-width page geometry clears hover instead of leaving stale crops", () => {
+    const page = setup({findings: []}); page.loaded("before"); page.loaded("after");
+    page.hoverPoint("before", .5, .5);
+    page.page("before").bounds = {left: 0, top: 0, width: 0, height: 0};
+    page.hoverPoint("before", .5, .5);
+    assert.equal(page.panel.hidden, true);
+    assert.equal(page.crop("after").dataset.source, undefined);
+});
+
+test("corners clamp inside each actual image, including small and very wide pages", () => {
+    const page = setup({findings: []}); page.loaded("before", 12, 4); page.loaded("after", 2000, 100);
+    for (const [x, y] of [[0, 0], [1, 1], [-.1, 1.1]]) {
+        page.hoverPoint("before", x, y); page.frame();
+        for (const [side, w, h] of [["before", 12, 4], ["after", 2000, 100]]) {
+            const [, sx, sy, cw, ch] = page.crop(side).draws[0];
+            assert.ok(sx >= 0 && sy >= 0 && cw > 0 && ch > 0);
+            assert.ok(sx + cw <= w && sy + ch <= h);
+        }
+    }
+});
+
+test("loading or failed opposite image has an explicit status, then uses only the loaded current image", () => {
+    const page = setup({findings: []}); page.loaded("before"); page.hoverPoint("before", .5, .5);
+    assert.equal(page.crop("after").hidden, true);
+    assert.match(page.q('[data-comparison-crop-status="after"]').textContent, /loading/);
+    page.side("after").querySelector("img").fire("error");
+    assert.equal(page.crop("after").draws.length, 0);
+    page.loaded("after");
+    assert.equal(page.crop("after").hidden, false);
+    assert.equal(page.crop("after").dataset.source, "/signed-after/1.png");
+    assert.equal(page.loads.length, 2);
+});
+
+test("generic inspection dismisses with Escape, resumes after leave and supports touch without hover", () => {
+    const page = setup({findings: []}); page.loaded("before"); page.loaded("after");
+    page.hoverPoint("before", .5, .5, {ctrlKey: true}); assert.equal(page.panel.hidden, true);
+    page.hoverPoint("before", .5, .5, {pointerType: "touch"}); assert.equal(page.panel.hidden, true);
+    page.page("before").fire("click", {detail: 1, clientX: 300, clientY: 600});
+    assert.equal(page.panel.dataset.interaction, "touch");
+    page.doc.fire("keydown", {key: "Escape"}); assert.equal(page.panel.hidden, true);
+    page.hoverPoint("before", .5, .5); page.doc.fire("keydown", {key: "Escape"});
+    page.hoverPoint("before", .6, .6); assert.equal(page.panel.hidden, true);
+    page.page("before").fire("pointerleave"); page.hoverPoint("before", .6, .6);
+    assert.equal(page.panel.hidden, false);
 });
 
 test("Escape closes hover inspection without a focused control inside the comparison", () => {

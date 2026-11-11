@@ -20,9 +20,10 @@ from submissions.services.file_manager import publication_pdf_info
 from submissions.services.formatting_history import open_revision_file
 from submissions.services.preview_storage import PREVIEW_TOKEN_PATTERN, purge_expired_preview_directories
 from submissions.services.publication_decisions import publication_master_paper_ids
-from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError, StaleUploadComparison
+from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError, StaleUploadComparison, LocalComparisonConfirmationRequired
+from submissions.services.comparison_execution_choice import confirm_local_token, validate_local_token, execution_display
 from submissions.services.pdf_comparison_execution import local_pdf_evidence
-from submissions.services.comparison_protocol import page_pixmap
+from submissions.services.comparison_protocol import page_pixmap, contract_id
 
 
 TTL = timedelta(hours=2)
@@ -133,24 +134,27 @@ def _read_baseline(submission, baseline):
 
 
 
-def _pdf_evidence(before, after, *, diagnostics=None, retry_failed=False):
+def _pdf_evidence(before, after, *, diagnostics=None, retry_failed=False, allow_local=False):
     transport = getattr(settings, "CFM_COMPARISON_TRANSPORT", "embedded")
     if transport == "embedded":
+        if getattr(settings, "CFM_COMPARISON_REMOTE_URL", "").strip() and not allow_local:
+            raise LocalComparisonConfirmationRequired("Embedded mode does not use the configured remote worker. Correct the deployment mode, or explicitly confirm local CPU execution.")
         return local_pdf_evidence(before, after, diagnostics=diagnostics)
     if transport == "service":
         from submissions.services.comparison_client import service_pdf_evidence
-        return service_pdf_evidence(before, after, diagnostics=diagnostics, retry_failed=retry_failed)
+        return service_pdf_evidence(before, after, diagnostics=diagnostics, retry_failed=retry_failed, allow_local=allow_local)
     raise PDFComparisonError("Comparison unavailable: choose embedded or service transport in deployment settings.")
 
 
-def compare_pdf_bytes(before_data, after_data, *, diagnostics=None, retry_failed=False):
-    return _pdf_evidence(before_data, after_data, diagnostics=diagnostics, retry_failed=retry_failed)
+def compare_pdf_bytes(before_data, after_data, *, diagnostics=None, retry_failed=False, allow_local=False):
+    return _pdf_evidence(before_data, after_data, diagnostics=diagnostics, retry_failed=retry_failed, allow_local=allow_local)
 
 
-def create_pdf_comparison(submission_id, baseline="original", *, request=None, expected_upload=None, retry_failed=False):
+def create_pdf_comparison(submission_id, baseline="original", *, request=None, expected_upload=None, retry_failed=False, local_confirmation=""):
     token = uuid.uuid4().hex
     directory = None
     submission = None
+    execution_binding = None
     try:
         submission = comparison_submission(submission_id)
         identity = comparison_identity(submission)
@@ -163,8 +167,21 @@ def create_pdf_comparison(submission_id, baseline="original", *, request=None, e
         if expected_upload is not None:
             validate_upload_binding(submission, expected_upload, pdf_sha256=hashlib.sha256(after).hexdigest())
         before, baseline_info = _read_baseline(submission, baseline)
+        execution_binding = {
+            "identity": identity, "baseline": baseline_info,
+            "hashes": [hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest()],
+            "upload": expected_upload, "contract": contract_id(),
+            "target_revision": FormattingRevision.objects.filter(submission_id=submission.pk).order_by("-number").values_list("pk", flat=True).first(),
+            "target_uploaded_at": submission.formatted_pdf_uploaded_at.isoformat() if submission.formatted_pdf_uploaded_at else None,
+        }
+        allow_local = validate_local_token(local_confirmation, execution_binding)
+        if allow_local:
+            audit_success("formatting_pdf_compare_local_confirm", "Local comparison execution explicitly confirmed for this PDF pair.",
+                          request=request, submission=submission, file_hashes=dict(zip(("before", "after"), execution_binding["hashes"])))
         cache_diagnostics = {}
-        result = compare_pdf_bytes(before, after, diagnostics=cache_diagnostics, **({"retry_failed": True} if retry_failed else {}))
+        result = compare_pdf_bytes(before, after, diagnostics=cache_diagnostics,
+                                   **({"retry_failed": True} if retry_failed else {}),
+                                   **({"allow_local": True} if allow_local else {}))
         current = comparison_submission(submission_id)
         current_info = publication_pdf_info(current, include_url=False)
         if comparison_identity(current) != identity or hashlib.sha256(_live_bytes(current_info)).digest() != hashlib.sha256(after).digest():
@@ -185,6 +202,8 @@ def create_pdf_comparison(submission_id, baseline="original", *, request=None, e
             "target": {"label": target_info["label"], "filename": target_info["filename"]},
             "before_sha256": hashlib.sha256(before).hexdigest(),
             "after_sha256": hashlib.sha256(after).hexdigest(), "result": result,
+            "execution": {"transport": cache_diagnostics.get("transport"),
+                          **{key: value for key, value in execution_display(cache_diagnostics).items() if key != "label"}},
         }
         if expected_upload is not None:
             payload["upload_binding"] = expected_upload
@@ -212,7 +231,13 @@ def create_pdf_comparison(submission_id, baseline="original", *, request=None, e
     except Exception as exc:
         if directory:
             shutil.rmtree(directory, ignore_errors=True)
-        audit_failure("formatting_pdf_compare", exc, "PDF comparison could not be created; no publication or review data changed.", request=request, submission=submission)
+        if isinstance(exc, LocalComparisonConfirmationRequired) and exc.can_confirm and execution_binding:
+            exc.confirmation_token = confirm_local_token(execution_binding)
+        if isinstance(exc, LocalComparisonConfirmationRequired):
+            audit_success("formatting_pdf_compare_deferred", "Comparison paused; local computation requires explicit confirmation.",
+                          request=request, submission=submission, extra={"reason": str(exc), "existing_local": exc.existing_local})
+        else:
+            audit_failure("formatting_pdf_compare", exc, "PDF comparison could not be created; no publication or review data changed.", request=request, submission=submission)
         if isinstance(exc, PDFComparisonError):
             raise
         if isinstance(exc, (OSError, ValueError, RuntimeError)):

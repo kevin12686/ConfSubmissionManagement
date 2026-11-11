@@ -24,7 +24,7 @@ from .comparison_protocol import (
 )
 from conference_final_manager.comparison_config import parse_remote_headers
 from conference_final_manager.comparison_http import NoRedirect, worker_headers, http_failure, transport_failure
-from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
+from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError, LocalComparisonConfirmationRequired
 from .rapidocr_comparison.result import validate_result
 
 ROUTE_SALT = "cfm.compute-route.v1"
@@ -61,7 +61,7 @@ class Endpoint:
         # Trusted LAN services must not inherit an unrelated machine HTTP proxy.
         self.opener = request.build_opener(request.ProxyHandler({}), NoRedirect())
 
-    def call(self, path, *, body=None, headers=None):
+    def call(self, path, *, body=None, headers=None, timeout=None):
         req = request.Request(self.url + path, data=body, headers={
             **worker_headers(self.token, self.custom_headers),
             **({"Content-Type": "application/octet-stream"} if body is not None else {}),
@@ -69,7 +69,7 @@ class Endpoint:
         })
         try:
             try:
-                response = self.opener.open(req, timeout=30 if body is not None else 5)
+                response = self.opener.open(req, timeout=timeout if timeout is not None else 30 if body is not None else 5)
             except error.HTTPError as exc:
                 response = exc
             with response:
@@ -112,6 +112,8 @@ def _endpoints():
     for name in ("remote", "local"):
         url = getattr(settings, f"CFM_COMPARISON_{name.upper()}_URL", "").strip()
         token = getattr(settings, f"CFM_COMPARISON_{name.upper()}_TOKEN", "").strip()
+        if token and not url:
+            raise PDFComparisonError(f"{name.title()} worker token is configured without its URL.")
         if url:
             endpoints.append(Endpoint(name, url, token, custom_headers=raw_headers if name == "remote" else ""))
     if not endpoints:
@@ -119,16 +121,40 @@ def _endpoints():
     return endpoints
 
 
-def _select(endpoints, contract):
+def probe_endpoint(endpoint, contract, *, timeout=None):
+    """One health request; diagnostics never imply permission to submit a job."""
+    try:
+        status, health = endpoint.call("/v1/health", **({"timeout": timeout} if timeout is not None else {}))
+    except TransportUnavailable as exc:
+        return {"state": "unreachable", "backend": "", "message": str(exc) or "Worker connection unavailable."}
+    backend = health.get("backend") if health.get("backend") in ("cpu", "cuda") else ""
+    if health.get("protocol") != PROTOCOL or health.get("contract") != contract:
+        return {"state": "incompatible", "backend": backend, "message": "Worker and CFM comparison versions are incompatible."}
+    if status in {200, 503} and health.get("state") in ("ready", "busy"):
+        return {"state": health["state"], "backend": backend, "message": ""}
+    known = {"preflight_pending", "configuration_unavailable", "storage_or_scheduler_unavailable"}
+    category = health.get("error")
+    detail = f" ({category})" if isinstance(category, str) and category in known else ""
+    return {"state": "not_ready", "backend": backend, "message": f"Worker is not ready{detail}. HTTP {status}."}
+
+
+def _select(endpoints, contract, *, allow_local=False):
+    remote = next((endpoint for endpoint in endpoints if endpoint.name == "remote"), None)
+    local = next((endpoint for endpoint in endpoints if endpoint.name == "local"), None)
+    if remote:
+        health = probe_endpoint(remote, contract)
+        if health["state"] in {"ready", "busy"} and not allow_local:
+            return remote
+        if not allow_local:
+            raise LocalComparisonConfirmationRequired(
+                f"Remote comparison has not started. {health['message']} Local CPU has not been started.",
+                can_confirm=local is not None,
+            )
     for endpoint in endpoints:
-        try:
-            status, health = endpoint.call("/v1/health")
-        except TransportUnavailable:
+        if endpoint.name == "remote":
             continue
-        if health.get("protocol") != PROTOCOL or health.get("contract") != contract:
-            # An incompatible remote is not allowed to supply evidence.
-            continue
-        if status in {200, 503} and health.get("state") in {"ready", "busy"}:
+        health = probe_endpoint(endpoint, contract)
+        if health["state"] in {"ready", "busy"}:
             return endpoint
     raise PDFComparisonError("Comparison unavailable: no compatible worker is ready. Check worker models, connection and deployment versions.")
 
@@ -150,7 +176,7 @@ def _route_lock():
             locks.unlock(handle)
 
 
-def _route(key, endpoints, contract):
+def _route(key, endpoints, contract, *, allow_local=False):
     with _route_lock() as root:
         routes = list(islice(root.glob("*.json"), 513))
         for old in routes:
@@ -181,7 +207,7 @@ def _route(key, endpoints, contract):
         if endpoint is None:
             if sum(1 for _ in islice(root.glob("*.json"), 512)) >= 512:
                 raise ComparisonInProgress("Too many recent comparison requests. Let current jobs finish and older requests expire.")
-            endpoint = _select(endpoints, contract)
+            endpoint = _select(endpoints, contract, allow_local=allow_local)
         # Persist intent before POST, so a lost response can be reconciled safely.
         temporary = root / (uuid.uuid4().hex + ".tmp")
         try:
@@ -201,17 +227,27 @@ def _validate_identity(payload, key, hashes, contract):
         raise PDFComparisonError("The worker result does not match this PDF pair and comparison method. No result was accepted.")
 
 
-def service_pdf_evidence(before, after, *, diagnostics=None, retry_failed=False):
+def service_pdf_evidence(before, after, *, diagnostics=None, retry_failed=False, allow_local=False):
     if not all(0 < len(data) <= MAX_PDF_BYTES for data in (before, after)):
         raise PDFComparisonError("Comparison requires two non-empty PDFs of at most 64 MiB each.")
     contract = contract_id()
     hashes = [hashlib.sha256(data).hexdigest() for data in (before, after)]
     key = job_key(hashes, contract)
     endpoints = _endpoints()
-    endpoint, resumed = _route(key, endpoints, contract)
+    endpoint, resumed = _route(key, endpoints, contract, allow_local=allow_local)
     deadline = time.monotonic() + WAIT_SECONDS
     try:
         status, payload = endpoint.call(f"/v1/jobs/{key}")
+        if endpoint.name == "local" and any(item.name == "remote" for item in endpoints) and not allow_local:
+            # Old CPU routes are not permission to submit/retry or silently wait
+            # for more local computation. Completed evidence is safe to reuse.
+            if status in {200, 202}:
+                _validate_identity(payload, key, hashes, contract)
+            if status == 404 or (status in {200, 202} and payload.get("state") != "completed"):
+                raise LocalComparisonConfirmationRequired(
+                    "This PDF pair is already bound to the local worker. Confirm local CPU use to continue; no remote duplicate will be started.",
+                    existing_local=True,
+                )
         if status == 404 or (status == 200 and payload.get("state") == "failed" and retry_failed):
             if status == 200:
                 _validate_identity(payload, key, hashes, contract)

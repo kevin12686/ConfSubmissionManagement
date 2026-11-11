@@ -143,7 +143,7 @@ def _current_upload(submission_id, binding):
     return submission
 
 
-def get_upload_comparison(submission_id, token, *, build=False, retry=False, request=None):
+def get_upload_comparison(submission_id, token, *, build=False, retry=False, request=None, local_confirmation=""):
     """GET reads only; POST may build once under a portable OS file lock."""
     submission = None
     creating = False
@@ -168,7 +168,8 @@ def get_upload_comparison(submission_id, token, *, build=False, retry=False, req
                 return payload
             _write_cache(directory, binding)
             creating = True
-            payload = create_pdf_comparison(submission_id, "original", request=request, expected_upload=binding, retry_failed=retry)
+            payload = create_pdf_comparison(submission_id, "original", request=request, expected_upload=binding,
+                                            retry_failed=retry, **({"local_confirmation": local_confirmation} if local_confirmation else {}))
             created = True
             _write_cache(directory, binding, payload["token"])
             return _cached_result(directory, binding)

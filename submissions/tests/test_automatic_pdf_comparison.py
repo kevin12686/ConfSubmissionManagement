@@ -420,7 +420,11 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
         self.mark_submission_publication_ready(result.submission)
         state = FinalSubmission.objects.values().get(pk=self.submission.pk)
         readiness = publication_readiness_rows(strict_hash=True)
-        self.build(entry)
+        from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired
+        with override_settings(CFM_COMPARISON_REMOTE_URL="https://remote.example", CFM_COMPARISON_TRANSPORT="embedded"):
+            with self.assertRaises(LocalComparisonConfirmationRequired) as blocked:
+                self.build(entry)
+            self.build(entry, local_confirmation=blocked.exception.confirmation_token)
         with zipfile.ZipFile(export_publication_package()) as archive:
             name = next(name for name in archive.namelist() if name.startswith("PDF/"))
             self.assertEqual(archive.read(name), after)
@@ -428,3 +432,31 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
             self.assertEqual(archive.read("P001_AUTOCOMPARE.pdf"), after)
         self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
         self.assertEqual(publication_readiness_rows(strict_hash=True), readiness)
+
+    def test_auto_comparison_waits_for_explicit_local_choice_without_undoing_upload(self):
+        _, entry = self.receipt()
+        self.submission.refresh_from_db()
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        with override_settings(CFM_COMPARISON_REMOTE_URL="https://remote.example", CFM_COMPARISON_TRANSPORT="embedded"):
+            response = self.client.post(self.endpoint, {"token": entry["token"], "allow_local": "1"})
+            self.assertEqual(response.status_code, 200)
+            choice = response.json()
+            self.assertEqual(choice["state"], "awaiting_choice")
+            self.assertTrue(choice["local_confirmation"])
+            self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+            self.assertEqual(Path(self.submission.formatted_pdf_file.path).read_bytes(), self.corrected)
+            # GET is still read-only and cannot grant permission.
+            self.assertEqual(self.client.get(self.endpoint, {"token": entry["token"], "local_confirmation": choice["local_confirmation"]}).json()["state"], "pending")
+            result = self.client.post(self.endpoint, {"token": entry["token"], "local_confirmation": choice["local_confirmation"]})
+            self.assertEqual(result.json()["state"], "complete")
+            self.assertEqual(result.json()["execution"]["label"], "Embedded · CPU")
+            self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+
+    def test_completed_snapshot_reopens_without_health_probe_or_new_inference(self):
+        _, entry = self.receipt()
+        self.build(entry)
+        with override_settings(CFM_COMPARISON_REMOTE_URL="https://remote.example"), patch("submissions.services.pdf_comparison.compare_pdf_bytes") as compute:
+            result = self.client.get(self.endpoint, {"token": entry["token"]}).json()
+        self.assertEqual(result["state"], "complete")
+        self.assertEqual(result["execution"]["label"], "Embedded · CPU")
+        compute.assert_not_called()

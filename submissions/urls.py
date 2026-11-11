@@ -56,6 +56,7 @@ urlpatterns = [
         name="title_author_manual_override_form",
     ),
     path("reviews/formatting/", views.formatting, name="formatting"),
+    path("reviews/formatting/comparison-services/", views.formatting_comparison_services, name="formatting_comparison_services"),
     path("reviews/formatting/<int:pk>/compare/", views.formatting_pdf_comparison, name="formatting_pdf_comparison"),
     path("reviews/formatting/<int:pk>/upload-comparison/", views.formatting_upload_comparison, name="formatting_upload_comparison"),
     path("reviews/formatting/<int:pk>/compare/<str:token>/<str:side>/<int:page_number>.png", views.formatting_comparison_page, name="formatting_comparison_page"),

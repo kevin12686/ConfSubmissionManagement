@@ -435,14 +435,16 @@ Use actual engine payloads, including the densest real result, at desktop and
    sidebar, initially Fit page. Red differences/arrows, amber unlocated ranges
    without arrows and quiet information are distinct; filters/counts remain
    usable and do not imply approval.
-2. Hover a mark: page selections and both scroll positions remain unchanged.
+2. Hover a mark or unmarked page: page selections and both scroll positions remain unchanged.
    Move into the inspector, leave both surfaces, close explicitly and press
    Escape. Verify crossing grace, keyboard focus/activation, touch access and
    no hover persistence or host-state write-back loop.
-3. For a large unlocated range, verify actual pointer-local magnification on
-   the hovered side and independent opposite-side inspection. Crops must show
-   original image pixels, not OCR-generated text. Opposite candidate ranges
-   are not presented as character matches.
+3. Verify both crops follow the same relative pointer position on the currently
+   displayed pages, including large unlocated ranges, one-sided findings,
+   off-page matches, hidden marks and zero findings. Repeat from each side,
+   at image edges and with different page dimensions/zoom/scroll offsets.
+   Crops show actual image pixels, not OCR-generated text or a substituted
+   matched page. Page labels and the non-correspondence status remain explicit.
 4. Show only the active finding's connection; unlocated candidates are dashed
    amber. Additions/removals without counterparts show no fabricated opposite
    mark/link. Cover overlapping marks and multi-page findings.
@@ -455,6 +457,21 @@ Use actual engine payloads, including the densest real result, at desktop and
    zero counts, missing metadata, truncation, unavailable comparison and viewer
    errors stay distinct. Render markup-like OCR/reasons literally and wrap long
    content without overlap or horizontal page overflow.
+
+7. In Formatting List/Single/Focus, verify exactly one service strip, above the
+   worklist and unaffected by filter/pagination HTMX swaps. Remote/Local report
+   actual GPU/CPU or explicit unknown/last-seen values. Observe ten-second
+   no-overlap health refreshes, hidden-tab pause, return/resume, manual refresh,
+   network errors and Details. These requests must only read health, never POST
+   PDFs, create comparison snapshots or change publication/review state.
+8. With a remote configured, disconnect it before selection: no CPU POST may
+   occur until explicit confirmation. Test remote recovery, busy/queued,
+   authentication rejection, stale green health and failure after health success.
+   Test expired/tampered/cross-paper consent and file/revision/config changes.
+   Keep accepted/lost-response work on its worker. Old CPU routes must not start
+   or wait for new work silently; completed results still open without consent.
+   Verify actual execution labels on results, legacy unknown labels and exact
+   Publication ZIP/CrossCheck bytes plus unchanged readiness/review flags.
 
 Manual figure, image-preservation, table, layout and full-math checks remain
 required regardless of counts. Record unresolved limitations and actual gate

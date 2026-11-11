@@ -461,6 +461,19 @@ unsaved notes stay untouched. Use site typography, compact icon controls and
 existing image loading/magnification; do not embed the primary documents inside
 narrow cards or add a permanent result-list sidebar.
 
+Formatting List/Single/Focus share one compact Comparison services band above
+the worklist, outside HTMX replacements. Show Remote/Local, reported GPU/CPU,
+text plus status color, check time, a refresh icon and a Details disclosure.
+Do not repeat it per paper, expose credentials or imply available means selected.
+Keep last-seen hardware visibly qualified. Poll ten seconds between completed
+requests while visible, without overlap; pause on hide/navigation and resume on
+return. Keep errors persistent here rather than in a disappearing toast.
+Remote unavailability pauses new comparison work with a Recheck action and,
+only when permitted, a distinct local confirmation action warning it may take
+longer. That choice is not a saved default or an upload failure. The per-upload
+status and completed comparison show small recorded worker/backend labels;
+old snapshots without metadata do not borrow today's green service status.
+
 Show annotated Before/After pages immediately, initially Fit page. Each side
 keeps its own source, filename and page controls. Small screens retain both
 documents with independent navigation, readable controls and no horizontal page
@@ -481,9 +494,12 @@ contexts, locations, rule IDs, risks and plain-text reasons. Never rewrite OCR,
 invent character correspondence or reclassify engine findings in the browser.
 A mixed non-tolerated edit must not be hidden by visual-tolerance presentation.
 
-Hover/focus/tap opens a transient inspector showing the existing finding and
-two crops from actual page-image pixels, without turning pages or scrolling
-either document. Moving from a mark into the inspector keeps it open; use a
+Hover anywhere on a page to open a transient inspector with two crops from
+actual displayed-page pixels, centered on the same normalized pointer position.
+Finding matches are not a prerequisite for either crop. Hovering a mark also
+shows its existing finding; raw OCR stays in the evidence disclosure, separate
+from position-based pixels. Do not turn pages or scroll either document.
+Moving from a page into the inspector keeps it open; use a
 short crossing grace period when leaving both. Support keyboard activation,
 touch taps, Escape and a named close control. Hover must not persist host state
 or create a host restoration/write-back loop.
@@ -491,9 +507,12 @@ Handle inspector dismissal at document level while it is visible: a pure hover
 can leave focus on `body`, outside the comparison root. Escape and Control must
 still close the panel without intercepting keys when it is already closed.
 
-For large unlocated ranges, center the hovered side's crop on the actual pointer
-position. The other crop starts from its own recorded range and is explicitly
-not a character match; it can be inspected independently. Display overlapping
+The same relative point drives both crops, including unlocated ranges, added or
+removed text and unmarked pages. Label both displayed page numbers and state
+that position is not text correspondence. Preserve aspect ratios and clamp at
+image edges; loading failures hide the empty canvas and show a status rather
+than use another page. Keyboard inspection starts at the focused mark's center;
+touch inspection may start anywhere on the page. Display overlapping
 findings without losing access to any item. Draw only the active finding's
 connection. Candidate unlocated links are dashed amber; one-sided additions or
 removals have no fabricated opposite mark or connection. Links are finding-level,
@@ -519,7 +538,7 @@ not an exact-identity proof or Exceptions Center waiver. See the
 Test actual engine payloads as well as UI fixtures, including the densest real
 case, empty/unlocated results, information-only results and one-sided changes.
 At desktop and narrow widths verify nonblank pages/crops, no hover movement,
-keyboard/touch access, crossing/dismissal, local pointer magnification,
+keyboard/touch access, crossing/dismissal, synchronized relative magnification,
 active-only connections and explicit navigation. Prototype browser checks alone
 do not establish production acceptance.
 

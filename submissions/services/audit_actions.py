@@ -36,6 +36,8 @@ _ACTION_DEFINITIONS = (
         ("stop", "Stop CrossCheck Execution"), ("preview_cancelled", "Cancel CrossCheck Preview"),
     )),
     AuditActionDefinition("formatting_pdf_compare", "Compare Formatting PDFs", "formatting"),
+    AuditActionDefinition("formatting_pdf_compare_local_confirm", "Confirm Local PDF Comparison", "formatting"),
+    AuditActionDefinition("formatting_pdf_compare_deferred", "Pause PDF Comparison", "formatting"),
     AuditActionDefinition("formatting_revision_capture", "Capture Formatting Baseline", "formatting"),
     AuditActionDefinition("formatting_revision_download", "Open Formatting Revision File", "formatting"),
     AuditActionDefinition("formatting_revision_rollback", "Roll Back Formatting Revision", "formatting"),

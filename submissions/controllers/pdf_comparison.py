@@ -16,6 +16,8 @@ from submissions.services.pdf_comparison import (
 )
 from submissions.services.file_manager import publication_pdf_info
 from submissions.services.automatic_pdf_comparison import ComparisonInProgress, get_upload_comparison
+from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired
+from submissions.services.comparison_execution_choice import execution_display
 
 
 def _return_url(request, pk):
@@ -33,6 +35,7 @@ def formatting_upload_comparison(request, pk):
         payload = get_upload_comparison(
             pk, params.get("token", ""), build=request.method == "POST",
             retry=params.get("retry") == "1", request=request,
+            local_confirmation=request.POST.get("local_confirmation", "") if request.method == "POST" else "",
         )
         if payload:
             result = {
@@ -41,12 +44,16 @@ def formatting_upload_comparison(request, pk):
                 "uncertain_count": payload["result"]["uncertain_count"],
                 "limited": payload["result"].get("coverage_status") == "limited" or payload["result"]["truncated"] or payload["result"]["pairing_limited"],
                 "text_available": payload["result"]["text_available"],
+                "execution": execution_display(payload.get("execution")),
                 "url": reverse("submissions:formatting_pdf_comparison", args=[pk]) + "?" + urlencode({
                     "comparison": payload["token"], "baseline": "original", "next": _return_url(request, pk),
                 }),
             }
         else:
             result = {"state": "pending", "message": "This saved PDF comparison has not started.", "retryable": True}
+    except LocalComparisonConfirmationRequired as exc:
+        result, status = {"state": "awaiting_choice", "message": str(exc), "retryable": True,
+                          "local_confirmation": exc.confirmation_token, "existing_local": exc.existing_local}, 200
     except StaleUploadComparison as exc:
         result, status = {"state": "unavailable", "message": str(exc), "retryable": False}, 409
     except ComparisonInProgress as exc:
@@ -67,21 +74,26 @@ def formatting_pdf_comparison(request, pk):
     back_url = _return_url(request, pk)
     payload, error = None, ""
     status = 200
+    execution_choice = None
     form = PDFComparisonForm(submission, request.POST if request.method == "POST" else None, initial={"baseline": request.GET.get("baseline", "original")})
     try:
         comparison_submission(pk)
         if request.method == "POST" and form.is_valid():
-            payload = create_pdf_comparison(pk, form.cleaned_data["baseline"], request=request, retry_failed=True)
+            payload = create_pdf_comparison(pk, form.cleaned_data["baseline"], request=request, retry_failed=True,
+                                            local_confirmation=request.POST.get("local_confirmation", ""))
             return redirect(reverse("submissions:formatting_pdf_comparison", args=[pk]) + "?" + urlencode({"comparison": payload["token"], "baseline": payload["baseline"]["key"], "next": back_url}))
         if request.method == "GET" and request.GET.get("comparison"):
             payload = load_pdf_comparison(pk, request.GET["comparison"])
             form = PDFComparisonForm(submission, initial={"baseline": payload["baseline"]["key"]})
+    except LocalComparisonConfirmationRequired as exc:
+        execution_choice = {"message": str(exc), "token": exc.confirmation_token, "existing_local": exc.existing_local}
     except (PDFComparisonError, OSError, ValueError) as exc:
         error, status = str(exc), 409
     comparison_data = None
     if payload:
         comparison_data = {
             **payload["result"], "created_at": payload["created_at"],
+            "execution": execution_display(payload.get("execution")),
             "before": {**payload["baseline"], "sha256": payload["before_sha256"]},
             "after": {**payload["target"], "sha256": payload["after_sha256"]},
             "page_urls": {
@@ -97,7 +109,16 @@ def formatting_pdf_comparison(request, pk):
         "submission": submission, "form": form, "back_url": back_url,
         "comparison_data": comparison_data, "comparison_error": error,
         "current_pdf": publication_pdf_info(submission),
+        "execution_choice": execution_choice,
     }, status=status)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_GET
+def formatting_comparison_services(request):
+    from submissions.services.comparison_health import comparison_service_status
+    response = JsonResponse(comparison_service_status())
     response["Cache-Control"] = "no-store"
     return response
 

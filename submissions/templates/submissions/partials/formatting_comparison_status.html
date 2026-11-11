@@ -3,6 +3,7 @@
     <div class="cfm-formatting-comparison-identity">
         <span class="fw-semibold">PDF comparison{% if show_paper_identity %} · {{ comparison.paper_id }} / Final {{ comparison.final_id }}{% endif %}</span>
         <span class="small text-muted">Saved revision {{ comparison.revision_number }} · Original → Corrected</span>
+        <span class="small text-muted" data-upload-comparison-execution hidden></span>
     </div>
     <div class="cfm-formatting-comparison-actions" role="status" aria-live="polite">
         <span class="spinner-border spinner-border-sm" aria-hidden="true" data-upload-comparison-spinner></span>
@@ -11,6 +12,7 @@
         <span class="badge text-bg-info" data-upload-comparison-info hidden></span>
         <a class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" data-upload-comparison-open hidden>Open comparison</a>
         <button class="btn btn-sm btn-outline-secondary" type="button" data-upload-comparison-retry hidden>Retry comparison</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-upload-comparison-local hidden>Use local CPU for this comparison · may take longer</button>
     </div>
     <div class="small text-muted cfm-formatting-comparison-note" data-upload-comparison-note>Comparison completion is not publication approval. Figures, image preservation, full mathematical structure, tables and layout still require visual review.</div>
 </div>

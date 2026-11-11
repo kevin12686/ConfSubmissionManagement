@@ -47,7 +47,10 @@ def check_embedded():
     if result.returncode or not isinstance(payload, dict) or payload.get("ready") is not True:
         reason = payload.get("error", "OCR native runtime failed") if isinstance(payload, dict) else "Invalid probe response"
         raise PreflightError(f"{reason}. Install requirements.txt and provision both approved models with prepare_rapidocr_models; check CFM_RAPIDOCR_MODEL_DIR and CFM_RAPIDOCR_THREADS.")
-    return [f"Comparison preflight OK: embedded {payload['backend']} models and sessions loaded."]
+    messages = [f"Comparison preflight OK: embedded {payload['backend']} models and sessions loaded."]
+    if os.environ.get("CFM_COMPARISON_REMOTE_URL", "").strip():
+        messages.append("Remote URL is configured but transport is embedded. Comparisons require correcting the mode or explicitly confirming local execution; no remote worker will be used in embedded mode.")
+    return messages
 
 
 def check_service(wait_seconds=90):
@@ -103,7 +106,7 @@ def check_service(wait_seconds=90):
             messages = [f"Comparison preflight OK: {required} worker authenticated, compatible and ready."]
             if "remote" in endpoints and required == "local":
                 messages.append("Preferred remote worker ready." if results["remote"] == "ready"
-                                else f"Remote worker {results['remote']}; validated local fallback will be used.")
+                                else f"Remote worker {results['remote']}; comparisons will wait for remote recovery or explicit local confirmation. Local worker is ready for explicit use.")
             return messages
         if time.monotonic() >= deadline:
             raise PreflightError(f"Required {required} worker {results[required]}. No conference startup/cutover was authorized. Start the shared worker, validate models and set this conference's token.")

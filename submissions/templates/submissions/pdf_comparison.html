@@ -18,13 +18,21 @@
             {% csrf_token %}<input type="hidden" name="next" value="{{ back_url }}">
             <div><label class="form-label" for="{{ form.baseline.id_for_label }}">Before · {{ form.baseline.label }}</label>{{ form.baseline }}{% for error in form.baseline.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
             <div><div class="form-label">After · Selected publication PDF</div><div class="cfm-comparison-current-file"><span class="badge text-bg-secondary">{{ current_pdf.label }}</span><span class="text-break">{{ current_pdf.filename|default:"No PDF" }}</span></div></div>
-            <button class="btn btn-primary" type="submit">{% if comparison_data %}Rebuild comparison{% else %}Build comparison{% endif %}</button>
+            <button class="btn btn-primary" type="submit">{% if execution_choice %}{% if execution_choice.existing_local %}Check existing comparison{% else %}Recheck remote and start{% endif %}{% elif comparison_data %}Rebuild comparison{% else %}Build comparison{% endif %}</button>
+            {% if execution_choice %}
+            <div class="cfm-comparison-execution-choice" role="status">
+                <strong>{% if execution_choice.existing_local %}Local comparison requires confirmation{% else %}Comparison not started{% endif %}</strong>
+                <div>{{ execution_choice.message }}</div>
+                {% if execution_choice.token %}<button class="btn btn-sm btn-outline-secondary" type="submit" name="local_confirmation" value="{{ execution_choice.token }}">Use local CPU for this comparison · may take longer</button>{% endif %}
+            </div>
+            {% endif %}
         </form>
     </details>
     {% if comparison_error %}<div class="alert alert-warning cfm-alert-stack" role="alert"><strong>Comparison unavailable</strong><div>{{ comparison_error }}</div><div>No result is available. Files, review flags, and publication decisions are unchanged.</div></div>{% endif %}
     {% if comparison_data %}
     {{ comparison_data|json_script:"pdf-comparison-data" }}
     <div data-pdf-comparison>
+        <div class="small text-muted mb-2">Compared by {{ comparison_data.execution.label }}</div>
         <div class="cfm-comparison-toolbar">
             <div class="btn-group" role="group" aria-label="Comparison view"><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-mode="pages" aria-pressed="true">Documents</button><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-mode="text" aria-pressed="false">Recognized text</button></div>
             <label><input type="checkbox" data-comparison-highlights checked> Marks</label>
@@ -86,13 +94,13 @@
             <details class="small mt-2"><summary>Compared file identities</summary><div class="text-break">Created: {{ comparison_data.created_at }}<br>Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>Temporary comparison expires after two hours. Publication files and review state are unchanged.</div></details>
         </div>
         <div class="alert alert-warning cfm-alert-stack" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
-        <section class="cfm-comparison-inspection" data-comparison-inspection role="dialog" aria-label="Finding inspection" hidden>
+        <section class="cfm-comparison-inspection" data-comparison-inspection role="dialog" aria-label="Page magnification and finding details" hidden>
             <div class="cfm-comparison-inspection-heading"><div><strong data-comparison-inspection-title></strong><div class="small text-muted" data-comparison-pair-status></div></div><button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-close aria-label="Close inspection" title="Close inspection"><span class="cfm-comparison-icon-close" aria-hidden="true"></span></button></div>
             <label class="small" data-comparison-overlap-label hidden>Overlapping findings <select class="form-select form-select-sm" data-comparison-overlap aria-label="Overlapping findings"></select></label>
             <p class="small" data-comparison-description></p>
             <div class="cfm-comparison-crops">
-                <section><strong class="small">Before <span data-comparison-crop-page="before"></span></strong><canvas data-comparison-crop="before" width="800" height="300" aria-label="Before region magnification"></canvas><p class="small" data-comparison-crop-status="before"></p><pre data-comparison-crop-text="before"></pre></section>
-                <section><strong class="small">After <span data-comparison-crop-page="after"></span></strong><canvas data-comparison-crop="after" width="800" height="300" aria-label="After region magnification"></canvas><p class="small" data-comparison-crop-status="after"></p><pre data-comparison-crop-text="after"></pre></section>
+                <section><strong class="small">Before <span data-comparison-crop-page="before"></span></strong><canvas data-comparison-crop="before" width="800" height="300" aria-label="Before page relative-position magnification" hidden></canvas><p class="small" data-comparison-crop-status="before" role="status"></p></section>
+                <section><strong class="small">After <span data-comparison-crop-page="after"></span></strong><canvas data-comparison-crop="after" width="800" height="300" aria-label="After page relative-position magnification" hidden></canvas><p class="small" data-comparison-crop-status="after" role="status"></p></section>
             </div>
             <details class="cfm-comparison-evidence" data-comparison-evidence hidden><summary>Finding evidence / OCR details</summary><ul class="small" data-comparison-evidence-reason></ul><div class="cfm-comparison-evidence-text"><div><strong>Before · raw OCR text</strong><pre data-comparison-raw-before></pre></div><div><strong>After · raw OCR text</strong><pre data-comparison-raw-after></pre></div></div></details>
         </section>

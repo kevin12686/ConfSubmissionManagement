@@ -41,7 +41,8 @@ one local application:
 - compares saved Original/revision PDFs with the selected publication PDF using
   rendered-page RapidOCR and bounded small-edit alignment. Annotated documents
   show text changes, unlocated ranges and inspectable visual-tolerance information;
-  hover inspection shows raw OCR and page-pixel crops without moving the pages.
+  hover inspection magnifies the same relative position on both displayed pages
+  without moving them, even without matched text. Finding details retain raw OCR.
   Headers/footers, formulas and image text remain in scope. A saved Formatting
   PDF upload automatically starts a separate Original comparison;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
@@ -64,7 +65,10 @@ the same validated runtime. Repeated comparisons and unchanged originals can
 avoid repeated OCR; first-time work can still time out. Cache reuse never skips
 current-file or upload-revision checks. Native startup defaults to embedded CPU
 execution. Docker can use a host-shared comparison worker, with an optional
-preferred remote CPU/GPU worker and local CPU fallback. See the
+preferred remote CPU/GPU worker. With a remote configured, new local CPU work
+requires explicit confirmation instead of a silent fallback. Formatting shows
+both services' status every ten seconds while visible, and comparisons label
+their recorded worker/backend. See the
 [compute service contract](docs/pdf_comparison.md#shared-comparison-service) and
 [Docker setup](docs/docker_guide.md). Workers never select publication files or
 access conference databases.

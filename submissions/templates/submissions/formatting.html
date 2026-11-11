@@ -3,6 +3,7 @@
 {% block title %}Formatting Review{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{% static 'submissions/formatting_comparison_status.css' %}?v={{ app_version }}">
+<link rel="stylesheet" href="{% static 'submissions/comparison_services.css' %}?v={{ app_version }}">
 <div class="cfm-page-header">
     <div>
         <h1 class="h3 cfm-page-title">Formatting Review</h1>
@@ -19,6 +20,7 @@
     {% endif %}
 </div>
 {% include "submissions/partials/focused_worklist.html" %}
+{% include "submissions/partials/comparison_services.html" %}
 
 <style>
     .format-preview {
@@ -434,4 +436,5 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 {% endif %}
 <script src="{% static 'submissions/formatting_comparison_status.js' %}?v={{ app_version }}" defer></script>
+<script src="{% static 'submissions/comparison_services.js' %}?v={{ app_version }}" defer></script>
 {% endblock %}

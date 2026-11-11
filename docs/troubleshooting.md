@@ -44,6 +44,8 @@ opening its browser page. Do not remove `data/` or bypass the checker.
   and set its dedicated token. A configured local fallback must be healthy and
   compatible even if a preferred remote is online. An unreachable optional
   remote is a warning when local is ready; invalid authentication is an error.
+  New comparisons still pause for remote recovery or explicit local confirmation;
+  successful startup does not authorize an automatic CPU fallback.
   For Cloudflare Access or another gateway, configure remote-only JSON in
   `CFM_COMPARISON_REMOTE_HEADERS` in this conference's env file, retaining its
   worker token. A browser login/redirect is not machine authentication: use a
@@ -904,9 +906,10 @@ Ordinary cleanup protects open comparison folders even if Reports overlaps
 them; normal expiry and Clear Database remain responsible for removal.
 
 Hover inspection does not change pages or scroll either document. Use explicit
-result/page controls to navigate. For a large amber range, move within it to
-inspect the actual pointer location; the opposite crop is only its own recorded
-candidate range, not a character match. Keyboard/touch and the close control
+result/page controls to navigate; existing linked-page behavior is unchanged.
+Move anywhere on either page to magnify that relative position on both displayed
+pages. Missing OCR counterparts do not hide a valid page crop. These are position
+previews, not matched-character regions. Keyboard/touch and the close control
 remain available. Missing counterparts have no fabricated connection. If a page
 or crop fails to load, retry rather than trusting stale image content.
 **No corresponding text** means any opposite reference page is navigation only.

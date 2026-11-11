@@ -198,7 +198,8 @@ After editing an existing conference env, run the unified update command for
 that project. It rebuilds/recreates with candidate preflight; restarting a
 container alone does not load changed Compose environment. Invalid headers,
 401/403, or a login redirect fail explicitly; they do not authorize local
-fallback. The existing unreachable-remote fallback policy is unchanged.
+fallback. An unreachable remote now pauses new comparisons until it recovers or
+the editor explicitly confirms local execution for that PDF pair.
 Gateway header rotation does not change worker job identity or start a second
 copy of accepted work. Changing worker URL or worker Bearer token still uses
 the existing signed routing safeguards. Header values are redacted in update
@@ -375,8 +376,9 @@ The conference create/rebuild/migration tools check this network and run the
 candidate image's `scripts/check_comparison_runtime.py` without its migration
 entrypoint, followed by Django system checks against temporary in-memory SQLite,
 before cutover. Local tokens/readiness/contract compatibility are
-checked even when a preferred remote is online, so the configured fallback is
-usable. An unreachable optional remote is a warning when local is ready;
+checked even when a preferred remote is online, so the configured local service
+is usable after explicit confirmation. An unreachable optional remote is a startup
+warning when local is ready, not authorization to silently compute on CPU;
 authentication/configuration errors stop deployment. Failed preflight leaves
 the existing conference container running. Raw `docker compose up` is not a safe
 update substitute: its web entrypoint checks before migrating, but Compose may

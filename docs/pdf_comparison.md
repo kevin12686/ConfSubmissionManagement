@@ -137,8 +137,14 @@ storage; a conference Clear Database or restore does not delete another
 conference's worker data. Retention is enforced independently by the worker.
 
 Before submitting a new pair, CFM checks protocol/code compatibility and
-readiness. An unreachable, not-ready or incompatible preferred remote allows
-local selection. Busy remains on the selected worker; it is not a signal to
+readiness. With a remote configured, an unreachable, not-ready or incompatible
+remote pauses the comparison; no new CPU work starts automatically. Manual and
+post-upload builds use the same rule. Local-only service mode remains automatic.
+An explicit local choice carries a five-minute signed confirmation bound to the
+submission, baseline, ordered PDF hashes, target revision/upload time, upload
+receipt (if any), engine contract and deployment configuration. GET/health
+requests cannot grant consent. Revalidate before dispatch; never substitute
+later files or a new configuration. Busy remains on the selected worker; it is not a signal to
 duplicate compute. Authentication/configuration errors are explicit. Once
 submission intent is retained, retry checks the same worker/job, including when
 the POST reply was lost. An unreachable accepted worker does not silently
@@ -151,6 +157,31 @@ lease expiry. Optional gateway header rotation does not change this identity.
 Explicit Build/Retry can requeue a failed terminal job within the worker's
 bounded retry allowance. Polling never retries failed inference; completed or
 running jobs cannot be overwritten by Retry.
+
+Existing local routes do not silently authorize submission, failed-job retries
+or long waits when a remote is configured: these require explicit local consent.
+A compatible completed result can still be retrieved without new computation.
+Do not delete a route or move accepted work to a different worker. A new CPU
+confirmation permits local use for this comparison, not a persistent preference.
+Authentication, redirect and malformed-evidence failures do not become CPU
+fallback opportunities. Embedded mode with a remote URL requires correcting the
+mode or explicit local confirmation; it never quietly ignores remote intent.
+
+Formatting List/Single/Focus share one compact service-status strip outside the
+HTMX worklist. It observes authenticated health only: refresh ten seconds after
+the preceding request completes, pause/abort when hidden or leaving, resume on
+return and never overlap requests. Status calls use two-second endpoint timeouts,
+five-second observation caching and one in-flight probe per web process. Last-seen
+hardware is explicitly labelled when current health cannot report it. Service
+mode reports observed backends; embedded mode labels its configured backend,
+not a verified standalone service. Service status is not job status or permission
+to dispatch; actual selection always
+checks independently. These observational reads do not produce audit spam.
+Successful signed comparison snapshots retain a small sanitized execution summary
+and show it in upload status and PDF Comparison. Older snapshots say Worker not
+recorded, never infer execution from today's health. Audit retains execution and
+explicit local confirmations. No worker protocol, method, job key or archive
+schema change is needed for this orchestration/presentation metadata.
 
 The API uses short job/status requests. The existing CFM build request polls
 for at most 240 seconds; a still-running/queued job returns the existing Retry
@@ -311,19 +342,27 @@ Expose these distinct groups:
   details; do not count these as verified unchanged content.
 
 The documents are the primary workspace, not a permanent result-list sidebar.
-Show annotated page images immediately. Hover/focus/tap inspection shows the
-existing finding, raw text and two crops from the actual page pixels, without
-changing pages or scrolling either document. Moving into the inspector keeps
-it open; leaving mark and inspector uses a short crossing grace period.
+Show annotated page images immediately. Hovering anywhere on either page opens
+two actual page-pixel crops at the same normalized page position (x/width,
+y/height). Moving the pointer updates both crops, regardless of OCR matching,
+finding filters or missing counterpart regions. Each crop uses its own displayed
+image and aspect ratio; clamp its window at that image's edges.
+The crop window adapts to the actual panel/page display widths for approximately
+two-times magnification on desktop and narrow screens, preserving aspect ratios.
+Hovering a mark also shows its existing finding and raw OCR in the evidence
+disclosure, not as text supposedly belonging to the opposite crop. Moving into the inspector keeps
+it open; leaving the page and inspector uses a short crossing grace period.
 Keyboard activation, touch, Escape and an explicit close control are supported.
 Escape/Control dismiss an open inspector even when hover has left keyboard
 focus on the surrounding page; inactive inspection does not consume keys.
 Hover is transient and must not persist host state.
 
-For large unlocated ranges, magnify the hovered side at the actual pointer.
-The opposite side starts at its own recorded range, explicitly not a character
-correspondence, and can be inspected independently. Draw only the active
-finding's connection: dashed amber for unlocated candidates and none for a
+Magnification never changes pages or scroll positions. It labels both current
+page numbers and explicitly does not imply text correspondence. Keyboard
+finding inspection uses the focused mark's center as the shared relative point;
+touch can inspect a mark or any page position. Missing/loading page pixels show
+an explicit status, not a blank crop or a substituted matching page. Draw only
+the active finding's connection: dashed amber for unlocated candidates and none for a
 missing counterpart. Connections are finding-level, never invented
 character-by-character alignment. Explicit previous/next-result commands may
 navigate to recorded pages. Page synchronization uses alignment evidence only
@@ -377,7 +416,7 @@ Retain one-to-one token/character accounting before display caps.
 
 Browser QA must use actual payloads and nonblank image/crop pixels on desktop
 and narrow screens. Verify hover does not navigate or scroll, keyboard/touch
-inspection, overlay crossing/dismissal, pointer-local unlocated crops, one-sided
+inspection, overlay crossing/dismissal, synchronized relative-position crops, one-sided
 findings, active-only links, explicit navigation and stale-load rejection.
 Compare database/review/readiness state and publication/CrossCheck bytes before
 and after. Verify saved-upload revision binding, audited builds, old-method

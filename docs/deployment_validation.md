@@ -6,7 +6,65 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
-## Latest Validated Scope (1.26.0)
+## Latest Regression Scope (1.27.0)
+
+- Native: 984 Django tests and 101 JavaScript tests passed. Standalone
+  deployment discovery ran 107 tests (105 passed, two opt-in Docker skips).
+  Django checks, migration drift, documentation validation, compilation and
+  diff checks passed. No model migration or archive-format change is required.
+- An isolated browser test used generated Original/Corrected PDFs, a temporary
+  database and a real native CPU worker with the pinned OCR models. Remote
+  availability was a disposable HTTP fixture, not actual GPU inference.
+  Automatic and manual comparison paused without submitting local work while
+  remote was unavailable. Explicit local confirmation created exactly one job
+  with one attempt; returning to Formatting reused its completed evidence.
+  Original/Corrected hashes and review state were unchanged.
+- The Formatting service strip refreshed at ten-second intervals, remained
+  independent of HTMX worklist replacement and fit desktop/narrow viewports.
+  Remote recovery changed live availability without relabelling the completed
+  result: it retained `Compared by Local · CPU`. A local worker's periodic
+  preflight temporarily refused new computation without changing publication
+  files or flags; an explicit retry after readiness completed normally.
+- Unit coverage includes expired/cross-submission/configuration/file/revision
+  consent rejection, existing local routes, completed-result reuse, gateway
+  rejection, lost responses, observation-cache isolation, hidden-page pause and
+  non-overlapping status requests. Publication/CrossCheck byte-integrity and
+  wrong-version rejection remain in the full regression gate.
+- Disposable ARM64 Linux Docker: the 984-test Django gate passed with six
+  expected skips (five host Docker-CLI configuration checks and one filesystem
+  case check). Host configuration coverage passed in native tests. The real
+  Compose/container custom-header round-trip also passed with fake credentials.
+  Django checks, migration drift, docs and compilation passed in the image.
+  Only pinned OCR models were mounted, read-only; no conference data was mounted
+  and the migration/startup entrypoint was bypassed. Generated containers and the
+  uniquely tagged image were removed. No existing conference container, database
+  or GPU-host service was changed. Earlier GPU measurements below are historical
+  evidence, not a new GPU benchmark for this release.
+
+## Earlier UI Regression Scope (1.26.1)
+
+- Native: 961 Django tests passed, plus 95 JavaScript tests. Standalone
+  deployment discovery ran 107 tests (105 passed, two opt-in Docker skips).
+  Django checks, migration drift, documentation validation, compilation and
+  diff checks passed. There is no model migration or archive-format change.
+- Isolated browser acceptance used the production Django comparison page,
+  signed comparison URLs and rendered generated two/three-page PDFs, with a
+  synthetic OCR fixture. This is UI acceptance, not a new OCR accuracy benchmark.
+  At 1440x1000 and 390x844, both crops contained actual image pixels, shared the
+  same normalized center, kept approximately two-times display magnification
+  and caused no horizontal overflow or implicit page/scroll changes.
+- Unmarked regions, hidden marks and an added page without a page-map match
+  still showed both displayed-page crops. Intentional image-request failure
+  cleared the failed-side crop and showed its status; Retry restored only the
+  selected page. Unit coverage also includes zero findings, unequal dimensions,
+  corners, stale image/frame callbacks and keyboard/touch/dismissal behavior.
+- Publication readers, source selection, snapshot/version binding, comparison
+  result rules, readiness and reset code are unchanged. Full regression includes
+  wrong-version rejection and publication/CrossCheck byte-integrity tests.
+- Docker was not rerun for this UI-only release: the local daemon was stopped
+  and its socket unavailable. No conference deployment or data was changed.
+
+## Earlier Validated Scope (1.26.0)
 
 - Native: 961 Django tests and 86 JavaScript tests passed. Standard standalone
   deployment/HTTP discovery ran 107 tests (105 passed); two explicit Docker acceptances are skipped by

@@ -127,8 +127,18 @@ CPU/GPU identity, corrupt results and source changes during compute. Verify
 publication ZIP/CrossCheck bytes and readiness/review state remain unchanged.
 
 Service mode may not silently execute embedded OCR when routing fails. Never
-retry an uncertain accepted remote request on a second worker. Deployment
-credentials and worker caches are not conference backup contents. Run the
+retry an uncertain accepted remote request on a second worker.
+With a remote URL, `_select()` must not silently choose local; only a validated
+short-lived confirmation from `comparison_execution_choice.py` grants local use
+for the exact submission/baseline/hashes/revision/configuration. Keep old local
+routes, but require consent before submitting/retrying/waiting for unfinished
+local computation; completed results may be reused. Keep health observations
+separate: `comparison_health.py` does bounded authenticated GETs and does not
+call routing/submission or publication services. The Formatting-only poller
+pauses while hidden, prevents overlap and never starts comparisons. Test timer,
+abort, HTMX and stale green-state behavior. Snapshot execution labels must use
+recorded actual backend, not live health; legacy missing metadata stays unknown.
+Deployment credentials and worker caches are not conference backup contents. Run the
 standalone Docker smoke in disposable volumes; never reuse conference containers
 or existing service volumes for acceptance. GPU acceptance must state the actual
 provider/hardware tested; mocked CUDA setup tests are not GPU inference tests.
@@ -400,7 +410,12 @@ Put reusable workflow behavior in services:
   Keep differences, unlocated ranges and information separately counted; coverage
   metadata and display caps cannot imply safety. The document-first UI consumes
   actual side-specific locations, raw text and explanations without reclassifying
-  evidence. Hover inspection must not navigate or scroll either PDF.
+  evidence. Magnify the same normalized pointer position on the two displayed
+  images, independently of finding locations or counterpart availability. Keep
+  crop labels/status distinct from recorded finding evidence; never load a
+  different page to fill a crop. Hover inspection must not navigate or scroll
+  either PDF. Cover unmarked/zero-finding pages, one-sided and off-page findings,
+  unequal dimensions, image failure/retry and stale animation/image callbacks.
   Run `node --test submissions/tests/js/pdf_comparison.test.mjs` and actual-payload
   browser QA in addition to the regression gate. Test real rendered-PDF OCR,
   stale/absent/contradictory native layers, order/value swaps, reflow, repeated

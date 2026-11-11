@@ -12,7 +12,7 @@ from django.test import SimpleTestCase, override_settings
 from submissions.services import comparison_client as client
 from submissions.services.comparison_protocol import contract_id, job_key, page_render_hashes
 from submissions.services.pdf_comparison import compare_pdf_bytes
-from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
+from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError, LocalComparisonConfirmationRequired
 from submissions.tests.ocr_fixtures import ocr_pages
 from submissions.services.rapidocr_comparison.result import build_result
 from submissions.tests.test_pdf_comparison import make_pdf
@@ -67,9 +67,9 @@ class ComparisonClientTests(SimpleTestCase):
             raise client.TransportUnavailable()
         return (200, self.jobs[endpoint.name]) if endpoint.name in self.jobs else (404, {"error": "not_found"})
 
-    def compare(self):
+    def compare(self, **kwargs):
         diagnostics = {}
-        result = compare_pdf_bytes(self.before, self.after, diagnostics=diagnostics)
+        result = compare_pdf_bytes(self.before, self.after, diagnostics=diagnostics, **kwargs)
         return result, diagnostics
 
     def test_remote_preferred_and_completed_job_reused(self):
@@ -80,12 +80,16 @@ class ComparisonClientTests(SimpleTestCase):
         self.assertEqual(sum(call[2] is not None for call in self.calls), 1)
         self.assertEqual({call[0] for call in self.calls}, {"remote"})
 
-    def test_only_preacceptance_offline_or_not_ready_falls_back(self):
+    def test_preacceptance_offline_or_not_ready_needs_explicit_local_choice(self):
         for state in ("offline", "not_ready"):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as root, override_settings(BASE_DIR=Path(root)):
                 self.health["remote"] = state
                 self.calls.clear()
-                self.assertEqual(self.compare()[1]["worker"], "local")
+                with self.assertRaises(LocalComparisonConfirmationRequired):
+                    self.compare()
+                self.assertFalse(any(c[2] is not None for c in self.calls))
+                self.assertFalse((Path(root) / "data/formatting_comparison_previews/compute" / f"{self.key}.json").exists())
+                self.assertEqual(self.compare(allow_local=True)[1]["worker"], "local")
                 self.assertFalse(any(c[0] == "remote" and c[2] is not None for c in self.calls))
 
     def test_busy_remote_is_not_offline(self):
@@ -157,7 +161,9 @@ class ComparisonClientTests(SimpleTestCase):
             self.compare()
         self.health["remote"] = "offline"
         with patch.object(client.time, "time", return_value=now + client.ROUTE_SECONDS + 1):
-            self.assertEqual(self.compare()[1]["worker"], "local")
+            with self.assertRaises(LocalComparisonConfirmationRequired):
+                self.compare()
+            self.assertEqual(self.compare(allow_local=True)[1]["worker"], "local")
 
     def test_failed_ocr_never_falls_back_or_becomes_clean(self):
         self.jobs["remote"] = {**self.complete, "state": "failed", "error": "ocr_failed"}
@@ -209,7 +215,7 @@ class ComparisonClientTests(SimpleTestCase):
                     self.assertNotIsInstance(raised.exception, ComparisonInProgress)
 
     def test_missing_endpoints_does_not_silently_run_embedded(self):
-        with override_settings(CFM_COMPARISON_LOCAL_URL="", CFM_COMPARISON_REMOTE_URL=""):
+        with override_settings(CFM_COMPARISON_LOCAL_URL="", CFM_COMPARISON_REMOTE_URL="", CFM_COMPARISON_LOCAL_TOKEN="", CFM_COMPARISON_REMOTE_TOKEN=""):
             with self.assertRaisesRegex(PDFComparisonError, "configure a shared local worker"):
                 self.compare()
 
@@ -229,6 +235,77 @@ class ComparisonClientTests(SimpleTestCase):
                 client.Endpoint("remote", url, "a" * 32)
         with self.assertRaises(PDFComparisonError):
             client.Endpoint("remote", "http://host:8091", "short")
+
+    def test_remote_only_offline_cannot_offer_a_nonexistent_local_worker(self):
+        self.health["remote"] = "offline"
+        with override_settings(CFM_COMPARISON_LOCAL_URL="", CFM_COMPARISON_LOCAL_TOKEN=""):
+            with self.assertRaises(LocalComparisonConfirmationRequired) as raised:
+                self.compare()
+        self.assertFalse(raised.exception.can_confirm)
+        self.assertFalse(any(c[2] is not None for c in self.calls))
+
+    def test_local_only_configuration_keeps_normal_execution(self):
+        with override_settings(CFM_COMPARISON_REMOTE_URL="", CFM_COMPARISON_REMOTE_TOKEN=""):
+            self.assertEqual(self.compare()[1]["worker"], "local")
+        self.assertEqual({c[0] for c in self.calls}, {"local"})
+
+    def test_old_local_route_does_not_authorize_new_or_pending_cpu_work(self):
+        self.health["remote"] = "offline"
+        self.compare(allow_local=True)
+        self.health["remote"] = "ready"
+        initial_posts = sum(c[2] is not None for c in self.calls)
+        for state in ("queued", "running", "failed", "missing"):
+            with self.subTest(state=state):
+                if state == "missing":
+                    self.jobs.pop("local", None)
+                else:
+                    self.jobs["local"] = {**self.complete, "state": state}
+                with self.assertRaises(LocalComparisonConfirmationRequired) as raised:
+                    self.compare(retry_failed=True)
+                self.assertTrue(raised.exception.existing_local)
+                self.assertEqual(sum(c[2] is not None for c in self.calls), initial_posts)
+        self.assertFalse(any(c[0] == "remote" and c[2] is not None for c in self.calls))
+
+    def test_completed_local_route_can_be_reused_without_new_cpu_permission(self):
+        self.health["remote"] = "offline"
+        result = self.compare(allow_local=True)[0]
+        self.health["remote"] = "ready"
+        self.assertEqual(self.compare()[0], result)
+        self.assertEqual(sum(c[2] is not None for c in self.calls), 1)
+
+    def test_gateway_denial_is_not_a_local_confirmation_opportunity(self):
+        for confirmed in (False, True):
+            with self.subTest(confirmed=confirmed), patch.object(client.Endpoint, "call", side_effect=PDFComparisonError("HTTP 403: access denied")):
+                with self.assertRaises(PDFComparisonError) as raised:
+                    self.compare(allow_local=confirmed)
+                self.assertNotIsInstance(raised.exception, LocalComparisonConfirmationRequired)
+        self.assertFalse(any(c[2] is not None for c in self.calls))
+
+    def test_explicit_local_submit_loss_remains_local_when_remote_recovers(self):
+        self.health["remote"] = "offline"
+        self.post_error = client.TransportUnavailable()
+        with self.assertRaises(ComparisonInProgress):
+            self.compare(allow_local=True)
+        self.post_error = None
+        self.health["remote"] = "ready"
+        self.assertEqual(self.compare()[1]["worker"], "local")
+        self.assertEqual(sum(c[2] is not None for c in self.calls), 1)
+
+    def test_cached_green_health_cannot_authorize_cpu_after_remote_disconnects(self):
+        from django.core.cache import cache
+        from submissions.services.comparison_health import comparison_service_status
+        cache.clear()
+        # Observe availability through the same probe, with its shorter status timeout.
+        normal_call = self.call
+        def status_call(endpoint, path, **kwargs):
+            kwargs.pop("timeout", None)
+            return normal_call(endpoint, path, **kwargs)
+        self.transport.side_effect = status_call
+        self.assertEqual(comparison_service_status()["remote"]["state"], "ready")
+        self.health["remote"] = "offline"
+        with self.assertRaises(LocalComparisonConfirmationRequired):
+            self.compare()
+        self.assertFalse(any(c[2] is not None for c in self.calls))
 
 
 class ComparisonHTTPTransportTests(SimpleTestCase):

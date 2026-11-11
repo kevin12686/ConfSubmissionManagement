@@ -67,7 +67,7 @@ class RuntimePreflightTests(SimpleTestCase):
                     raise comparison_client.TransportUnavailable
                 return 200, self.health
             with patch.object(comparison_client.Endpoint, "call", autospec=True, side_effect=health):
-                self.assertIn("validated local fallback", preflight.check_service(0)[1])
+                self.assertIn("explicit local confirmation", preflight.check_service(0)[1])
 
     def test_unauthorized_endpoint_is_error_not_silent_fallback(self):
         from submissions.services.pdf_comparison_errors import PDFComparisonError

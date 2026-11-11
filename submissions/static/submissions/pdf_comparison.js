@@ -12,7 +12,7 @@
         const data = JSON.parse(script.textContent);
         const query = (selector) => root.querySelector(selector);
         const state = {selected: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
-        const inspection = {finding: null, mode: null, side: null, location: null, points: {}, anchor: null, timer: null, frame: null, blocked: false};
+        const inspection = {finding: null, mode: null, side: null, location: null, point: null, anchor: null, timer: null, frame: null, blocked: false};
         const inspectionPanel = query("[data-comparison-inspection]");
         const groupOf = finding => finding.category === "formatting" ? finding.kind : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
         const markKind = finding => ["formatting", "tolerated"].includes(finding.category) ? "info" : finding.category === "uncertain" ? "review" : "change";
@@ -57,6 +57,13 @@
             sides[name].findingPages.addEventListener("change", () => navigate(name, Number(sides[name].findingPages.value), true));
             panel.querySelectorAll("[data-comparison-page-step]").forEach(button => button.addEventListener("click", () => navigate(name, state[name] + Number(button.dataset.comparisonPageStep))));
             sides[name].scroll.addEventListener("scroll", () => { drawConnection(); if (inspection.mode === "hover") closeInspection(); }, {passive: true});
+            sides[name].page.addEventListener("pointerenter", event => hoverPage(name, event));
+            sides[name].page.addEventListener("pointermove", event => hoverPage(name, event));
+            sides[name].page.addEventListener("pointerleave", () => { inspection.blocked = false; scheduleClose(); });
+            sides[name].page.addEventListener("click", event => {
+                if (event.ctrlKey || event.target.closest(".cfm-comparison-mark") || !sides[name].ready) return;
+                openInspection(null, name, null, "touch", event);
+            });
         }
         function renderCoverage() {
             const complete = data.coverage_status === "complete";
@@ -253,7 +260,7 @@
             }
         }
         function renderEvidence(finding) {
-            query("[data-comparison-inspection-title]").textContent = finding.label;
+            query("[data-comparison-inspection-title]").textContent = finding?.label || "Page magnification";
             let message = "Manual comparison of the saved PDFs.";
             if (finding) {
                 message = finding.category === "uncertain" ? "No reliable local correspondence. Inspect both ranges; this is not an unchanged region or a verified character match."
@@ -264,20 +271,21 @@
                 if (finding.locations_truncated) message += " Only the first word regions are highlighted; the passage is longer.";
             }
             query("[data-comparison-description]").textContent = message;
+            query("[data-comparison-description]").hidden = !finding;
             const evidence = query("[data-comparison-evidence]");
             const reasons = query("[data-comparison-evidence-reason]");
             reasons.replaceChildren();
             for (const reason of [...(finding?.issues || []),
-                ...["rule_id", "rule_label", "rule_risk"].filter(key => finding[key] !== undefined).map(key => `${key}: ${finding[key]}`)]) {
+                ...["rule_id", "rule_label", "rule_risk"].filter(key => finding?.[key] !== undefined).map(key => `${key}: ${finding[key]}`)]) {
                 const item = document.createElement("li");
                 item.textContent = reason;
                 reasons.appendChild(item);
             }
-            evidence.hidden = false;
+            evidence.hidden = !finding;
             evidence.open = false;
             for (const side of ["before", "after"]) {
                 let raw = (finding?.[`${side}_raw`] || "No recognized passage.").replace(/\u200b/g, "[U+200B]");
-                if (finding[`${side}_ocr`]?.length) raw += `\n\nOCR lines / scores\n${JSON.stringify(finding[`${side}_ocr`], null, 2)}`;
+                if (finding?.[`${side}_ocr`]?.length) raw += `\n\nOCR lines / scores\n${JSON.stringify(finding[`${side}_ocr`], null, 2)}`;
                 query(`[data-comparison-raw-${side}]`).textContent = raw;
             }
         }
@@ -329,19 +337,6 @@
                     mark.setAttribute("aria-label", `${finding.label}: ${name}, page ${state[name]}. ${(finding[`${name}_text`] || "Review region").slice(0, 120)}`);
                     const [x0, y0, x1, y1] = location.box;
                     Object.assign(mark.style, {left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%`});
-                    mark.addEventListener("pointerenter", event => {
-                        if (event.pointerType === "touch" || event.ctrlKey || inspection.blocked === location || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-                        openInspection(finding, name, location, "hover", event);
-                    });
-                    mark.addEventListener("pointermove", event => {
-                        if (inspection.mode !== "hover" || inspection.side !== name || inspection.location !== location || event.ctrlKey) return;
-                        inspection.points[name] = pointerPoint(name, location, event);
-                        if (inspection.frame === null) inspection.frame = requestAnimationFrame(() => {
-                            inspection.frame = null;
-                            renderCrops(name);
-                        });
-                    });
-                    mark.addEventListener("pointerleave", () => { inspection.blocked = false; scheduleClose(); });
                     mark.addEventListener("focus", () => {
                         if (mark.matches(":focus-visible")) openInspection(finding, name, location, "keyboard");
                     });
@@ -354,31 +349,55 @@
             }
             highlightMarks();
         }
-        function pointerPoint(name, location, event) {
+        function pointerPoint(name, event) {
             const rect = sides[name].page.getBoundingClientRect();
-            const [x0, y0, x1, y1] = location.box;
-            return {x: Math.max(x0, Math.min(x1, (event.clientX - rect.left) / rect.width)), y: Math.max(y0, Math.min(y1, (event.clientY - rect.top) / rect.height))};
+            if (!rect.width || !rect.height || !Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) return null;
+            return {x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))};
+        }
+        function hoverPage(name, event) {
+            if (state.mode !== "pages" || !sides[name].ready || event.pointerType === "touch" || event.ctrlKey
+                || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+            const point = pointerPoint(name, event);
+            if (!point) { closeInspection(); return; }
+            const mark = event.target.closest(".cfm-comparison-mark");
+            const finding = mark ? data.findings.find(item => String(item.id) === mark.dataset.findingId) : null;
+            const location = mark?.location || null;
+            if (inspection.blocked === (location || sides[name].page)) return;
+            inspection.blocked = false;
+            clearTimeout(inspection.timer);
+            if (inspectionPanel.hidden || inspection.mode !== "hover" || inspection.side !== name
+                || inspection.location !== location || inspection.finding !== finding) {
+                openInspection(finding, name, location, "hover", event);
+                return;
+            }
+            inspection.point = point;
+            if (inspection.frame === null) inspection.frame = requestAnimationFrame(() => {
+                inspection.frame = null;
+                renderCrops();
+            });
         }
         function openInspection(finding, name, location, mode, event) {
-            if (!finding) return;
             clearTimeout(inspection.timer);
             cancelAnimationFrame(inspection.frame); inspection.frame = null;
-            if (inspection.finding?.id !== finding.id) inspection.points = {};
+            const mark = name && finding ? selectedMark(name, finding.id)
+                : finding ? selectedMark("before", finding.id) || selectedMark("after", finding.id) : null;
+            const box = location?.box || mark?.location.box;
+            const point = name && event && mode !== "keyboard" ? pointerPoint(name, event)
+                : ["hover", "touch"].includes(mode) && inspection.side === name && inspection.location === location ? inspection.point : null;
+            inspection.point = point || (box ? {x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2} : {x: .5, y: .5});
             Object.assign(inspection, {finding, side: name, location, mode});
-            const mark = name ? selectedMark(name, finding.id) : selectedMark("before", finding.id) || selectedMark("after", finding.id);
-            inspection.anchor = event?.clientY ? {top: event.clientY, bottom: event.clientY} : mark?.getBoundingClientRect();
-            if (name && location && event?.clientX !== undefined && mode !== "keyboard") inspection.points[name] = pointerPoint(name, location, event);
+            inspection.anchor = Number.isFinite(event?.clientY) ? {top: event.clientY, bottom: event.clientY} : mark?.getBoundingClientRect();
             const overlaps = query("[data-comparison-overlap]");
             overlaps.replaceChildren();
             const candidates = name && location ? visibleFindings().filter(item => locations(item, name).some(({box}) =>
-                box[0] <= location.box[2] && box[2] >= location.box[0] && box[1] <= location.box[3] && box[3] >= location.box[1])) : [finding];
+                box[0] <= location.box[2] && box[2] >= location.box[0] && box[1] <= location.box[3] && box[3] >= location.box[1])) : finding ? [finding] : [];
             for (const item of candidates) {
                 const option = document.createElement("option");
                 option.value = item.id;
                 option.textContent = `${item.label}: ${(item[`${name || "before"}_text`] || item.after_text || "Review region").slice(0, 80)}`;
                 overlaps.appendChild(option);
             }
-            overlaps.value = finding.id;
+            overlaps.value = finding?.id ?? "";
             query("[data-comparison-overlap-label]").hidden = candidates.length < 2;
             inspectionPanel.hidden = false;
             inspectionPanel.dataset.interaction = mode;
@@ -391,19 +410,14 @@
             }
         }
         function renderInspection() {
-            if (!inspection.finding || inspectionPanel.hidden) return;
-            const finding = inspection.finding;
-            const both = ["before", "after"].every(name => finding[`${name}_locations`]?.length && finding[`${name}_pages`]?.length);
-            query("[data-comparison-pair-status]").textContent = !both ? "One-sided evidence; no counterpart is drawn."
-                : finding.category === "uncertain" ? "Candidate ranges only, not a verified correspondence. Each crop uses its own recorded region."
-                    : "Same finding, not character-by-character correspondence.";
+            if (inspectionPanel.hidden) return;
+            query("[data-comparison-pair-status]").textContent = "Same relative position on the displayed pages, not a text correspondence.";
             renderCrops();
         }
-        function renderCrops(onlySide = null) {
+        function renderCrops() {
             const finding = inspection.finding;
-            if (!finding) return;
+            if (inspectionPanel.hidden || !inspection.point) return;
             for (const name of ["before", "after"]) {
-                if (onlySide && name !== onlySide) continue;
                 const side = sides[name], image = side.page.querySelector(":scope > img");
                 const canvas = query(`[data-comparison-crop="${name}"]`), context = canvas.getContext("2d");
                 context.clearRect(0, 0, canvas.width, canvas.height);
@@ -411,40 +425,42 @@
                 canvas.dataset.state = "empty";
                 const status = query(`[data-comparison-crop-status="${name}"]`);
                 const label = query(`[data-comparison-crop-page="${name}"]`);
-                const current = locations(finding, name);
-                query(`[data-comparison-crop-text="${name}"]`).textContent = (finding[`${name}_text`] || "No corresponding text.").replace(/\u200b/g, "[U+200B]");
-                label.textContent = "";
-                if (!current.length) {
-                    status.textContent = !finding[`${name}_pages`].length ? "No corresponding region."
-                        : `Region on ${pageLabel(finding, name)}; not on this page.`;
-                    continue;
-                }
                 label.textContent = ` / page ${state[name]}`;
-                if (!side.ready || !image.complete || !image.naturalWidth || image.getAttribute("src") !== side.source) {
+                if (!side.ready || !image.complete || !image.naturalWidth || !image.naturalHeight || image.getAttribute("src") !== side.source) {
+                    canvas.hidden = true;
                     status.textContent = "Page image unavailable or loading. No other page is substituted.";
                     continue;
                 }
-                // Magnify pixels of this side only. Large ranges follow this side's pointer, never the counterpart's.
-                const location = inspection.side === name && current.includes(inspection.location) ? inspection.location : current[0];
-                const [x0, y0, x1, y1] = location.box;
-                const point = inspection.points[name] || {x: (x0 + x1) / 2, y: (y0 + y1) / 2};
+                // Share a page-relative center, never a finding's counterpart.
+                // Each image keeps its own aspect ratio and actual source pixels.
+                const point = inspection.point;
                 const width = image.naturalWidth, height = image.naturalHeight;
-                const cw = Math.min(width, Math.max(180, Math.min(600, (x1 - x0) * width + 80)));
-                const ch = Math.min(height, Math.max(80, Math.min(225, (y1 - y0) * height + 48)));
+                canvas.hidden = false;
+                const displayedWidth = side.page.getBoundingClientRect().width;
+                if (!displayedWidth || !canvas.clientWidth) {
+                    canvas.hidden = true;
+                    status.textContent = "Page preview is not visible.";
+                    continue;
+                }
+                const cw = Math.min(width, width * canvas.clientWidth / displayedWidth / 2);
+                const ch = Math.min(height, cw * canvas.height / canvas.width);
                 const sx = Math.max(0, Math.min(width - cw, point.x * width - cw / 2));
                 const sy = Math.max(0, Math.min(height - ch, point.y * height - ch / 2));
                 const scale = Math.min((canvas.width - 16) / cw, (canvas.height - 16) / ch);
                 const dx = (canvas.width - cw * scale) / 2, dy = (canvas.height - ch * scale) / 2;
                 context.drawImage(image, sx, sy, cw, ch, dx, dy, cw * scale, ch * scale);
                 context.save(); context.beginPath(); context.rect(dx, dy, cw * scale, ch * scale); context.clip();
-                context.strokeStyle = markKind(finding) === "change" ? "#b91e30" : markKind(finding) === "review" ? "#a26100" : "#71869a";
-                context.lineWidth = 2;
-                context.strokeRect(dx + (x0 * width - sx) * scale, dy + (y0 * height - sy) * scale, (x1 - x0) * width * scale, (y1 - y0) * height * scale);
+                if (finding && !root.classList.contains("cfm-comparison-no-highlights")) {
+                    context.strokeStyle = markKind(finding) === "change" ? "#b91e30" : markKind(finding) === "review" ? "#a26100" : "#71869a";
+                    context.lineWidth = 2;
+                    for (const {box: [x0, y0, x1, y1]} of locations(finding, name)) {
+                        context.strokeRect(dx + (x0 * width - sx) * scale, dy + (y0 * height - sy) * scale, (x1 - x0) * width * scale, (y1 - y0) * height * scale);
+                    }
+                }
                 context.restore();
-                status.textContent = finding.category === "uncertain" ? (inspection.points[name] ? "Pointer position in this range." : "Own recorded range; not a character match.") : "";
+                status.textContent = "";
                 canvas.dataset.state = "ready";
                 canvas.dataset.source = side.source;
-                canvas.dataset.findingId = finding.id;
             }
         }
         function drawConnection() {
@@ -496,12 +512,13 @@
         function closeInspection() {
             clearTimeout(inspection.timer);
             cancelAnimationFrame(inspection.frame); inspection.frame = null;
-            Object.assign(inspection, {finding: null, mode: null, side: null, location: null, points: {}});
+            Object.assign(inspection, {finding: null, mode: null, side: null, location: null, point: null});
             inspectionPanel.hidden = true;
             for (const name of ["before", "after"]) {
                 const canvas = query(`[data-comparison-crop="${name}"]`);
                 canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
                 delete canvas.dataset.source; delete canvas.dataset.findingId; canvas.dataset.state = "empty";
+                canvas.hidden = true;
             }
             highlightMarks(); drawConnection();
         }
@@ -511,14 +528,18 @@
         }
         inspectionPanel.addEventListener("pointerenter", () => clearTimeout(inspection.timer));
         inspectionPanel.addEventListener("pointerleave", scheduleClose);
-        query("[data-comparison-close]").addEventListener("click", () => { inspection.blocked = inspection.mode === "hover" ? inspection.location : null; closeInspection(); });
+        function dismissInspection() {
+            inspection.blocked = inspection.mode === "hover" ? inspection.location || sides[inspection.side].page : null;
+            closeInspection();
+        }
+        query("[data-comparison-close]").addEventListener("click", dismissInspection);
         query("[data-comparison-overlap]").addEventListener("change", event => {
             const finding = data.findings.find(item => String(item.id) === String(event.target.value));
             openInspection(finding, inspection.side, inspection.location, inspection.mode);
         });
         document.addEventListener("keydown", event => {
             if (inspectionPanel.hidden) return;
-            if (event.key === "Escape" || event.key === "Control") { inspection.blocked = inspection.mode === "hover" ? inspection.location : null; closeInspection(); }
+            if (event.key === "Escape" || event.key === "Control") dismissInspection();
         });
         root.addEventListener("focusout", event => {
             if (inspection.mode === "keyboard" && !inspectionPanel.contains(event.relatedTarget) && !event.relatedTarget?.closest(".cfm-comparison-mark")) closeInspection();

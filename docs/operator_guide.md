@@ -632,12 +632,15 @@ Counts are records, not affected papers or accuracy. Filters and explicit
 previous/next-result navigation let you inspect the relevant recorded pages.
 Browse all pages and open each exact snapshot PDF for manual review.
 
-Hover a mark to inspect its raw OCR text, reason and two local page-image crops.
-This does not turn pages or scroll either document. Move into the inspector to
+Hover anywhere on a page to magnify the same relative position on both currently
+displayed pages. Both crops remain available even when OCR has no counterpart;
+this is a position preview, not a claim that the text matches. Hover a mark for
+its reason and raw OCR details as well. This does not turn pages or scroll either
+document, and the existing Link pages behavior is unchanged. Move into the inspector to
 keep it open; keyboard focus/activation and touch taps also work. Escape or the
-close control dismisses it. For a large unlocated range, the hovered side follows
-the actual pointer position; the opposite crop starts at its own recorded range,
-not an invented character match. Inspect either side independently. Only the
+close control dismisses it. Each crop labels its actual page number; an image
+still loading or unavailable shows an explicit status, never another page.
+Keyboard finding inspection uses the mark's center on both pages. Only the
 active finding's connection is shown; an amber dashed connection is a candidate,
 not verified equality. Added/removed text has no fabricated opposite mark.
 
@@ -695,7 +698,12 @@ it is separate from preserved review images/revisions. See the
 
 For shared-worker deployments, these same controls use the configured compute
 service; there is no separate publication workflow. CFM prefers a ready compatible
-remote worker, otherwise uses the shared local CPU worker. Busy work stays on its
+remote worker. If it cannot use a configured remote, the comparison waits instead
+of quietly starting local CPU. Use Recheck remote and start after fixing the
+connection, or explicitly choose local CPU for this comparison (which may take
+longer). The confirmation expires after five minutes and cannot be reused after
+files/revision/configuration change. A local-only setup still runs normally.
+Busy work stays on its
 selected worker. If the connection drops after submission, use Retry to retrieve
 that job; the app does not submit a second copy locally. A running/queued message
 is not completion. An unavailable result never changes the saved Formatting files.
@@ -704,11 +712,22 @@ file, not in conference settings or backups. Shared-worker storage is independen
 Clear Database clears this CFM's receipts/cache, not the shared service's other
 clients. See [service contract](pdf_comparison.md#shared-comparison-service).
 
+Formatting's small Comparison services strip shows Remote/Local availability and
+reported GPU/CPU, with Details for safe connection errors. It refreshes every ten
+seconds between requests while the tab is visible; hidden tabs pause. This never
+starts a paper comparison. Unreachable hardware may show a clearly marked last
+seen value, not a confirmed current backend. Existing comparisons separately
+show Compared by Remote/Local/Embedded and the recorded GPU/CPU; a new green
+service status does not relabel an old result. Old results without that metadata
+show Worker not recorded. Previously started local jobs remain local and need
+confirmation to resume waiting or retry computation; completed results can reopen.
+
 No comparison changes Review OK, review flags, exceptions,
 publication selection, or export eligibility. Temporary comparisons are not
 backups or retained review evidence; the build itself is recorded in Audit Log.
 Expired staging folders are removed when another comparison is built; there
-is no browser background polling or deletion timer. The independent shared worker
+is no browser comparison-job polling or deletion timer. Formatting's separate
+service-health polling reads only availability. The independent shared worker
 has its own bounded job scheduler and retention.
 
 ## Plagiarism / CrossCheck Workflow

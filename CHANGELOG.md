@@ -3,6 +3,31 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.27.0 - Unreleased
+
+- Require a PDF/revision/configuration-bound explicit choice before new local
+  comparison work when a remote worker is configured but unavailable. Preserve
+  pinned jobs, safe retry, completed-result reuse and all publication checks.
+- Add one integrated Formatting service strip showing Remote/Local availability
+  and reported hardware, refreshing every ten seconds while visible with bounded
+  cached probes, no overlapping requests and no job submission from health reads.
+- Record and display the actual comparison worker/backend separately from live
+  availability, and audit local execution confirmations. Old results without
+  execution metadata are labelled unknown rather than inferred from live settings.
+- Keep the inference method, worker protocol, model quality, runtime limits and
+  State archive v8 unchanged. No database migration is needed.
+
+## 1.26.1 - Unreleased
+
+- Synchronize comparison magnification by relative pointer position on the two
+  displayed pages, including unmarked areas and findings without a counterpart.
+  Do not navigate to a matched region or hide an available page crop because
+  OCR did not locate corresponding text. Keep finding evidence separate from
+  relative-position pixels; only real recorded marks/connections are drawn.
+- Preserve linked-page navigation, signed PDF/version binding, comparison
+  results, publication selection and review state. Loading failures remain
+  explicit and never substitute another page. State archive remains v8.
+
 ## 1.26.0 - Unreleased
 
 - Identify shared worker HTTP requests with `ConferenceFinalManager/1` by
