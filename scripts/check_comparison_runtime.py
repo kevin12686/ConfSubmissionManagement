@@ -80,18 +80,24 @@ def check_service(wait_seconds=90):
         for name, endpoint in endpoints.items():
             try:
                 status, health = endpoint.call("/v1/health")
-            except TransportUnavailable:
-                results[name] = "unreachable"
+            except TransportUnavailable as exc:
+                results[name] = "unreachable" + (f": {exc}" if str(exc) else "")
                 continue
             except PDFComparisonError as exc:
                 # Authentication/redirect/invalid API errors cannot be hidden by fallback.
-                raise PreflightError(f"{name.title()} worker rejected the health check. Check its token, remote custom headers and direct API URL; redirects are not supported.") from None
+                raise PreflightError(f"{name.title()} worker health check failed: {exc}") from None
+            if status != 200:
+                results[name] = f"not ready: health endpoint returned HTTP {status}"
+                continue
             if health.get("protocol") != PROTOCOL or health.get("contract") != expected:
                 results[name] = "incompatible; update worker and CFM from the same checkout"
             elif status == 200 and health.get("state") in {"ready", "busy"}:
                 results[name] = "ready"
             else:
-                results[name] = "not ready; check worker models, backend and logs"
+                category = health.get("error")
+                known = {"preflight_pending", "configuration_unavailable", "storage_or_scheduler_unavailable"}
+                detail = f" ({category})" if isinstance(category, str) and category in known else ""
+                results[name] = f"not ready{detail}; check worker models, backend and logs"
         required = "local" if "local" in endpoints else "remote"
         if results[required] == "ready":
             messages = [f"Comparison preflight OK: {required} worker authenticated, compatible and ready."]

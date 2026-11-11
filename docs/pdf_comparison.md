@@ -181,6 +181,13 @@ explicitly, without silent fallback or secret values in diagnostics. CFM does
 not follow worker redirects or environment HTTP proxies. Never expose an
 unprotected origin publicly or mount conference data into it. See the
 [gateway setup](docker_guide.md#remote-gateway-authentication).
+The shared HTTP client supplies the descriptive `ConferenceFinalManager/1`
+User-Agent for health/upload/poll/retry calls and startup checks. Explicit
+remote UA overrides are retained. This is not an engine/cache/route identity
+change. Preflight exposes safe HTTP status, Cloudflare code and Ray ID (1010
+means browser signature blocking), not arbitrary response prose or credentials.
+Authentication/redirect failures remain explicit and never authorize fallback;
+unavailable-before-acceptance and already-pinned job behavior are unchanged.
 
 ### Work Bounds
 

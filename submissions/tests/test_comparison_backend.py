@@ -289,7 +289,7 @@ class WorkerEntrypointTests(SimpleTestCase):
 
 class DeploymentUpdaterTests(SimpleTestCase):
     def test_transport_network_and_tokens_survive_generated_environment(self):
-        from scripts import update_docker_instances as updater
+        from scripts import docker_update_engine as updater
         import docker_instance_tools as helpers
         from submissions.tests.test_docker_data_tools import make_container
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -327,7 +327,7 @@ class DeploymentUpdaterTests(SimpleTestCase):
             self.assertEqual(updater.display_env_value(key, values[key]), "***")
 
     def test_slave_environment_files_are_never_discovered_as_conferences(self):
-        from scripts import update_docker_instances as updater
+        from scripts import docker_update_engine as updater
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         for name in (".env.slave", ".env.slave.example", ".env.slave.gpu"):
             (root / name).write_text("CFM_SLAVE_PROJECT_NAME=worker-only\n")
@@ -386,15 +386,17 @@ class DeploymentConfigTests(SimpleTestCase):
 
     def test_custom_headers_survive_actual_compose_interpolation(self):
         from scripts import docker_instance_tools as helpers
-        from scripts import update_docker_instances as updater
+        from scripts import docker_update_engine as updater
         raw = json.dumps({"X-API-Key": "dollar${DO_NOT_EXPAND}$ $$ # ' quote\" backslash\\"})
-        with helpers.temporary_env_file({"CFM_COMPARISON_REMOTE_HEADERS": raw}) as path:
+        secret = "signing$${LITERAL}$ # ' quote\" slash\\"
+        with helpers.temporary_env_file({"CFM_COMPARISON_REMOTE_HEADERS": raw, "SMS_SECRET_KEY": secret}) as path:
             config = self.config("docker-compose.yml", env_file=str(path))
             desired = updater.planned_instance_from_env(ROOT, Path(path), "comparison-config-test", bind_override=False)
         actual = config["services"]["web"]["environment"]["CFM_COMPARISON_REMOTE_HEADERS"]
         # `config` is a re-loadable Compose document, not a container env dump.
         self.assertEqual(json.loads(actual.replace("$$", "$")), json.loads(raw))
         self.assertEqual(json.loads(desired["env_values"]["CFM_COMPARISON_REMOTE_HEADERS"]), json.loads(raw))
+        self.assertEqual(desired["env_values"]["SMS_SECRET_KEY"], secret)
 
     def test_image_stages_do_not_install_both_ort_packages(self):
         source = (ROOT / "Dockerfile.comparison-slave").read_text()

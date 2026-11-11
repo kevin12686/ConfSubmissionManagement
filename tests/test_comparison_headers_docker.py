@@ -12,7 +12,7 @@ import unittest
 import uuid
 
 from scripts import docker_instance_tools as tools
-from scripts import update_docker_instances as updater
+from scripts import docker_update_engine as updater
 
 
 @unittest.skipUnless(os.environ.get("CFM_HEADER_TEST_IMAGE"), "Set CFM_HEADER_TEST_IMAGE for disposable Docker acceptance")

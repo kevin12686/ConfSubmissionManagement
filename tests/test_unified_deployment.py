@@ -45,10 +45,14 @@ class UnifiedDeploymentTests(unittest.TestCase):
             "version": 1, "project": env.get("CFM_SLAVE_PROJECT_NAME"),
             "backend": env.get("CFM_DEPLOY_WORKER_BACKEND"), "fingerprint": "a" * 64}))
         self.inspect = self.enterContext(patch.object(deploy.updater, "inspect_compose_containers", return_value=[]))
+        self.enterContext(patch.object(deploy.updater, "planned_instance_from_env", side_effect=lambda root, path, project, **kwargs: {
+            "env_values": deploy.EnvFile(Path(path).resolve()).values,
+        }))
         self.plan = self.enterContext(patch.object(deploy, "conference_plan", side_effect=lambda path, name: {
             "project": name, "env_path": path, "action": "create"}))
         self.apply = self.enterContext(patch.object(deploy.updater, "apply_update_plans"))
-        self.enterContext(patch.object(deploy.updater, "print_update_plans"))
+        self.real_print_plans = deploy.updater.print_update_plans
+        self.print_plans = self.enterContext(patch.object(deploy.updater, "print_update_plans"))
         self.network = self.enterContext(patch.object(deploy, "ensure_network"))
         self.output, self.errors = io.StringIO(), io.StringIO()
         self.enterContext(redirect_stdout(self.output))
@@ -70,14 +74,33 @@ class UnifiedDeploymentTests(unittest.TestCase):
     def conference(self, name="conf-a", *args):
         return deploy.main(["conference", "--name", name, *args])
 
+    def existing_plan(self, name="conf-a", port="9001"):
+        path = self.root / (".env." + name)
+        if not path.exists():
+            self.write(path, f"COMPOSE_PROJECT_NAME={name}\nSMS_PORT={port}\nSMS_DATA_DIR=./runtime/{name}\n")
+        existing = {"project": name, "mount_type": "volume", "sms_data_dir": str(self.root / "runtime" / name),
+                    "sms_bind_host": "127.0.0.1", "sms_port": port, "env": {}}
+        return {"action": "update", "project": name, "existing": existing, "env_path": path,
+                "desired": {**existing, "env_values": {}}, "changes": {}, "force_proxy_recreate": False}
+
+    def prepare_update_mocks(self, plans):
+        planner = self.enterContext(patch.object(deploy.updater, "build_update_plans", return_value=plans))
+        def compose(root, path, name, *, bind_override):
+            values = deploy.EnvFile(Path(path).resolve()).values
+            return {"env_values": values, "env": {k: v for k, v in values.items() if k in deploy.updater.ENV_KEYS},
+                    "sms_data_dir": str(root / values["SMS_DATA_DIR"]),
+                    "sms_port": values["SMS_PORT"], "sms_bind_host": values["SMS_BIND_HOST"]}
+        self.enterContext(patch.object(deploy.updater, "planned_instance_from_env", side_effect=compose))
+        return planner
+
     def test_dry_runs_write_nothing_and_never_contact_worker(self):
         self.assertEqual(self.worker("--client", "conf-a", "--client", "conf-b", "--dry-run"), 0)
         self.assertEqual(self.conference("conf-c", "--dry-run"), 0)
+        self.assertEqual(list(self.root.iterdir()), [])
         self.assertEqual(deploy.main(["update", "--dry-run"]), 0)
         self.assertEqual(list(self.root.iterdir()), [])
         self.status.assert_not_called()
         self.launch.assert_not_called()
-        self.inspect.assert_not_called()
         self.apply.assert_not_called()
         self.assertTrue(all(call.kwargs["dry_run"] for call in self.provision.call_args_list))
 
@@ -285,11 +308,174 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(self.conference(), 0)
         self.status.return_value = "ready"
         self.launch.reset_mock()
-        with patch.object(deploy.updater, "build_update_plans", return_value=[{
-                "project": "conf-a", "env_path": self.root / ".env.conf-a"}]):
-            self.assertEqual(deploy.main(["update", "--project", "conf-a"]), 0)
+        self.prepare_update_mocks([self.existing_plan()])
+        self.assertEqual(deploy.main(["update", "--project", "conf-a"]), 0)
         self.launch.assert_not_called()
         self.assertEqual(self.apply.call_count, 2)
+
+    def test_both_update_entrypoints_share_the_same_dispatch(self):
+        from scripts import update_docker_instances as cli
+        with patch.object(cli.deploy, "main", return_value=0) as main:
+            self.assertEqual(cli.main(["--project", "conf-a", "--dry-run", "--offline"]), 0)
+        main.assert_called_once_with(["update", "--project", "conf-a", "--dry-run", "--offline"])
+
+    def test_bulk_update_prepares_one_worker_with_distinct_client_tokens(self):
+        plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b", "conf-c"))]
+        planner = self.prepare_update_mocks(plans)
+        self.assertEqual(deploy.main(["update"]), 0)
+        self.assertEqual(self.launch.call_count, 1)
+        self.assertEqual(self.provision.call_count, 1)
+        self.assertEqual(self.apply.call_count, 3)
+        self.assertEqual(len(set(self.clients().values())), 3)
+        for plan in plans:
+            env = deploy.EnvFile(plan["env_path"])
+            self.assertEqual(env.get("CFM_COMPARISON_LOCAL_TOKEN"), self.clients()[plan["project"]])
+            self.assertEqual(env.get("SMS_DATA_DIR"), "./runtime/" + plan["project"])
+        planner.assert_called_once_with(self.root, selected_projects=set())
+
+    def test_bulk_dry_run_has_actual_redacted_plans_without_persistent_changes(self):
+        plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b"))]
+        original = {p["env_path"]: p["env_path"].read_bytes() for p in plans}
+        self.prepare_update_mocks(plans)
+        self.print_plans.side_effect = self.real_print_plans
+        self.assertEqual(deploy.main(["update", "--dry-run"]), 0)
+        for path, content in original.items():
+            self.assertEqual(path.read_bytes(), content)
+        self.assertEqual(set(self.root.iterdir()), set(original))
+        self.assertIn("Project: conf-a", self.output.getvalue())
+        self.assertIn("Project: conf-b", self.output.getvalue())
+        self.assertIn("create/update required", self.output.getvalue())
+        self.assertIn("Live HTTP/runtime checks", self.output.getvalue())
+        self.assertNotIn("DRY_RUN_CREDENTIAL_NOT_WRITTEN", self.output.getvalue())
+        self.launch.assert_not_called()
+        self.status.assert_not_called()
+        self.apply.assert_not_called()
+
+    def test_later_invalid_config_aborts_before_any_provision_or_cutover(self):
+        plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b"))]
+        with plans[1]["env_path"].open("a") as stream:
+            stream.write("CFM_COMPARISON_REMOTE_URL=https://worker.example\nCFM_COMPARISON_REMOTE_TOKEN=short-private-token\n")
+        original = {p["env_path"]: p["env_path"].read_bytes() for p in plans}
+        self.prepare_update_mocks(plans)
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.launch.assert_not_called()
+        self.provision.assert_not_called()
+        self.apply.assert_not_called()
+        for path, content in original.items():
+            self.assertEqual(path.read_bytes(), content)
+        self.assertNotIn("short-private-token", self.errors.getvalue())
+
+    def test_port_conflict_is_rechecked_after_defaults_before_provision(self):
+        self.prepare_update_mocks([self.existing_plan("conf-a", "9001"), self.existing_plan("conf-b", "9001")])
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.launch.assert_not_called()
+        self.provision.assert_not_called()
+        self.apply.assert_not_called()
+        self.assertIn("Host endpoint conflict", self.errors.getvalue())
+
+    def test_create_missing_still_requires_explicit_opt_in(self):
+        plan = self.existing_plan()
+        plan.update(action="create", existing=None)
+        self.prepare_update_mocks([plan])
+        original = plan["env_path"].read_bytes()
+        self.assertEqual(deploy.main(["update"]), 0)
+        self.apply.assert_not_called()
+        self.launch.assert_not_called()
+        self.assertEqual(plan["env_path"].read_bytes(), original)
+        self.assertEqual(deploy.main(["update", "--create-missing"]), 0)
+        self.assertEqual(self.apply.call_count, 1)
+        self.assertTrue(self.apply.call_args.kwargs["create_missing"])
+
+    def test_remote_only_update_preserves_headers_without_local_provisioning(self):
+        plan = self.existing_plan()
+        with plan["env_path"].open("a") as stream:
+            stream.write("CFM_COMPARISON_LOCAL_URL=\nCFM_COMPARISON_LOCAL_TOKEN=\n"
+                "CFM_COMPARISON_REMOTE_URL=https://worker.example\nCFM_COMPARISON_REMOTE_TOKEN=" + "r" * 40 + "\n"
+                "CFM_COMPARISON_REMOTE_HEADERS='{" + '"X-API-Key":"private-gateway-key"' + "}'\n")
+        self.prepare_update_mocks([plan])
+        self.assertEqual(deploy.main(["update"]), 0)
+        self.launch.assert_not_called()
+        self.provision.assert_not_called()
+        self.assertEqual(self.apply.call_count, 1)
+        self.assertNotIn("private-gateway-key", self.output.getvalue() + self.errors.getvalue())
+
+    def test_missing_signing_secret_and_worker_settings_are_retained_from_live_instance(self):
+        plan = self.existing_plan()
+        plan["existing"]["env"] = {
+            "SMS_SECRET_KEY": "existing-signing-secret$${LITERAL} # ' quote\" slash\\",
+            "CFM_COMPARISON_TRANSPORT": "service",
+            "CFM_COMPARISON_LOCAL_URL": "http://external-local:8091",
+            "CFM_COMPARISON_LOCAL_TOKEN": "l" * 40,
+            "CFM_COMPARISON_REMOTE_URL": "https://worker.example",
+            "CFM_COMPARISON_REMOTE_TOKEN": "r" * 40,
+            "CFM_COMPARISON_REMOTE_HEADERS": '{"X-API-Key":"existing-gateway-secret"}',
+        }
+        self.prepare_update_mocks([plan])
+        self.assertEqual(deploy.main(["update"]), 0)
+        env = deploy.EnvFile(plan["env_path"])
+        for key, value in plan["existing"]["env"].items():
+            self.assertEqual(env.get(key), value)
+        self.launch.assert_not_called()
+        self.assertNotIn("existing-signing-secret", self.output.getvalue() + self.errors.getvalue())
+        self.assertNotIn("existing-gateway-secret", self.output.getvalue() + self.errors.getvalue())
+
+    def test_remote_endpoint_change_never_reuses_the_previous_endpoints_token(self):
+        plan = self.existing_plan()
+        plan["existing"]["env"] = {"CFM_COMPARISON_REMOTE_URL": "https://old.example", "CFM_COMPARISON_REMOTE_TOKEN": "r" * 40}
+        with plan["env_path"].open("a") as stream:
+            stream.write("CFM_COMPARISON_REMOTE_URL=https://new.example\n")
+        self.prepare_update_mocks([plan])
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.launch.assert_not_called()
+        self.apply.assert_not_called()
+
+    def test_legacy_live_environment_is_retained_without_creating_an_env(self):
+        plan = self.existing_plan()
+        plan["env_path"].unlink()
+        plan["env_path"] = None
+        plan["action"] = "update_live"
+        plan["desired"]["env_values"] = {"CFM_COMPARISON_TRANSPORT": "service",
+            "CFM_COMPARISON_LOCAL_URL": "http://comparison-slave:8091", "CFM_COMPARISON_LOCAL_TOKEN": "l" * 40}
+        self.prepare_update_mocks([plan])
+        self.assertEqual(deploy.main(["update"]), 0)
+        self.assertFalse(list(self.root.glob(".env*")))
+        self.assertEqual(self.clients(), {"conf-a": "l" * 40})
+
+    def test_later_preflight_failure_does_not_restore_an_already_updated_env(self):
+        plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b"))]
+        original = {p["env_path"]: p["env_path"].read_bytes() for p in plans}
+        self.prepare_update_mocks(plans)
+        self.apply.side_effect = [None, RuntimeError("preflight failed")]
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.assertNotEqual(plans[0]["env_path"].read_bytes(), original[plans[0]["env_path"]])
+        self.assertEqual(plans[1]["env_path"].read_bytes(), original[plans[1]["env_path"]])
+
+    def test_cutover_attempt_keeps_its_config_for_recovery(self):
+        plan = self.existing_plan()
+        original = plan["env_path"].read_bytes()
+        self.prepare_update_mocks([plan])
+        self.apply.side_effect = deploy.docker.CutoverStartedError("cutover failed")
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.assertNotEqual(plan["env_path"].read_bytes(), original)
+        self.assertIn("retaining its configuration", self.errors.getvalue())
+
+    def test_concurrent_env_edit_during_provision_is_not_overwritten(self):
+        plan = self.existing_plan()
+        self.prepare_update_mocks([plan])
+        current = plan["env_path"].read_bytes() + b"# Concurrent operator edit\n"
+        def provision(*args, **kwargs):
+            plan["env_path"].write_bytes(current)
+        self.provision.side_effect = provision
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.apply.assert_not_called()
+        self.assertEqual(plan["env_path"].read_bytes(), current)
+        self.assertIn("changed during deployment planning", self.errors.getvalue())
+
+    def test_single_conference_embedded_setup_remains_supported(self):
+        self.write(".env.conf-a", "COMPOSE_PROJECT_NAME=conf-a\nCFM_COMPARISON_TRANSPORT=embedded\n")
+        self.assertEqual(self.conference(), 0)
+        self.launch.assert_not_called()
+        self.provision.assert_called_once()
 
     def test_public_worker_credentials_rejected_instead_of_permissions_relaxed(self):
         self.write("runtime/comparison-slave/clients.json", json.dumps({"conf-a": "t" * 40}), mode=0o644)

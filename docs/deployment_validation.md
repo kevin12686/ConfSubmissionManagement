@@ -6,7 +6,44 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
-## Latest Validated Scope (1.25.1)
+## Latest Validated Scope (1.26.0)
+
+- Native: 961 Django tests and 86 JavaScript tests passed. Standard standalone
+  deployment/HTTP discovery ran 107 tests (105 passed); two explicit Docker acceptances are skipped by
+  normal discovery and were run separately.
+- Disposable ARM64 Linux Docker: the full Django gate passed with six expected
+  skips (five host Docker-CLI configuration checks and one filesystem-case
+  check). Host Compose checks and the actual header/container round-trip passed.
+- A real HTTP fixture rejects the default Python-urllib browser signature and
+  accepts the common CFM User-Agent. Health/upload/poll/result/retry requests
+  retain gateway headers and worker authentication. Forced Cloudflare 1010,
+  worker 401, redirects, non-JSON and network failures preserve safe reasons
+  through preflight, without arbitrary prose, redirect URLs or credentials.
+- Real updater acceptance used a disposable checkout, two generated conference
+  projects and one shared CPU worker with unique images/networks/volumes.
+  The original updater created both with one worker preparation; both CLI
+  dry-runs listed real plans, all-project update succeeded, and a selected-project
+  compatibility update left the other web container unchanged. Env/client-token
+  bytes, full SQLite contents (including review flags/notes) and managed
+  Original/Corrected file hashes were unchanged across updates. All generated
+  containers/networks/volumes were removed; models were mounted read-only.
+- Unit failures cover later invalid config before provisioning, prepared port
+  conflicts, remote-only and env-less legacy instances, concurrent env edits,
+  retention of live signing keys/worker connections omitted by env files,
+  literal dollar signs/quotes/backslashes in signing keys and gateway headers,
+  per-conference restoration before cutover and retaining recovery config after
+  attempted cutover. Earlier completed updates are not rolled back.
+- Publication selection, inference contract/models/DPI/timeouts and review-reset
+  rules are unchanged. State archive remains v8; no DB migration is needed.
+
+The operator independently confirmed Cloudflare 1010 for Python-urllib and
+`HTTP 200 / ready / cuda` after a one-request application User-Agent override.
+This release's automated tests used fake gateway credentials and local fixtures,
+not the operator's Cloudflare account or production conferences. No new GPU OCR
+benchmark or three-paper inference run is claimed; earlier measurements below
+remain tied to their original release.
+
+## Earlier Validated Scope (1.25.1)
 
 - Native: 954 Django tests and 86 JavaScript tests passed. The standalone
   deployment/configuration suite passed 85 tests; its additional opt-in Docker

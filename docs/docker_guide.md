@@ -35,8 +35,9 @@ and proxies all other requests to `web`. Keep one Gunicorn worker with SQLite.
 | Migrate or recover older storage | [Migrate A Legacy Bind Mount](#migrate-a-legacy-bind-mount) |
 | Review tested hardware, timing and limitations | [Deployment Validation](deployment_validation.md) |
 
-Normal setup uses `scripts/deploy.py`. The lower-level commands are maintenance
-interfaces, not additional required steps after unified setup.
+First setup uses `scripts/deploy.py`. Normal updates use the existing
+`scripts/update_docker_instances.py`; it and `deploy.py update` share the same
+complete orchestration workflow. Worker-only lifecycle commands remain separate.
 
 ## Unified Deployment
 
@@ -55,7 +56,10 @@ Existing project names, data paths, secrets, client credentials and explicit
 settings are preserved. Conflicting or corrupt existing values cause an
 actionable error instead of replacement. Generated environment defaults are
 filled only when absent. Dry-run does not download, write settings, generate
-credentials or start/stop containers. Offline mode requires the pinned models
+credentials or start/stop containers. Update previews render actual redacted
+Compose plans and local-worker/model requirements using temporary private env
+staging only; those temporary files are removed. They do not run live HTTP,
+model-session or image-build checks. Offline mode requires the pinned models
 already present; an invalid existing model is never automatically replaced.
 Deployment requests/results are appended without credentials to private
 `runtime/deployment.log`; this host-maintenance log is separate from the
@@ -124,13 +128,14 @@ trusted GPU-host `worker --client <project>` operation, not manual token editing
 Later, on each host run the appropriate unified command again. On the CFM host:
 
 ```bash
-python3 scripts/deploy.py update --dry-run
-python3 scripts/deploy.py update
+python3 scripts/update_docker_instances.py --dry-run
+python3 scripts/update_docker_instances.py
 ```
 
 Use `--project conference-a` to limit conference updates, or `--offline` to
-require models already installed. Low-level maintenance commands remain
-available but do not perform automatic provisioning. Do not mix the worker's
+require models already installed. `deploy.py update` accepts the same update
+options and uses this identical workflow. New env-declared conferences are
+shown but skipped unless `--create-missing` is supplied. Do not mix the worker's
 Compose file with a conference Compose invocation.
 
 ### Remote Gateway Authentication
@@ -169,6 +174,17 @@ result retrieval and explicit retries, including startup/cutover checks. It
 continues sending its separate per-conference `Authorization: Bearer` token.
 No custom headers are sent to the local worker or unrelated integrations.
 HTTP is allowed for a trusted isolated LAN; use HTTPS for gateway deployment.
+The common HTTP client sends `User-Agent: ConferenceFinalManager/1` by default
+on local and remote requests, including preflight. This identifies the compute
+transport, not a browser or OCR/cache version. No per-conference User-Agent
+setting is necessary. Explicit custom remote User-Agent headers remain allowed;
+an obsolete `Python-urllib/...` override can still trigger gateway policy.
+Cloudflare 1010 specifically means browser-signature blocking, not proof of a
+bad worker token. Preflight includes the HTTP status, safe Cloudflare code and
+bounded Ray ID; it withholds remote prose, cookies and redirect URLs. Ordinary
+401/403 without a recognized provider code remain access-denied diagnostics,
+not a guessed attribution. DNS, TLS, timeout, redirect and non-JSON errors are
+distinct. Gateway policy and credentials are never automatically weakened.
 
 Configuration is limited to 32 unique case-insensitive header names, 128
 characters per name, 4096 printable ASCII characters per value and 16 KiB of
@@ -189,7 +205,7 @@ the existing signed routing safeguards. Header values are redacted in update
 plans and absent from CFM audit/diagnostics and System State archives. They do
 not change publication selection, comparison results/cache or review flags.
 
-## Lower-Level Conference Creation
+## Creating Additional Conferences
 
 Create one environment file per conference:
 
@@ -545,11 +561,11 @@ the older ARM64 CPU timeout record is not a result for the later CUDA deployment
 
 ## Update Existing Instances
 
-Use the unified entry point for normal updates, from the owning checkout:
+Use the existing updater for normal updates, from the owning checkout:
 
 ```bash
-python3 scripts/deploy.py update --dry-run
-python3 scripts/deploy.py update
+python3 scripts/update_docker_instances.py --dry-run
+python3 scripts/update_docker_instances.py
 ```
 
 Limit the conference operation with `--project <existing-project>`. On a
@@ -557,18 +573,12 @@ worker-only host, repeat its `deploy.py worker` command instead; `update` target
 conferences and does not operate a remote host through SSH. Keep existing project
 identities and perform worker changes during a maintenance window.
 
-### Lower-Level Conference Updater
-
-The following interface assumes worker/models/credentials are already managed.
-It does not perform unified provisioning or worker-source updates.
-
-After changing code or any `.env` / `.env.*` setting, preview the complete
-update plan:
-
-```bash
-python3 scripts/update_docker_instances.py --dry-run
-python3 scripts/update_docker_instances.py
-```
+`python3 scripts/deploy.py update` is an equivalent compatibility entry point;
+it does not have different preparation/authentication behavior. Both accept
+`--dry-run`, repeatable `--project`, `--offline`, and `--create-missing`.
+Dry-run renders the actual per-project env/port/data/settings plan and local
+worker/model requirements without persistent writes, downloads or container
+changes. It is not a successful live connection test or a runtime guarantee.
 
 The updater:
 
@@ -577,9 +587,12 @@ The updater:
 3. rejects duplicate project names, overlapping endpoints, shared data
    folders, foreign checkout ownership, and changes to an existing
    `SMS_DATA_DIR`;
-4. builds and preflights the candidate runtime before cutover;
-5. replaces only `web`, and reloads or recreates `proxy` only when required;
-6. waits for readiness;
+4. fills absent managed-env prerequisites without replacing existing values,
+   validates the entire prepared batch again, provisions missing pinned models,
+   and enrolls all selected local clients in one shared-worker preparation;
+5. builds and preflights each candidate runtime before its cutover;
+6. replaces only that conference's `web`, reloads or recreates `proxy` only
+   when required, and waits for readiness;
 7. verifies the loaded Nginx Host directive, one static asset, and a
    non-mutating same-origin CSRF POST.
 
@@ -591,8 +604,32 @@ python3 scripts/update_docker_instances.py --create-missing
 ```
 
 Use repeatable `--project NAME` options to limit an operation. Secrets are
-masked in plans, and management scripts never rewrite operator environment
-files.
+masked in plans. Missing settings/tokens may be appended to managed env files;
+existing nonempty values/comments are retained. Manually supplied remote URL,
+per-conference worker token and custom headers are supported; enrollment JSON
+is an optional explicit import, not required for subsequent updates.
+If the env omits a signing secret or worker connection that the existing
+container already uses, preserve that live value rather than generating a new
+identity or dropping the connection. An explicitly changed endpoint does not
+inherit the old endpoint's token/headers. Explicit blank URL/header settings
+are retained. Concurrent env edits after planning abort instead of being overwritten.
+Compose resolves variable references in existing assignments; generated literal
+values escape dollar signs. Signing keys and credentials containing quotes,
+backslashes or dollar signs must keep the same bytes in the recreated container.
+
+A configured custom external worker is not taken over by this updater. Remote-only
+mode does not provision a local worker. An env-less instance retains its live
+configuration: a complete registered worker connection can be reused; missing
+credentials/configuration require an explicit managed env, never an invented
+replacement identity. A shared-worker change may affect all its clients, even
+when only one conference was selected. Wait for all comparisons to finish and
+exclude new submissions during maintenance; the busy check is not an atomic drain.
+
+Batch updates are not an all-conference transaction. A later failure leaves
+earlier verified updates in place. Before a conference cutover, failure restores
+its staged env and leaves its old container running. Once container replacement
+was attempted, retain that env and inspect the failed deployment status; do not
+claim automatic rollback of containers, files or migrations.
 
 ## Back Up Docker Data
 

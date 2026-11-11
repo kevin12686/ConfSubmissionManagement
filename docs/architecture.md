@@ -89,10 +89,16 @@ nor worker is allowed to select publication files. `comparison_protocol.py`
 binds code/model contract, ordered PDF hashes and inspection render checks.
 CPU/GPU cache profiles remain separate. Remote unavailability before acceptance
 can select local CPU; busy/uncertain accepted jobs stay pinned to one worker.
-The shared worker Compose has no conference volume. The lower-level conference
-updater does not recreate it; the unified deployer manages its lifecycle
-separately when code/configuration or client enrollment requires an update,
-and reuses an unchanged healthy worker. See the
+The shared worker Compose has no conference volume. Both conference update
+commands use one orchestration layer to prepare it once for the selected batch
+when code/configuration or client enrollment requires an update, reusing an
+unchanged healthy worker. `docker_update_engine.py` owns validated container
+planning/cutover; `update_docker_instances.py` is a thin compatibility CLI into
+the same workflow as `deploy.py update`, without a recursive CLI dependency.
+Batch preparation validates all static settings/data/port constraints before
+provisioning. Apply is per conference, not a distributed transaction. Keep
+earlier completed updates and retain staged config after attempted cutover
+for recovery. See the
 [service contract](pdf_comparison.md#shared-comparison-service).
 Optional remote gateway headers are per-conference env-only JSON. A shared
 standard-library parser validates them for deployment/preflight and the HTTP
@@ -102,6 +108,12 @@ cannot be replaced, redirects remain forbidden, and gateway denial fails
 explicitly rather than selecting another worker. Header credential rotation
 does not change the worker route or cache identity. Values are secret deployment
 state, redacted by management tools and excluded from conference archives.
+The standard-library `comparison_http.py` shares application User-Agent and safe
+HTTP diagnostics between worker clients and host checks. It reports status,
+allowlisted provider codes and bounded Ray IDs, not arbitrary response prose,
+cookies, redirect URLs or credentials. These headers/diagnostics are not part
+of the inference contract or signed route identity. Existing unavailable-before-
+acceptance fallback and accepted-job pinning remain unchanged.
 RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
 comparison request. The unified deployment provisioner can download missing

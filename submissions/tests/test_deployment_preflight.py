@@ -72,8 +72,24 @@ class RuntimePreflightTests(SimpleTestCase):
     def test_unauthorized_endpoint_is_error_not_silent_fallback(self):
         from submissions.services.pdf_comparison_errors import PDFComparisonError
         with patch.object(comparison_client.Endpoint, "call", side_effect=PDFComparisonError("Unauthorized")):
-            with self.assertRaisesRegex(preflight.PreflightError, "token"):
+            with self.assertRaisesRegex(preflight.PreflightError, "Unauthorized"):
                 preflight.check_service(0)
+
+    def test_network_failure_keeps_safe_specific_reason(self):
+        with patch.object(comparison_client.Endpoint, "call", side_effect=comparison_client.TransportUnavailable("Worker DNS lookup failed.")):
+            with self.assertRaisesRegex(preflight.PreflightError, "DNS lookup failed"):
+                preflight.check_service(0)
+
+    def test_not_ready_preserves_only_known_worker_error_codes(self):
+        for category in ("preflight_pending", "configuration_unavailable", "private-response", {"private": "response"}):
+            with self.subTest(category_type=type(category).__name__), patch.object(comparison_client.Endpoint, "call",
+                return_value=(200, {**self.health, "state": "not_ready", "error": category})):
+                with self.assertRaises(preflight.PreflightError) as raised:
+                    preflight.check_service(0)
+            text = str(raised.exception)
+            if isinstance(category, str) and category in {"preflight_pending", "configuration_unavailable"}:
+                self.assertIn(category, text)
+            self.assertNotIn("private", text)
 
     def test_preflight_passes_headers_only_to_remote_endpoint(self):
         observed = {}
@@ -196,10 +212,40 @@ class CutoverPreflightTests(SimpleTestCase):
         status.return_value.close.assert_called_with(clear=True)
 
     def test_create_failure_never_starts_conference(self):
-        import update_docker_instances as update
+        from scripts import docker_update_engine as update
         plan = {"env_path": Path("/env"), "project": "qa", "desired": {"env_values": {}}}
         with patch.object(update, "require_comparison_network"), patch.object(update, "run") as runner, \
              patch.object(update, "preflight_compose_runtime", side_effect=RuntimeError("not ready")):
             with self.assertRaisesRegex(RuntimeError, "not ready"):
                 update.create_instance(plan, preflight.ROOT)
         self.assertFalse(any("up" in call.args[0] for call in runner.call_args_list))
+
+    def test_rebuild_failure_after_up_is_explicit_and_preserves_recovery_state(self):
+        import rebuild_docker_instances as rebuild
+        from docker_instance_tools import CutoverStartedError, DockerCommandError
+        instance = {"project": "qa", "name": "qa-web", "public_service": "proxy",
+                    "mount_type": "volume", "gateway_version": "1", "env": {}}
+        def run(command, **kwargs):
+            if "up" in command:
+                raise DockerCommandError(command, 1, "private-error")
+        with patch.object(rebuild, "require_comparison_network"), patch.object(rebuild, "run", side_effect=run), \
+             patch.object(rebuild, "GatewayOperationStatus") as status, patch.object(rebuild, "preflight_compose_runtime"):
+            with self.assertRaises(CutoverStartedError) as raised:
+                rebuild.rebuild_instance(instance, preflight.ROOT, dry_run=False,
+                    env_values={"CFM_COMPARISON_TRANSPORT": "service"})
+        self.assertNotIn("private-error", str(raised.exception))
+        status.return_value.fail.assert_called_once()
+        status.return_value.close.assert_called_once_with(clear=False)
+
+    def test_create_failure_after_up_has_cutover_started_type(self):
+        from scripts import docker_update_engine as update
+        from docker_instance_tools import CutoverStartedError, DockerCommandError
+        def run(command, **kwargs):
+            if "up" in command:
+                raise DockerCommandError(command, 1, "private-error")
+        plan = {"env_path": Path("/env"), "project": "qa", "desired": {"env_values": {}}}
+        with patch.object(update, "require_comparison_network"), patch.object(update, "run", side_effect=run), \
+             patch.object(update, "preflight_compose_runtime"):
+            with self.assertRaises(CutoverStartedError) as raised:
+                update.create_instance(plan, preflight.ROOT)
+        self.assertNotIn("private-error", str(raised.exception))

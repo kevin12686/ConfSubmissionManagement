@@ -38,6 +38,13 @@ write-free dry-run, preservation of existing env comments/settings/secrets,
 per-conference enrollment isolation, repeated setup, multiple conferences on
 one worker, invalid/conflicting credentials, busy-worker refusal and partial
 deployment retry. Readiness/ZIP/CrossCheck regression remains mandatory.
+Exercise both updater entrypoints against the same selected/all-project plans.
+Dry-run must show actual redacted changes and worker/model requirements without
+persistent writes or live probes; new projects require `--create-missing`.
+Cover one shared-worker preparation for a multi-conference batch, remote-only
+and env-less legacy cases, later invalid configuration before any provisioning,
+busy refusal, per-conference env restoration before cutover, retaining settings
+after attempted cutover and no rollback of earlier successful updates.
 
 Use disposable projects/volumes and generated data, never a live conference.
 Test native Python/venv/dependency failures and actual model loading. Confirm
@@ -78,6 +85,11 @@ JSON, duplicate/case-colliding and reserved headers, control characters, bounds,
 env preservation/redaction, special characters through actual Compose and
 rotation without a second upload. Never test with conference PDFs or real
 Cloudflare secrets. Changing this deployment setting needs no DB migration.
+Gate a disposable HTTP fixture against Python-urllib User-Agent and verify the
+default CFM identity succeeds for startup/upload/poll/retry while custom UA is
+retained. Force 1010, generic gateway denial, worker 401, login redirect,
+non-JSON and network errors; assert safe reasons/status/Ray ID survive preflight
+without response prose, cookies, request credentials or changed fallback policy.
 
 ## Shared PDF Reader Acceptance
 

@@ -3,7 +3,7 @@
 
 import argparse
 import hashlib
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, ExitStack
 from datetime import datetime, timezone
 import ipaddress
 import json
@@ -18,19 +18,19 @@ import tempfile
 from urllib import request, parse, error
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT = SCRIPT_DIR.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import deployment_provision
 import docker_instance_tools as docker
 import start_comparison_slave as slave
-import update_docker_instances as updater
-
-ROOT = SCRIPT_DIR.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from scripts import docker_update_engine as updater
 
 from conference_final_manager.comparison_config import parse_remote_headers
+from conference_final_manager.comparison_http import NoRedirect, worker_headers
 
 BOOTSTRAP = "cfm-bootstrap"
 NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
@@ -103,7 +103,10 @@ def file_changes(changes):
                 atomic_write(path, data)
                 written.append(path)
         yield
-    except BaseException:
+    except BaseException as exc:
+        if isinstance(exc, docker.CutoverStartedError):
+            print("Container cutover was attempted; retaining its configuration for recovery. Earlier completed updates are not rolled back.", file=sys.stderr)
+            raise
         for path in reversed(written):
             if read_file(path) != changes[path]:
                 raise DeployError("Configuration changed concurrently; refusing to overwrite it during recovery.")
@@ -137,7 +140,8 @@ class EnvFile:
                 parts = shlex.split(raw, comments=True, posix=True)
             except ValueError as exc:
                 raise DeployError(f"Unsupported quoted env setting: {key}.") from exc
-            self.values[key] = " ".join(parts)
+            value = " ".join(parts)
+            self.values[key] = value if raw.lstrip().startswith("'") else value.replace("$$", "$")
             self.lines[key] = index
 
     def get(self, key, default=""):
@@ -272,11 +276,6 @@ def configured_path(env, key):
     return checked_path(Path(value) if Path(value).is_absolute() else ROOT / value)
 
 
-class NoRedirect(request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
 def worker_status(env, clients):
     result = docker.run(["docker", "ps", "--filter", f"label=com.docker.compose.project={env.get('CFM_SLAVE_PROJECT_NAME')}",
                          "--filter", "label=com.docker.compose.service=comparison-slave", "--format", "{{.ID}}"], capture=True)
@@ -300,7 +299,7 @@ def worker_status(env, clients):
     url = f"http://{host}:{env.get('CFM_SLAVE_PORT')}/v1/health"
     opener = request.build_opener(request.ProxyHandler({}), NoRedirect())
     try:
-        req = request.Request(url, headers={"Authorization": "Bearer " + next(iter(clients.values()))})
+        req = request.Request(url, headers=worker_headers(next(iter(clients.values()))))
         with opener.open(req, timeout=5) as response:
             data = response.read(8193)
             if response.status != 200 or len(data) > 8192:
@@ -355,7 +354,9 @@ def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, 
     changed = clients != original_clients or env.original is None or needs_update
     if dry_run:
         deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=True)
-        print(f"Would ensure shared {env.get('CFM_DEPLOY_WORKER_BACKEND')} worker; validate/reuse or enroll {len(additions)} conference namespace(s). No files written.")
+        action = "create/update required" if changed or force else "reuse if healthy; apply checks live status"
+        print(f"Shared {env.get('CFM_DEPLOY_WORKER_BACKEND')} worker {env.get('CFM_SLAVE_PROJECT_NAME')}: {action}.")
+        print(f"  {len(additions)} selected conference namespace(s); existing credentials retained. Any worker restart affects all clients on this shared worker.")
         return clients
     state = worker_status(env, original_clients)
     if state == "busy" and (changed or force):
@@ -426,10 +427,70 @@ def ensure_network(name):
         docker.run(["docker", "network", "create", name], capture=True)
 
 
-def conference(args):
+def validate_compute_config(values):
+    """Reject invalid per-conference connections before shared infrastructure changes."""
+    try:
+        parse_remote_headers(values.get("CFM_COMPARISON_REMOTE_HEADERS", ""), url=values.get("CFM_COMPARISON_REMOTE_URL", ""))
+    except ValueError as exc:
+        raise DeployError(str(exc)) from None
+    transport = values.get("CFM_COMPARISON_TRANSPORT", "service")
+    if transport not in {"service", "embedded"}:
+        raise DeployError("Unknown comparison transport.")
+    if transport == "embedded":
+        return
+    for name in ("LOCAL", "REMOTE"):
+        url = values.get(f"CFM_COMPARISON_{name}_URL", "").strip()
+        token = values.get(f"CFM_COMPARISON_{name}_TOKEN", "").strip()
+        if url:
+            try:
+                endpoint(url)
+                valid_token(token)
+            except (ValueError, DeployError):
+                raise DeployError(f"Invalid {name.lower()} worker URL/token; no credential was changed.") from None
+        elif token:
+            raise DeployError(f"{name.title()} worker token is configured without its URL.")
+    if not any(values.get(f"CFM_COMPARISON_{name}_URL", "").strip() for name in ("LOCAL", "REMOTE")):
+        raise DeployError("Service mode needs at least one worker endpoint.")
+
+
+def validate_env_snapshot(env):
+    if read_file(env.path) != env.original:
+        raise DeployError(f"{env.path.name} changed during deployment planning; no stale configuration was written. Preview again.")
+
+
+def prepare_conference(args, *, existing=None, effective_values=None):
+    """Prepare configuration in memory; never provision or mutate containers."""
     project = namespace(args.name)
     env = EnvFile(select_conference_env(project, args.env_file, dry_run=args.dry_run))
     env.require("COMPOSE_PROJECT_NAME", project)
+    # Compose owns interpolation. Reuse its structured effective values rather
+    # than interpreting `$VAR` ourselves or re-expanding literal credentials.
+    if effective_values is None and env.original is not None:
+        with updater.compose_file_precedence():
+            effective_values = updater.planned_instance_from_env(ROOT, env.path, project,
+                bind_override=bool(existing and existing["mount_type"] == "bind"))["env_values"]
+    for key, value in (effective_values or {}).items():
+        if env.get(key):
+            env.values[key] = value
+    if existing:
+        live = existing.get("env", {})
+        # Missing env entries do not authorize rotating a running signing key
+        # or dropping an already configured worker connection. Explicit values
+        # (including an intentionally blank URL/header setting) remain owned by
+        # the operator; tokens are retained only for the same endpoint URL.
+        env.default("SMS_SECRET_KEY", live.get("SMS_SECRET_KEY", ""))
+        for key in ("CFM_COMPARISON_TRANSPORT", "CFM_COMPARISON_NETWORK"):
+            if key not in env.values and live.get(key):
+                env.default(key, live[key])
+        for name in ("LOCAL", "REMOTE"):
+            url_key, token_key = f"CFM_COMPARISON_{name}_URL", f"CFM_COMPARISON_{name}_TOKEN"
+            if url_key not in env.values and live.get(url_key):
+                env.default(url_key, live[url_key])
+            if env.get(url_key) == live.get(url_key) and live.get(token_key):
+                env.default(token_key, live[token_key])
+        key = "CFM_COMPARISON_REMOTE_HEADERS"
+        if key not in env.values and env.get("CFM_COMPARISON_REMOTE_URL") == live.get("CFM_COMPARISON_REMOTE_URL") and live.get(key):
+            env.default(key, live[key])
     if args.port is not None:
         if not 1 <= args.port <= 65535:
             raise DeployError("Conference port must be between 1 and 65535.")
@@ -469,6 +530,16 @@ def conference(args):
             token = proposed or clients.get(project) or ("DRY_RUN_CREDENTIAL_NOT_WRITTEN_" + project if args.dry_run else secrets.token_urlsafe(32))
             env.default("CFM_COMPARISON_LOCAL_URL", local_url)
             env.require("CFM_COMPARISON_LOCAL_TOKEN", valid_token(token))
+    validate_compute_config(env.values)
+    return env, worker
+
+
+def conference(args):
+    instances = updater.matching_instances(updater.inspect_compose_containers(), ROOT, {args.name})
+    existing = next((item for item in instances if item["project"] == args.name), None)
+    env, worker = prepare_conference(args, existing=existing)
+    project = env.get("COMPOSE_PROJECT_NAME")
+    transport = env.get("CFM_COMPARISON_TRANSPORT")
     if args.dry_run:
         if worker:
             ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline, dry_run=True)
@@ -480,12 +551,14 @@ def conference(args):
     with docker.temporary_env_file(env.values) as preview:
         plan = conference_plan(preview, project)
     plan["env_path"] = env.path
+    validate_env_snapshot(env)
     if worker:
         ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline)
     else:
         if transport == "embedded":
             deployment_provision.provision_models(ROOT / "runtime/rapidocr-models", offline=args.offline)
         ensure_network(env.get("CFM_COMPARISON_NETWORK", "cfm-comparison"))
+    validate_env_snapshot(env)
     with file_changes({env.path: env.bytes()}):
         updater.print_update_plans([plan], create_missing=True)
         updater.apply_update_plans([plan], ROOT, create_missing=True)
@@ -510,16 +583,88 @@ def worker(args):
 
 
 def update(args):
-    if args.dry_run:
-        print("Would validate/provision selected conference configurations and shared worker, then invoke the existing updater. No files or containers changed.")
-        return
     plans = updater.build_update_plans(ROOT, selected_projects=set(args.project))
+    prepared, worker, additions = {}, None, {}
+    active = []
     for plan in plans:
+        if plan["action"] == "create" and not args.create_missing:
+            continue
+        active.append(plan)
         if plan["env_path"]:
-            conference(argparse.Namespace(name=plan["project"], port=None, env_file=plan["env_path"],
-                       remote_url=None, remote_enrollment=None, offline=args.offline, dry_run=False))
+            env, local = prepare_conference(argparse.Namespace(
+                name=plan["project"], port=None, env_file=plan["env_path"],
+                remote_url=None, remote_enrollment=None, dry_run=args.dry_run,
+            ), existing=plan["existing"], effective_values=plan["desired"]["env_values"])
+            prepared[plan["project"]] = env
+            if local:
+                worker = local
+                additions[plan["project"]] = env.get("CFM_COMPARISON_LOCAL_TOKEN")
         else:
-            updater.apply_update_plans([plan], ROOT, create_missing=False)
+            values = plan["desired"]["env_values"]
+            validate_compute_config(values)
+            # Retain a legacy instance's live environment, never invent a new
+            # managed env file or replace its deployment identity.
+            if values.get("CFM_COMPARISON_TRANSPORT", "service") == "service":
+                url = values.get("CFM_COMPARISON_LOCAL_URL", "")
+                token = values.get("CFM_COMPARISON_LOCAL_TOKEN", "")
+                if url == "http://comparison-slave:8091" and token:
+                    worker = worker_env()
+                    if values.get("CFM_COMPARISON_NETWORK", "cfm-comparison") != worker.get("CFM_COMPARISON_NETWORK"):
+                        raise DeployError("Running conference and shared worker network differ; reconcile the existing configuration first.")
+                    additions[plan["project"]] = valid_token(token)
+                elif not url and not values.get("CFM_COMPARISON_REMOTE_URL"):
+                    raise DeployError("A legacy instance without worker configuration needs its existing managed env file before upgrade; no identity was invented.")
+
+    # Re-evaluate filled defaults through Compose, retaining every data/port
+    # guard before any worker or conference configuration is committed.
+    with ExitStack() as staging, updater.compose_file_precedence():
+        for plan in active:
+            env = prepared.get(plan["project"])
+            if not env:
+                continue
+            path = staging.enter_context(docker.temporary_env_file(env.values))
+            existing = plan["existing"]
+            desired = updater.planned_instance_from_env(ROOT, path, plan["project"],
+                bind_override=bool(existing and existing["mount_type"] == "bind"))
+            if existing:
+                updater.validate_existing_data_mount(existing, desired)
+            plan["desired"] = desired
+            plan["changes"] = updater.environment_changes(existing, desired, ROOT) if existing else {}
+            plan["force_proxy_recreate"] = not existing or bool(updater.PROXY_RECREATE_KEYS & set(plan["changes"]))
+        instances = updater.matching_instances(updater.inspect_compose_containers(), ROOT, set())
+        updater.validate_desired_endpoints(active, instances)
+        updater.validate_desired_data_directories(active, instances)
+        updater.print_update_plans(plans, create_missing=args.create_missing)
+        for env in prepared.values():
+            validate_env_snapshot(env)
+        if worker:
+            ensure_worker(worker, additions, offline=args.offline, dry_run=args.dry_run)
+        embedded = any(p["desired"]["env_values"].get("CFM_COMPARISON_TRANSPORT", "service") == "embedded" for p in active)
+        if embedded:
+            deployment_provision.provision_models(ROOT / "runtime/rapidocr-models", offline=args.offline, dry_run=args.dry_run)
+        if args.dry_run:
+            for env in prepared.values():
+                original = EnvFile(env.path)
+                keys = sorted(k for k, v in env.values.items() if v and not original.get(k))
+                if keys:
+                    print(f"  {env.path.name}: fill missing settings: {', '.join(keys)} (values withheld).")
+            print("Dry-run: configuration/Compose plans checked; no persistent files, models or containers changed. Live HTTP/runtime checks run before cutover during apply.")
+            return
+        for plan in active:
+            values = plan["desired"]["env_values"]
+            if not worker or values.get("CFM_COMPARISON_NETWORK", "cfm-comparison") != worker.get("CFM_COMPARISON_NETWORK"):
+                ensure_network(values.get("CFM_COMPARISON_NETWORK", "cfm-comparison"))
+        # Commit each env only around its own cutover; a later failure must not
+        # restore settings for an earlier conference that was already updated.
+        for plan in active:
+            env = prepared.get(plan["project"])
+            if env:
+                validate_env_snapshot(env)
+            with file_changes({env.path: env.bytes()} if env else {}):
+                updater.apply_update_plans([plan], ROOT, create_missing=args.create_missing)
+        for plan in plans:
+            if plan not in active:
+                print(f"Skipped new project {plan['project']}; use --create-missing to authorize creation.")
 
 
 def main(argv=None):
@@ -543,6 +688,7 @@ def main(argv=None):
     c.add_argument("--remote-enrollment", type=Path)
     u = sub.add_parser("update", parents=[common])
     u.add_argument("--project", action="append", default=[])
+    u.add_argument("--create-missing", action="store_true", help="Also create new conferences declared by env files.")
     args = parser.parse_args(argv)
     try:
         lock = nullcontext() if args.dry_run else docker.exclusive_lock(ROOT / "runtime/.docker-data-operation.lock")
@@ -571,8 +717,12 @@ def main(argv=None):
                 return 1
         return 0
     except (OSError, ValueError, RuntimeError) as exc:
-        if isinstance(exc, (DeployError, deployment_provision.ProvisionError)):
+        if isinstance(exc, (DeployError, deployment_provision.ProvisionError, slave.DeploymentError,
+                            docker.CutoverStartedError, updater.UpdatePlanError)):
             print(f"Deployment stopped: {exc}", file=sys.stderr)
+        elif isinstance(exc, docker.DockerCommandError):
+            stage = next((name for name in ("build", "run", "up", "config", "exec") if name in exc.command), "operation")
+            print(f"Deployment stopped: Docker {stage} exited with status {exc.returncode}. See the preceding build/preflight/cutover output; earlier completed updates remain applied.", file=sys.stderr)
         else:
             print(f"Deployment stopped ({type(exc).__name__}); existing credentials were not silently replaced.", file=sys.stderr)
         return 1

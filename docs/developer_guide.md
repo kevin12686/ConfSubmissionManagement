@@ -148,7 +148,9 @@ conference data. Optional GROBID/CrossCheck services are not startup prerequisit
 
 `scripts/start_comparison_slave.py` owns independent worker build/preflight/start.
 `scripts/deploy.py` orchestrates first setup and updates around that interface
-and the existing conference updater. Its private per-project enrollment files,
+and `docker_update_engine.py` (the extracted conference planning/cutover guard
+layer). `update_docker_instances.py` delegates to the same update workflow, not
+a second implementation. Its private per-project enrollment files,
 worker-source fingerprint and deployment log are host state under `runtime/`,
 not conference models or System State contents. Preserve existing user values
 and token bytes; tests must reject conflicting enrollments and exercise
@@ -168,13 +170,29 @@ remote endpoints receive the headers. Preserve Bearer/protocol headers,
 case-insensitive duplicate rejection and secret-safe errors. Header rotation
 does not change the signed route identity (worker URL/token) or OCR contract.
 Docker management must retain/redact the entire setting. Compose config output
-escapes literal dollars; normalize this new env setting at that structured
-output boundary and preserve JSON/quotes/dollars in generated env files.
+escapes literal dollars; normalize environment values at that structured output
+boundary, and escape literal dollars when generating scalar env assignments.
+Let Compose resolve existing variable references instead of expanding them in
+the deployer. Preserve JSON/quotes/dollars and existing signing-key bytes across
+both rendered plans and generated env files.
 Test actual HTTP and Compose round-trips, not only mocked `Endpoint.call()`.
+`comparison_http.py` owns the descriptive `ConferenceFinalManager/1` User-Agent
+and secret-safe network/HTTP diagnostics. Preserve explicit custom remote UA
+overrides, but never require one for normal Cloudflare operation. Startup errors
+must retain safe HTTP/provider codes (1010 is not bad-token proof), bounded
+non-secret Ray IDs, redirects/non-JSON and DNS/TLS/timeout/refusal categories.
+Do not print response prose, cookies, Location URLs or request credentials.
 For the opt-in actual container env check, build a disposable app image and run
 `CFM_HEADER_TEST_IMAGE=<test-image> .venv/bin/python -m unittest discover -s tests -p 'test_comparison_headers_docker.py'`.
 It creates/removes unique test projects with fake credentials and no conference
 mounts. Normal standalone discovery skips this explicit Docker-only check.
+Run the real isolated updater acceptance with
+`CFM_UPDATE_DOCKER_ACCEPTANCE=1 .venv/bin/python -m unittest discover -s tests -p 'test_update_workflow_docker.py'`.
+It requires Docker, installed test dependencies and the pinned local models;
+it creates a disposable checkout, unique images/networks/volumes and two
+generated conferences, exercises both update entrypoints and checks database,
+env/token preservation. It never mounts existing conference data. The model
+directory is read-only. Normal discovery skips this explicit acceptance test.
 Developers should use that guide for instance creation, environment ownership,
 updates, backups, migration, and rollback.
 
@@ -187,9 +205,20 @@ The development-facing boundaries are:
 - Nginx must preserve the public Host header, serve static/media independently
   of `SMS_DEBUG`, and never participate in publication file selection.
 - Code or environment changes are applied through
-  `scripts/deploy.py update`, beginning with `--dry-run`; the lower-level
-  `scripts/update_docker_instances.py` remains available for already provisioned
-  deployments and does not manage worker provisioning.
+  `scripts/update_docker_instances.py`, beginning with `--dry-run`;
+  `scripts/deploy.py update` is the same orchestration entry point. Prepare
+  shared-worker clients once per selected batch, never once per conference.
+  New env-declared projects still require `--create-missing`. Dry-run performs
+  actual static/Compose planning with private temporary env staging but no
+  persistent writes, live HTTP probes, builds, downloads or restarts.
+- Validate all prepared static plans before infrastructure mutations. Keep each
+  env commit scoped to its own apply: a later failure must not restore an earlier
+  updated conference's old settings. A typed `CutoverStartedError` preserves
+  recovery configuration after a replacement was attempted. Do not describe a
+  batch as transactional or automatically roll back migrations/containers.
+  Missing env signing secrets and worker connections must retain the existing
+  instance's live values, not rotate keys or silently switch compute endpoints.
+  Never carry an old token/header set to a different explicitly selected URL.
 - The Docker operation scripts share a lock and must retain the current data
   mount type until an explicit migration or rollback.
 - Never use `docker compose down -v` for a conference instance.

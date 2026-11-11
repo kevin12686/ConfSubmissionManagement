@@ -23,8 +23,9 @@ forced interruption. Inspect private `runtime/deployment.log` for operation IDs
 and outcomes; it contains no tokens or PDF content.
 
 Remote GPU enrollment must be private mode 0600, match COMPOSE_PROJECT_NAME,
-and agree with existing remote credentials/URL. Import the trusted GPU-host
-file instead of editing tokens. If deliberately changing a worker's bind
+and agree with existing remote credentials/URL. Prefer importing the trusted
+GPU-host file; manual env configuration is also supported when its URL/token
+exactly match the intended worker namespace. If deliberately changing a worker's bind
 address, stop that idle worker first: an already-running server is still on
 its old address and the deployer will not guess a new health-check target.
 
@@ -51,6 +52,19 @@ opening its browser page. Do not remove `data/` or bypass the checker.
   Recreate via the unified updater after changing env; a restart alone retains
   the old environment. Do not share raw env/Compose output containing secrets.
   See [Remote Gateway Authentication](docker_guide.md#remote-gateway-authentication).
+- Cloudflare `HTTP 403 / error 1010` means browser-signature blocking, not proof
+  of a bad worker token. Shared client/preflight requests now identify CFM with
+  `ConferenceFinalManager/1`; remove an explicit obsolete Python-urllib UA
+  override if it is not intentional. Inspect Cloudflare security events using
+  the reported Ray ID; do not regenerate tokens or disable Access to hide it.
+  Only code/HTTP/provider IDs are displayed, not untrusted remote messages.
+  JSON `401 / protocol:1 / unauthorized` instead identifies worker token rejection.
+- Use `scripts/update_docker_instances.py` for complete CFM-host updates,
+  including local worker/models/credentials; `deploy.py update` is equivalent.
+  Both dry-runs now show actual redacted static/Compose plans, not just a
+  generic message. They do not prove a live service connection. A later batch
+  failure leaves earlier updates applied; after attempted cutover, retain the
+  env/recovery status rather than assuming rollback.
 - Update/migration failures during preflight leave the old web running. Backup
   checks new-image restart prerequisites before stopping it. After fixing the
   worker/configuration, retry the normal operation; do not delete volumes.

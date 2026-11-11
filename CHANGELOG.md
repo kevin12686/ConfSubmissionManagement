@@ -3,6 +3,25 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.26.0 - Unreleased
+
+- Identify shared worker HTTP requests with `ConferenceFinalManager/1` by
+  default, including startup/cutover checks, uploads, polling and retries.
+  Preserve optional remote custom headers and worker Bearer authentication.
+- Report safe HTTP status, Cloudflare error codes (including 1010), Ray IDs,
+  redirects, invalid JSON and DNS/TLS/connection failures instead of hiding
+  every health-check error as a rejected token. Do not echo response prose,
+  credentials, cookies or redirect URLs.
+- Make `update_docker_instances.py` and `deploy.py update` use one orchestration
+  workflow. Validate the selected batch, prepare the shared local worker once,
+  provision missing models/client credentials and retain existing settings/data.
+  Both provide actual redacted dry-run plans; creating new conferences still
+  requires explicit `--create-missing`.
+- Keep earlier completed updates after a later failure. Restore a staged env on
+  pre-cutover failure, but retain it for recovery once container cutover was
+  attempted. Publication selection, OCR quality/contracts, review resets and
+  State archive v8 are unchanged; no database migration is needed.
+
 ## 1.25.1 - Unreleased
 
 - Add per-conference `CFM_COMPARISON_REMOTE_HEADERS` JSON configuration in the

@@ -54,6 +54,10 @@ SENSITIVE_ENV_KEYS = {"SMS_SECRET_KEY", "SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROS
 }
 
 
+class CutoverStartedError(RuntimeError):
+    """Container replacement was attempted; configuration must not be rolled back."""
+
+
 class DockerCommandError(RuntimeError):
     def __init__(self, command: list[str], returncode: int, stderr: str = ""):
         self.command = command
@@ -324,7 +328,7 @@ def format_env_line(key: str, value: str) -> str:
         return f"{key}='" + value.replace("'", "\\u0027") + "'\n"
     if re.match(r"^[A-Za-z0-9_./:@%+\\-]+$", value):
         return f"{key}={value}\n"
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
     return f'{key}="{escaped}"\n'
 
 

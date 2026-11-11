@@ -232,12 +232,36 @@ class ComparisonClientTests(SimpleTestCase):
 
 
 class ComparisonHTTPTransportTests(SimpleTestCase):
+    def test_http_errors_keep_status_and_safe_reason(self):
+        cases = [(401, b'{"protocol":1,"error":"unauthorized"}', "worker rejected"),
+                 (403, b'{"cloudflare_error":true,"error_code":1010}', "1010"),
+                 (302, b"{}", "redirects"), (200, b"<html>private-secret</html>", "invalid JSON"),
+                 (200, b"[]", "JSON object")]
+        for code, body, reason in cases:
+            endpoint = client.Endpoint("remote", "http://host:8091", "t" * 32)
+            response = io.BytesIO(body)
+            response.status, response.headers = code, {}
+            with self.subTest(code=code, reason=reason), patch.object(endpoint.opener, "open", return_value=response):
+                with self.assertRaises(PDFComparisonError) as raised:
+                    endpoint.call("/v1/health")
+            self.assertIn(f"HTTP {code}", str(raised.exception))
+            self.assertIn(reason, str(raised.exception))
+            self.assertNotIn("private-secret", str(raised.exception))
+        from http.client import IncompleteRead
+        endpoint = client.Endpoint("remote", "http://host:8091", "t" * 32)
+        with patch.object(endpoint.opener, "open", side_effect=IncompleteRead(b"private-secret", 1)):
+            with self.assertRaises(PDFComparisonError) as raised:
+                endpoint.call("/v1/health")
+        self.assertIn("incomplete", str(raised.exception))
+        self.assertNotIn("private-secret", str(raised.exception))
+
     def test_html_gateway_failures_are_transport_unavailable(self):
         for code in (500, 502, 503, 504):
             with self.subTest(code=code):
                 endpoint = client.Endpoint("remote", "http://host:8091", "t" * 32)
                 response = io.BytesIO(b"<html>Upstream unavailable</html>")
                 response.status = code
+                response.headers = {}
                 with patch.object(endpoint.opener, "open", return_value=response):
                     with self.assertRaises(client.TransportUnavailable):
                         endpoint.call("/v1/health")
@@ -248,6 +272,7 @@ class ComparisonHTTPTransportTests(SimpleTestCase):
                 endpoint = client.Endpoint("remote", "http://host:8091", "t" * 32)
                 response = io.BytesIO(body)
                 response.status = code
+                response.headers = {}
                 with patch.object(endpoint.opener, "open", return_value=response):
                     with self.assertRaises(PDFComparisonError):
                         endpoint.call("/v1/health")

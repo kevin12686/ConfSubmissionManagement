@@ -21,7 +21,7 @@ import docker_data_transfer
 import docker_instance_tools
 import migrate_docker_data_volumes
 import rebuild_docker_instances
-import update_docker_instances
+from scripts import docker_update_engine as update_docker_instances
 
 
 class DockerDataTransferTests(TestCase):

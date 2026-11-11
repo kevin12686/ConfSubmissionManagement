@@ -12,6 +12,7 @@ from django.test import SimpleTestCase, override_settings
 
 from scripts import check_comparison_runtime as preflight
 from submissions.services import comparison_client as client
+from conference_final_manager.comparison_http import USER_AGENT
 from submissions.services.comparison_protocol import contract_id, page_render_hashes
 from submissions.services.pdf_comparison_errors import PDFComparisonError
 from submissions.services.rapidocr_comparison.result import build_result
@@ -26,6 +27,7 @@ class GatewayHTTPTests(SimpleTestCase):
         self.headers = {"CF-Access-Client-Id": "client", "CF-Access-Client-Secret": "secret$#'\\\""}
         self.seen, self.jobs, self.uploads = [], {}, []
         self.denial = None
+        self.denial_body = b"<html>Login required</html>"
         self.before = make_pdf(["The original text preserves the scientific context in this paragraph."])
         self.after = make_pdf(["The corrected text preserves the scientific context in this paragraph."])
         self.hashes = [hashlib.sha256(pdf).hexdigest() for pdf in (self.before, self.after)]
@@ -46,8 +48,14 @@ class GatewayHTTPTests(SimpleTestCase):
                     code = owner.denial
                     self.send_response(code)
                     self.send_header("Location", owner.url + "/must-not-follow")
+                    self.send_header("cf-ray", "a58b4d0c5fa70c43-DFW")
                     self.end_headers()
-                    self.wfile.write(b"<html>Login required</html>")
+                    self.wfile.write(owner.denial_body)
+                    return
+                if self.headers.get("User-Agent", "").startswith("Python-urllib/"):
+                    self.send_response(403)
+                    self.end_headers()
+                    self.wfile.write(b'{"cloudflare_error":true,"error_code":1010}')
                     return
                 if (self.headers.get("Authorization") != "Bearer " + owner.token
                         or any(self.headers.get(k) != v for k, v in owner.headers.items())):
@@ -104,6 +112,7 @@ class GatewayHTTPTests(SimpleTestCase):
         for method, path, headers in self.seen:
             headers = {key.lower(): value for key, value in headers.items()}
             self.assertEqual(headers["authorization"], "Bearer " + self.token)
+            self.assertEqual(headers["user-agent"], USER_AGENT)
             for key, value in self.headers.items():
                 self.assertEqual(headers[key.lower()], value)
         self.headers["CF-Access-Client-Secret"] = "rotated-secret"
@@ -141,5 +150,31 @@ class GatewayHTTPTests(SimpleTestCase):
         self.assertEqual(local.call("/v1/health")[0], 200)
         for _, _, headers in self.seen:
             self.assertFalse(any(key.lower().startswith("cf-access-") for key in headers))
+            self.assertEqual(next(v for k, v in headers.items() if k.lower() == "user-agent"), USER_AGENT)
         with self.assertRaises(PDFComparisonError):
             client.Endpoint("local", self.url, self.token, custom_headers='{"X-Key":"secret"}')
+
+    def test_cloudflare_1010_reaches_preflight_without_remote_prose_or_credentials(self):
+        import os
+        self.denial = 403
+        self.denial_body = json.dumps({"cloudflare_error": True, "error_code": 1010,
+            "detail": "untrusted prose " + self.token + self.headers["CF-Access-Client-Secret"]}).encode()
+        with patch.dict(os.environ, {
+            "CFM_COMPARISON_LOCAL_URL": "", "CFM_COMPARISON_LOCAL_TOKEN": "",
+            "CFM_COMPARISON_REMOTE_URL": self.url, "CFM_COMPARISON_REMOTE_TOKEN": self.token,
+            "CFM_COMPARISON_REMOTE_HEADERS": json.dumps(self.headers),
+        }), self.assertRaises(preflight.PreflightError) as raised:
+            preflight.check_service(0)
+        text = str(raised.exception)
+        for expected in ("HTTP 403", "1010", "User-Agent", "a58b4d0c5fa70c43-DFW"):
+            self.assertIn(expected, text)
+        for secret in (self.token, self.headers["CF-Access-Client-Secret"], "untrusted prose"):
+            self.assertNotIn(secret, text)
+        self.assertEqual(self.uploads, [])
+
+    def test_custom_user_agent_override_is_preserved_case_insensitively(self):
+        custom = {**self.headers, "user-agent": "ConferenceOperator/2"}
+        endpoint = client.Endpoint("remote", self.url, self.token, custom_headers=json.dumps(custom))
+        self.assertEqual(endpoint.call("/v1/health")[0], 200)
+        headers = {k.lower(): v for k, v in self.seen[-1][2].items()}
+        self.assertEqual(headers["user-agent"], "ConferenceOperator/2")

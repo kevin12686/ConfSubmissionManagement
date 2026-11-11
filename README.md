@@ -72,6 +72,9 @@ Remote workers behind Cloudflare Access or another HTTP gateway can use
 per-conference custom authentication headers from the same private `.env` file;
 see [Remote Gateway Authentication](docs/docker_guide.md#remote-gateway-authentication).
 These headers supplement the worker token and never go to the local CPU worker.
+Worker requests identify CFM with a shared application User-Agent; gateway
+errors retain safe HTTP/Cloudflare codes instead of suggesting every rejection
+is a bad token.
 Method 7's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t and rn/m; whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image
@@ -173,6 +176,10 @@ python3 scripts/deploy.py conference --name conference-a --port 8000
 Use a unique `COMPOSE_PROJECT_NAME`, port, and data mirror for every conference.
 See the [Docker Guide](docs/docker_guide.md) before updating, backing up,
 migrating, or recovering a Docker instance.
+Normal updates use `python3 scripts/update_docker_instances.py --dry-run`, then
+the same command without `--dry-run`; it prepares local compute prerequisites
+and updates the selected conferences. `deploy.py update` is an equivalent
+entry point, not a second deployment workflow.
 Remote GPU setup and one-time private enrollment are covered in
 [Unified Deployment](docs/docker_guide.md#unified-deployment). Measured full-PDF
 GPU Docker timings and known network/CPU limits live in

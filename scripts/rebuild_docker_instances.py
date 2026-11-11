@@ -19,6 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from docker_instance_tools import (  # noqa: E402
+    CutoverStartedError,
     DockerCommandError,
     GATEWAY_VERSION,
     SENSITIVE_ENV_KEYS,
@@ -237,10 +238,11 @@ def rebuild_instance(
                 env_file,
                 bind_override=bind_override,
             )
-        except Exception:
+        except Exception as exc:
             if cutover_started:
                 status.fail()
                 status.close(clear=False)
+                raise CutoverStartedError(f"{instance['project']}: container cutover was attempted but did not finish verification; inspect deployment status before retrying.") from exc
             else:
                 status.close(clear=True)
             raise

@@ -5,6 +5,7 @@ same idempotent job instead of silently starting another job on a second host.
 """
 from contextlib import contextmanager
 import hashlib
+from http.client import HTTPException
 from itertools import islice
 import json
 import os
@@ -22,6 +23,7 @@ from .comparison_protocol import (
     PROTOCOL, MAX_PDF_BYTES, MAX_REPLY_BYTES, contract_id, job_key, page_render_hashes,
 )
 from conference_final_manager.comparison_config import parse_remote_headers
+from conference_final_manager.comparison_http import NoRedirect, worker_headers, http_failure, transport_failure
 from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
 from .rapidocr_comparison.result import validate_result
 
@@ -34,11 +36,6 @@ WAIT_SECONDS = 240
 
 class TransportUnavailable(Exception):
     pass
-
-
-class NoRedirect(request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
 
 
 class Endpoint:
@@ -66,8 +63,7 @@ class Endpoint:
 
     def call(self, path, *, body=None, headers=None):
         req = request.Request(self.url + path, data=body, headers={
-            **self.custom_headers,
-            "Authorization": "Bearer " + self.token, "Accept": "application/json",
+            **worker_headers(self.token, self.custom_headers),
             **({"Content-Type": "application/octet-stream"} if body is not None else {}),
             **(headers or {}),
         })
@@ -77,29 +73,33 @@ class Endpoint:
             except error.HTTPError as exc:
                 response = exc
             with response:
+                status = response.status
+                response_headers = response.headers
                 data = response.read(MAX_REPLY_BYTES + 1)
                 if len(data) > MAX_REPLY_BYTES:
-                    raise PDFComparisonError("Comparison worker response exceeds the safe limit.")
-                status = response.status
+                    raise PDFComparisonError(f"HTTP {status}: comparison worker response exceeds the safe limit.")
             if status in {401, 403}:
-                raise PDFComparisonError(f"Comparison unavailable: {self.name} worker or access gateway rejected authentication. Check the worker API token and remote custom headers.")
+                raise PDFComparisonError(f"Comparison {self.name} worker: {http_failure(status, data, response_headers, secrets=[self.token, *self.custom_headers.values()])}")
             if status in {301, 302, 303, 307, 308}:
-                raise PDFComparisonError("Comparison worker redirects are not permitted.")
+                raise PDFComparisonError(http_failure(status, data, response_headers, secrets=[self.token, *self.custom_headers.values()]))
             if status in {502, 504}:
                 # Proxies commonly return HTML when the upstream is unavailable.
                 # Selection may fall back; an existing route remains pinned.
-                raise TransportUnavailable
+                raise TransportUnavailable(http_failure(status, data, response_headers, secrets=[self.token, *self.custom_headers.values()]))
             try:
                 value = json.loads(data)
             except (ValueError, RecursionError) as exc:
                 if 500 <= status < 600:
-                    raise TransportUnavailable from exc
-                raise PDFComparisonError("Comparison worker returned invalid JSON.") from exc
+                    raise TransportUnavailable(f"HTTP {status}: worker/gateway returned non-JSON server failure.") from None
+                raise PDFComparisonError(f"HTTP {status}: comparison worker returned invalid JSON (possibly a gateway/login page).") from None
             if not isinstance(value, dict):
-                raise PDFComparisonError("Comparison worker returned an invalid response.")
+                raise PDFComparisonError(f"HTTP {status}: comparison worker returned an invalid response; expected a JSON object.")
             return status, value
         except (error.URLError, OSError, TimeoutError) as exc:
-            raise TransportUnavailable from exc
+            raise TransportUnavailable(transport_failure(exc)) from None
+        except HTTPException as exc:
+            # Invalid/incomplete HTTP is not permission to select a new worker.
+            raise PDFComparisonError(transport_failure(exc)) from None
 
 
 def _endpoints():
