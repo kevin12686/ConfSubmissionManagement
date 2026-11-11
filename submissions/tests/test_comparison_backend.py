@@ -299,6 +299,7 @@ class DeploymentUpdaterTests(SimpleTestCase):
             "CFM_COMPARISON_LOCAL_TOKEN": "local-test-" + "a" * 32,
             "CFM_COMPARISON_REMOTE_URL": "https://ocr.example.test",
             "CFM_COMPARISON_REMOTE_TOKEN": "remote-test-" + "b" * 32,
+            "CFM_COMPARISON_REMOTE_HEADERS": '{"X-API-Key":"private$gateway#value"}',
         }
         container = make_container(root, project="sms-test", mount={
             "Type": "bind", "Destination": "/app/data", "Source": str(root / "data"),
@@ -320,7 +321,7 @@ class DeploymentUpdaterTests(SimpleTestCase):
         with redirect_stdout(output):
             updater.print_update_plans([plan], create_missing=False)
             updater.rebuild_instance(instance, root, dry_run=True, env_values=env)
-        for key in ("CFM_COMPARISON_LOCAL_TOKEN", "CFM_COMPARISON_REMOTE_TOKEN"):
+        for key in ("CFM_COMPARISON_LOCAL_TOKEN", "CFM_COMPARISON_REMOTE_TOKEN", "CFM_COMPARISON_REMOTE_HEADERS"):
             self.assertIn(key, helpers.SENSITIVE_ENV_KEYS)
             self.assertNotIn(values[key], output.getvalue())
             self.assertEqual(updater.display_env_value(key, values[key]), "***")
@@ -380,8 +381,20 @@ class DeploymentConfigTests(SimpleTestCase):
         slave = self.config("compose.comparison-slave.yml")
         self.assertEqual(config["networks"]["comparison"]["name"], slave["networks"]["comparison"]["name"])
         self.assertIn("comparison-slave", slave["services"]["comparison-slave"]["networks"]["comparison"]["aliases"])
-        for key in ("LOCAL_TOKEN", "REMOTE_URL", "REMOTE_TOKEN"):
+        for key in ("LOCAL_TOKEN", "REMOTE_URL", "REMOTE_TOKEN", "REMOTE_HEADERS"):
             self.assertEqual(env["CFM_COMPARISON_" + key], "")
+
+    def test_custom_headers_survive_actual_compose_interpolation(self):
+        from scripts import docker_instance_tools as helpers
+        from scripts import update_docker_instances as updater
+        raw = json.dumps({"X-API-Key": "dollar${DO_NOT_EXPAND}$ $$ # ' quote\" backslash\\"})
+        with helpers.temporary_env_file({"CFM_COMPARISON_REMOTE_HEADERS": raw}) as path:
+            config = self.config("docker-compose.yml", env_file=str(path))
+            desired = updater.planned_instance_from_env(ROOT, Path(path), "comparison-config-test", bind_override=False)
+        actual = config["services"]["web"]["environment"]["CFM_COMPARISON_REMOTE_HEADERS"]
+        # `config` is a re-loadable Compose document, not a container env dump.
+        self.assertEqual(json.loads(actual.replace("$$", "$")), json.loads(raw))
+        self.assertEqual(json.loads(desired["env_values"]["CFM_COMPARISON_REMOTE_HEADERS"]), json.loads(raw))
 
     def test_image_stages_do_not_install_both_ort_packages(self):
         source = (ROOT / "Dockerfile.comparison-slave").read_text()

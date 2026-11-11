@@ -146,7 +146,8 @@ launch a second job. A signed routing lease lasts 130 minutes after its last
 use and renews only on the same endpoint. The extra ten minutes cover an attempt
 started near the job's two-hour expiry and bounded network delays; expiry must
 not launch a local duplicate of still-running remote work. Changing endpoint or
-credentials requires restoring the configuration or waiting for lease expiry.
+worker Bearer credentials requires restoring the configuration or waiting for
+lease expiry. Optional gateway header rotation does not change this identity.
 Explicit Build/Retry can requeue a failed terminal job within the worker's
 bounded retry allowance. Polling never retries failed inference; completed or
 running jobs cannot be overwritten by Retry.
@@ -171,9 +172,15 @@ inspection snapshots, not a new OCR run. Retrieval still requires a ready,
 compatible worker runtime; changed or unavailable models/providers do not
 silently serve previously computed evidence.
 
-Bearer tokens require a trusted isolated LAN or TLS; the worker is not a public
-internet service. CFM does not follow worker redirects or environment HTTP
-proxies. Never expose the worker publicly or mount conference data into it.
+Bearer tokens require a trusted isolated LAN or TLS; the worker is not a
+hardened public internet service. A protected HTTPS gateway can front its private
+origin using optional per-conference `CFM_COMPARISON_REMOTE_HEADERS` JSON.
+Headers supplement worker authentication on every remote API request and
+startup check, never local requests. Gateway 401/403 and redirects fail
+explicitly, without silent fallback or secret values in diagnostics. CFM does
+not follow worker redirects or environment HTTP proxies. Never expose an
+unprotected origin publicly or mount conference data into it. See the
+[gateway setup](docker_guide.md#remote-gateway-authentication).
 
 ### Work Bounds
 

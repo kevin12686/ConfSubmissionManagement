@@ -23,6 +23,7 @@ class RuntimePreflightTests(SimpleTestCase):
             "CFM_COMPARISON_LOCAL_TOKEN": "local-test-token-" * 3,
             "CFM_COMPARISON_REMOTE_URL": "",
             "CFM_COMPARISON_REMOTE_TOKEN": "",
+            "CFM_COMPARISON_REMOTE_HEADERS": "",
         }))
         self.health = {"protocol": 1, "contract": contract_id(), "state": "ready"}
 
@@ -73,6 +74,28 @@ class RuntimePreflightTests(SimpleTestCase):
         with patch.object(comparison_client.Endpoint, "call", side_effect=PDFComparisonError("Unauthorized")):
             with self.assertRaisesRegex(preflight.PreflightError, "token"):
                 preflight.check_service(0)
+
+    def test_preflight_passes_headers_only_to_remote_endpoint(self):
+        observed = {}
+        def health(endpoint, path):
+            observed[endpoint.name] = endpoint.custom_headers
+            return 200, self.health
+        with patch.dict(os.environ, {
+            "CFM_COMPARISON_REMOTE_URL": "https://remote.example",
+            "CFM_COMPARISON_REMOTE_TOKEN": "r" * 32,
+            "CFM_COMPARISON_REMOTE_HEADERS": '{"X-API-Key":"private-value"}',
+        }), patch.object(comparison_client.Endpoint, "call", autospec=True, side_effect=health):
+            preflight.check_service(0)
+        self.assertEqual(observed, {"local": {}, "remote": {"X-API-Key": "private-value"}})
+
+    def test_invalid_headers_fail_before_health_without_exposing_values(self):
+        for value in ('{"Authorization":"private-value"}', '{"X-Key":"private-value",}', '[]'):
+            with self.subTest(value=value), patch.dict(os.environ, {"CFM_COMPARISON_REMOTE_HEADERS": value}):
+                with patch.object(comparison_client.Endpoint, "call") as call:
+                    with self.assertRaises(preflight.PreflightError) as raised:
+                        preflight.check_service(0)
+                call.assert_not_called()
+                self.assertNotIn("private-value", str(raised.exception))
 
     def test_service_waits_for_startup_with_finite_budget(self):
         with patch.object(comparison_client.Endpoint, "call", side_effect=[

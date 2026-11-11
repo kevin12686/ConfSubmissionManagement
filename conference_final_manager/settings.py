@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.25.0"
+APP_VERSION = "1.25.1"
 STATE_ARCHIVE_VERSION = 8
 
 
@@ -37,6 +37,7 @@ SECRET_KEY = os.environ.get("SMS_SECRET_KEY", "local-dev-only-change-if-exposed"
 CFM_COMPARISON_TRANSPORT = os.environ.get("CFM_COMPARISON_TRANSPORT", "embedded")
 CFM_COMPARISON_REMOTE_URL = os.environ.get("CFM_COMPARISON_REMOTE_URL", "")
 CFM_COMPARISON_REMOTE_TOKEN = os.environ.get("CFM_COMPARISON_REMOTE_TOKEN", "")
+CFM_COMPARISON_REMOTE_HEADERS = os.environ.get("CFM_COMPARISON_REMOTE_HEADERS", "")
 CFM_COMPARISON_LOCAL_URL = os.environ.get("CFM_COMPARISON_LOCAL_URL", "")
 CFM_COMPARISON_LOCAL_TOKEN = os.environ.get("CFM_COMPARISON_LOCAL_TOKEN", "")
 DEBUG = _env_bool("SMS_DEBUG", True)

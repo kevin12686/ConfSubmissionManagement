@@ -312,7 +312,9 @@ def planned_instance_from_env(
         ) from exc
 
     web_environment = {
-        key: str(value)
+        # Rendered Compose config escapes dollars for re-loading as a template.
+        # This JSON setting must instead retain its actual container env value.
+        key: str(value).replace("$$", "$") if key == "CFM_COMPARISON_REMOTE_HEADERS" else str(value)
         for key, value in (web.get("environment") or {}).items()
     }
     proxy_environment = {

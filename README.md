@@ -68,6 +68,10 @@ preferred remote CPU/GPU worker and local CPU fallback. See the
 [compute service contract](docs/pdf_comparison.md#shared-comparison-service) and
 [Docker setup](docs/docker_guide.md). Workers never select publication files or
 access conference databases.
+Remote workers behind Cloudflare Access or another HTTP gateway can use
+per-conference custom authentication headers from the same private `.env` file;
+see [Remote Gateway Authentication](docs/docker_guide.md#remote-gateway-authentication).
+These headers supplement the worker token and never go to the local CPU worker.
 Method 7's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t and rn/m; whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image

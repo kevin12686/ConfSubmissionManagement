@@ -24,6 +24,7 @@ class ComparisonClientTests(SimpleTestCase):
         self.enterContext(override_settings(
             BASE_DIR=self.root, CFM_COMPARISON_TRANSPORT="service",
             CFM_COMPARISON_REMOTE_URL="http://remote:8091", CFM_COMPARISON_REMOTE_TOKEN="r" * 32,
+            CFM_COMPARISON_REMOTE_HEADERS="",
             CFM_COMPARISON_LOCAL_URL="http://local:8091", CFM_COMPARISON_LOCAL_TOKEN="l" * 32,
         ))
         self.before = make_pdf(["The results are in Table 2. These independent observations preserve scientific context."])
@@ -111,6 +112,29 @@ class ComparisonClientTests(SimpleTestCase):
         with override_settings(CFM_COMPARISON_REMOTE_TOKEN="x" * 32):
             with self.assertRaisesRegex(PDFComparisonError, "configuration changed"):
                 self.compare()
+
+    def test_gateway_credential_rotation_keeps_the_same_job_and_worker(self):
+        self.compare()
+        with override_settings(CFM_COMPARISON_REMOTE_HEADERS='{"X-API-Key":"new-secret"}'):
+            self.assertTrue(self.compare()[1]["resumed"])
+        self.assertEqual(sum(c[2] is not None for c in self.calls), 1)
+        self.assertEqual({c[0] for c in self.calls}, {"remote"})
+
+    def test_invalid_headers_do_not_select_local_or_submit(self):
+        for raw in ('{"Authorization":"secret"}', '{"X-Key":"secret\\n"}', '[]'):
+            with self.subTest(raw=raw), override_settings(CFM_COMPARISON_REMOTE_HEADERS=raw):
+                with self.assertRaises(PDFComparisonError):
+                    self.compare()
+        self.assertEqual(self.calls, [])
+
+    def test_custom_headers_are_remote_only_and_missing_url_is_rejected(self):
+        with override_settings(CFM_COMPARISON_REMOTE_HEADERS='{"X-API-Key":"secret"}'):
+            remote, local = client._endpoints()
+            self.assertEqual(remote.custom_headers, {"X-API-Key": "secret"})
+            self.assertEqual(local.custom_headers, {})
+            with override_settings(CFM_COMPARISON_REMOTE_URL=""):
+                with self.assertRaisesRegex(PDFComparisonError, "requires"):
+                    client._endpoints()
 
     def test_route_lease_renews_on_same_endpoint_past_job_ttl(self):
         now = client.time.time()

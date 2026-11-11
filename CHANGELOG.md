@@ -3,6 +3,18 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.25.1 - Unreleased
+
+- Add per-conference `CFM_COMPARISON_REMOTE_HEADERS` JSON configuration in the
+  existing env file for Cloudflare Access or other HTTP gateway authentication.
+  Startup checks and every remote worker request share validation/headers;
+  local workers never receive them. Worker Bearer authentication is retained.
+- Reject invalid, duplicate, control-character and reserved protocol headers
+  without exposing secret values. Preserve/redact settings through Docker
+  updates, including literal dollar signs, quotes and backslashes.
+- Keep accepted-job routing, OCR/cache contracts, publication file selection,
+  review state and State archive v8 unchanged. No database migration is needed.
+
 ## 1.25.0 - Unreleased
 
 - Consolidate normal deployment around the unified CLI, distinguish lower-level

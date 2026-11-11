@@ -21,6 +21,7 @@ from django.core.files import locks
 from .comparison_protocol import (
     PROTOCOL, MAX_PDF_BYTES, MAX_REPLY_BYTES, contract_id, job_key, page_render_hashes,
 )
+from conference_final_manager.comparison_config import parse_remote_headers
 from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
 from .rapidocr_comparison.result import validate_result
 
@@ -41,7 +42,13 @@ class NoRedirect(request.HTTPRedirectHandler):
 
 
 class Endpoint:
-    def __init__(self, name, url, token):
+    def __init__(self, name, url, token, *, custom_headers=""):
+        try:
+            self.custom_headers = parse_remote_headers(custom_headers, url=url)
+        except ValueError as exc:
+            raise PDFComparisonError(str(exc)) from None
+        if self.custom_headers and name != "remote":
+            raise PDFComparisonError("Custom comparison headers are permitted only for the remote worker.")
         parts = parse.urlsplit(url)
         if (
             parts.scheme not in {"http", "https"} or not parts.hostname
@@ -52,11 +59,14 @@ class Endpoint:
             raise PDFComparisonError(f"Comparison unavailable: configure a valid {name} worker URL and dedicated API token (32+ characters).")
         self.name, self.url, self.token = name, url.rstrip("/"), token
         self.identity = hashlib.sha256((self.url + "\n" + token).encode()).hexdigest()
+        # Gateway credential rotation must not duplicate an accepted worker job.
+        # Route identity remains the worker URL and its per-conference token.
         # Trusted LAN services must not inherit an unrelated machine HTTP proxy.
         self.opener = request.build_opener(request.ProxyHandler({}), NoRedirect())
 
     def call(self, path, *, body=None, headers=None):
         req = request.Request(self.url + path, data=body, headers={
+            **self.custom_headers,
             "Authorization": "Bearer " + self.token, "Accept": "application/json",
             **({"Content-Type": "application/octet-stream"} if body is not None else {}),
             **(headers or {}),
@@ -72,7 +82,7 @@ class Endpoint:
                     raise PDFComparisonError("Comparison worker response exceeds the safe limit.")
                 status = response.status
             if status in {401, 403}:
-                raise PDFComparisonError(f"Comparison unavailable: {self.name} worker rejected its API token.")
+                raise PDFComparisonError(f"Comparison unavailable: {self.name} worker or access gateway rejected authentication. Check the worker API token and remote custom headers.")
             if status in {301, 302, 303, 307, 308}:
                 raise PDFComparisonError("Comparison worker redirects are not permitted.")
             if status in {502, 504}:
@@ -94,11 +104,16 @@ class Endpoint:
 
 def _endpoints():
     endpoints = []
+    raw_headers = getattr(settings, "CFM_COMPARISON_REMOTE_HEADERS", "")
+    try:
+        parse_remote_headers(raw_headers, url=getattr(settings, "CFM_COMPARISON_REMOTE_URL", ""))
+    except ValueError as exc:
+        raise PDFComparisonError(str(exc)) from None
     for name in ("remote", "local"):
         url = getattr(settings, f"CFM_COMPARISON_{name.upper()}_URL", "").strip()
         token = getattr(settings, f"CFM_COMPARISON_{name.upper()}_TOKEN", "").strip()
         if url:
-            endpoints.append(Endpoint(name, url, token))
+            endpoints.append(Endpoint(name, url, token, custom_headers=raw_headers if name == "remote" else ""))
     if not endpoints:
         raise PDFComparisonError("Comparison unavailable: configure a shared local worker before using service mode.")
     return endpoints

@@ -81,6 +81,30 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.apply.assert_not_called()
         self.assertTrue(all(call.kwargs["dry_run"] for call in self.provision.call_args_list))
 
+    def test_remote_headers_preserved_and_never_printed(self):
+        raw = json.dumps({"X-API-Key": "private$ #value'with\"quote"})
+        path = self.write(".env.conf-a", "COMPOSE_PROJECT_NAME=conf-a\n"
+            "CFM_COMPARISON_REMOTE_URL=https://worker.example\n"
+            "CFM_COMPARISON_REMOTE_TOKEN=" + "r" * 40 + "\n" + deploy.docker.format_env_line("CFM_COMPARISON_REMOTE_HEADERS", raw))
+        original = path.read_text()
+        self.assertEqual(self.conference(), 0)
+        self.assertIn(original, path.read_text())
+        self.assertEqual(json.loads(deploy.EnvFile(path).get("CFM_COMPARISON_REMOTE_HEADERS")), json.loads(raw))
+        self.assertNotIn("private$", self.output.getvalue() + self.errors.getvalue())
+        self.assertNotIn("private$", (self.root / "runtime/deployment.log").read_text())
+
+    def test_invalid_headers_stop_before_worker_or_conference_changes(self):
+        for raw in ('{"Authorization":"private-secret"}', '{"X-Key":"private-secret"}', '[]'):
+            path = self.write(".env.conf-a", "COMPOSE_PROJECT_NAME=conf-a\n" +
+                deploy.docker.format_env_line("CFM_COMPARISON_REMOTE_HEADERS", raw))
+            original = path.read_bytes()
+            self.assertEqual(self.conference(), 1)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertNotIn("private-secret", self.errors.getvalue())
+        self.launch.assert_not_called()
+        self.provision.assert_not_called()
+        self.apply.assert_not_called()
+
     def test_worker_generates_distinct_private_enrollments_and_preserves_tokens(self):
         args = ("--gpu", "--bind-host", "192.0.2.10", "--client", "conf-a", "--client", "conf-b")
         self.assertEqual(self.worker(*args), 0)

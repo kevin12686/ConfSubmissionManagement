@@ -6,7 +6,35 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
-## Latest Validated Scope (1.25.0)
+## Latest Validated Scope (1.25.1)
+
+- Native: 954 Django tests and 86 JavaScript tests passed. The standalone
+  deployment/configuration suite passed 85 tests; its additional opt-in Docker
+  test was run separately and passed.
+- Disposable ARM64 Linux Docker: 954 Django tests passed with six expected
+  skips (five host Docker-CLI configuration checks and one filesystem-case
+  check). Host Compose checks passed. Only pinned models were mounted read-only;
+  no conference database/files were mounted and the migration entrypoint was
+  bypassed.
+- Real loopback HTTP exercised custom gateway headers alongside the worker
+  token through startup checks, upload, polling, completed retrieval and explicit
+  retry. Header rotation retained the same job without a duplicate upload.
+  Gateway denial/login redirects did not follow redirects or select local.
+  Local endpoints did not receive remote credentials.
+- A real Compose-to-Linux-container round-trip verified literal dollars,
+  variable-looking strings, hashes, apostrophes, quotes and backslashes in both
+  initial and updater-generated env files. The test used fake credentials,
+  unique projects and no conference volumes; its containers/networks were removed.
+- Parser bounds, invalid/duplicate/reserved headers, secret-safe errors,
+  env preservation/redaction and the stdlib-only deployment import boundary
+  passed. Publication/export, wrong-version and review-state regression passed.
+  There is no DB/schema/archive change; State archive remains v8.
+
+This round did not contact an actual Cloudflare account or rerun GPU OCR against
+the three real papers: headers change HTTP authentication, not inference or
+publication selection. GPU measurements below belong to the earlier release.
+
+## Earlier Validated Scope (1.25.0)
 
 - Native: 945 Django tests, 77 standalone deployment/provisioning tests and
   86 JavaScript tests passed.

@@ -133,6 +133,62 @@ require models already installed. Low-level maintenance commands remain
 available but do not perform automatic provisioning. Do not mix the worker's
 Compose file with a conference Compose invocation.
 
+### Remote Gateway Authentication
+
+Configure optional headers once in each CFM conference's private `.env.<name>`
+file, not the GPU worker env or enrollment file. Leave the value blank when no
+gateway authentication is needed. Existing settings are never auto-overwritten.
+
+```dotenv
+CFM_COMPARISON_REMOTE_HEADERS='{"CF-Access-Client-Id":"REPLACE_ME","CF-Access-Client-Secret":"REPLACE_ME"}'
+```
+
+This is a JSON object, not a shell dictionary. Use one line with outer single
+quotes to retain JSON quotes and literal `$`/`#` characters. If a header contains
+an apostrophe, encode it inside JSON as `\u0027`. Use JSON escapes for quotes
+(`\"`) and backslashes (`\\`). The deployer retains existing file text; generated
+temporary env files also preserve these characters. Header values are secrets:
+keep env files mode 0600, out of Git/backups, and do not paste `docker inspect`
+or `docker compose config` output into logs/support requests. Docker operators
+can still inspect container environment variables.
+
+For Cloudflare, publish a dedicated worker hostname through the GPU host's
+Tunnel, and protect it with an Access Application using a Service Auth policy
+that permits the intended service token. Set the advertised/enrolled remote
+endpoint to `https://gpu.example.com`, not the Cloudflare login page. A native
+host cloudflared may target the worker's loopback port; a cloudflared container
+must reach the worker over its Docker network, not its own localhost. Do not
+publish the worker's origin port to the Internet. Existing LAN enrollments are
+not silently migrated: keep the worker credential, explicitly reconcile the
+conference remote URL and import a matching trusted enrollment when changing
+the advertised endpoint. Also check the gateway's combined two-PDF request
+size limit. Tunnel configuration/policies are managed outside CFM.
+
+CFM sends the configured headers on remote health checks, job upload, polling,
+result retrieval and explicit retries, including startup/cutover checks. It
+continues sending its separate per-conference `Authorization: Bearer` token.
+No custom headers are sent to the local worker or unrelated integrations.
+HTTP is allowed for a trusted isolated LAN; use HTTPS for gateway deployment.
+
+Configuration is limited to 32 unique case-insensitive header names, 128
+characters per name, 4096 printable ASCII characters per value and 16 KiB of
+JSON. Blank/`{}` means no headers. Non-string values, duplicates, control
+characters and reserved auth/protocol/transport headers are rejected before
+network requests. In particular, `Authorization`, `Host`, `Accept`, content
+framing/type/encoding, hop-by-hop headers and `X-CFM-*` cannot be overridden.
+Do not use an Access single-header configuration that replaces `Authorization`.
+
+After editing an existing conference env, run the unified update command for
+that project. It rebuilds/recreates with candidate preflight; restarting a
+container alone does not load changed Compose environment. Invalid headers,
+401/403, or a login redirect fail explicitly; they do not authorize local
+fallback. The existing unreachable-remote fallback policy is unchanged.
+Gateway header rotation does not change worker job identity or start a second
+copy of accepted work. Changing worker URL or worker Bearer token still uses
+the existing signed routing safeguards. Header values are redacted in update
+plans and absent from CFM audit/diagnostics and System State archives. They do
+not change publication selection, comparison results/cache or review flags.
+
 ## Lower-Level Conference Creation
 
 Create one environment file per conference:
@@ -200,6 +256,7 @@ Compose defaults explicitly to `service`, with these per-conference settings:
 | `CFM_COMPARISON_LOCAL_TOKEN` | Blank; this conference's local-worker bearer token |
 | `CFM_COMPARISON_REMOTE_URL` | Blank; optional trusted remote worker |
 | `CFM_COMPARISON_REMOTE_TOKEN` | Blank; separate token for that remote worker |
+| `CFM_COMPARISON_REMOTE_HEADERS` | Blank; private JSON object of remote-only gateway headers |
 
 URLs alone do not select service mode for a native launcher. Missing tokens,
 unreachable services or invalid runtimes mean Comparison unavailable, not a

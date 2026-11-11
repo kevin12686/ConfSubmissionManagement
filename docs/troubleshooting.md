@@ -43,6 +43,14 @@ opening its browser page. Do not remove `data/` or bypass the checker.
   and set its dedicated token. A configured local fallback must be healthy and
   compatible even if a preferred remote is online. An unreachable optional
   remote is a warning when local is ready; invalid authentication is an error.
+  For Cloudflare Access or another gateway, configure remote-only JSON in
+  `CFM_COMPARISON_REMOTE_HEADERS` in this conference's env file, retaining its
+  worker token. A browser login/redirect is not machine authentication: use a
+  Service Auth policy and service-token headers. Invalid JSON, duplicate or
+  reserved headers fail before requests; 401/403 never silently selects local.
+  Recreate via the unified updater after changing env; a restart alone retains
+  the old environment. Do not share raw env/Compose output containing secrets.
+  See [Remote Gateway Authentication](docker_guide.md#remote-gateway-authentication).
 - Update/migration failures during preflight leave the old web running. Backup
   checks new-image restart prerequisites before stopping it. After fixing the
   worker/configuration, retry the normal operation; do not delete volumes.

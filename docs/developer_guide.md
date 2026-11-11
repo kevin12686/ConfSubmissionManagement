@@ -161,6 +161,20 @@ prerequisites before stopping a new-image web; legacy images retain their former
 backup behavior. These checks do not change publication rules.
 
 Docker procedures are centralized in the [Docker Guide](docker_guide.md).
+`conference_final_manager/comparison_config.py` is the standard-library-only
+owner for optional `CFM_COMPARISON_REMOTE_HEADERS` JSON validation. Deployment,
+startup checks and `comparison_client.Endpoint` must use that parser; only
+remote endpoints receive the headers. Preserve Bearer/protocol headers,
+case-insensitive duplicate rejection and secret-safe errors. Header rotation
+does not change the signed route identity (worker URL/token) or OCR contract.
+Docker management must retain/redact the entire setting. Compose config output
+escapes literal dollars; normalize this new env setting at that structured
+output boundary and preserve JSON/quotes/dollars in generated env files.
+Test actual HTTP and Compose round-trips, not only mocked `Endpoint.call()`.
+For the opt-in actual container env check, build a disposable app image and run
+`CFM_HEADER_TEST_IMAGE=<test-image> .venv/bin/python -m unittest discover -s tests -p 'test_comparison_headers_docker.py'`.
+It creates/removes unique test projects with fake credentials and no conference
+mounts. Normal standalone discovery skips this explicit Docker-only check.
 Developers should use that guide for instance creation, environment ownership,
 updates, backups, migration, and rollback.
 

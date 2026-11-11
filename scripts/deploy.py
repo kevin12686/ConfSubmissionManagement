@@ -27,6 +27,11 @@ import start_comparison_slave as slave
 import update_docker_instances as updater
 
 ROOT = SCRIPT_DIR.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from conference_final_manager.comparison_config import parse_remote_headers
+
 BOOTSTRAP = "cfm-bootstrap"
 NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 TOKEN = re.compile(r"[!-~]{32,512}\Z")
@@ -440,6 +445,10 @@ def conference(args):
         env.require("CFM_COMPARISON_REMOTE_TOKEN", remote["token"])
     elif args.remote_url:
         raise DeployError("--remote-url requires an explicit private --remote-enrollment file.")
+    try:
+        parse_remote_headers(env.get("CFM_COMPARISON_REMOTE_HEADERS"), url=env.get("CFM_COMPARISON_REMOTE_URL"))
+    except ValueError as exc:
+        raise DeployError(str(exc)) from None
     transport = env.get("CFM_COMPARISON_TRANSPORT")
     if transport not in {"service", "embedded"}:
         raise DeployError("Unknown preserved comparison transport.")

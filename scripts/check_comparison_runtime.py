@@ -54,6 +54,12 @@ def check_service(wait_seconds=90):
     from submissions.services.comparison_client import Endpoint, TransportUnavailable
     from submissions.services.comparison_protocol import PROTOCOL, contract_id
     from submissions.services.pdf_comparison_errors import PDFComparisonError
+    from conference_final_manager.comparison_config import parse_remote_headers
+    raw_headers = os.environ.get("CFM_COMPARISON_REMOTE_HEADERS", "")
+    try:
+        parse_remote_headers(raw_headers, url=os.environ.get("CFM_COMPARISON_REMOTE_URL", ""))
+    except ValueError as exc:
+        raise PreflightError(str(exc)) from None
     endpoints = {}
     for name in ("local", "remote"):
         url = os.environ.get(f"CFM_COMPARISON_{name.upper()}_URL", "").strip()
@@ -62,9 +68,9 @@ def check_service(wait_seconds=90):
             raise PreflightError(f"{name.title()} worker token is configured without its URL.")
         if url:
             try:
-                endpoints[name] = Endpoint(name, url, token)
+                endpoints[name] = Endpoint(name, url, token, custom_headers=raw_headers if name == "remote" else "")
             except (PDFComparisonError, ValueError) as exc:
-                raise PreflightError(f"Invalid {name} worker URL/token. Configure CFM_COMPARISON_{name.upper()}_URL and its dedicated TOKEN (32+ characters).") from exc
+                raise PreflightError(f"Invalid {name} worker URL/token or remote custom headers. Configure CFM_COMPARISON_{name.upper()}_URL and its dedicated TOKEN (32+ characters).") from None
     if not endpoints:
         raise PreflightError("Service transport needs a worker URL and dedicated token. Start the shared worker and configure CFM_COMPARISON_LOCAL_URL/TOKEN.")
     expected = contract_id()
@@ -79,7 +85,7 @@ def check_service(wait_seconds=90):
                 continue
             except PDFComparisonError as exc:
                 # Authentication/redirect/invalid API errors cannot be hidden by fallback.
-                raise PreflightError(f"{name.title()} worker rejected the health check. Check its token and direct API URL; redirects are not supported.") from exc
+                raise PreflightError(f"{name.title()} worker rejected the health check. Check its token, remote custom headers and direct API URL; redirects are not supported.") from None
             if health.get("protocol") != PROTOCOL or health.get("contract") != expected:
                 results[name] = "incompatible; update worker and CFM from the same checkout"
             elif status == 200 and health.get("state") in {"ready", "busy"}:

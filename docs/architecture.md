@@ -94,6 +94,14 @@ updater does not recreate it; the unified deployer manages its lifecycle
 separately when code/configuration or client enrollment requires an update,
 and reuses an unchanged healthy worker. See the
 [service contract](pdf_comparison.md#shared-comparison-service).
+Optional remote gateway headers are per-conference env-only JSON. A shared
+standard-library parser validates them for deployment/preflight and the HTTP
+client. Every remote API call uses them alongside the worker Bearer token;
+local endpoints never receive them. Reserved auth/evidence/transport headers
+cannot be replaced, redirects remain forbidden, and gateway denial fails
+explicitly rather than selecting another worker. Header credential rotation
+does not change the worker route or cache identity. Values are secret deployment
+state, redacted by management tools and excluded from conference archives.
 RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
 comparison request. The unified deployment provisioner can download missing

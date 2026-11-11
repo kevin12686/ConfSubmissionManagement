@@ -42,13 +42,14 @@ ENV_KEYS = (
     "CFM_COMPARISON_LOCAL_TOKEN",
     "CFM_COMPARISON_REMOTE_URL",
     "CFM_COMPARISON_REMOTE_TOKEN",
+    "CFM_COMPARISON_REMOTE_HEADERS",
     "SMS_PROXY_MAX_BODY_SIZE",
     "SMS_CROSSCHECK_WEB_USERNAME",
     "SMS_CROSSCHECK_WEB_PASSWORD",
     "SMS_CROSSCHECK_IEEE_USERNAME",
     "SMS_CROSSCHECK_IEEE_PASSWORD",
 )
-SENSITIVE_ENV_KEYS = {"SMS_SECRET_KEY", "SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD"} | {
+SENSITIVE_ENV_KEYS = {"SMS_SECRET_KEY", "SMS_CROSSCHECK_WEB_PASSWORD", "SMS_CROSSCHECK_IEEE_PASSWORD", "CFM_COMPARISON_REMOTE_HEADERS"} | {
     key for key in ENV_KEYS if key.endswith("_TOKEN")
 }
 
@@ -317,6 +318,10 @@ def temporary_env_file(values: dict[str, str]):
 
 
 def format_env_line(key: str, value: str) -> str:
+    if key == "CFM_COMPARISON_REMOTE_HEADERS":
+        # Compose interpolates dollars in double-quoted env values. JSON permits
+        # an escaped apostrophe, so single quoting preserves all header bytes.
+        return f"{key}='" + value.replace("'", "\\u0027") + "'\n"
     if re.match(r"^[A-Za-z0-9_./:@%+\\-]+$", value):
         return f"{key}={value}\n"
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')

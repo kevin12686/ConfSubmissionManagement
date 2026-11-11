@@ -70,6 +70,15 @@ uses the existing manual/upload comparison controls and both annotated documents
 the worker must not introduce a second file selector or publication path. Record
 GPU tests separately from CPU/mock tests and disclose untested hardware.
 
+For optional remote gateway headers, use disposable credentials and a loopback
+HTTP gateway. Verify health/upload/poll/retry carry both gateway headers and the
+worker Bearer token, while local fallback never receives gateway headers.
+401/403 and login redirects must fail, not silently select local. Cover invalid
+JSON, duplicate/case-colliding and reserved headers, control characters, bounds,
+env preservation/redaction, special characters through actual Compose and
+rotation without a second upload. Never test with conference PDFs or real
+Cloudflare secrets. Changing this deployment setting needs no DB migration.
+
 ## Shared PDF Reader Acceptance
 
 Use disposable data, never mutate the operator's live conference for browser QA.
