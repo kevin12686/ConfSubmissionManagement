@@ -1,5 +1,17 @@
 # Architecture Notes
 
+## Comparison Service Observability
+
+Release identity lives in dependency-free `submissions/version.py`, shared by
+Django and the minimal CPU/GPU images. Authenticated health adds packaged version
+and allowlisted effective settings captured after successful runtime validation.
+`comparison_metadata.py` sanitizes both server output and peer input; it never
+serializes environment dictionaries or credentials. Formatting reuses its
+existing bounded poll/cache and responsive Details. These fields are not routing,
+readiness, compute-contract or signed-cache identity. Embedded settings are labelled
+configured, not independently validated. GPU idle lifetime retains model sessions
+only; namespace settings, file caches and article evidence remain isolated.
+
 ## PDF Browsing Boundary
 
 `submissions/services/pdf_viewer.py` builds presentation URLs and validates

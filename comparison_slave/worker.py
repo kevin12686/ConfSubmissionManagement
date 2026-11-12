@@ -54,6 +54,7 @@ def execute(before, after):
 
 
 def preflight():
+    from submissions.services.comparison_metadata import execution_settings
     from submissions.services import comparison_protocol
     from submissions.services.pdf_comparison_execution import local_pdf_evidence  # noqa: F401
     from submissions.services.rapidocr_comparison.runtime import build_recognizer, ocr_backend
@@ -63,7 +64,7 @@ def preflight():
     recognizer._load_det_model()
     recognizer._load_rec_model()
     return {"contract": comparison_protocol.contract_id(),
-            "backend": ocr_backend(), "runtime": runtime_fingerprint()}
+            "backend": ocr_backend(), "runtime": runtime_fingerprint(), "settings": execution_settings()}
 
 
 def main():

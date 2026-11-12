@@ -151,6 +151,13 @@ def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
     print("Preflight passed; starting worker and waiting for readiness...")
     run(start, environment=environment, timeout=wait_seconds + 60)
     print("Worker deployment is healthy.")
+    try:
+        details = run(base + ["exec", "-T", SERVICE, "python", "-m", "comparison_slave.entrypoint", "--status"],
+                      environment=environment, timeout=10, capture=True)
+        print(details.strip())
+    except DeploymentError:
+        # Diagnostic output must not turn a healthy completed cutover into a failure.
+        print("Worker is running; runtime version/settings could not be retrieved. Check Formatting service Details.")
 
 
 def main(argv=None):

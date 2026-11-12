@@ -125,7 +125,9 @@ class ComparisonSlaveTests(unittest.TestCase):
 
     def fake_process(self, mode, namespace, body=None):
         if mode == "preflight":
-            return {"contract": self.contract, "backend": "cpu", "runtime": "c" * 64}
+            return {"contract": self.contract, "backend": "cpu", "runtime": "c" * 64,
+                    "settings": {"det": "small", "rec": "small", "parallel_pages": 2, "threads": 4,
+                                 "timeout_seconds": 300, "gpu_idle_seconds": 0}}
         self.assertEqual(worker.read_pair(io.BytesIO(body)), [self.before, self.after])
         return copy.deepcopy(self.evidence)
 
@@ -324,6 +326,31 @@ class ComparisonSlaveTests(unittest.TestCase):
         self.assertEqual(self.request("POST", body=changed)[1]["error"], "hash_mismatch")
         self.assertEqual(self.request("POST", path="/v1/jobs/" + "0" * 64)[1]["error"], "invalid_key")
         self.assertEqual(self.request(path="/v1/jobs/../../secret")[0], 404)
+
+    def test_health_reports_validated_settings_not_later_environment_or_client_secrets(self):
+        from submissions.version import APP_VERSION
+        self.compute.reset_mock()
+        with patch.dict(os.environ, {"CFM_RAPIDOCR_THREADS": "8", "CFM_COMPARISON_REMOTE_TOKEN": "secret-value"}):
+            for _ in range(2):
+                status, payload = self.request(path="/v1/health")
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["worker_version"], APP_VERSION)
+                self.assertEqual(payload["settings"]["threads"], 4)
+                self.assertNotIn("secret-value", json.dumps(payload))
+                self.assertNotIn(self.tokens["conference-a"], json.dumps(payload))
+        self.compute.assert_not_called()
+        self.assertEqual(self.request(path="/v1/health", token="wrong")[0], 401)
+
+    def test_failed_preflight_clears_observed_settings_without_changing_job_rules(self):
+        self.assertTrue(self.service.public_settings)
+        self.compute.side_effect = ValueError("private-failure")
+        self.service.preflight_at = 0
+        self.service.probe_requested.set()
+        with self.assertLogs("comparison_slave.runner", level="WARNING"):
+            self.service.tick()
+        status, payload = self.request(path="/v1/health")
+        self.assertEqual((status, payload["state"], payload["settings"]), (200, "not_ready", {}))
+        self.assertNotIn("private-failure", json.dumps(payload))
 
     def test_health_is_fast_async_and_idle_preflight_does_not_repeat(self):
         self.compute.reset_mock()

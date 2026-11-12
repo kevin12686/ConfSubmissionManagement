@@ -8,6 +8,7 @@ from submissions.services import comparison_health as health
 from submissions.services.comparison_client import TransportUnavailable
 from submissions.services.comparison_protocol import contract_id
 from submissions.services.pdf_comparison_errors import PDFComparisonError
+from submissions.version import APP_VERSION
 
 
 @override_settings(CFM_COMPARISON_TRANSPORT="service",
@@ -24,7 +25,8 @@ class ComparisonHealthTests(SimpleTestCase):
             self.calls.append((endpoint.name, path, kwargs))
             if self.offline and endpoint.name == "remote":
                 raise TransportUnavailable("Worker request timed out.")
-            return 200, {"protocol": 1, "contract": self.contract, "state": "ready", "backend": "cuda" if endpoint.name == "remote" else "cpu"}
+            return 200, {"protocol": 1, "contract": self.contract, "state": "ready", "backend": "cuda" if endpoint.name == "remote" else "cpu",
+                         "worker_version": APP_VERSION, "settings": {"threads": 4, "token": "NEVER-EXPOSE"}}
         self.transport = self.enterContext(patch("submissions.services.comparison_client.Endpoint.call", autospec=True, side_effect=call))
 
     def test_health_endpoint_is_get_only_bounded_and_uses_no_database_or_job_requests(self):
@@ -34,6 +36,10 @@ class ComparisonHealthTests(SimpleTestCase):
         result = health.comparison_service_status()
         self.assertEqual(result["remote"]["backend"], "cuda")
         self.assertEqual(result["local"]["backend"], "cpu")
+        self.assertEqual(result["app_version"], APP_VERSION)
+        self.assertEqual(result["remote"]["worker_version"], APP_VERSION)
+        self.assertEqual(result["local"]["settings"], {"threads": 4})
+        self.assertNotIn("NEVER-EXPOSE", str(result))
         self.assertEqual(len(self.calls), 2)
         self.assertTrue(all(path == "/v1/health" and kwargs == {"timeout": 2} for _, path, kwargs in self.calls))
         self.assertEqual(formatting_comparison_services(RequestFactory().post("/" )).status_code, 405)
@@ -49,6 +55,9 @@ class ComparisonHealthTests(SimpleTestCase):
         self.assertEqual(result["remote"]["state"], "unreachable")
         self.assertEqual(result["remote"]["backend"], "")
         self.assertEqual(result["remote"]["last_backend"], "cuda")
+        self.assertEqual(result["remote"]["last_metadata"]["worker_version"], APP_VERSION)
+        self.assertEqual(result["remote"]["last_metadata"]["settings"], {"threads": 4})
+        self.assertEqual(result["remote"]["settings"], {})
         self.assertEqual(result["local"]["state"], "ready")
 
     def test_gateway_error_is_displayed_and_other_worker_still_checked(self):
@@ -67,6 +76,7 @@ class ComparisonHealthTests(SimpleTestCase):
         with override_settings(CFM_COMPARISON_REMOTE_HEADERS='{"X-Key":"rotated-secret"}'):
             result = health.comparison_service_status()
         self.assertEqual(result["remote"]["last_backend"], "")
+        self.assertEqual(result["remote"]["last_metadata"], {})
         self.assertNotIn("rotated-secret", str(result))
 
     def test_embedded_mode_does_not_probe_or_pretend_remote_is_used(self):
@@ -76,6 +86,17 @@ class ComparisonHealthTests(SimpleTestCase):
         self.assertEqual(result["remote"]["state"], "unused")
         self.assertEqual(result["local"]["state"], "embedded")
         self.assertTrue(result["local"]["backend_configured"])
+        self.assertEqual(result["local"]["worker_version"], APP_VERSION)
+
+    def test_old_worker_metadata_is_unavailable_not_replaced_by_last_seen(self):
+        health.comparison_service_status()
+        cache.delete("cfm-comparison-health:" + health.configuration_identity() + self.contract)
+        self.transport.side_effect = lambda *args, **kwargs: (200, {
+            "protocol": 1, "contract": self.contract, "state": "ready", "backend": "cpu"})
+        result = health.comparison_service_status()
+        self.assertEqual(result["remote"]["worker_version"], "")
+        self.assertEqual(result["remote"]["settings"], {})
+        self.assertNotIn("last_metadata", result["remote"])
 
     def test_concurrent_observation_never_starts_second_probe(self):
         with health._lock:

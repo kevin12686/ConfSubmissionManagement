@@ -103,6 +103,13 @@ Health checks and complete cache hits do not keep models loaded or reload an
 idle model. Formatting service Details distinguishes loaded/unloaded/loading
 models from service availability. The model process shares weights, not
 conference settings or signed caches; job timeouts/crashes discard it.
+Authenticated worker health also reports its packaged release version and
+allowlisted effective settings from successful runtime validation. Formatting's
+Comparison services shows each release alongside backend/status; Details lists
+models, concurrent pages, threads, OCR timeout and model idle unload. No secrets
+or paths are exposed. Unreachable workers show last-seen metadata explicitly;
+older workers without metadata remain unavailable, not guessed. Release numbers
+are informational: the existing compute contract still determines compatibility.
 Method 8's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t, rn/m and same-letter diacritics (e/é/è); whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image

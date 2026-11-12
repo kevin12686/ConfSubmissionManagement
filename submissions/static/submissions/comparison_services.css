@@ -10,5 +10,11 @@
 .cfm-services-refresh { width: 2rem; height: 2rem; padding: .4rem; }
 .cfm-services-refresh > span { display: block; width: 100%; height: 100%; background: currentColor; mask: url(vendor/pdfjs-6.4.299/legacy/web/images/secondaryToolbarButton-rotateCw.svg) center / contain no-repeat; }
 .cfm-services-details { display: grid; gap: .35rem; padding-bottom: .75rem; overflow-wrap: anywhere; }
+.cfm-services-runtime-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 2rem; }
+.cfm-service-runtime { min-width: 0; }
+.cfm-service-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .25rem .75rem; }
+.cfm-service-settings dt { font-weight: 500; }
+.cfm-service-settings dd { margin: 0; min-width: 0; }
 .cfm-comparison-services [hidden] { display: none !important; }
 @media (max-width: 767.98px) { .cfm-services-tools { margin-left: 0; } }
+@media (max-width: 575.98px) { .cfm-services-runtime-grid { grid-template-columns: minmax(0, 1fr); } }

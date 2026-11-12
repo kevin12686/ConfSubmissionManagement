@@ -1,8 +1,8 @@
 <section class="cfm-comparison-services" data-comparison-services data-services-url="{% url 'submissions:formatting_comparison_services' %}" aria-label="Comparison services">
     <div class="cfm-services-summary">
         <span class="fw-semibold">Comparison services</span>
-        <div class="cfm-service-item" data-service="remote"><span>Remote</span><span class="text-muted" data-service-backend>Unknown</span><span class="cfm-service-state" data-service-state="checking" role="status">Checking…</span></div>
-        <div class="cfm-service-item" data-service="local"><span>Local</span><span class="text-muted" data-service-backend>Unknown</span><span class="cfm-service-state" data-service-state="checking" role="status">Checking…</span></div>
+        <div class="cfm-service-item" data-service="remote"><span>Remote</span><span class="text-muted" data-service-backend>Unknown</span><span class="text-muted" data-service-version></span><span class="cfm-service-state" data-service-state="checking" role="status">Checking…</span></div>
+        <div class="cfm-service-item" data-service="local"><span>Local</span><span class="text-muted" data-service-backend>Unknown</span><span class="text-muted" data-service-version></span><span class="cfm-service-state" data-service-state="checking" role="status">Checking…</span></div>
         <div class="cfm-services-tools">
             <span class="small text-muted" data-services-checked>Checking services…</span>
             <button class="btn btn-sm btn-outline-secondary cfm-services-refresh" type="button" data-services-refresh aria-label="Recheck comparison services" title="Recheck comparison services"><span aria-hidden="true"></span></button>
@@ -10,8 +10,11 @@
         </div>
     </div>
     <div id="comparison-service-details" class="cfm-services-details" data-services-details hidden>
-        <div><span class="fw-semibold">Remote:</span> <span data-services-remote-message></span></div>
-        <div><span class="fw-semibold">Local:</span> <span data-services-local-message></span></div>
+        <div class="cfm-services-runtime-grid">
+            {% include "submissions/partials/comparison_service_details.html" with service_name="remote" service_label="Remote worker" %}
+            {% include "submissions/partials/comparison_service_details.html" with service_name="local" service_label="Local execution" %}
+        </div>
+        <div class="small text-muted">CFM <span data-services-app-version></span>. Release versions identify deployments; the compute contract determines compatibility.</div>
         <div class="small text-muted">Service status does not identify the worker used by an existing comparison. Remote failure never starts local CPU automatically.</div>
     </div>
 </section>

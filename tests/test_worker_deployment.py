@@ -51,6 +51,10 @@ class WorkerDeploymentTests(unittest.TestCase):
             return json.dumps(self.config)
         if command[:2] == ["docker", "ps"]:
             return self.owned_services
+        if "--status" in command:
+            if self.fail_stage == "--status":
+                raise deployment.DeploymentError("unavailable")
+            return "Worker runtime: version 1.31.1; backend cpu; state ready.\nEffective settings: {}\n"
         if self.fail_stage and self.fail_stage in command:
             raise deployment.DeploymentError("simulated operation failure")
         return ""
@@ -76,6 +80,14 @@ class WorkerDeploymentTests(unittest.TestCase):
         self.assertEqual(options["timeout"], 300)
         self.assertFalse(any("down" in cmd or "stop" in cmd for cmd, _ in self.commands))
         self.assertNotIn("a" * 40, self.output.getvalue() + self.errors.getvalue())
+        self.assertIn("Worker runtime: version 1.31.1", self.output.getvalue())
+        self.assertGreater(next(i for i, (cmd, _) in enumerate(self.commands) if "--status" in cmd), start)
+
+    def test_optional_status_failure_does_not_undo_healthy_cutover(self):
+        self.fail_stage = "--status"
+        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 0)
+        self.assertIn("Worker deployment is healthy.", self.output.getvalue())
+        self.assertIn("could not be retrieved", self.output.getvalue())
 
     def test_gpu_is_only_enabled_explicitly(self):
         self.config["services"]["comparison-slave"]["environment"]["CFM_OCR_BACKEND"] = "cuda"

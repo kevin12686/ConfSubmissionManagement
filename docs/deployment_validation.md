@@ -6,6 +6,28 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
+## Worker Metadata Acceptance (1.31.1 / Method 8)
+
+- Disposable native source copy: 1,049 Django tests passed, standalone discovery
+  ran 111 tests with two Docker opt-in skips, and all 125 JavaScript tests passed.
+  Check, migration drift, documentation, compile and whitespace gates passed.
+- Built the actual standalone CPU image from its production Dockerfile. In an
+  isolated temporary-storage container, real model preflight returned v1.31.1,
+  Small/Small, two pages, four threads, 300-second timeout and CPU idle 0.
+  Authenticated health and `--status` agreed; unauthenticated health was rejected.
+  No existing conference/worker container or volume was used.
+- Browser acceptance covered List/Single/Focus at widths 320/390/768/1024/1440,
+  safe settings, missing old-worker metadata, compatible release mismatch,
+  incompatible contract, explicit last-seen data and ten-second polling. No
+  horizontal overflow, JavaScript exception or job submission was observed.
+  GPU/offline/legacy UI responses were synthetic; this round did not rerun remote
+  CUDA inference or the two full-updater/header Docker opt-ins. The preceding
+  residency release retains its separately labelled actual GPU evidence below.
+- The actual container compute contract remains
+  `3ea6e26d3f9f24c6150b00bf57d0bb18af6edc9ea373750b8db735abcf8f4b26`.
+  Version/settings are not evidence/cache identity. No OCR, comparison,
+  publication-selection, review-reset or archive-v8 format change was made.
+
 ## GPU Model Residency Acceptance (1.31.0 / Method 8)
 
 - Native macOS: 1,038 Django tests passed. Standalone discovery ran 110 tests

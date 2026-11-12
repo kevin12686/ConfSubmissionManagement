@@ -153,6 +153,15 @@ call routing/submission or publication services. The Formatting-only poller
 pauses while hidden, prevents overlap and never starts comparisons. Test timer,
 abort, HTMX and stale green-state behavior. Snapshot execution labels must use
 recorded actual backend, not live health; legacy missing metadata stays unknown.
+`submissions/version.py` is the dependency-free release identity copied into both
+standalone worker images and imported by Django settings. Health `worker_version`
+and `settings` are observational, never contract/job/cache inputs. Capture worker
+settings only after successful preflight in the actual execution environment;
+clear them on failed preflight. `comparison_metadata.py` owns the bounded
+allowlist at both output/peer boundaries. Unknown fields, paths, tokens and
+arbitrary version strings must not reach the UI or deployment output. Missing
+metadata must not change routing/readiness; last-seen data must be labelled.
+The embedded display uses configured runtime parsers, not a service probe.
 Deployment credentials and worker caches are not conference backup contents. Run the
 standalone Docker smoke in disposable volumes; never reuse conference containers
 or existing service volumes for acceptance. GPU acceptance must state the actual
@@ -909,7 +918,9 @@ Use factories in `submissions/tests/factories.py` rather than duplicating setup 
 
 ## Version And Release Checklist
 
-The app version is `APP_VERSION` in `conference_final_manager/settings.py`. The footer displays it.
+The app version is `APP_VERSION` in `submissions/version.py`, imported by
+`conference_final_manager/settings.py`. The footer and authenticated worker
+health use this same packaged identity; environment overrides are not supported.
 
 Increment `APP_VERSION` for user-visible workflow, docs, UI, schema, or export changes.
 

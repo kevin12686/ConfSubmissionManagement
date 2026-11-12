@@ -316,11 +316,11 @@ def worker_status(env, clients):
 
 def worker_fingerprint(env):
     files = [ROOT / name for name in ("Dockerfile.comparison-slave", "requirements-slave-gpu.txt",
-                                     "compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml")]
+                                     "compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml", "submissions/version.py")]
     files += sorted((ROOT / "comparison_slave").glob("*.py"))
     services = ROOT / "submissions/services"
     files += [services / name for name in ("comparison_protocol.py", "pdf_comparison_worker.py",
-              "pdf_comparison_execution.py", "pdf_comparison_errors.py", "pdf_comparison_cache.py")]
+              "pdf_comparison_execution.py", "pdf_comparison_errors.py", "pdf_comparison_cache.py", "comparison_metadata.py")]
     files += sorted((services / "rapidocr_comparison").glob("*.py"))
     digest = hashlib.sha256(json.dumps(env.values, sort_keys=True).encode())
     for path in files:

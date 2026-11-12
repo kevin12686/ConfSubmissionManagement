@@ -540,6 +540,22 @@ wall budget; defaults use 300 seconds.
 
 ### Worker OCR Settings
 
+After a successful worker deployment, the script prints the version/backend/
+state observed from the running service and its effective OCR settings.
+Formatting's Comparison services shows CPU/GPU release versions; Details lists
+the validated model sizes, parallel pages, threads, timeout and model idle
+duration. Editing a host env without deploying does not change that observation.
+Version is packaged with the image, not configured in `.env`. Read the running
+worker directly without displaying tokens:
+
+```bash
+docker exec <worker-container> python -m comparison_slave.entrypoint --status
+```
+
+This authenticated local read loads no models, changes no conference data and
+prints only allowlisted metadata. Older workers may not support this command.
+Worker release numbers do not replace protocol/contract compatibility checks.
+
 Set these on the **shared worker**, not each conference, in
 `compose.comparison-slave.yml` / `compose.comparison-slave.gpu.yml`, or through the
 worker's private environment file. Compose resolves the values; the unified

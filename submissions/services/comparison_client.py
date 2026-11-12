@@ -128,8 +128,10 @@ def probe_endpoint(endpoint, contract, *, timeout=None):
     except TransportUnavailable as exc:
         return {"state": "unreachable", "backend": "", "message": str(exc) or "Worker connection unavailable."}
     backend = health.get("backend") if health.get("backend") in ("cpu", "cuda") else ""
+    from .comparison_metadata import public_metadata
+    metadata = public_metadata(health)
     if health.get("protocol") != PROTOCOL or health.get("contract") != contract:
-        return {"state": "incompatible", "backend": backend, "message": "Worker and CFM comparison versions are incompatible."}
+        return {**metadata, "state": "incompatible", "backend": backend, "message": "Worker and CFM comparison versions are incompatible."}
     if status in {200, 503} and health.get("state") in ("ready", "busy"):
         message = ""
         models = health.get("gpu_models")
@@ -140,11 +142,11 @@ def probe_endpoint(endpoint, contract, *, timeout=None):
             model_state = models.get("state")
             if isinstance(model_state, str) and model_state in states and type(idle) is int and 1 <= idle <= 86400:
                 message = f"GPU models: {states[model_state]}. Idle unload: {idle} seconds."
-        return {"state": health["state"], "backend": backend, "message": message}
+        return {**metadata, "state": health["state"], "backend": backend, "message": message}
     known = {"preflight_pending", "configuration_unavailable", "storage_or_scheduler_unavailable"}
     category = health.get("error")
     detail = f" ({category})" if isinstance(category, str) and category in known else ""
-    return {"state": "not_ready", "backend": backend, "message": f"Worker is not ready{detail}. HTTP {status}."}
+    return {**metadata, "state": "not_ready", "backend": backend, "message": f"Worker is not ready{detail}. HTTP {status}."}
 
 
 def _completed_result(payload, key, hashes, contract, before, after):

@@ -1,5 +1,19 @@
 # Troubleshooting
 
+## Checking A Running Worker Release
+
+Use Formatting > Comparison services; expand Details for the CFM/worker releases
+and effective OCR settings. If host `.env` values differ, verify that the worker
+was rebuilt/recreated; the display reflects its successful runtime validation,
+not the host file. An unloaded GPU model with Ready is normal. Idle retention
+keeps model sessions only, not individual article results.
+Version unavailable can mean a legacy worker; it is not proof of an outage.
+Last seen is historical, not a current check. Different release numbers alone
+do not prove incompatibility; the existing contract check determines that.
+On the worker host, `docker exec <worker-container> python -m comparison_slave.entrypoint --status`
+reads authenticated local health without printing tokens. Never paste clients
+JSON or custom auth headers.
+
 For normal task order, use the [Operator Guide](operator_guide.md). For the
 rules behind publication blockers and selected files, use
 [Publication Rules](publication_rules.md). This guide focuses on symptoms,

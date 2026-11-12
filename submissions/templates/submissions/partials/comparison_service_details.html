@@ -1,0 +1,14 @@
+<div class="cfm-service-runtime">
+    <h3 class="h6 mb-2">{{ service_label }}</h3>
+    <p class="mb-2" data-services-{{ service_name }}-message></p>
+    <p class="small text-muted mb-2" data-services-{{ service_name }}-metadata-note></p>
+    <dl class="cfm-service-settings mb-0">
+        <dt>Version</dt><dd data-services-{{ service_name }}-version>Unavailable</dd>
+        <dt>Detection model</dt><dd data-services-{{ service_name }}-det>Unavailable</dd>
+        <dt>Recognition model</dt><dd data-services-{{ service_name }}-rec>Unavailable</dd>
+        <dt>Concurrent pages</dt><dd data-services-{{ service_name }}-parallel_pages>Unavailable</dd>
+        <dt>Threads per page</dt><dd data-services-{{ service_name }}-threads>Unavailable</dd>
+        <dt>OCR timeout</dt><dd data-services-{{ service_name }}-timeout_seconds>Unavailable</dd>
+        <dt>Model idle unload</dt><dd data-services-{{ service_name }}-gpu_idle_seconds>Unavailable</dd>
+    </dl>
+</div>

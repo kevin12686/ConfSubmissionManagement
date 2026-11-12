@@ -39,6 +39,7 @@ class Service:
         self.ready = False
         self.health_error = "configuration_unavailable"
         self.runtime = None
+        self.public_settings = {}
         self.active = False
         self.preflight_at = 0.0
         self.maintenance_at = 0.0
@@ -103,9 +104,11 @@ class Service:
         if not self.resident:
             return self._run_isolated(mode, namespace, body)
         if mode == "preflight":
+            from submissions.services.comparison_metadata import execution_settings
             from submissions.services.comparison_protocol import contract_id
             meta = self.resident.probe()
-            return {"contract": contract_id(), "backend": "cuda", "runtime": meta["runtime"]}
+            return {"contract": contract_id(), "backend": "cuda", "runtime": meta["runtime"],
+                    "settings": execution_settings()}
         with self.resident.job(body) as environment:
             payload = self._run_isolated(mode, namespace, body, environment)
             if "error" in payload:
@@ -231,6 +234,7 @@ class Service:
         if now >= self.preflight_at and (self.probe_requested.is_set() or self.ledger.busy()):
             self.probe_requested.clear()
             self.ready = False
+            self.public_settings = {}
             try:
                 previous_runtime = self.runtime
                 payload = self.process("preflight", next(iter(self.clients)))
@@ -241,6 +245,9 @@ class Service:
                 self.runtime = payload.get("runtime") if self.ready else None
                 if self.ready and self.runtime != previous_runtime:
                     self.ledger.invalidate_runtime(comparison_protocol.contract_id(), self.runtime)
+                if self.ready:
+                    from submissions.services.comparison_metadata import public_metadata
+                    self.public_settings = public_metadata(payload)["settings"]
             except Exception as exc:
                 self.ready = False
                 self.runtime = None

@@ -754,7 +754,13 @@ timeout/crash makes that attempt fail explicitly; it never approves a review or
 switches to CPU. Existing manual Retry and remote/local consent still apply.
 
 Formatting's small Comparison services strip shows Remote/Local availability and
-reported GPU/CPU, with Details for safe connection errors. It refreshes every ten
+reported GPU/CPU and packaged release, with Details for safe connection errors
+and effective model sizes, concurrent pages, threads, OCR timeout and GPU idle
+duration alongside the CFM release. Changing `.env` alone does not update a
+running worker. Unavailable means that metadata was not reported. Last-seen
+versions/settings are explicitly marked; a release mismatch alone is not a
+contract failure. Model idle retention keeps reusable sessions, not article
+results; evidence caches have separate lifetimes. It refreshes every ten
 seconds between requests while the tab is visible; hidden tabs pause. This never
 starts a paper comparison. Unreachable hardware may show a clearly marked last
 seen value, not a confirmed current backend. Existing comparisons separately

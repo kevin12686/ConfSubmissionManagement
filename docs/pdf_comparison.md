@@ -199,6 +199,17 @@ mode reports observed backends; embedded mode labels its configured backend,
 not a verified standalone service. Service status is not job status or permission
 to dispatch; actual selection always
 checks independently. These observational reads do not produce audit spam.
+Authenticated `/v1/health` includes `worker_version` and `settings` (detection/
+recognition size, parallel pages, threads per page, OCR timeout seconds and GPU
+idle seconds). Settings are snapshots from successful runtime validation, not
+a dump of `.env`. Before validation, or after failed preflight, settings are
+unavailable. Formatting shows versions beside status and details in a shared
+responsive layout. Offline observations retain explicitly last-seen metadata;
+legacy services do not inherit an assumed version. A release mismatch alone is
+not incompatibility: the protocol/compute contract remains authoritative.
+CPU idle unload is not applicable; GPU idle 0 means per-job model release.
+Resident models are reusable inference sessions/weights, not retained article
+results. Per-document/pair evidence and job storage have separate lifetimes.
 Successful signed comparison snapshots retain a small sanitized execution summary
 and show it in upload status and PDF Comparison. Older snapshots say Worker not
 recorded, never infer execution from today's health. Audit retains execution and

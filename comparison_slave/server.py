@@ -89,6 +89,8 @@ class Application:
             state = "busy" if busy else "ready" if ready else "not_ready"
             payload = {"protocol": 1, "contract": contract, "state": state, "backend": self.service.backend,
                        "error": "" if ready or busy else self.service.health_error or "preflight_pending"}
+            from submissions.services.comparison_metadata import release_metadata
+            payload.update(release_metadata(self.service.public_settings))
             if self.service.resident:
                 payload["gpu_models"] = self.service.resident.status()
             return 200, payload

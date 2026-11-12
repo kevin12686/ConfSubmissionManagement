@@ -306,6 +306,19 @@ the blank-default migration.
 18. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
 19. Exercise Paper Master List and Final Submission sorting before and after search. Confirm natural ID order (`P2` before `P10`, Final `2` before `10`), pagination preserves the selected sort, Final Submission tabs retain it, and Old Versions tabs match the shared worklist tab design.
 
+### Worker Version And Settings Visibility
+
+- In isolated Formatting List/Single/Focus, check Remote/Local version, backend
+  and availability plus effective model sizes, pages, threads, timeout and GPU
+  idle duration in Details. Verify narrow/short viewport wrapping.
+- Verify old workers without metadata, differing compatible releases, incompatible
+  contracts, failed health and explicit Last seen state. Never show raw remote
+  metadata, tokens, headers, private paths or environment dumps.
+- Health/Details/polling must not load OCR models, renew GPU idle time, submit
+  jobs, authorize CPU fallback, modify review state or change publication bytes.
+- After isolated CPU/GPU deployment, confirm the observed runtime version and
+  settings are printed. A diagnostic read failure must not undo a healthy cutover.
+
 ### Formatting Revision Acceptance
 
 In a disposable conference, upload a corrected PDF and then source only; open

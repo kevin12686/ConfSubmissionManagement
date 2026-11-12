@@ -463,7 +463,11 @@ narrow cards or add a permanent result-list sidebar.
 
 Formatting List/Single/Focus share one compact Comparison services band above
 the worklist, outside HTMX replacements. Show Remote/Local, reported GPU/CPU,
-text plus status color, check time, a refresh icon and a Details disclosure.
+packaged release, text plus status color, check time, a refresh icon and a
+Details disclosure. Effective model/concurrency/timeout/idle settings belong in
+shared responsive Details, not more badges or a separate settings form. Use
+text-only bounded metadata and explicit Unavailable/Last seen states. A release
+mismatch must not imply contract failure.
 Do not repeat it per paper, expose credentials or imply available means selected.
 Keep last-seen hardware visibly qualified. Poll ten seconds between completed
 requests while visible, without overlap; pause on hide/navigation and resume on

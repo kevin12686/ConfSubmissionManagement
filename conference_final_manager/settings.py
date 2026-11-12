@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
 
+from submissions.version import APP_VERSION
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Conference Final Manager"
-APP_VERSION = "1.31.0"
 STATE_ARCHIVE_VERSION = 8
 
 

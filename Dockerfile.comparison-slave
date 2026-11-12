@@ -15,7 +15,9 @@ RUN python -m pip install --upgrade pip \
 # settings, conference databases, media, runtime models or local artifacts.
 COPY comparison_slave /app/comparison_slave
 COPY submissions/__init__.py /app/submissions/__init__.py
+COPY submissions/version.py /app/submissions/version.py
 COPY submissions/services/__init__.py /app/submissions/services/__init__.py
+COPY submissions/services/comparison_metadata.py /app/submissions/services/comparison_metadata.py
 COPY submissions/services/pdf_comparison_worker.py /app/submissions/services/pdf_comparison_worker.py
 COPY submissions/services/comparison_protocol.py submissions/services/pdf_comparison_execution.py submissions/services/pdf_comparison_errors.py submissions/services/pdf_comparison_cache.py /app/submissions/services/
 COPY submissions/services/rapidocr_comparison /app/submissions/services/rapidocr_comparison

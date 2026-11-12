@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.1 - Unreleased
+
+- Report the packaged worker release and validated effective OCR settings in
+  authenticated health and Formatting's existing Comparison services. Keep
+  model settings in shared responsive Details, with explicit last-seen and
+  unavailable states; never return environment dumps, credentials or paths.
+- Share release identity between Django and CPU/GPU images; print observed
+  runtime version/settings after a healthy worker deployment. Retain protocol,
+  compute/cache identity, inference, publication rules and State archive v8.
+
 ## 1.31.0 - Unreleased
 
 - Retain standalone GPU models in a supervised process, unloading after 1800

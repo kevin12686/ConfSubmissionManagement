@@ -74,6 +74,19 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if args == ["--healthcheck"]:
         return 0 if healthy() else 1
+    if args == ["--status"]:
+        try:
+            from submissions.services.comparison_metadata import public_metadata
+            payload = health_status()
+            backend = payload.get("backend") if payload.get("backend") in ("cpu", "cuda") else "unknown"
+            state = payload.get("state") if payload.get("state") in ("ready", "busy", "not_ready") else "unknown"
+            metadata = public_metadata(payload)
+            print(f"Worker runtime: version {metadata['worker_version'] or 'unavailable'}; backend {backend}; state {state}.")
+            print("Effective settings: " + json.dumps(metadata["settings"], sort_keys=True))
+            return 0
+        except (OSError, ValueError, KeyError, http.client.HTTPException):
+            print("Worker runtime details unavailable.", file=sys.stderr)
+            return 1
     if not args:
         print("Worker startup failed: a server command or --preflight is required.", file=sys.stderr)
         return 1
@@ -90,8 +103,8 @@ def main(argv=None):
         return 1
 
 
-def healthy():
-    """Prime lazy startup without exposing bearer tokens in args or logs."""
+def health_status():
+    """Authenticated local observation, without tokens in arguments or output."""
     connection = http.client.HTTPConnection("127.0.0.1", 8091, timeout=4)
     try:
         clients = clients_from_file(Path(os.environ["CFM_SLAVE_ROOT"]) / "clients.effective.json")
@@ -100,13 +113,21 @@ def healthy():
         response = connection.getresponse()
         data = response.read(4097)
         if response.status != 200 or len(data) > 4096:
-            return False
+            raise ValueError("Invalid health response")
         payload = json.loads(data)
-        return isinstance(payload, dict) and payload.get("state") in ("ready", "busy")
-    except (OSError, ValueError, KeyError, http.client.HTTPException):
-        return False
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid health response")
+        return payload
     finally:
         connection.close()
+
+
+def healthy():
+    """Prime lazy startup without exposing bearer tokens in args or logs."""
+    try:
+        return health_status().get("state") in ("ready", "busy")
+    except (OSError, ValueError, KeyError, http.client.HTTPException):
+        return False
 
 
 if __name__ == "__main__":

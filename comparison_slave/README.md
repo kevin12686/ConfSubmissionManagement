@@ -7,6 +7,15 @@ authenticated client's bounded upload. Comparison remains advisory evidence.
 
 ## Deployment
 
+Authenticated `/v1/health` reports the image's packaged `worker_version` and
+allowlisted effective `settings` from successful runtime validation. Formatting
+shows these in Comparison services/Details; release versions do not replace the
+existing contract check. Use `docker exec <worker-container> python -m
+comparison_slave.entrypoint --status` for a local, token-safe status read. The
+deployer prints this observation after a healthy start. No version override or
+new `.env` setting is needed. Before runtime validation, or after a failed
+validation, settings can be unavailable; old workers may omit metadata entirely.
+
 The normal operator entry point is now `scripts/deploy.py`; see the Docker Guide
 for automatic model provisioning, private client enrollment and conference setup.
 The commands below remain the lower-level worker lifecycle interface: they
