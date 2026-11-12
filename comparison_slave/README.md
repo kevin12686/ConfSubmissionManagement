@@ -64,6 +64,23 @@ the worker env/Compose, not per-conference service clients. See
 [Worker OCR Settings](../docs/docker_guide.md#worker-ocr-settings). GPU reduction
 and dynamic dispatch do not change OCR precision, batch 6, 300 DPI or file binding.
 
+Standalone CUDA additionally defaults to `CFM_GPU_MODEL_IDLE_SECONDS=1800`.
+Use 0 for the former per-job model lifetime, or 1-86400 idle seconds. CPU ignores
+this option. Set it in the worker env, not per-conference env, and recreate the
+worker through the existing deployer; existing explicit values are preserved.
+One private broker supervises a GPU-only inference process. Fresh namespace
+children still own Django settings, signing and document/pair caches. Only
+PDF bytes and bounded OCR evidence cross authenticated local IPC; no namespace
+paths or signing keys enter inference. Complete cache reuse does not load models.
+The idle clock starts after loading/last completed inference, not after health
+polls/cache hits; an active job is never unloaded. At expiry, shutdown, timeout
+or inference failure the GPU process is killed/reaped to release its CUDA arena.
+Parent-death protection prevents orphan models after a server crash. Cold health
+validates the previously loaded engine's current models/dependencies/device in
+a short metadata-only process, not a second loaded model pool. Changed identity
+requires fresh validation and invalidates obsolete evidence. Worker logs record
+`gpu_models_loaded`, `gpu_models_unloaded` and safe failure categories.
+
 - `CFM_SLAVE_ROOT`: absolute, worker-owned directory with mode 0700, separate
   from every conference's storage. Do not mount existing conference data.
 - `CFM_SLAVE_CLIENTS_FILE`: absolute worker-owned JSON file, mode 0600, containing

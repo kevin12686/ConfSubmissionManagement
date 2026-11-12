@@ -5,6 +5,7 @@ PAGE_ENV = "CFM_RAPIDOCR_PAGES"
 DETECTION_ENV = "CFM_RAPIDOCR_DET_MODEL"
 RECOGNITION_ENV = "CFM_RAPIDOCR_REC_MODEL"
 TIMEOUT_ENV = "CFM_RAPIDOCR_TIMEOUT"
+GPU_IDLE_ENV = "CFM_GPU_MODEL_IDLE_SECONDS"
 MAX_PARALLEL_PAGES = 8
 DEFAULT_TIMEOUT = 300
 
@@ -42,6 +43,12 @@ def timeout_seconds():
 
 def supervisor_seconds():
     return timeout_seconds() + 30
+
+
+def gpu_idle_seconds():
+    if os.environ.get("CFM_OCR_BACKEND", "cpu") != "cuda":
+        return 0
+    return integer_setting(GPU_IDLE_ENV, 1800, 0, 86400)
 
 
 def execution_identity():

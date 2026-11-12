@@ -158,6 +158,42 @@ standalone Docker smoke in disposable volumes; never reuse conference containers
 or existing service volumes for acceptance. GPU acceptance must state the actual
 provider/hardware tested; mocked CUDA setup tests are not GPU inference tests.
 
+### GPU Model Lifetime Acceptance
+
+`comparison_slave/resident.py` owns one supervised GPU inference actor and its
+authenticated local IPC. `resident_worker.py` is pure OCR; do not move namespace
+Django settings, signing or file caches into it. Per-job namespace children stay
+isolated. `resident_protocol.py` bounds metadata (64 KiB), PDFs (64 MiB) and raw
+document replies (128 MiB, separate from the optional 4-MiB cache storage cap).
+Validate approved PDF/runtime hashes and schema at both IPC boundaries. Never
+reuse a suspect actor after failure, or start another before the old child is
+reaped. Keep Linux parent-death protection and renewed per-job CPU budgets;
+persistent CUDA must still have finite cgroup memory and unchanged wall limits.
+
+GPU-only `CFM_GPU_MODEL_IDLE_SECONDS` accepts 0 (legacy) or 1-86400; default 1800.
+Do not include idle duration in semantic cache identity. This release's code
+changes do change the shared contract, so CFM and workers still update together.
+Cold probes may reuse only a formerly validated backend identity after checking
+current model checksums, dependencies, selected device and libraries. Changed
+runtime requires new session validation, not relabeling old cache. Health/cache
+reads must not load models or keep them warm after idle expiry.
+
+Run `scripts/accept_gpu_residency.py --before <read-only.pdf> --after <read-only.pdf>
+--output <new.json>` in a finite-memory isolated CUDA container with `--init` and
+private temporary storage. It compares actual raw strings/exact scores/word boxes,
+native geometry, render hashes and final results against per-job execution across
+two new namespaces, verifies warm/idle-cold cache, reloading, VRAM release, actor
+crash recovery, a stopped actor's 30-second failure and parent-death cleanup.
+The script creates its own clients/roots; never point it at production storage.
+The minimal worker image intentionally omits developer scripts. Mount this
+checkout's `scripts/` read-only at `/app/scripts` in the disposable test container
+(or copy the acceptance script into a test-only image), using the same checkout
+as its worker code. Mount test PDFs/models read-only and a separate output folder.
+Record full-PDF tests, model-load versus inference timing and hardware separately;
+a passed mock or cache hit is not fresh GPU inference acceptance. Also test blank,
+rotated, different-length and malformed/oversized evidence, token/hash mismatch,
+concurrent cancellation, invalid settings, explicit 0 retention and unchanged CPU.
+
 ## Docker Development Boundary
 
 Deployment preflight lives in `scripts/check_comparison_runtime.py`, outside

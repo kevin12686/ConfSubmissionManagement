@@ -338,6 +338,11 @@ Standalone CPU workers default to two concurrent pages/four threads per page;
 GPU remains four pages and native/embedded CPU one. These deployment defaults
 change scheduling only, not publication selection or OCR comparison tolerances.
 Existing explicit settings remain authoritative.
+GPU model residency shares weights only. Each job still validates its approved
+PDF hashes/runtime and keeps namespace signing/cache state isolated. Idle unload,
+model reload, cache hits, crashes and timeouts cannot select another file, approve
+a review or change readiness. Model state is deployment/runtime information,
+not publication evidence or System State archive data.
 
 The approved broad policy tolerates complete local differences covered by 38
 direct visual groups, same-base/same-case letter diacritics and existing whitespace rules. Raw OCR, locations, rule

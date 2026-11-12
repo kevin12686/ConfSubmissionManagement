@@ -744,6 +744,15 @@ compute-contract compatibility. Model/concurrency changes invalidate the old
 worker runtime cache and require Retry, not reuse as the new model. No setting
 changes publication files, version selection, Title/Author extraction or Review OK.
 
+GPU workers keep models loaded for 30 idle minutes by default. This reduces
+repeated initialization, not OCR inference time. Worker operators can change
+`CFM_GPU_MODEL_IDLE_SECONDS` (0 disables residency); no conference setting is
+needed. Service Details reports loaded/loading/unloaded separately from Ready.
+Ready with unloaded models is normal: new OCR reloads them, completed cache does
+not. Health polling and cache reads do not extend the model's idle timer. A model
+timeout/crash makes that attempt fail explicitly; it never approves a review or
+switches to CPU. Existing manual Retry and remote/local consent still apply.
+
 Formatting's small Comparison services strip shows Remote/Local availability and
 reported GPU/CPU, with Details for safe connection errors. It refreshes every ten
 seconds between requests while the tab is visible; hidden tabs pause. This never

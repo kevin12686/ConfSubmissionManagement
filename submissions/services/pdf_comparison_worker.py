@@ -32,7 +32,7 @@ def read_pair(stream):
     return documents
 
 
-def resource_limits():
+def resource_limits(*, persistent=False):
     # Windows relies on the parent wall-clock timeout and bounded inputs.
     # Linux also bounds native allocations; macOS reserves large virtual ranges
     # for its runtime, so an address-space limit there would reject valid files.
@@ -48,7 +48,9 @@ def resource_limits():
     # CPU time accumulates across threads; it must not cut short the wall budget
     # when a deployment explicitly enables more ONNX threads.
     cpu_budget = MAX_THREADS * parallel_pages() * timeout_seconds()
-    resource.setrlimit(resource.RLIMIT_CPU, (cpu_budget, cpu_budget + 20))
+    if persistent and backend != "cuda":
+        raise ValueError("Only standalone GPU inference may retain model processes.")
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_budget, resource.RLIM_INFINITY if persistent else cpu_budget + 20))
     if sys.platform.startswith("linux"):
         if backend == "cuda":
             # CUDA reserves large virtual ranges. Require an actual finite
@@ -76,7 +78,9 @@ def inspect_pair(before, after, cache_directory=None, *, cache_only=False):
     if cache_only and (not cache_directory or not (cache_directory / "pair.input.json").is_file()):
         return {"version": VERSION, "cache_miss": True}
     try:
-        recognizer = build_recognizer()
+        from submissions.services.rapidocr_comparison.resident_protocol import ResidentClient
+        resident = ResidentClient.from_environment()
+        recognizer = None if resident else build_recognizer()
     except Exception:
         return {"version": VERSION, "error": "configuration"}
     try:
@@ -87,7 +91,7 @@ def inspect_pair(before, after, cache_directory=None, *, cache_only=False):
         fingerprint = None
         if cache_directory:
             try:
-                fingerprint = runtime_fingerprint()
+                fingerprint = resident.fingerprint if resident else runtime_fingerprint()
             except Exception:
                 cache_directory = None
         hashes = [hashlib.sha256(data).hexdigest() for data in (before, after)]
@@ -129,7 +133,7 @@ def inspect_pair(before, after, cache_directory=None, *, cache_only=False):
                 if digest in memo:
                     document = copy.deepcopy(memo[digest])
                 else:
-                    pages, native = extract_document(data, recognizer)
+                    pages, native = resident.extract(data) if resident else extract_document(data, recognizer)
                     document = {"pages": pages, "native": native}
                 memo[digest] = document
                 if cache_directory:

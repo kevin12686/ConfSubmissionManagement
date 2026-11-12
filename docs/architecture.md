@@ -142,6 +142,18 @@ values. Both default to a 300-second OCR budget with supervisor budget +30.
 Selected models/concurrency are runtime/cache identity, not publication authority.
 Workers and conferences must share the updated compute contract. No schema or
 State archive version changes are needed for these deployment settings.
+GPU residency is owned by `comparison_slave/resident.py`, not conference state.
+It supervises one pure OCR child (`rapidocr_comparison/resident_worker.py`) and
+private bounded IPC (`resident_protocol.py`). Namespace jobs/cache signing remain
+fresh isolated children; inference never configures Django. Per-job capability
+tokens, approved PDF hashes, runtime identity and deadlines bind every request.
+Cold/warm results use the same renderer/models/decoder. Model residency defaults
+to 1800 idle seconds on CUDA only; 0 retains per-job execution. Warm probes and
+metadata-only cold probes do not refresh idle time or allocate model sessions.
+The broker owns cancellation, kill/reap and idle expiry; Linux parent-death
+protection prevents orphan GPU processes. CPU time has a renewed per-job soft
+budget for the persistent actor, with the same finite wall/cgroup memory bounds.
+Changing lifetime alone does not relabel evidence or require a new archive schema.
 The default lookup is `BASE_DIR/runtime/rapidocr-models`,
 already exposed in Docker by the existing `.:/app` mount. An optional absolute
 `CFM_RAPIDOCR_MODEL_DIR` overrides it; external Docker directories need an explicit

@@ -1,6 +1,7 @@
 """Container-only private-root and file-backed Compose secret initialization."""
 import http.client
 import json
+import logging
 import os
 from pathlib import Path
 import stat
@@ -69,6 +70,7 @@ def preflight(clients_source):
 
 
 def main(argv=None):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     args = sys.argv[1:] if argv is None else argv
     if args == ["--healthcheck"]:
         return 0 if healthy() else 1

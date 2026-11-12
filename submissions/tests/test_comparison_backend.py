@@ -399,11 +399,35 @@ class DeploymentConfigTests(SimpleTestCase):
         self.assertEqual(gpu["build"]["target"], "gpu")
         self.assertEqual(gpu["environment"]["CFM_OCR_BACKEND"], "cuda")
         self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_PAGES"], "4")
+        self.assertEqual(gpu["environment"]["CFM_GPU_MODEL_IDLE_SECONDS"], "1800")
         self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_THREADS"], "4")
         self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_TIMEOUT"], "300")
         self.assertEqual(gpu["volumes"], base["volumes"])
         self.assertEqual(gpu["mem_limit"], base["mem_limit"])
         self.assertEqual(gpu["deploy"]["resources"]["reservations"]["devices"][0]["driver"], "nvidia")
+
+    def test_gpu_idle_override_zero_is_preserved_and_invalid_values_fail(self):
+        from scripts import docker_instance_tools as helpers
+        from scripts.start_comparison_slave import DeploymentError, model_options
+        for value in ("0", "30", "86400", "-1", "86401", "30m"):
+            with helpers.temporary_env_file({"CFM_GPU_MODEL_IDLE_SECONDS": value}) as path:
+                config = self.config("compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml", env_file=str(path))
+                self.assertEqual(config["services"]["comparison-slave"]["environment"]["CFM_GPU_MODEL_IDLE_SECONDS"], value)
+                if value in {"0", "30", "86400"}:
+                    model_options(config)
+                else:
+                    with self.assertRaises(DeploymentError):
+                        model_options(config)
+
+    def test_selected_worker_idle_setting_is_not_overridden_by_caller_shell(self):
+        from scripts import docker_instance_tools as helpers
+        from scripts.start_comparison_slave import configuration
+        with helpers.temporary_env_file({"CFM_GPU_MODEL_IDLE_SECONDS": "0"}) as path:
+            original = path.read_bytes()
+            with patch.dict(os.environ, {"CFM_GPU_MODEL_IDLE_SECONDS": "3600"}):
+                config, _, _ = configuration(path, gpu=True)
+            self.assertEqual(config["services"]["comparison-slave"]["environment"]["CFM_GPU_MODEL_IDLE_SECONDS"], "0")
+            self.assertEqual(path.read_bytes(), original)
 
     def test_conference_service_urls_and_credentials_are_separate(self):
         config = self.config("docker-compose.yml", env_file=".env.example")

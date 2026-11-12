@@ -552,6 +552,7 @@ deployer uses that same resolved model selection when provisioning.
 | `CFM_RAPIDOCR_DET_MODEL` | small | small | small / medium |
 | `CFM_RAPIDOCR_REC_MODEL` | small | small | small / medium |
 | `CFM_RAPIDOCR_TIMEOUT` | 300 | 300 | 30-3600 seconds per pair |
+| `CFM_GPU_MODEL_IDLE_SECONDS` | ignored | 1800 | 0 disables residency; 1-86400 idle seconds |
 
 300 DPI, detection limit 2560, recognition batch 6 and comparison rules stay fixed.
 For example, in the GPU Compose service's `environment`:
@@ -588,6 +589,27 @@ Medium models/concurrent pages can need much more RAM/VRAM. Four Small/Small pag
 used about 11.8 GiB VRAM on the tested 16-GiB card; this is not a universal memory
 guarantee. Do not assume four Medium pages fit. OOM/timeout means unavailable,
 never partial success or silent model/backend/quality downgrade.
+
+GPU models now stay in one supervised inference process between jobs. After
+1800 seconds without inference, the process exits and releases its CUDA memory;
+the next OCR miss loads it again. Set `CFM_GPU_MODEL_IDLE_SECONDS=0` deliberately
+to retain the old per-job lifetime, or e.g. `1800` for 30 minutes. This is a
+**shared GPU worker** setting, not a conference or CFM web setting. Existing
+explicit values (including 0) survive updates. CPU execution is unchanged.
+Residency can retain the peak VRAM allocation until idle expiry; account for
+other GPU services. It saves model/session initialization, not neural inference
+work. It does not increase deadlines or lower models/DPI/batch quality.
+
+Health checks and complete cache hits neither refresh the idle timer nor reload
+idle models. A cold worker can be Ready: its runtime/device was validated and
+models load only on new OCR. Formatting's existing service Details shows model
+state separately. Cold probes verify pinned files, installed libraries and the
+same GPU identity without loading model sessions. Namespace/signing/cache data
+remain in isolated job processes; only models are shared. Timeout/OOM/invalid
+evidence kills and reaps the actor before reuse; server death kills it too.
+No extra LAN port, Docker service, credential or conference migration is needed.
+Recreate the GPU worker with the normal unified deployment command after changing
+the env. Update CFM and workers from the same checkout for contract compatibility.
 
 Changing models/concurrency invalidates runtime-bound cache. Obsolete completed
 worker jobs require explicit Retry; no old evidence is served as the new model's

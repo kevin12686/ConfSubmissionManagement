@@ -60,8 +60,7 @@ class Application:
                  "hashes": [row["before_hash"], row["after_hash"]],
                  "state": row["state"], "error": row["error"], "attempts": row["attempts"]}
         if row["state"] == "completed":
-            if (row["contract"] != contract or not self.service.ready
-                    or time.monotonic() >= self.service.preflight_at):
+            if row["contract"] != contract or not self.service.runtime_ready():
                 self.service.probe_requested.set()
                 self.service.wake.set()
                 raise HTTPError(503, "not_ready")
@@ -82,14 +81,17 @@ class Application:
         if path == "/v1/health":
             if method != "GET":
                 raise HTTPError(405, "method_not_allowed")
-            ready = self.service.ready and time.monotonic() < self.service.preflight_at
+            ready = self.service.runtime_ready()
             busy = self.service.active or self.service.ledger.busy(running_only=not ready)
             if not ready:
                 self.service.probe_requested.set()
                 self.service.wake.set()
             state = "busy" if busy else "ready" if ready else "not_ready"
-            return 200, {"protocol": 1, "contract": contract, "state": state, "backend": self.service.backend,
-                         "error": "" if ready or busy else self.service.health_error or "preflight_pending"}
+            payload = {"protocol": 1, "contract": contract, "state": state, "backend": self.service.backend,
+                       "error": "" if ready or busy else self.service.health_error or "preflight_pending"}
+            if self.service.resident:
+                payload["gpu_models"] = self.service.resident.status()
+            return 200, payload
         match = re.fullmatch(r"/v1/jobs/([a-f0-9]{64})", path)
         if not match:
             raise HTTPError(404, "not_found")
@@ -135,7 +137,7 @@ class Application:
             if existing and not self.service.ledger.expired(existing) and not (retry and existing["state"] == "failed"):
                 reply = self.job_reply(existing, contract)
                 return (202 if reply["state"] in {"queued", "running"} else 200), reply
-            if not self.service.ready or time.monotonic() >= self.service.preflight_at:
+            if not self.service.runtime_ready():
                 self.service.probe_requested.set()
                 self.service.wake.set()
                 raise HTTPError(503, "not_ready")
@@ -179,6 +181,7 @@ def application(environ, start_response):
         with _initialization:
             if _application is None and time.monotonic() >= _retry_at:
                 try:
+                    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
                     service = Service(os.environ["CFM_SLAVE_ROOT"], os.environ["CFM_SLAVE_CLIENTS_FILE"],
                                       secret_file=os.environ.get("CFM_SLAVE_SECRET"))
                     _application = Application(service)

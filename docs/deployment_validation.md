@@ -6,6 +6,64 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
+## GPU Model Residency Acceptance (1.31.0 / Method 8)
+
+- Native macOS: 1,038 Django tests passed. Standalone discovery ran 110 tests
+  with two opt-in skips; both actual Docker opt-ins passed separately. All 123
+  JavaScript tests and check/migration-drift/docs/compile/whitespace gates passed.
+  No database migration or State archive change is needed (archive v8).
+- Isolated ARM64 Linux app Docker: 1,038 tests ran with ten platform skips;
+  the read-only Compose cases ran on macOS. Real updater acceptance retained
+  two disposable conferences' DB/review state, publication files, envs and tokens
+  through both entrypoints. Custom-header container round-trip also passed.
+- Actual CUDA acceptance used the Quadro RTX 5000 16-GiB host, finite 8-GiB RAM
+  and eight-CPU test containers, pinned Small/Small models, four pages, four
+  threads per engine, unchanged 300 DPI/batch 6 and 300-second work budget.
+  The test-only image layered the new standalone source over the installed
+  pinned CUDA dependencies; this is real GPU inference, not a fresh dependency
+  installation test. No production volume, port or worker was reused/restarted.
+- Both supplied 12-page PDFs matched per-job execution exactly: raw OCR strings,
+  serialized scores, word segmentation/boxes, native geometry, render hashes
+  and final comparisons. The model PID was reused across fresh OCR in distinct
+  namespaces. Raw OCR SHA256 was
+  `30540752da581042bb42669d4debcac7a664a6d74893f5a6c515e34899c3545e`.
+  The same checks cover nine generated blank/rotated/two-column/edited pages
+  with unequal document lengths. This is execution parity, not defect accuracy.
+- Representative final real-pair times: per-job execution 20.269 seconds;
+  resident first fresh pair 18.846 and a second uncached namespace 17.581;
+  initial model loading 2.202. Direct isolated pair-cache execution was 1.781
+  seconds warm / 2.588 after idle unload (not HTTP ledger-cache lookup timing).
+  Residency saves initialization, not neural inference, and uses more standing
+  VRAM. These are measurements, not universal speedup guarantees.
+- Final real-pair VRAM rose from 6 to 12,058 MiB, then returned to 6 after idle
+  process termination. Health/cache reads did not keep it warm; cold pair-cache
+  reuse allocated no model process, while a fresh namespace reloaded it.
+- Real actor crash recovery, a stopped actor's 30.172-second explicit failure,
+  and Linux parent-death cleanup passed. No timeout/invalid evidence became a
+  partial completed result. Unit tests additionally cover idle-death monitoring,
+  failed reaping blocking replacement, capability/PDF/runtime mismatch, bounded
+  IPC, cancellation, renewed CPU budgets, kernel-default native-call watchdog,
+  immediate unavailable status and preflight recovery without replaying jobs.
+- CPU actual nine-page extraction matched committed 1.30.1 exactly, including
+  unrounded scores/geometry (SHA256
+  `65206830c992191bbfc9817e2c76330e90b3fba5f86d79bc94a12560776116a5`).
+  Explicit idle 0, invalid settings, selected-env precedence over caller shell,
+  credential retention and unchanged CPU defaults are covered.
+- The normal GPU entrypoint/Gunicorn path passed startup preflight, authenticated
+  HTTP health and job execution, idle Ready/cold state and completed-result lookup
+  without model reload. Default worker logs contain both load and unload events.
+  The existing production worker retained container ID
+  `fa5d8e02004b3ec774471b6224ab788cfd8b63e6f8d07ba27bf5bc7ea35db1e8`
+  and start time `2026-11-12T05:20:03.861108696Z` throughout acceptance.
+
+CFM and the tested GPU image share compute contract
+`3ea6e26d3f9f24c6150b00bf57d0bb18af6edc9ea373750b8db735abcf8f4b26`.
+Publication/revision selection, readiness and review-reset dependencies are
+unchanged. Production conference data, original PDFs and existing GPU service
+configuration remain untouched. Temporary test models/PDFs/processes/images are
+removed after acceptance; only reports are retained. The earlier ARM64 CPU
+cold-comparison timeout limitation is unchanged, not fixed by GPU residency.
+
 ## CPU Worker Defaults Acceptance (1.30.1 / Method 8)
 
 Standalone CPU defaults are now two pages/four threads per engine. Explicit

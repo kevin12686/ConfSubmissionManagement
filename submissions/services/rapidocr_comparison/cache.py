@@ -46,11 +46,12 @@ def worker_identity():
     return value
 
 
-def runtime_fingerprint():
+def runtime_fingerprint(*, backend_identity=None):
     import cv2
     import onnxruntime
     code = sorted(Path(__file__).parent.glob("*.py"))
     code.append(Path(__file__).parents[1] / "pdf_comparison_worker.py")
+    code.append(Path(__file__).parents[3] / "comparison_slave" / "resident.py")
     worker = worker_identity()
     node = None if worker else uuid.getnode()
     # UUID's fallback is random per process, not a stable hardware identifier.
@@ -62,7 +63,8 @@ def runtime_fingerprint():
             ("model name", "flags", "Features", "CPU implementer", "CPU part")
         )})
     identity = {
-        "format": FORMAT, "backend": runtime.backend_identity(), "models": runtime.selected_model_hashes(),
+        "format": FORMAT, "backend": runtime.backend_identity() if backend_identity is None else backend_identity,
+        "models": runtime.selected_model_hashes(),
         "execution": runtime.execution_identity(),
         "threads": runtime.ocr_thread_count(), "python": sys.version,
         "platform": platform.platform(), "machine": platform.machine(),

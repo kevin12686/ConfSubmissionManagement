@@ -166,6 +166,16 @@ class UnifiedDeploymentTests(unittest.TestCase):
         for key, value in values.items():
             self.assertEqual(deploy.EnvFile(path).get(key), value)
 
+    def test_gpu_update_retains_explicit_disabled_residency_and_credentials(self):
+        self.assertEqual(self.worker("--gpu", "--client", "conf-a"), 0)
+        path = self.root / "runtime/comparison-slave/worker.env"
+        path.write_bytes(path.read_bytes() + b"CFM_GPU_MODEL_IDLE_SECONDS=0\n")
+        original, clients = path.read_bytes(), self.clients()
+        self.status.return_value = "ready"
+        self.assertEqual(self.worker("--gpu", "--client", "conf-a"), 0)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(self.clients(), clients)
+
     def test_wildcard_bind_requires_explicit_advertised_endpoint(self):
         self.assertEqual(self.worker("--bind-host", "0.0.0.0", "--client", "conf-a"), 1)
         self.assertFalse((self.root / "runtime/comparison-slave/worker.env").exists())

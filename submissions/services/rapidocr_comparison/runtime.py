@@ -113,7 +113,7 @@ def selected_model_hashes():
 
 def build_recognizer():
     # Keep the CPU single-page execution path unchanged; parallel execution is
-    # opt-in on CPU, and the CUDA default owns four independent model sessions.
+    # bounded on standalone CPU, and CUDA owns four sessions by default.
     execution_identity()
     timeout_seconds()
     first = _build_recognizer()
@@ -130,10 +130,7 @@ def build_recognizer():
     return RecognizerPool(engines)
 
 
-def _build_recognizer():
-    global _validated_cuda_identity
-    _validated_cuda_identity = None
-    root = validate_models()
+def validate_dependencies():
     backend = ocr_backend()
     package = "onnxruntime-gpu" if backend == "cuda" else "onnxruntime"
     other = "onnxruntime" if backend == "cuda" else "onnxruntime-gpu"
@@ -146,7 +143,6 @@ def _build_recognizer():
         pass
     else:
         raise ValueError(f"OCR {backend} requires only {package}, not {other}; use separate environments.")
-    from rapidocr import RapidOCR
     import onnxruntime
     onnxruntime.disable_telemetry_events()
     if backend == "cuda":
@@ -154,6 +150,21 @@ def _build_recognizer():
             raise ValueError("CUDAExecutionProvider is unavailable; CPU fallback is not permitted.")
         # The GPU image installs ORT's CUDA/cuDNN extras, not a second ORT wheel.
         onnxruntime.preload_dlls(directory="")
+    return onnxruntime
+
+
+def cuda_library_versions():
+    return {dist.metadata["Name"]: dist.version for dist in importlib.metadata.distributions()
+            if dist.metadata.get("Name", "").lower().startswith("nvidia-")}
+
+
+def _build_recognizer():
+    global _validated_cuda_identity
+    _validated_cuda_identity = None
+    root = validate_models()
+    backend = ocr_backend()
+    onnxruntime = validate_dependencies()
+    from rapidocr import RapidOCR
 
     # Explicit model paths avoid RapidOCR's model-directory download branch.
     params = {
@@ -182,8 +193,7 @@ def _build_recognizer():
             sessions[name] = {"providers": providers, "options": session.get_provider_options()}
         _validated_cuda_identity = {
             "backend": backend, "sessions": sessions, "device": cuda_device_identity(),
-            "libraries": {dist.metadata["Name"]: dist.version for dist in importlib.metadata.distributions()
-                          if dist.metadata.get("Name", "").lower().startswith("nvidia-")},
+            "libraries": cuda_library_versions(),
         }
     return recognizer
 

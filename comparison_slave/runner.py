@@ -30,6 +30,7 @@ class Service:
         self.root = private_directory(root)
         self.clients = clients_from_file(clients_file)
         self.guard = None
+        self.resident = None
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.probe_requested = threading.Event()
@@ -62,10 +63,20 @@ class Service:
             for namespace in self.clients:
                 path = private_directory(namespace_path(self.root, namespace))
                 private_directory(path / "tmp")
+            from submissions.services.rapidocr_comparison.config import gpu_idle_seconds
+            idle_seconds = gpu_idle_seconds()
+            if self.backend == "cuda" and idle_seconds:
+                from .resident import ResidentGPU
+                environment = os.environ.copy()
+                environment["CFM_SLAVE_ROOT"] = str(self.root)
+                environment.setdefault("CFM_RAPIDOCR_MODEL_DIR", str(Path(__file__).resolve().parents[1] / "runtime" / "rapidocr-models"))
+                self.resident = ResidentGPU(environment, self.guard.fileno(), idle_seconds)
             if start:
                 self.thread = threading.Thread(target=self.loop, name="comparison-scheduler", daemon=True)
                 self.thread.start()
         except BaseException:
+            if self.resident:
+                self.resident.close()
             if self.guard:
                 self.guard.close()
             raise
@@ -74,6 +85,8 @@ class Service:
         from submissions.services.rapidocr_comparison.config import supervisor_seconds
         self.stop.set()
         self.wake.set()
+        if self.resident:
+            self.resident.close()
         if self.thread:
             self.thread.join(timeout=supervisor_seconds() + 10)
             if self.thread.is_alive():
@@ -82,7 +95,26 @@ class Service:
             self.guard.close()
             self.guard = None
 
+    def runtime_ready(self):
+        return (self.ready and time.monotonic() < self.preflight_at
+                and not (self.resident and self.resident.failed))
+
     def run_process(self, mode, namespace, body=None):
+        if not self.resident:
+            return self._run_isolated(mode, namespace, body)
+        if mode == "preflight":
+            from submissions.services.comparison_protocol import contract_id
+            meta = self.resident.probe()
+            return {"contract": contract_id(), "backend": "cuda", "runtime": meta["runtime"]}
+        with self.resident.job(body) as environment:
+            payload = self._run_isolated(mode, namespace, body, environment)
+            if "error" in payload:
+                self.resident.invalidate()
+            else:
+                validate_output(payload)
+            return payload
+
+    def _run_isolated(self, mode, namespace, body=None, extra_environment=None):
         from submissions.services.rapidocr_comparison.config import supervisor_seconds
         directory = namespace_path(self.root, namespace)
         environment = os.environ.copy()
@@ -90,6 +122,7 @@ class Service:
         environment["CFM_SLAVE_ROOT"] = str(self.root)
         environment["TMPDIR"] = str(directory / "tmp")
         environment.setdefault("CFM_RAPIDOCR_MODEL_DIR", str(Path(__file__).resolve().parents[1] / "runtime" / "rapidocr-models"))
+        environment.update(extra_environment or {})
         command = [sys.executable, "-B", "-m", "comparison_slave.worker", mode, str(directory), str(self.secret_file)]
         # Files bound stdout independently of the child's behavior; no pipe buffers grow.
         with tempfile.TemporaryFile(dir=directory / "tmp") as source, tempfile.TemporaryFile(dir=directory / "tmp") as output:
@@ -185,6 +218,10 @@ class Service:
 
     def tick(self):
         from submissions.services import comparison_protocol
+        if self.resident and self.resident.failed and self.ready:
+            self.ready = False
+            self.preflight_at = 0.0
+            self.probe_requested.set()
         self.clean_temporary_jobs()
         now = time.monotonic()
         if now >= self.maintenance_at:
@@ -243,6 +280,8 @@ class Service:
                 self.health_error = ""
                 self.preflight_at = time.monotonic() + 60
         except Exception as exc:
+            if self.resident:
+                self.resident.invalidate()
             self.ledger.finish(row, error="comparison_failed")
             logger.warning("comparison_slave job_failed namespace=%s key=%s category=comparison_failed type=%s",
                            row["namespace"], row["key"], type(exc).__name__)

@@ -11,6 +11,8 @@ comparison method. App **1.30.1** changes only standalone CPU's omitted page
 setting to two; explicit settings, native/embedded CPU and CUDA defaults stay
 unchanged. The compute contract changes with the implementation;
 update workers and CFM together. State archive v8 is unchanged.
+App **1.31.0** adds standalone GPU model residency; method, rendering, recognition,
+comparison tolerances and signed snapshot/version selection remain unchanged.
 This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
 they must not be relabeled or reused as method-8 results. Historical method
@@ -211,6 +213,23 @@ wall budget defaults to 300 seconds, configurable with `CFM_RAPIDOCR_TIMEOUT`
 that budget plus 30 seconds, not an independent hard-coded deadline. This
 does not promise every cold PDF pair will finish. No new browser background
 timer or conference workflow writes are introduced.
+
+Standalone GPU models have an independent lifetime: the default
+`CFM_GPU_MODEL_IDLE_SECONDS=1800` retains a single model process between jobs;
+0 uses the former per-job lifetime. CPU/native execution is unchanged. Private
+IPC binds job capability, exact PDF bytes/hash, validated runtime and deadline.
+Models are shared across namespaces, never Django settings/signing/cache paths.
+Full raw OCR evidence and results must match per-job execution exactly. Runtime
+and model checks still apply before/after extraction and during cache reuse.
+Cold metadata probes verify dependencies/device/pinned files without allocating
+model sessions. Health and cache hits do not reset idle time; only completed
+inference does. Startup model loading starts its initial idle interval. An active
+job prevents expiry. Expiry terminates/reaps the GPU process; it does not merely
+drop Python references. A timeout, invalid output or crash discards the process,
+and Linux parent-death protection prevents orphan CUDA allocations. Cache state
+is separate: an unloaded model can serve a valid completed result without
+reloading. Readiness/publication rules and signed upload selection are untouched.
+See [Worker OCR Settings](docker_guide.md#worker-ocr-settings) for deployment.
 
 Before accepting completion, CFM checks protocol/engine contract, exact ordered
 input hashes, result schema/identity and every inspection page's rendered pixel

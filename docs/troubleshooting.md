@@ -40,6 +40,18 @@ bound. Reduce concurrency deliberately if necessary, not DPI/model quality, and
 never accept partial evidence as success. Update CFM and workers from the same
 checkout so their compute contracts agree.
 
+GPU memory remaining allocated between comparisons is expected with residency.
+The shared GPU worker defaults to 1800 idle seconds; set its
+`CFM_GPU_MODEL_IDLE_SECONDS=0` to use the former per-job release, or another
+1-86400-second interval, then recreate through the normal deployer. Do not change
+conference envs or remove cache/review data. Health polling and complete cache
+hits do not keep models warm. Ready + unloaded in Formatting Details is normal;
+new OCR loads models, valid cache does not. An active job delays unloading until
+it ends. Worker logs show safe `gpu_models_loaded` / `gpu_models_unloaded` reasons.
+Timeout/OOM/crash must stop the actor and leave comparison unavailable, not
+partial success. Recheck readiness and explicitly retry after resolving the
+cause; never compensate by changing publication files or bypassing version checks.
+
 - Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
   and provision the two pinned OCR models using the Developer Guide. Run
   `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.

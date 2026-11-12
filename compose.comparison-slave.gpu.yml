@@ -6,6 +6,7 @@ services:
     environment:
       CFM_OCR_BACKEND: cuda
       CFM_RAPIDOCR_PAGES: ${CFM_RAPIDOCR_PAGES:-4}
+      CFM_GPU_MODEL_IDLE_SECONDS: ${CFM_GPU_MODEL_IDLE_SECONDS:-1800}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     deploy:
       resources:

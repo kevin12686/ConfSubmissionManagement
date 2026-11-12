@@ -17,9 +17,11 @@ def contract_id():
     root = Path(__file__).parent
     paths = sorted((root / "rapidocr_comparison").glob("*.py"))
     paths += [root / "pdf_comparison_worker.py", Path(__file__)]
+    resident = root.parents[1] / "comparison_slave" / "resident.py"
     contract = {
         "protocol": PROTOCOL, "method": VERSION, "models": {**MODEL_HASHES, **MEDIUM_MODEL_HASHES},
-        "code": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
+        "code": {**{str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
+                 "comparison_slave/resident.py": hashlib.sha256(resident.read_bytes()).hexdigest()},
     }
     return hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()
 

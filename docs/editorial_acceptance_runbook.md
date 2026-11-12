@@ -512,6 +512,17 @@ results before release; no fixture set provides a universal catch-all.
 
 ### Stage 8: Docker Proxy And Recovery
 
+For GPU residency, use only isolated data/containers and real CUDA inference.
+Verify default 1800, explicit 0 (former lifetime), invalid settings and unchanged
+CPU defaults. Reuse one model PID for uncached jobs in separate namespaces and
+compare complete raw OCR/results with per-job output. Cache hits and repeated
+health polls must not reset idle time; expiry must remove the PID/release VRAM.
+A subsequent complete cache hit stays cold; an OCR miss reloads. Kill/stop only
+the test actor: require explicit failure, bounded timeout, no partial completion
+and safe reload after preflight. Kill the test parent and verify no GPU orphan.
+Use `scripts/accept_gpu_residency.py` as described in the Developer Guide. Preserve
+existing env/tokens and publication ZIP/CrossCheck bytes through update tests.
+
 For execution changes, verify standalone CPU defaults 2/Small/Small/300 with
 four threads per page, native/embedded CPU default one page, and CUDA defaults
 4/Small/Small/300 in resolved Compose, plus explicit page/model/timeout overrides.

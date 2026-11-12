@@ -27,7 +27,7 @@ def compose_environment():
     return {key: value for key, value in os.environ.items()
             if not key.startswith(("COMPOSE_", "CFM_SLAVE_"))
             and not key.startswith("CFM_RAPIDOCR_")
-            and key != "CFM_COMPARISON_NETWORK"}
+            and key not in {"CFM_COMPARISON_NETWORK", "CFM_GPU_MODEL_IDLE_SECONDS"}}
 
 
 def run(command, *, environment, timeout, capture=False):
@@ -99,8 +99,11 @@ def model_options(config):
                "rec_model": env.get("CFM_RAPIDOCR_REC_MODEL", "small")}
     if any(value not in {"small", "medium"} for value in options.values()):
         raise DeploymentError("Worker detection/recognition models must be small or medium.")
-    for name, default, low, high in (("CFM_RAPIDOCR_PAGES", 4 if env.get("CFM_OCR_BACKEND") == "cuda" else 2, 1, 8),
-                                     ("CFM_RAPIDOCR_TIMEOUT", 300, 30, 3600)):
+    bounds = [("CFM_RAPIDOCR_PAGES", 4 if env.get("CFM_OCR_BACKEND") == "cuda" else 2, 1, 8),
+              ("CFM_RAPIDOCR_TIMEOUT", 300, 30, 3600)]
+    if env.get("CFM_OCR_BACKEND") == "cuda":
+        bounds.append(("CFM_GPU_MODEL_IDLE_SECONDS", 1800, 0, 86400))
+    for name, default, low, high in bounds:
         try:
             value = int(env.get(name, default))
         except (TypeError, ValueError) as exc:

@@ -131,7 +131,16 @@ def probe_endpoint(endpoint, contract, *, timeout=None):
     if health.get("protocol") != PROTOCOL or health.get("contract") != contract:
         return {"state": "incompatible", "backend": backend, "message": "Worker and CFM comparison versions are incompatible."}
     if status in {200, 503} and health.get("state") in ("ready", "busy"):
-        return {"state": health["state"], "backend": backend, "message": ""}
+        message = ""
+        models = health.get("gpu_models")
+        if backend == "cuda" and isinstance(models, dict):
+            states = {"warm": "loaded", "cold": "unloaded; loads when new OCR is needed",
+                      "loading": "loading", "busy": "in use", "unavailable": "unavailable"}
+            idle = models.get("idle_seconds")
+            model_state = models.get("state")
+            if isinstance(model_state, str) and model_state in states and type(idle) is int and 1 <= idle <= 86400:
+                message = f"GPU models: {states[model_state]}. Idle unload: {idle} seconds."
+        return {"state": health["state"], "backend": backend, "message": message}
     known = {"preflight_pending", "configuration_unavailable", "storage_or_scheduler_unavailable"}
     category = health.get("error")
     detail = f" ({category})" if isinstance(category, str) and category in known else ""

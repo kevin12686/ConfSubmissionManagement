@@ -3,6 +3,20 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.0 - Unreleased
+
+- Retain standalone GPU models in a supervised process, unloading after 1800
+  idle seconds by default. Add worker-only `CFM_GPU_MODEL_IDLE_SECONDS` (0 keeps
+  the former lifetime). Preserve explicit deployment values and CPU behavior.
+- Keep namespace settings/signing/cache in isolated children; bind GPU IPC to
+  each job's capability, approved PDF hashes, validated runtime and deadline.
+  Health/cache probes do not refresh idle time or load idle model sessions.
+- Kill/reap GPU processes on idle expiry, failure or shutdown, with Linux
+  parent-death protection and per-job CPU budgeting. Expose safe model status
+  in existing Formatting service Details; no new service or public port.
+- Preserve models/DPI/batch/comparison rules, publication/revision selection,
+  review dependencies and State archive v8. Update CFM/workers together.
+
 ## 1.30.1 - Unreleased
 
 - Default standalone CPU comparison workers to two concurrent pages with four

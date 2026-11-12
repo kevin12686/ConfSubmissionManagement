@@ -96,6 +96,13 @@ batch 6. Update CFM and workers together for the shared compute contract. See
 or switching models. A worker invalidates completed cache from its previous
 model/runtime; existing cross-worker cache discovery may still reuse valid
 evidence from another unchanged worker, with its actual worker attribution.
+Standalone GPU workers retain one supervised model process between jobs and
+unload it after 30 minutes without inference. Set `CFM_GPU_MODEL_IDLE_SECONDS`
+in the **worker** env (0 disables residency; 1-86400 seconds). CPU is unchanged.
+Health checks and complete cache hits do not keep models loaded or reload an
+idle model. Formatting service Details distinguishes loaded/unloaded/loading
+models from service availability. The model process shares weights, not
+conference settings or signed caches; job timeouts/crashes discard it.
 Method 8's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t, rn/m and same-letter diacritics (e/é/è); whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image
