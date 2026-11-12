@@ -52,5 +52,6 @@ def line_tokens(line, page, line_number):
         box = ([min(b[0] for b in boxes), min(b[1] for b in boxes),
                 max(b[2] for b in boxes), max(b[3] for b in boxes)] if boxes else line['box'])
         tokens.append({'text': m.group(), 'page': page, 'line': line_number,
+                       'text_start': m.start(), 'text_end': m.end(),
                        'box': box, 'precision': 'word' if boxes else 'line', 'score': line['score'], 'raw_text': line['text'], 'raw_box': line['box']})
     return tokens

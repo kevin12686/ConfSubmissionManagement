@@ -11,12 +11,14 @@
         if (!root || !script) return;
         const data = JSON.parse(script.textContent);
         const query = (selector) => root.querySelector(selector);
-        const state = {selected: null, connection: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "wrap_hyphen"])};
+        const state = {selected: null, connection: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "hyphens"])};
         const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, candidate: null};
         const inspectionPanel = query("[data-comparison-inspection]");
         const detail = window.CFMComparisonDetail?.create();
         query(".cfm-comparison-workspace").insertBefore(inspectionPanel, query(".cfm-comparison-documents"));
-        const groupOf = finding => finding.category === "formatting" ? finding.kind : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
+        const groupOf = finding => finding.category === "formatting"
+            ? ["wrap_hyphen", "word_hyphen"].includes(finding.kind) ? "hyphens" : finding.kind
+            : ["uncertain", "tolerated"].includes(finding.category) ? finding.category : "attention";
         const markKind = finding => ["formatting", "tolerated"].includes(finding.category) ? "info" : finding.category === "uncertain" ? "review" : "change";
         const sides = {};
         for (const name of ["before", "after"]) {
@@ -140,7 +142,7 @@
             return data.findings.filter(matchesFilter);
         }
         function matchesFilter(finding) {
-            return state.groups.has(groupOf(finding)) && (state.category === "all" || finding.category === state.category || finding.kind === state.category);
+            return state.groups.has(groupOf(finding)) && (state.category === "all" || finding.category === state.category || finding.kind === state.category || groupOf(finding) === state.category);
         }
         function pageLabel(finding, name) {
             const pages = finding[`${name}_pages`];

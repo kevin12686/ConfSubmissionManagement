@@ -7,6 +7,7 @@ import unicodedata
 from collections import Counter,defaultdict
 
 from . import tokens as helpers
+from . import hyphens
 
 CONFIG={'anchor_tokens':6,'anchor_characters':24,'maximum_gap_tokens':200,
         'maximum_edit_tokens':16,'maximum_edit_characters':80,'maximum_edit_runs':6,
@@ -89,7 +90,7 @@ def spacing_equivalent(a,b):
     return chars(a)==chars(b)
 
 
-def anchors(a,b):
+def anchors(a,b,*,protect_hyphens=False):
     aa,bb=[key(t) for t in a],[key(t) for t in b];n=CONFIG['anchor_tokens']
     if aa and aa == bb:
         return [(0,len(a),0,len(b))]
@@ -98,8 +99,17 @@ def anchors(a,b):
         raise ValueError('OCR anchor pairing work bound exceeded')
     ca=Counter(tuple(aa[i:i+n]) for i in range(max(0,len(aa)-n+1)))
     cb=Counter(tuple(bb[i:i+n]) for i in range(max(0,len(bb)-n+1)))
+    inside_a,inside_b=(hyphens.interiors(a),hyphens.interiors(b)) if protect_hyphens else ({},{})
     accepted=[]
     for i,j,size in difflib.SequenceMatcher(None,aa,bb,autojunk=False).get_matching_blocks():
+        end_i,end_j=i+size,j+size
+        while i<end_i and (i in inside_a or j in inside_b):
+            step=max(inside_a.get(i,(i,i))[1]-i,inside_b.get(j,(j,j))[1]-j)
+            i+=step;j+=step
+        while end_i>i and (end_i in inside_a or end_j in inside_b):
+            step=max(end_i-inside_a.get(end_i,(end_i,end_i))[0],end_j-inside_b.get(end_j,(end_j,end_j))[0])
+            end_i-=step;end_j-=step
+        size=end_i-i
         if size<n or sum(len(t['text']) for t in a[i:i+size])<CONFIG['anchor_characters']:continue
         if any(ca[tuple(aa[p:p+n])]==1 and cb[tuple(aa[p:p+n])]==1 for p in range(i,i+size-n+1)):
             accepted.append((i,i+size,j,j+size))
@@ -108,13 +118,14 @@ def anchors(a,b):
     return accepted
 
 
-def local_alignment(a,b,offsets):
+def local_alignment(a,b,offsets,*,hyphen_pairs=None):
     """Bounded exact edit DP; substitutions beat delete/insert number swapping.
 
     The second score is geometry only as a tie breaker. It never makes differing
     tokens equal and cannot beat a lower integer edit cost.
     """
     n,m=len(a),len(b)
+    pairs=hyphen_pairs or {}
     costs=[[(0,0.0)]*(m+1) for _ in range(n+1)];back=[[None]*(m+1) for _ in range(n+1)]
     for i in range(1,n+1):costs[i][0]=(i*CONFIG['deletion_cost'],0);back[i][0]='delete'
     for j in range(1,m+1):costs[0][j]=(j*CONFIG['insertion_cost'],0);back[0][j]='insert'
@@ -129,13 +140,19 @@ def local_alignment(a,b,offsets):
                      ((costs[i-1][j][0]+CONFIG['deletion_cost'],costs[i-1][j][1]),'delete'),
                      ((costs[i][j-1][0]+CONFIG['insertion_cost'],costs[i][j-1][1]),'insert')]
             value,op=min(choices,key=lambda item:item[0]);costs[i][j]=value;back[i][j]=op
+            for start,left in pairs.get((i,j),[]):
+                candidate=(costs[start][left][0]+1,costs[start][left][1])
+                if candidate<costs[i][j]:
+                    costs[i][j]=candidate;back[i][j]=('word_hyphen',start,left)
     path=[];i,j=n,m
     while i or j:
-        op=back[i][j];ai=i-(op!='insert');bj=j-(op!='delete')
+        op=back[i][j]
+        if isinstance(op,tuple):op,ai,bj=op
+        else:ai=i-(op!='insert');bj=j-(op!='delete')
         path.append((op,ai,i,bj,j));i,j=ai,bj
     path.reverse();runs=[]
     for op,i,j,k,l in path:
-        if runs and runs[-1][0]==op:
+        if runs and runs[-1][0]==op and op!='word_hyphen':
             old=runs[-1];runs[-1]=(op,old[1],j,old[3],l)
         else:runs.append((op,i,j,k,l))
     return runs
@@ -147,6 +164,7 @@ def locs(tokens):
 
 
 def wrap_hyphen(a,b):
+    """Label an already validated lexical pair; this is not a tolerance gate."""
     def wrapped(left,right):
         return (len(left)==3 and len(right)==1 and left[1]['text']=='-'
                 and left[0]['text'].isalpha() and left[2]['text'].isalpha()

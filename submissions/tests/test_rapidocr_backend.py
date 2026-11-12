@@ -16,7 +16,7 @@ from django.test import SimpleTestCase, override_settings
 
 from submissions.services import pdf_comparison, pdf_comparison_worker
 from submissions.services.rapidocr_comparison import runtime
-from submissions.services.rapidocr_comparison.result import build_result
+from submissions.services.rapidocr_comparison.result import VERSION, build_result
 from submissions.tests.ocr_fixtures import ocr_pages
 
 
@@ -113,11 +113,11 @@ class OCRWorkerRuntimeTests(SimpleTestCase):
 
     def test_no_ocr_fallback_for_failed_recognition_or_model_loading(self):
         with patch.object(runtime, "build_recognizer", side_effect=ValueError("missing model")):
-            self.assertEqual(pdf_comparison_worker.inspect_pair(b"a", b"b"), {"version": 8, "error": "configuration"})
+            self.assertEqual(pdf_comparison_worker.inspect_pair(b"a", b"b"), {"version": VERSION, "error": "configuration"})
         with patch.object(runtime, "build_recognizer", return_value=object()), patch.object(
             runtime, "extract_document", side_effect=RuntimeError("recognizer failed")
         ):
-            self.assertEqual(pdf_comparison_worker.inspect_pair(b"a", b"b"), {"version": 8, "error": "ocr_failed"})
+            self.assertEqual(pdf_comparison_worker.inspect_pair(b"a", b"b"), {"version": VERSION, "error": "ocr_failed"})
 
     def test_no_result_and_incomplete_ocr_arrays_fail_not_blank_success(self):
         for response in (None, SimpleNamespace(txts=["word"], scores=[], boxes=[])):
@@ -141,7 +141,7 @@ class OCRWorkerRuntimeTests(SimpleTestCase):
 
     def test_default_model_path_and_timeout_are_bound_to_parent(self):
         result = build_result(ocr_pages("Identical recognized text."), ocr_pages("Identical recognized text."), identical_bytes=True)
-        response = subprocess.CompletedProcess([], 0, json.dumps({"version": 8, "result": result}).encode())
+        response = subprocess.CompletedProcess([], 0, json.dumps({"version": VERSION, "result": result}).encode())
         with tempfile.TemporaryDirectory() as temporary, override_settings(BASE_DIR=temporary), patch.dict(os.environ, {}, clear=True):
             with patch("submissions.services.pdf_comparison_execution.subprocess.run", return_value=response) as run:
                 pdf_comparison.compare_pdf_bytes(b"same", b"same")

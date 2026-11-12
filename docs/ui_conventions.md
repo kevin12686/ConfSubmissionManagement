@@ -504,8 +504,15 @@ Use three distinct visual groups:
 - Unlocated ranges: amber highlight/outline, no arrows; correspondence is not
   established and manual review remains necessary.
 - Information: quiet neutral outlines for tolerated visual differences,
-  whitespace joins/splits and possible wrap hyphens. Do not turn these back into
+  whitespace joins/splits and word/line-wrap hyphens. Do not turn these back into
   warnings or label them verified unchanged.
+
+Keep one **Hyphens** checkbox, finding-type option and Info group for both
+`word_hyphen` and `wrap_hyphen`. Sum their counts without adding another toolbar
+or coloring them like text warnings. The selected finding retains its exact
+kind, label, raw OCR and paired locations; both kinds use the existing hover,
+connection and magnification components. Wrap-only findings use the same group;
+older-method snapshots require rebuilding rather than severity relabelling.
 
 Keep totals/displayed counts distinct and filters local to the comparison.
 Do not infer paper counts, accuracy or safety scores. Preserve raw OCR text,

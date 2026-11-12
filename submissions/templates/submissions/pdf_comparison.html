@@ -46,7 +46,9 @@
             <label><input type="checkbox" data-comparison-group-filter="uncertain" checked><i class="cfm-comparison-mark-key cfm-comparison-mark-key-review" aria-hidden="true"></i> Unlocated ranges <strong>{{ comparison_data.uncertain_count }}</strong></label>
             <label><input type="checkbox" data-comparison-group-filter="tolerated" checked><i class="cfm-comparison-mark-key cfm-comparison-mark-key-info" aria-hidden="true"></i> Visual exceptions <strong>{{ comparison_data.tolerated_count|default:0 }}</strong></label>
             <label><input type="checkbox" data-comparison-group-filter="ignored_spacing" checked> Spacing <strong>{{ comparison_data.info_kind_counts.ignored_spacing|default:0 }}</strong></label>
-            <label><input type="checkbox" data-comparison-group-filter="wrap_hyphen" checked> Wrap hyphens <strong>{{ comparison_data.info_kind_counts.wrap_hyphen|default:0 }}</strong></label>
+            {% with wrapped=comparison_data.info_kind_counts.wrap_hyphen|default:0 words=comparison_data.info_kind_counts.word_hyphen|default:0 %}
+            <label><input type="checkbox" data-comparison-group-filter="hyphens" checked> Hyphens <strong>{{ wrapped|add:words }}</strong></label>
+            {% endwith %}
             <span class="small text-muted">{{ comparison_data.info_count }} formatting information</span>
         </div>
         <div class="cfm-comparison-layout">
@@ -55,7 +57,7 @@
                     <div><h2 class="h6 mb-0" data-comparison-heading>Document comparison</h2><span class="small text-muted" data-comparison-location></span></div>
                     <div class="cfm-comparison-stepper">
                         <label class="visually-hidden" for="comparison-category">Finding type</label>
-                        <select class="form-select form-select-sm" id="comparison-category" data-comparison-category><option value="all">All findings</option><option value="added">Added text</option><option value="changed">Changed text</option><option value="removed">Removed text</option><option value="reference">Possible reference errors</option><option value="uncertain">Unlocated ranges</option><option value="tolerated">Visual exceptions</option><option value="ignored_spacing">Spacing joins / splits</option><option value="wrap_hyphen">Wrap-hyphen information</option></select>
+                        <select class="form-select form-select-sm" id="comparison-category" data-comparison-category><option value="all">All findings</option><option value="added">Added text</option><option value="changed">Changed text</option><option value="removed">Removed text</option><option value="reference">Possible reference errors</option><option value="uncertain">Unlocated ranges</option><option value="tolerated">Visual exceptions</option><option value="ignored_spacing">Spacing joins / splits</option><option value="hyphens">Hyphen information</option></select>
                         <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-step="-1" aria-label="Previous difference" title="Previous difference"><span class="cfm-comparison-icon-previous" aria-hidden="true"></span></button>
                         <span class="small text-muted" data-comparison-position></span>
                         <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-step="1" aria-label="Next difference" title="Next difference"><span class="cfm-comparison-icon-next" aria-hidden="true"></span></button>
@@ -75,7 +77,7 @@
                     <section class="cfm-comparison-finding-group" data-comparison-level="warning"><h3 class="h6 cfm-comparison-group-heading">Unlocated ranges <span data-finding-group-count="uncertain"></span></h3><div data-finding-group="uncertain"></div></section>
                     <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Tolerated visual differences <span data-finding-group-count="tolerated"></span></h3><div data-finding-group="tolerated"></div></section>
                     <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Spacing joins / splits <span data-finding-group-count="ignored_spacing"></span></h3><div data-finding-group="ignored_spacing"></div></section>
-                    <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Wrap-hyphen information <span data-finding-group-count="wrap_hyphen"></span></h3><div data-finding-group="wrap_hyphen"></div></section>
+                    <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Hyphen information <span data-finding-group-count="hyphens"></span></h3><div data-finding-group="hyphens"></div></section>
                 </div>
                 <div class="small text-muted" data-comparison-empty hidden>No findings in this view.</div>
                 <button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-manual>Browse all pages</button>

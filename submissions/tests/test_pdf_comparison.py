@@ -334,7 +334,7 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         response = self.client.get(self.url, {"comparison": payload["token"]})
         self.assertContains(response, 'data-comparison-level="warning"')
         self.assertContains(response, 'data-finding-group="ignored_spacing"')
-        self.assertContains(response, 'data-finding-group="wrap_hyphen"')
+        self.assertContains(response, 'data-finding-group="hyphens"')
         self.assertContains(response, 'data-finding-group="tolerated"')
         self.assertEqual(payload["result"]["info_count"], 0)
         self.assertContains(response, 'data-finding-group="uncertain"')
@@ -343,6 +343,41 @@ class PDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertEqual(response.context["comparison_data"]["findings"], payload["result"]["findings"])
         self.assertEqual(response.context["comparison_data"]["page_map"], payload["result"]["page_map"])
         self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+
+    def test_hyphen_info_does_not_change_publication_or_crosscheck_bytes_or_reviews(self):
+        import zipfile
+        from submissions.services.crosscheck import prepare_crosscheck_upload
+        from submissions.services.reports import export_publication_package
+        from submissions.services.rapidocr_comparison.result import build_result
+        from submissions.tests.test_rapidocr_acceptance import page
+        before_text = 'The real-time method used 23 trials.'
+        after_text = 'The realtime method used 99 trials.'
+        extra = [f'Retained supporting evidence on page {n} with independent context.' for n in range(2, 9)]
+        original, corrected = make_pdf([before_text, *extra]), make_pdf([after_text, *extra])
+        self.submission.pdf_file.save('hyphen-original.pdf', ContentFile(original))
+        self.submission.formatted_pdf_file.save('hyphen-corrected.pdf', ContentFile(corrected))
+        self.mark_submission_publication_ready(self.submission)
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        readiness = publication_readiness_rows(strict_hash=True)
+        result = build_result(
+            [dict(page(text), page=n) for n, text in enumerate([before_text, *extra], 1)],
+            [dict(page(text), page=n) for n, text in enumerate([after_text, *extra], 1)],
+        )
+        self.assertEqual(result['info_kind_counts']['word_hyphen'], 1)
+        self.assertGreater(result['content_count'], 0)
+        with patch('submissions.services.pdf_comparison._pdf_evidence', return_value=result):
+            payload = create_pdf_comparison(self.submission.pk)
+        response = self.client.get(self.url, {'comparison': payload['token']})
+        self.assertContains(response, 'Hyphen-only word difference')
+        self.assertContains(response, 'data-comparison-group-filter="hyphens"')
+        self.assertEqual(comparison_pdf_bytes(self.submission.pk, payload['token'], 'after'), corrected)
+        with zipfile.ZipFile(export_publication_package()) as archive:
+            name = next(name for name in archive.namelist() if name.startswith('PDF/'))
+            self.assertEqual(archive.read(name), corrected)
+        with zipfile.ZipFile(prepare_crosscheck_upload('HYPHEN')['zip_path']) as archive:
+            self.assertEqual(archive.read('P001_HYPHEN.pdf'), corrected)
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+        self.assertEqual(publication_readiness_rows(strict_hash=True), readiness)
 
     def test_final_and_crosscheck_remain_byte_identical_after_comparison(self):
         from submissions.services.crosscheck import prepare_crosscheck_upload

@@ -3,12 +3,13 @@ from collections import Counter, defaultdict
 import math
 import re
 
-from . import engine, symbols
+from . import engine, hyphens, symbols
 
-VERSION = 8
+VERSION = 9
 LIMITATIONS = [
     "OCR compares recognized visible text, not PDF metadata or native text. Identical OCR errors and missed text can hide real changes.",
     "Whitespace split/join and the listed direct visual substitutions are tolerated; genuine similar-character edits can be missed.",
+    "Hyphen-only Latin word differences are information, not proof of equal meaning; ambiguous named-variable expressions still need visual review.",
     "Figures, image preservation, full mathematical structure and layout require manual review. This result is not publication approval.",
 ]
 ERROR_PATTERN = re.compile(r"Error!\s*(?:Reference source not found|Bookmark not defined)\.?|\[\s*\?\s*\]|\?\?|(?:Figure|Fig\.|Table|Eq\.|Equation|Section)\s*\?", re.I)
@@ -95,7 +96,7 @@ def build_result(before_pages, after_pages, before_native=None, after_native=Non
                                    ("ignored_spacing", "formatting", "Tolerated whitespace split/join"),
                                    ("ignored_visual", "tolerated", "Tolerated visual substitution")):
         for item in evidence[group]:
-            append(item, category, label)
+            append(item, category, "Hyphen-only word difference" if item['kind'] == 'word_hyphen' else label)
     prior = Counter(key for key, _, _, _ in _patterns(before_pages))
     for key, text, locations, raw in _patterns(after_pages):
         if prior[key]:
@@ -184,12 +185,17 @@ def validate_result(result):
     if not isinstance(findings, list) or len(findings) > 300:
         raise ValueError("Invalid finding inventory")
     categories = {"text": {"added", "changed", "removed"}, "reference": {"reference"}, "uncertain": {"author_review", "no_ocr_text"},
-                  "formatting": {"wrap_hyphen", "ignored_spacing"}, "tolerated": {"ignored_visual"}}
+                  "formatting": {"wrap_hyphen", "word_hyphen", "ignored_spacing"}, "tolerated": {"ignored_visual"}}
     for number, row in enumerate(findings):
         if not isinstance(row, dict) or row.get("id") != number or row.get("kind") not in categories.get(row.get("category"), set()):
             raise ValueError("Invalid finding identity")
         if not isinstance(row.get("issues"), list) or not row["issues"] or any(not isinstance(x, str) for x in row["issues"]):
             raise ValueError("Invalid finding explanation")
+        if row['kind'] in {'word_hyphen', 'wrap_hyphen'} and (
+            not isinstance(row.get('before_text'), str) or not isinstance(row.get('after_text'), str)
+            or not hyphens.text_equivalent(row['before_text'], row['after_text'])
+        ):
+            raise ValueError('Invalid hyphen-only word evidence')
         if type(row.get("locations_truncated")) is not bool:
             raise ValueError("Invalid location coverage")
         for side in ("before", "after"):
@@ -205,6 +211,8 @@ def validate_result(result):
                 records = row.get(side + "_" + key)
                 if not isinstance(records, list) or len(records) > 160:
                     raise ValueError("Invalid finding location inventory")
+                if row['kind'] in {'word_hyphen', 'wrap_hyphen'} and not records:
+                    raise ValueError('Missing hyphen-only word location evidence')
                 for record in records:
                     location(record, side)
                     if record["page"] not in actual:

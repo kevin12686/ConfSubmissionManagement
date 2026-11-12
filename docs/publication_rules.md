@@ -324,7 +324,7 @@ and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
 corrected files or historical baselines never trigger a substitute. A comparison
 with no findings is not proof of intact figures, tables, equations, or layout.
 Headers/footers, image text and formulas remain in rendered-page OCR scope.
-Method 8 uses native geometry only for order/ownership guidance, not native
+Method 9 uses native geometry only for order/ownership guidance, not native
 strings as proof of equality. Context alignment preserves one-to-one occurrence
 accounting; reference-page navigation is not a text match. Unlocated or empty-OCR
 ranges remain explicit and require manual review.

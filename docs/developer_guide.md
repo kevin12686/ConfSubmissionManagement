@@ -28,7 +28,7 @@ macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windo
 
 ## PDF Comparison Runtime
 
-Method 8 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
+Method 9 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
 `requirements.txt`, with checksum-pinned PP-OCRv6 Small (default) or Medium
 detection/recognition models selected independently in the worker environment.
 Use the application's Python environment on macOS/Linux/Windows; a successful
@@ -480,7 +480,7 @@ Put reusable workflow behavior in services:
   on Original/verified revision readers. Builds use audited POSTs; GETs only
   validate/read existing signed snapshots. Never call processing, Formatting
   save, author-cache rebuild or workflow recomputation from comparison.
-  Method 8 uses rendered-page RapidOCR, not the retired method-6 font/glyph
+  Method 9 uses rendered-page RapidOCR, not the retired method-6 font/glyph
   proof engine. Native geometry guides region/row order only; it never supplies
   OCR text or an equality shortcut. Preserve raw OCR text, scores and boxes,
   headers/footers, image/formula text and low-confidence recognition.
@@ -909,6 +909,15 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Multi-editor long-running Process PDFs/extraction races, including generated
   file output as well as database fields.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
+- Hyphen tolerance must consume full lexical pairs in the bounded local DP,
+  retaining global math/identifier context and per-character occurrence counts.
+  Cover inline/split/wrapped compounds, changed wrap positions, anchor cuts,
+  missing anchors, repeated words, field ownership, mixed real edits, numeric
+  ranges, negative values, short variables, Unicode dash forms and malformed
+  worker Info. Do not add a global hyphen-to-empty visual substitution. Fresh
+  rendered-PDF OCR and frozen-evidence comparator tests are separate evidence;
+  run both and preserve raw OCR. Verify synchronized worker contract/cache
+  invalidation, old signed snapshot display and unchanged publication bytes.
 - Formatting comparison status lifecycle: Review OK leaving a filter must
   remove its comparison from that list. Cover first-return-only upload receipts,
   unrelated queries/pages, stale completed results after HTMX/history navigation,

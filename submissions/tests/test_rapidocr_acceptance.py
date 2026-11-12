@@ -1,4 +1,4 @@
-"""Method-7 OCR-only contracts; these do not assert glyph or native-text proof."""
+"""Rendered OCR contracts; these do not assert glyph or native-text proof."""
 import copy
 import json
 import random
@@ -7,6 +7,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 from submissions.services.rapidocr_comparison import core, engine, locator, runtime, symbols
+from submissions.services.rapidocr_comparison.result import VERSION
 from scripts.accept_rapidocr_real3pairs import check_accounting, check_provenance, gold_checks
 from django.test import SimpleTestCase
 
@@ -282,7 +283,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
         empty = dict(page(''), page=2, ocr={'status': 'completed', 'lines': []})
         result = build_result([page('The reference was Figure 2.')],
                               [page('Error! Reference source not found.'), empty])
-        return {'version': 8, 'result': result}
+        return {'version': VERSION, 'result': result}
 
     def test_worker_timeout_oserror_and_nonzero_are_unavailable(self):
         from submissions.services.pdf_comparison import PDFComparisonError, compare_pdf_bytes
@@ -297,7 +298,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
     def test_worker_malformed_incomplete_and_old_schema_are_unavailable(self):
         from submissions.services.pdf_comparison import PDFComparisonError
 
-        for response in (b'', b'not JSON', b'null', b'[]', b'{}', b'{"version":7,"result":{}}',
+        for response in (b'', b'not JSON', b'null', b'[]', b'{}', b'{"version":8,"result":{}}', b'{"version":7,"result":{}}',
                          b'{"version":6,"result":{}}', b'\xff'):
             with self.subTest(response=response), self.assertRaises(PDFComparisonError):
                 self.compare_response(response)
@@ -307,7 +308,7 @@ class OCRWorkerBoundaryTests(SimpleTestCase):
 
         for error in ('configuration', 'ocr_failed', 'unknown_failure'):
             with self.subTest(error=error), self.assertRaises(PDFComparisonError):
-                self.compare_response(json.dumps({'version': 8, 'error': error}).encode())
+                self.compare_response(json.dumps({'version': VERSION, 'error': error}).encode())
 
     def test_empty_and_oversized_input_reject_before_worker(self):
         from submissions.services.pdf_comparison import MAX_BYTES, PDFComparisonError, compare_pdf_bytes

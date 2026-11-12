@@ -2,8 +2,9 @@
 
 ## Implemented Design
 
-The production integration uses temporary comparison method **8**, introduced in
-app **1.29.0** with inspectable same-letter diacritic tolerance. Apps **1.29.1**
+The production integration uses temporary comparison method **9**, introduced in
+app **1.31.4** with bounded word-hyphen information. It retains method 8's
+inspectable visual/diacritic policy from **1.29.0**. Apps **1.29.1**
 through **1.29.4** improve inspection layout and display-only detail rendering without
 changing that method or signed snapshots.
 App **1.30.0** adds configurable execution and CUDA optimizations, not a new
@@ -13,9 +14,12 @@ unchanged. The compute contract changes with the implementation;
 update workers and CFM together. State archive v8 is unchanged.
 App **1.31.0** adds standalone GPU model residency; method, rendering, recognition,
 comparison tolerances and signed snapshot/version selection remain unchanged.
+The hyphen extension changes the shared code/cache contract, not OCR models or publication rules;
+update CFM and all workers together. Older signed inspection snapshots require
+rebuilding; they are never relabelled in the browser or loaded into an older UI.
 This is the canonical engine/UI contract, not a test report or
-release acceptance record. Method-7 and older signed results must be rebuilt;
-they must not be relabeled or reused as method-8 results. Historical method
+release acceptance record. Method-8 and older signed results must be rebuilt;
+they must not be relabeled or reused as method-9 results. Historical method
 descriptions remain in the changelog, not as requirements for this engine.
 
 Comparison is advisory and read-only. After comes from the publication helper
@@ -129,7 +133,7 @@ by Clear Database. Review images and immutable revisions are not this cache.
 Rendering now hands RapidOCR the identical 300-DPI BGR pixel array directly,
 without the former lossless PNG encode/decode roundtrip. Models, recognition
 batching, reading order, comparison rules and result schema remain unchanged.
-That pixel-transfer optimization is retained by method 8; State archive remains v8. First-time extraction
+That pixel-transfer optimization is retained by method 9; State archive remains v8. First-time extraction
 on CPU can exceed the existing wall limit; reuse is not a promise that every
 cold comparison finishes. Service deployment below changes the execution
 boundary, not the comparison algorithm.
@@ -406,12 +410,49 @@ difference with an ordinary residual edit retains the original finding; do not
 fragment or partially excuse it because one character resembles another.
 Tolerated occurrences are neutral information, not renamed uncertainty warnings.
 
-There is no empty-string rule: deletion of a minus sign, decimal point, question
+There is no global empty-string rule: deletion of a minus sign, decimal point, question
 mark or word is not a visual exception. There is no general case folding,
 subscript/superscript equivalence, arbitrary number substitution or spelling
 correction. Explicit multi-character rules such as `rn/m` can nevertheless
 tolerate genuine character insertions/deletions. Existing whitespace split/join
-tolerance remains inspectable; possible wrap-hyphen information is separate.
+tolerance remains inspectable; lexical hyphen information is separate.
+
+### Hyphen-Only Words
+
+`hyphens.py` defines one lexical gate for inline and line-wrap compounds. It
+accepts tight ASCII hyphen, U+2010 or U+2011 joins between Latin-letter parts of
+at least two letters each, including an explicit OCR line-end/line-start join.
+The opposite word may be joined or whitespace-split. Ordered letters and case
+must match exactly after removing only these word hyphens and whitespace; this
+does not compose spelling, accent or confusable corrections into the new rule.
+Original OCR offsets establish tight joining, never native-text spelling.
+
+Exact anchors cannot begin/end inside an eligible compound. The existing
+bounded local edit DP consumes a complete word pair with a dedicated transition,
+so an isolated dash deletion cannot be excused without its word context. Full
+document boundaries and ownership remain available even outside the local gap.
+At least one reliable unchanged context anchor is required. Real neighboring
+insertions/deletions/replacements retain their own edit accounting. All original
+characters still belong exactly once to equality or a recorded difference.
+
+Short variables (`x-y`), numeric ranges (`10-20`), negative values (`-0.05`),
+attached digits/underscores, spaced subtraction, double dashes, en/em/minus-sign
+deletion and explicit neighboring math syntax do not pass. Line-wrap handling
+uses this same gate rather than an independent permissive fallback. Unsupported
+or over-bound spans remain warnings/handoffs, not equality.
+
+`word_hyphen` and `wrap_hyphen` share the existing neutral **Hyphens** control,
+Info list and full raw evidence. Their label distinguishes inline/changed word
+hyphenation from a possible wrap. Parent result validation rejects numeric or
+letter-changing text mislabeled as `word_hyphen`, and requires both locations
+and raw OCR. These findings do not approve review or alter publication readiness.
+
+This cannot prove meaning: `re-sign/resign` is deliberately Info. A named Latin
+variable expression with no distinguishing mathematical syntax can also look
+like a word compound; manual mathematical review remains necessary. There is no
+dictionary or semantic classifier. The CPU/GPU contract and runtime fingerprint
+include this implementation, so incompatible completed caches are not reused.
+The initial comparison after a synchronized update can require fresh OCR.
 
 ### Accepted Blind Spots
 

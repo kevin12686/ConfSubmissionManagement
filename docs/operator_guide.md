@@ -630,8 +630,14 @@ active Publishing submission, normally Corrected. It never reads a debug copy,
 another submission, or a history file as publication input. A missing selected
 file is an error, not permission to fall back.
 
-Method 8 compares rendered pages with local RapidOCR. Same-letter diacritic
+Method 9 compares rendered pages with local RapidOCR. Same-letter diacritic
 changes (e/é/è) appear as Info with raw evidence; genuine accents may differ.
+The existing **Hyphens** controls combine word and line-wrap hyphen information:
+`real-time/realtime`, `real-time/real time` and changed wrap positions can be
+Info when their ordered Latin letters/case match. The raw words and both PDFs
+remain available. Numbers, ranges, short variables and explicit mathematical
+syntax do not receive this word exception. Hyphenation can change meaning
+(`re-sign/resign`), so Info is not a claim of semantic equality.
 Complete validated worker results are reused without CPU/GPU confirmation.
 Partial OCR cache still requires fresh computation and follows normal consent.
 Update CFM and all workers together; older method caches are not relabelled.
@@ -709,7 +715,7 @@ example after missing OCR models, worker timeout or parse/render failure. A
 viewer image-load failure is separate. Correct installation issues and retry;
 do not treat a failed comparison as an unchanged paper.
 
-Method-7 and older results must be rebuilt for method 8. Comparisons expire
+Method-8 and older results must be rebuilt for method 9. Comparisons expire
 after two hours and reject changed scope, selected identities/bytes, missing
 baselines or damaged snapshots. Size/page/token/work limits and display caps
 remain bounded (including 64 MiB, 40 pages and 30,000 tokens per PDF); consult

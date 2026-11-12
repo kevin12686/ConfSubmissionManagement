@@ -867,7 +867,7 @@ must actually initialize CUDA; a failed CUDA setup cannot silently claim GPU
 execution while doing CPU OCR. Shared-worker storage and credentials are not
 restored from a conference System State ZIP.
 
-Method 8 uses rendered-page RapidOCR, not the former method-6 glyph-proof
+Method 9 uses rendered-page RapidOCR, not the former method-6 glyph-proof
 engine. **Text differences** are OCR-localized candidate edits; **unlocated
 ranges** need manual confirmation; **information** includes tolerated visual
 differences and spacing/wrap records. Inspect actual page pixels, raw OCR and
@@ -879,6 +879,15 @@ also be missed. This is not spelling correction or proof of equality. Minus,
 decimal, question-mark or word deletion is not automatically exempted; mixed
 ordinary edits must remain visible. Identical OCR errors or omitted text on both
 sides can still hide changes. Manual figure/layout/table/math review is required.
+
+Hyphen-only words are shown as Info under **Hyphens**, not silently omitted.
+`real-time/realtime` and changed wrapping may pass only the bounded word rule;
+the letters/case must still agree. Negative values, numeric ranges, short
+variables, ambiguous dash forms and explicit math syntax remain warnings.
+`re-sign/resign` may be Info despite a real meaning change. Rebuild a comparison
+to apply a new policy; an old signed snapshot is not retroactively relabelled.
+Update CFM and workers together, because this rule changes the compute/cache
+contract. A first post-update comparison may need fresh OCR, even for old PDFs.
 
 **Engine coverage: limited** means a result with inspection limitations, even
 with zero changes. Missing coverage metadata is not complete. **Comparison
@@ -920,7 +929,7 @@ require explicit retry. A 240-second CFM request returning Retry is not the same
 as the worker's default 300-second OCR timeout. GPU OOM is an explicit failure;
 reduce configured concurrency deliberately, not image resolution or model checks.
 
-Rebuild method-7 and older cached results for method 8. If unexpected differences
+Rebuild method-8 and older cached results for method 9. If unexpected differences
 remain, retain input hashes, runtime/model versions, raw OCR, actual locations
 and tolerance rule IDs for diagnosis. Do not edit source PDFs, suppress all
 unlocated ranges or add paper-specific rules to reduce counts. The

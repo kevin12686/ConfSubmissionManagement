@@ -2,7 +2,7 @@
 from array import array
 from collections import Counter,defaultdict
 import statistics
-from . import core, symbols
+from . import core, hyphens, symbols
 from . import layout as hybrid
 
 MAX_CHARS=1600
@@ -83,7 +83,8 @@ def item(a,b,reason,kind,rid=None):
 
 
 def compare_tokens(a,b,profile):
-    anchors=core.anchors(a,b);deltas=defaultdict(list);votes=Counter()
+    anchors=core.anchors(a,b,protect_hyphens=profile!='literal');deltas=defaultdict(list);votes=Counter()
+    spans_a,spans_b=(hyphens.word_spans(a),hyphens.word_spans(b)) if profile!='literal' else ([],[])
     for i,j,k,l in anchors:
         for x,y in zip(range(i,j),range(k,l)):
             deltas[a[x]['page']].append((b[y]['x']-a[x]['x'],b[y]['y']-a[x]['y']))
@@ -101,7 +102,7 @@ def compare_tokens(a,b,profile):
             f[side + '_ocr'] = list(records.values())
         f['before_context']=' '.join(t['text'] for t in (context_left or []))
         f['after_context']=' '.join(t['text'] for t in (context_right or []))
-        key={'author_review':'handoffs','ignored_visual':'ignored_visual','ignored_spacing':'ignored_spacing','wrap_hyphen':'info'}.get(category,'findings')
+        key={'author_review':'handoffs','ignored_visual':'ignored_visual','ignored_spacing':'ignored_spacing','wrap_hyphen':'info','word_hyphen':'info'}.get(category,'findings')
         out[key].append(f)
     for i,j,k,l in anchors+[(len(a),len(a),len(b),len(b))]:
         aa,bb=a[ca:i],b[cb:k];ua,ub=units(aa),units(bb)
@@ -112,17 +113,19 @@ def compare_tokens(a,b,profile):
             elif max(len(aa),len(bb))>core.CONFIG['maximum_gap_tokens']:
                 add(ua,ub,'Span exceeds the bounded local comparison range.','author_review',context_left=contexta,context_right=contextb)
             else:
-                strict=core.local_alignment(aa,bb,offsets);merged=[]
+                pairs=hyphens.alignment_pairs(a,b,spans_a=spans_a,spans_b=spans_b,range_a=(ca,i),range_b=(cb,k)) if anchors and profile!='literal' else {}
+                strict=core.local_alignment(aa,bb,offsets,hyphen_pairs=pairs);merged=[]
                 for op,x,y,u,v in strict:
-                    if merged and op!='equal' and merged[-1][0]!='equal':
+                    if merged and op not in {'equal','word_hyphen'} and merged[-1][0] not in {'equal','word_hyphen'}:
                         _,p,_,q,_=merged[-1];merged[-1]=('replace',p,y,q,v)
                     else:merged.append((op,x,y,u,v))
                 pending=[];reason=None;used_visual=False;residual_budgets=[]
                 for op,x,y,u,v in merged:
                     left,right=aa[x:y],bb[u:v];lu,ru=units(left),units(right)
                     if op=='equal':pending.append(('equal',lu,ru,None));continue
+                    if op=='word_hyphen':
+                        pending.append(('wrap' if core.wrap_hyphen(left,right) else 'hyphen',lu,ru,None));used_visual=True;continue
                     if core.spacing_equivalent(left,right):pending.append(('spacing',lu,ru,None));continue
-                    if core.wrap_hyphen(left,right):pending.append(('wrap',lu,ru,None));continue
                     if max(len(lu),len(ru))>MAX_CHARS:reason='Visual work bound exceeded';break
                     path=visual_alignment(lu,ru,profile)
                     # Exempt only a complete local difference explained by the
@@ -157,8 +160,9 @@ def compare_tokens(a,b,profile):
                 else:
                     for kind,left,right,rid in pending:
                         if kind=='equal':equal_chars+=len(left);continue
-                        cat={'tolerated':'ignored_visual','spacing':'ignored_spacing','wrap':'wrap_hyphen'}.get(kind,'changed' if left and right else 'removed' if left else 'added')
-                        why='Direct visual exception; not proof that document text is unchanged.' if kind=='tolerated' else 'Possible line-wrap hyphen.' if kind=='wrap' else 'Compared inside unchanged surrounding text.'
+                        cat={'tolerated':'ignored_visual','spacing':'ignored_spacing','wrap':'wrap_hyphen','hyphen':'word_hyphen'}.get(kind,'changed' if left and right else 'removed' if left else 'added')
+                        why=('Same ordered letters; only word hyphens and spacing differ. Real hyphenation edits may change meaning.' if kind=='hyphen'
+                             else 'Direct visual exception; not proof that document text is unchanged.' if kind=='tolerated' else 'Possible line-wrap hyphen.' if kind=='wrap' else 'Compared inside unchanged surrounding text.')
                         add(left,right,why,cat,rid,contexta,contextb)
         equal_chars+=sum(len(t['text']) for t in a[i:j]);ca,cb=j,l
     before=sum(len(t['text']) for t in a);after=sum(len(t['text']) for t in b)

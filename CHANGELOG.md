@@ -3,6 +3,22 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.4 - Unreleased
+
+- Classify hyphen-only Latin word differences as inspectable Info. Preserve
+  complete word pairs across anchor boundaries, raw OCR, locations and occurrence
+  accounting; do not remove dashes globally or repair recognized spelling.
+- Use the same bounded lexical gate for line-wrap hyphens. Negative numbers,
+  numeric ranges, short variables, explicit math/identifier syntax and other
+  letter/value edits remain warnings or unlocated handoffs.
+- Integrate both hyphen kinds into the existing neutral Hyphens controls and
+  finding group; no additional toolbar or publication approval state.
+- Update CFM and CPU/GPU workers together for comparison method 9 and its changed
+  compute/cache contract. Method-8 and older snapshots require rebuilding,
+  never browser-side relabelling. Publication file
+  selection, version binding, readiness, review resets and State archive v8 stay
+  unchanged.
+
 ## 1.31.3 - Unreleased
 
 - Keep automatic Formatting comparison status on its owning paper. Show an

@@ -315,12 +315,22 @@ test("unreliable page map never substitutes equal page numbers", () => {
 test("three Info kinds stay separate, neutral and independently filterable", () => {
     const page = setup({findings: [finding({id: 0, category: "tolerated", kind: "ignored_visual", rule_id: "round", rule_risk: "Real edits may be missed"}),
         finding({id: 1, category: "formatting", kind: "ignored_spacing"}), finding({id: 2, category: "formatting", kind: "wrap_hyphen"})]});
-    for (const group of ["tolerated", "ignored_spacing", "wrap_hyphen"]) assert.equal(page.q(`[data-finding-group="${group}"]`).childElementCount, 1);
+    for (const group of ["tolerated", "ignored_spacing", "hyphens"]) assert.equal(page.q(`[data-finding-group="${group}"]`).childElementCount, 1);
     page.loaded("before"); assert.ok(page.marks("before").every(mark => mark.dataset.kind === "info"));
     page.category("ignored_spacing"); assert.equal(page.marks("before").length, 1); assert.equal(page.loads.length, 2);
     page.category("tolerated"); page.next();
     assert.match(page.q("[data-comparison-description]").textContent, /not proof/);
     assert.match(page.q("[data-comparison-evidence-reason]").textContent, /rule_risk: Real edits may be missed/);
+});
+test("word and wrap hyphens share one neutral Info group without hiding a true text change", () => {
+    const page = setup({findings: [finding({id: 0, category: "formatting", kind: "word_hyphen", label: "Hyphen-only word difference"}),
+        finding({id: 1, category: "formatting", kind: "wrap_hyphen"}), finding({id: 2, category: "text", kind: "changed"})]});
+    assert.equal(page.q('[data-finding-group="hyphens"]').childElementCount, 2);
+    page.loaded("before");
+    assert.equal(page.marks("before").filter(mark => mark.dataset.kind === "info").length, 2);
+    assert.equal(page.marks("before").filter(mark => mark.dataset.kind === "change").length, 1);
+    page.category("hyphens"); assert.equal(page.marks("before").length, 2);
+    page.category("changed"); assert.equal(page.marks("before").length, 1);
 });
 test("raw OCR, scores, risks and coverage reasons are literal text", () => {
     const unsafe = "<img src=x onerror=alert(1)>";

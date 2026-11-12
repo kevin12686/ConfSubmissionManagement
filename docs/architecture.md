@@ -71,7 +71,7 @@ belong in the audience-specific guides listed on the
 - Templates stay server-rendered Django pages using locally pinned Tabler 1.4.0 with Bootstrap-compatible markup; there is no React or separate frontend build.
 
 Formatting comparison is a separate read-only service/controller/workspace,
-not a branch of PDF processing or Formatting save. Method 8 renders each exact
+not a branch of PDF processing or Formatting save. Method 9 renders each exact
 saved PDF independently and compares local RapidOCR output. The current
 publication helper selects After; Before is the same submission's Original or a
 hash-verified Formatting revision. No FinalSubmission or mirrored state is
@@ -210,8 +210,17 @@ Red text changes, amber unlocated ranges and neutral information stay
 distinct. Hover cannot move pages or scroll either document; explicit result
 navigation can. Only the active finding is connected, with no fabricated
 counterpart. Coverage and evidence totals never certify figures, layout or full
-math. Temporary method 8 requires rebuilding method-7 and older results,
+math. Temporary method 9 requires rebuilding method-8 and older results,
 independently of System State archive v8.
+
+Word/line-wrap hyphen tolerance is centralized in `rapidocr_comparison/hyphens.py`.
+It uses literal OCR offsets, Latin word boundaries and ownership. Anchors avoid
+splitting eligible compounds; a dedicated transition in the existing bounded
+local DP accounts for the whole pair. Explicit math/numeric/identifier context
+cannot be discarded when slicing the gap. This is not a global dash deletion
+or native-text correction. Parent validation and the shared Info presentation
+retain both word and wrap evidence. The rule changes the CPU/GPU compute/cache
+contract, not publication selection or archive v8.
 
 Automatic upload comparison orchestration belongs to
 `automatic_pdf_comparison.py`, not the Formatting transaction. A typed

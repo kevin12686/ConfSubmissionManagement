@@ -504,7 +504,7 @@ These measurements do not guarantee every future PDF meets its deadline.
 
 ### Embedded CPU Setup
 
-For explicit `CFM_COMPARISON_TRANSPORT=embedded`, method 8 uses CPU inference with `rapidocr==3.10.0`,
+For explicit `CFM_COMPARISON_TRANSPORT=embedded`, method 9 uses CPU inference with `rapidocr==3.10.0`,
 `onnxruntime==1.31.1` and the selected, approved PP-OCRv6 Small/Medium detection/recognition model
 pair. Rebuild the Linux image with the pinned requirements and verify that both
 packages import in the container; a host virtual environment is not used by

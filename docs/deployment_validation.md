@@ -6,6 +6,37 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
+## Word Hyphen Acceptance (1.31.4 / Method 9)
+
+- Native gate: 1,074 Django tests and 130 JavaScript tests passed; standalone
+  discovery ran 127 tests with two deployment-only opt-ins skipped. Those
+  deployment scripts were unchanged in this round. Linux Docker passed the same
+  1,074 Django tests with 10 native-platform checks skipped. System/migration,
+  documentation, compile and whitespace checks passed.
+- Both supplied R011 PDFs were freshly recognized in full: 11 pages per side,
+  pinned Small/Small at unchanged 300 DPI, native CPU with four threads and one
+  page in flight. A final isolated production-worker run took 116.9 seconds
+  while other validation was running. This is acceptance evidence, not a
+  deployment-speed benchmark. Its complete result exactly matched comparison
+  on the frozen fresh OCR/native geometry.
+- For this unadjudicated real pair, text findings changed from 107 to 98;
+  unlocated findings remained 14. Formatting Info changed from 23 to 31 and
+  visual tolerance remained 10. Finding segmentation can change; these counts
+  are not accuracy or proof that every document defect was found.
+- Thirteen rendered-PDF/OCR controls passed: inline/split/wrapped hyphens,
+  negative values, ranges, short variables, letter change, insertion, deletion,
+  reference-to-question, adjacent numeric edit, layout shift and metadata-only
+  edits. Linux comparison reproduced native output exactly on the real pair
+  and all 13 frozen actual-OCR controls. Linux inference and remote GPU inference
+  were not rebenchmarked; the shared pure-Python classifier and contract changed,
+  not models, DPI or providers.
+- Browser acceptance used isolated DB/media plus the real OCR results. Verified
+  the combined Hyphens count/filter, neutral paired marks, red minus/numeric
+  marks, Evidence, pointer magnification and nonblank crops at 1440, 1024, 768
+  and 390px, without horizontal overflow. Publication/CrossCheck byte and review
+  regressions passed. Method-8 snapshots are rejected for rebuilding, not
+  reinterpreted. State archive remains v8.
+
 ## Worker Lifecycle Acceptance (1.31.2 / Method 8)
 
 - Final disposable native source: all 1,049 Django tests and 125 JavaScript

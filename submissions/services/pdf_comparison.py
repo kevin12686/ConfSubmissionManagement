@@ -28,7 +28,7 @@ from submissions.services.comparison_protocol import page_pixmap, contract_id
 
 TTL = timedelta(hours=2)
 SALT = "submissions.pdf-comparison.v1"
-COMPARISON_VERSION = 8
+COMPARISON_VERSION = 9
 MAX_BYTES = 64 * 1024 * 1024
 
 

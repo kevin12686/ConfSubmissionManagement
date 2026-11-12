@@ -113,8 +113,14 @@ models, concurrent pages, threads, OCR timeout and model idle unload. No secrets
 or paths are exposed. Unreachable workers show last-seen metadata explicitly;
 older workers without metadata remain unavailable, not guessed. Release numbers
 are informational: the existing compute contract still determines compatibility.
-Method 8's broad visual policy can deliberately tolerate real similar-character
+Method 9's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t, rn/m and same-letter diacritics (e/é/è); whitespace-only changes can also be missed.
+Hyphen-only Latin word pairs, including `real-time/realtime` and line-wrap
+hyphenation, remain inspectable Info under the shared Hyphens controls. Minus
+deletions, numeric ranges and explicit mathematical syntax are not word-hyphen
+exceptions. Real `re-sign/resign` meaning changes can nevertheless be tolerated;
+this is a lexical policy, not semantic or mathematical proof. Update CFM and all
+workers together when adopting this comparison/cache contract.
 Engine completion or zero findings is not publication approval. Figures, image
 preservation, tables, layout and full mathematical structure require manual review.
 

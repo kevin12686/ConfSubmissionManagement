@@ -398,9 +398,16 @@ Use disposable records/files and hash-pinned reviewed expectations.
    the old completed action; do the same through browser history. The old
    endpoint must still reject access. Unrelated child-panel loads must not
    start duplicate requests or rerun OCR for valid complete cache results.
-4. Rebuild method-7 and older signed results; never relabel them method 8.
+4. Rebuild method-8 and older signed results; never relabel them method 9.
    Compare same-letter diacritics (e/é/è) and a neighboring true numeric edit:
    diacritics must remain inspectable Info, while the numeric edit stays Warning.
+   Also test `real-time/realtime`, `real-time/real time`, changed wrap points and
+   repeated compounds. Hyphen-only words/wraps share the neutral Hyphens control,
+   not an additional UI. Verify neighboring text/numeric edits, negative values,
+   ranges, short variables, explicit equations and no-context wraps are still
+   Warning/handoff; forged numeric `word_hyphen` evidence must be rejected.
+   Check raw OCR, both paired locations, hover crops and one-to-one character
+   accounting. Test whole provided PDFs with fresh OCR, not only injected text.
    A validated complete cache on either worker must bypass local confirmation;
    wrong hashes/method/runtime, partial OCR and unfinished jobs must not start
    new local computation without consent. Existing signed routes remain pinned.
