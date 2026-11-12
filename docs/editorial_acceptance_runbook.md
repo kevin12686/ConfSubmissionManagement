@@ -1,768 +1,154 @@
-# Editorial Acceptance Runbook
-
-For PDF comparison inspection, verify the dock is above the documents, both
-magnification crops are fully visible without internal scrolling, and long
-Evidence scrolls independently. Test short/narrow windows, close/reopen, paired
-region edges and absent counterpart pages. View switches must not move the
-document headers or change signed PDF identities, comparison findings or reviews.
-Check actual SVG endpoints and detail-crop centers for direct hover, Next/Previous,
-multi-region selection, candidate links, reverse hover and box-edge movement.
-Auto match must use the same pair as the connection; only absent pairs fall back
-to relative positions. Explicit Relative is the manual override. Hiding a line
-must not discard its pair, candidate links remain unverified, and changing pages
-must not reuse stale endpoints or detail pixels. Pinned Evidence stays readable.
-
-This runbook is for manual end-to-end validation before using the system for a real publication handoff. The standard is strict: final publication export should be clean only when readiness issues are resolved or explicitly allowed as exceptions.
-
-Use a disposable conference data folder. Complete the automated command
-checklist first, then work through each stage in order. Expected publication
-behavior is defined in [Publication Rules](publication_rules.md); shared
-responsive and worklist behavior is defined in
-[UI Conventions](ui_conventions.md). Docker procedures are centralized in the
-[Docker Guide](docker_guide.md).
-
-## Run Order
-
-1. Run the automated gate below.
-2. Create the disposable dataset.
-3. Complete Manual Stages 1-8 in order.
-4. Confirm the grouped acceptance checks before handoff.
-
-### Automated Gate
-
-Run every command in the canonical
-[Developer Regression Gate](developer_guide.md#regression-commands), including
-the standalone deployment tests, JavaScript tests and compilation. Do not use
-a shorter copied command list that omits newly added components.
-
-The Docker-specific manual checks use disposable instances and the procedures
-in the [Docker Guide](docker_guide.md).
-
-The deployment/worker/reader checks below supplement the manual stages when
-those components are affected. Record measured results separately in
-[Deployment Validation](deployment_validation.md), identifying hardware, version
-and untested cases rather than presenting a checklist as evidence of a pass.
-
-## Deployment Preflight Acceptance
-
-Unified setup must also cover online missing-model provisioning, offline and
-write-free dry-run, preservation of existing env comments/settings/secrets,
-per-conference enrollment isolation, repeated setup, multiple conferences on
-one worker, invalid/conflicting credentials, busy-worker refusal and partial
-deployment retry. Readiness/ZIP/CrossCheck regression remains mandatory.
-Exercise both updater entrypoints against the same selected/all-project plans.
-Dry-run must show actual redacted changes and worker/model requirements without
-persistent writes or live probes; new projects require `--create-missing`.
-Cover one shared-worker preparation for a multi-conference batch, remote-only
-and env-less legacy cases, later invalid configuration before any provisioning,
-busy refusal, per-conference env restoration before cutover, retaining settings
-after attempted cutover and no rollback of earlier successful updates.
-
-Use disposable projects/volumes and generated data, never a live conference.
-Test native Python/venv/dependency failures and actual model loading. Confirm
-failures occur before migration/browser opening. Validate worker dry-run,
-missing models, invalid private clients, CPU/CUDA selection and a successful
-healthy start. A failed worker update must preserve the prior container.
-Test conference creation with missing/wrong tokens and incompatible/offline
-workers: no database migration may run. Test failed update/migration before
-cutover and failed backup restart preflight before stop. Compare container IDs
-and database/managed-file hashes. Successful create/update must pass health,
-static-module and same-origin CSRF checks. Record Windows/GPU hardware limits
-honestly; mocked orchestration does not prove native platform inference.
-
-## Shared Comparison Worker Acceptance
-
-Use disposable worker storage, credentials, conference DB/media and ports.
-Never attach a production conference volume to the worker. Check two namespaces
-cannot read each other's jobs/cache; identical POSTs produce one job; queue and
-retention are bounded; interrupted/restarted or timed-out jobs never become clean
-results. Exercise remote ready, busy, unavailable, incompatible and unauthorized
-states. Lose a POST response and confirm Retry retrieves the same job rather than
-launching local work. Validate malformed, swapped-hash and wrong-render responses
-are rejected, including when the publication revision changes during execution.
-
-Run three real PDF pairs plus additions/deletions/reference errors, metadata-only,
-reflow, blank/rotated and corrupt-input controls with unchanged models/300 DPI.
-Record actual backend/runtime and cold/warm reuse separately. Verify unchanged
-publication ZIP and CrossCheck bytes, readiness and all review flags. Browser QA
-uses the existing manual/upload comparison controls and both annotated documents;
-the worker must not introduce a second file selector or publication path. Record
-GPU tests separately from CPU/mock tests and disclose untested hardware.
-
-For optional remote gateway headers, use disposable credentials and a loopback
-HTTP gateway. Verify health/upload/poll/retry carry both gateway headers and the
-worker Bearer token, while local fallback never receives gateway headers.
-401/403 and login redirects must fail, not silently select local. Cover invalid
-JSON, duplicate/case-colliding and reserved headers, control characters, bounds,
-env preservation/redaction, special characters through actual Compose and
-rotation without a second upload. Never test with conference PDFs or real
-Cloudflare secrets. Changing this deployment setting needs no DB migration.
-Gate a disposable HTTP fixture against Python-urllib User-Agent and verify the
-default CFM identity succeeds for startup/upload/poll/retry while custom UA is
-retained. Force 1010, generic gateway denial, worker 401, login redirect,
-non-JSON and network errors; assert safe reasons/status/Ray ID survive preflight
-without response prose, cookies, request credentials or changed fallback policy.
-
-## Shared PDF Reader Acceptance
-
-Use disposable data, never mutate the operator's live conference for browser QA.
-
-1. Open PDFs from Organized List (both views/details), Final Submissions, edit,
-   Formatting (List/Single/Focus), Title/Author, Paper ID, Author Count,
-   exceptions/Error Report, Old Versions, history and Editor Upload preview.
-   Confirm the common reader opens in the requested tab and leaves forms alone.
-2. Confirm each reader's source URL is the original endpoint. Original,
-   Corrected, report, debug, inactive/discarded row, exact revision and comparison
-   Before/After must not be confused or replaced by the active paper's PDF.
-3. Confirm the reader fills the viewport without site Navbar/footer or outer
-   scrolling, while ordinary work pages keep their normal layout. Test actual
-   nonblank canvas rendering, text selection/search, next/previous, page input,
-   fit/zoom, rotation, password entry, 320px/desktop and short/landscape windows.
-   Resize after loading and verify the PDF fills the space beneath the wrapping
-   toolbar. Runtime/data/font requests must stay local; no editing/save UI may appear.
-4. Test missing Corrected, corrupt PDF, missing/corrupt history, stale comparison
-   and missing static modules. Show a readable error and raw direct/download
-   links; never silently pick another file. Without JavaScript the raw actions
-   must remain available.
-5. Compare DB signatures, review flags, readiness and SHA256 bytes before/after
-   reading. Publication ZIP and CrossCheck ZIP must still use the current
-   Corrected/Original helper bytes, not rendered, debug or historical output.
-6. Confirm source/ZIP downloads, thumbnails, verification images, magnifiers,
-   comparison highlights and lazy/HTMX fragments retain their prior behavior.
-7. For Docker, validate Nginx configuration and module/worker `.mjs` Content-Type
-   through the static location; ordinary CSS/WASM MIME types must remain intact.
-8. Reopen a multi-page PDF and confirm Fit page + Single page defaults, one
-   displayed page, and wheel navigation that turns only one page per gesture.
-   Verify a long stream of small trackpad deltas cannot keep flipping, then a
-   new gesture can turn again. Zoom in: native scrolling must reach the edge,
-   and only a fresh gesture there may flip. Going back enters the prior page's
-   bottom; first/last-page bounds, horizontal/modified wheel and toolbar input
-   must remain intact. Switch to Continuous
-   scrolling and back at a middle/last page without losing page or zoom. Test
-   next/previous, page input, cross-page search, internal PDF destinations and
-   panning after zooming in; do not clip off-page content to simulate no scrolling.
-   On mixed portrait/landscape documents, Fit page/Fit width must refit the
-   newly selected page, while an explicit numeric zoom remains unchanged.
-9. In the PDF area, test Left/Right, Up/Down, Page Up/Down and Home/End in both
-   layouts. Zoomed pages must pan first; a held vertical key reaching the edge
-   must not turn until released and pressed again. Held page-turn keys cannot
-   keep skipping pages. Verify backward-bottom/forward-top entry and first/last
-   limits. Mix wheel, key, toolbar, page input, search and internal links; pending
-   positioning must not move a different page or layout. Inputs, selects, buttons,
-   password entry, IME, modified keys and text selection must remain native.
-   Focus loss/window blur must release held keys; loading must not steal an input
-   the user focused before the PDF became ready.
-
-10. Open a long, mixed-orientation PDF. Desktop starts with the page sidebar open;
-    narrow screens start closed. Check all page numbers, lazy nonblank thumbnail
-    canvases, independent sidebar scrolling, same-document jumps and current-page
-    markers following wheel, key, page input and search navigation. Rotate and
-    reopen quickly: no stale thumbnail may survive canceled rendering. Test
-    sidebar keyboard focus/Enter/Space/Escape and mobile selection auto-close.
-    Main PDF width, zoom preservation, normal site pages and source/download
-    URLs must remain unchanged. A thumbnail failure must not block the main PDF;
-    closing/reopening retries. Compare DB signatures and selected/revision file
-    bytes before and after; thumbnails must not create managed media files.
-
-## Dummy Conference Dataset
-
-Create these Paper Master records:
-
-| Paper ID | Title | Authors | Expected outcome |
-| --- | --- | --- | --- |
-| P001 | Ready Paper | Ada Lovelace; Alan Turing | Publishes successfully |
-| P002 | Revised Version Paper | Grace Hopper | Newer Start2 final becomes current |
-| P003 | Mapping Problem Paper | Katherine Johnson | Blocks until Paper ID is corrected and verified |
-| P004 | Unpaid Paper | Barbara Liskov | Mark Not Publishing |
-| P005 | Missing Source Paper | Donald Knuth | Blocks until source file is uploaded |
-| P006 | Similarity Review Paper | Edsger Dijkstra | Blocks until plagiarism scores are acceptable or handled |
-| P007 | Email Replacement Paper | Frances Allen | Editor Upload creates a conflict until Start2 or editor version is discarded |
-| P008 | Approved Exception Paper | Leslie Lamport | Page or author-limit issue is allowed with an exception note |
-| P009 | Duplicate Author Paper | Chih-Wei Hsu; Chih Wei Hsu | Duplicate-author warning requires review |
-
-Create Final Submission records and files:
-
-| Final ID | Paper ID entered by author | Scenario |
-| --- | --- | --- |
-| 10 | P001 | Clean PDF/source, all reviews complete |
-| 20 | P002 | Older version, should become replaced |
-| 21 | P002 | Newer version, should become current |
-| 30 | WRONG | Mapping error until editor fixes it |
-| 40 | P004 | Unpaid or withdrawn; mark Not Publishing |
-| 50 | P005 | PDF exists, source missing |
-| 60 | P006 | Plagiarism score over threshold |
-| 70 | P007 | Start2 version exists |
-| EDITOR-P007-001 | P007 | Editor Upload from email, conflict until one version is discarded |
-| 80 | P008 | Page count or author number outside configured limit |
-| 90 | P009 | Same normalized author appears twice |
-
-## Manual Workflow Checklist
-
-### Stage 1: Setup And Import
-
-1. Configure Settings, including conference name, page limits, author limits, plagiarism thresholds, timezone, folders, and active-version rule. Confirm the editable form appears without waiting for Storage Management or GROBID, then confirm the storage panel and health status fill in separately. Refresh Storage Management and verify its counts remain stable without changing any records. Create a cleanup preview, replace one candidate at the same path, and confirm Apply skips it as changed; an overlapping Reports folder must not select System State or import/restore preview files.
-2. Import the Paper Master List and verify preview sorting places changed/new rows above unchanged rows.
-3. Import Final Submission metadata and upload matching PDF/source files. Confirm preview sorting places mapping/file/reset issues above unchanged rows.
-4. Use `Add Final Submission` to create one record manually. Confirm matching Paper Master title evaluation, uploaded PDF/source paths, Pending processing/review state, active/replaced version recalculation, and a `final_submission_create` audit event. Submit an invalid form and confirm no record is created.
-
-### Stage 2: Scope And Version Decisions
-
-5. Open Dashboard and confirm its blocking check count matches the current final-package readiness rows. Only workflows with blockers should appear under Next actions; clear workflows should appear under No current blockers. Confirm each action total and breakdown count unique affected papers from those rows, its link opens only the represented blocking categories, valid Allowed exceptions remain under Tracked information, and a stale exception returns to Next actions.
-6. Open Verify Paper IDs. Correct P003 and verify only after it maps to a valid Paper Master record.
-7. Mark P004 as Not Publishing and confirm it moves out of publication blockers while remaining visible in the Not Publishing List.
-8. Create the Editor Upload for P007. Trigger a title mismatch and confirm the title safety check shows the uploaded PDF title above vertically stacked Paper Master and Final comparisons, combines identical references, and provides word-level plus expandable character differences. At 320, 768, 1024, and 1440 pixel widths, confirm long titles wrap without horizontal page overflow. Open the temporary PDF, then test replacing and canceling a preview without creating a submission. Finally confirm a mismatched upload and verify it remains unverified and the Start2/Editor conflict warning appears.
-   In a disposable data folder, change the preview PDF bytes and separately edit
-   the Paper Master after preview; both confirmations must fail without creating
-   an Editor Upload.
-9. Discard either the Start2 or Editor Upload version for P007 with a required note. Confirm the conflict clears.
-
-### Stage 3: PDF, Metadata, And Formatting Review
-
-10. Run Process PDFs. Confirm only current Paper Master publication candidates are processed; discarded, Not Publishing, invalid-ID, and historical versions must not create processing errors. Confirm page counts, hashes, thumbnails, and publication PDF debug copies are generated. Confirm all matching thumbnail strips remain expanded. Exercise `Needs processing`, `Page issues`, `Processed`, and `All`; use paper jump; verify sticky paper identity, fixed-size lazy thumbnails, page labels, enlarged preview, and failure tile. Record one general formatting issue and one page-specific issue from the enlarged preview. Confirm both append to the same Formatting notes, set Needs edit, clear a prior Review OK binding, leave PDF/processing/Title-Author/plagiarism state unchanged, and create audit events.
-11. Run Title/Author Review for needs-review records. Review extracted title/authors, title differences, red flags, and verification images together. Generate one Built-in, one GROBID, and one Manual Override image and confirm all three use the same layout, differing only in their source label. Test one PDF with substantial white space above its title and confirm the header reuses that space, then test one with a top logo/text and confirm the image expands instead of covering it. Use a long title and a long filename to confirm the header wraps with small margins and never reaches the PDF title/authors. Include a title ending in mathematical star `⋆` and confirm the exact character appears through the bundled fallback without overlapping the preceding title text. Use adjacent or intentionally split author names to confirm every parsed author has a separate numbered legend entry and boundary. Confirm author evidence is case-sensitive and requires matching internal punctuation: `Jean Luc` must not mark `Jean-Luc`. Test a surname followed by `*`, a Unicode superscript, merged numeric affiliation, an ORCID ending in `X`, and list punctuation; when trailing content is absent from the extraction, confirm only the extracted name is highlighted and numeric/symbolic metadata remains outside the green boundary. Confirm `John Smith` in `John Smithson` outlines only `John Smith` in orange, including for a single-word prefix case such as `Li` in `Linear`. Put an exact `Li` elsewhere on the same page and confirm the exact green match suppresses the orange `Li` in `Linear`. Confirm each `A1...AN` legend entry is green, orange, or red to match its selected evidence state. Repeat with a marker present in the extracted name and confirm it is included. Hold `Ctrl` over the verification image and confirm the shared magnifier exposes those boundaries without interfering with the normal full-image link. Change the filter and move to another page through the partial worklist navigation, then confirm every newly displayed verification image still opens the magnifier without a full browser refresh. Confirm that Review OK is the only completion action and no second title-match confirmation appears. If GROBID fallback is enabled, test it only on suspicious rows and confirm successful GROBID output still returns to Pending review. For one difficult paper, test Manual override with a reason and confirm it is visibly marked, audited, and still requires Review OK.
-    For exact title evidence, remove a trailing symbol such as `⋆` from the
-    extracted title and confirm the PDF-only symbol remains outside the yellow
-    boundary; restore the same symbol to the extraction and confirm it is
-    included.
-12. Open Formatting Review. Confirm list mode is a compact worklist and only one
-    selected paper remains expanded. Change tabs and search, verify the worklist
-    updates and URL history changes without losing the page shell, then disable
-    JavaScript or open the filter URL directly to confirm the ordinary GET
-    fallback. In List, Single Paper, and Focus modes, point near the center and
-    all four edges of the first-page preview, then hold `Ctrl`. Confirm the
-    `3:2` landscape lens follows the pointer, remains inside the image, closes
-    immediately when `Ctrl` is released or the window loses focus, and does not
-    retain the `Hold Ctrl to magnify` hint over the enlarged content. Confirm
-    the shared in-image hint returns after closing without the delay of a native
-    browser tooltip and does not alter any formatting or
-    publication state. Change Formatting filters and pages before repeating the
-    magnifier check; each newly swapped preview must work without expanding a
-    different card or refreshing the browser. Confirm touch/coarse-pointer
-    layouts retain the static preview and `Open Publication PDF`. Start Single
-    Paper Mode from a filtered/search result and record
-    its first two Paper IDs. Mark the first Review OK and Save: it must stay on
-    the same paper, preserve the filter/search, and Go next must still point to
-    the recorded second paper. Previous/Next must use natural Paper ID order.
-    Confirm Single mode has no numbered worklist paginator. Open Formatting from
-    Final Submission Edit and confirm the exact Focus mode shows only that paper,
-    no queue navigation, and offers `Start Single Paper Mode here`.
-    Upload a corrected PDF/source, confirm the vertically stacked title safety
-    component, cancel once to verify the temporary upload is removed, then save.
-    Replace the publication file from another request before one Save and before
-    one title-guard confirmation; both stale actions must be rejected without
-    changing formatting status/files. Invalid or duplicate-kind uploads must
-    retain entered status/notes and require files to be selected again.
-
-### Stage 4: CrossCheck, Counts, Exceptions, And Navigation
-
-For automatic CrossCheck, use a mocked service or an explicitly authorized test
-folder with one full-text paper. Confirm Corrected/Original input bytes match
-manual/final export selection, `PaperID.pdf` filenames, separate conference
-postfix, and sequential daily tokens. Default IEEE credentials must be omitted.
-Exercise 409, uncertain POST recovery without re-upload, partial/unconfirmed
-results, Unprocessed fallback, malformed/foreign manifest, changed active Final,
-changed PDF and changed score after preview. Apply only after confirmation and
-check P/S mirror, report bytes, exception staleness, unchanged review flags and
-rollback on DB/audit failure. Retry only confirmed missing reports, without
-re-uploading PDFs. Apply first results before retrying, then verify the retry
-applies only new results; also apply while a retry waits. Test busy responses,
-uncertain recovery, exact source/parent, changed Final/PDF, corrupt later ZIP,
-duplicate submits and applied-result preservation after manual edits. Verify
-cumulative counts, inline retry input retention and scoped PDF/ZIP links on
-desktop/mobile. Save/restore v8 and verify all history and ZIP hashes remain
-usable with no secret. Restore v7 through its explicit adapter; incomplete v8
-history must fail. Clear Database removes all history/evidence/local secrets.
-GET/filter actions are read-only.
-
-Begin connection setup with a blank URL and verify no request is sent. Enter a
-test service requiring WebLogin, supply unsaved credentials and load folders;
-test wrong/missing credentials as well. Save credentials without leaving the
-page or saving/enabling other Settings. Change the address/login while a check
-is pending and confirm the obsolete response is ignored. Saved credentials must
-not cross service URLs; environment overrides still win. Verify passwords are
-absent from responses, audit and backups, and existing saved addresses survive
-the blank-default migration.
-
-13. Export CrossCheck/plagiarism PDFs with a token, import result CSV with Plagiarism % and Single %, and upload optional report PDFs.
-14. Open Author Count. Confirm publication paper count is per normalized author, duplicate-author warnings are reviewable, and name/Paper ID search plus attention filters do not change counts.
-15. Open Exceptions. Search/filter to P008, approve it only with a note, and confirm allowed page/author/plagiarism exceptions move to Info and do not block final export. Change an approved plagiarism score and confirm the exception becomes stale and blocks export again. In Organized List, type reasons into two exception sections for the same paper, submit only one section, and confirm the complete paper row refreshes while the other unsaved reason remains. Confirm only the clicked exception was stored, the panel stays open, and a stale evidence warning reloads the current backend value without applying the old decision.
-16. Confirm Final Submissions opens with submission tabs/table first and `Import / Re-upload` collapsed. Expand it, drop/select metadata plus PDF/source files, verify counts/type summary/removal, and confirm preview-before-apply still controls storage. Open Final Submission Edit from Organized List, Title/Author Review, Formatting Review, Not Publishing, Verify Paper IDs, and Exceptions. Change one value, confirm only that field is marked, revert it and confirm the marker clears. Submit another change and verify the Review Changes page shows exact current/proposed values and reset impact without changing the database. Confirm and verify Save returns to the same worklist/view/filter/search/tab. Select a byte-identical PDF and confirm no review resets; select different bytes and confirm PDF-dependent resets are previewed before apply. Confirm the edit order is Submission identity, Metadata, Current row files, Plagiarism data/report, Workflow status summary, and Review changes. Confirm version discard is a separate form under the collapsed bottom `Version actions` danger zone and still requires a reason. Then open Organized List, switch Checklist/Compact candidates, and confirm both show the same active publication scope.
-    Re-import an existing Final ID with the same Author-entered ID but a changed
-    Final Title that resembles another Master paper. Confirm Preview preserves
-    the current Official Paper ID and resets Paper ID review without remapping.
-    Re-import again with a changed Author-entered ID and confirm Official ID is
-    re-resolved. Change Final Authors only and confirm Title/Author Review
-    returns to Pending while existing extracted metadata remains visible.
-    Upload a legacy workbook containing `Mapping Table` and confirm Apply is
-    blocked without creating or updating records.
-17. From one Final Submission Edit page, open Paper ID Review, Process PDFs,
-    Title/Author Review, Formatting Review, Not Publishing, and Organized List.
-    Confirm each destination shows the shared focused-record banner and only the
-    intended Final/Paper record. Create a collision such as Final ID `58` plus
-    Paper ID `R058`; exact links must not show both, while manually searching
-    `58` may. Confirm an inactive or excluded target shows an outside-scope
-    explanation and that opening any focused GET leaves all review and active
-    flags unchanged.
-18. Exercise Author Count search/filter/sort, Exceptions status/type/search, Title/Author grouped views, Verify Paper ID filters, Final Submission tabs, and Process PDF filters. Confirm URLs can be refreshed/shared and normal GET navigation still works without JavaScript.
-19. Exercise Paper Master List and Final Submission sorting before and after search. Confirm natural ID order (`P2` before `P10`, Final `2` before `10`), pagination preserves the selected sort, Final Submission tabs retain it, and Old Versions tabs match the shared worklist tab design.
-
-### Worker Version And Settings Visibility
-
-Before deployment acceptance, verify worker lifecycle guards in disposable
-storage: `--init` creates only absent identity/auth, optionally from a template;
-updates with missing env/clients/namespaces fail read-only. Include repeated init,
-existing project volumes, stopped/foreign containers, mismatched backend/port/
-mounts and concurrent edits. Worker/rebuild compatibility CLIs must use the same
-guards. Update two existing test conferences through both updater entrypoints;
-verify names, explicit settings, tokens, database/reviews and publication bytes
-remain unchanged. No missing worker may be recreated from conference credentials.
-
-- In isolated Formatting List/Single/Focus, check Remote/Local version, backend
-  and availability plus effective model sizes, pages, threads, timeout and GPU
-  idle duration in Details. Verify narrow/short viewport wrapping.
-- Verify old workers without metadata, differing compatible releases, incompatible
-  contracts, failed health and explicit Last seen state. Never show raw remote
-  metadata, tokens, headers, private paths or environment dumps.
-- Health/Details/polling must not load OCR models, renew GPU idle time, submit
-  jobs, authorize CPU fallback, modify review state or change publication bytes.
-- After isolated CPU/GPU deployment, confirm the observed runtime version and
-  settings are printed. A diagnostic read failure must not undo a healthy cutover.
-
-### Formatting Revision Acceptance
-
-In a disposable conference, upload a corrected PDF and then source only; open
-Revision history in Formatting List/Single/Focus and Final Submission edit.
-Verify exact independent file pairs, notes/time, newest-first order, local
-top/bottom pagination, retry feedback, and narrow-screen wrapping. Confirm
-history navigation leaves an unsaved Formatting form and its main URL intact.
-Capture existing corrected files twice and confirm one baseline and unchanged
-review state. Invalidate the originals and discard the row; history remains
-viewable/downloadable without selecting it for publication. Remove a history
-file and verify its download fails without falling back. Inject copy, DB, and
-audit failures and verify no partial upload or revision is applied.
-
-Compare final/CrossCheck PDF bytes before and after baseline/history reads.
-Cleanup must retain history even when Reports overlaps media. Verify v6
-backup/restore round-trips revision hashes, links, and review flags; validate
-a v5 restore with empty history, reject a v6 missing its revision payload, and
-verify Clear Database and failed restore rollback cover historical files.
-
-Automated edge coverage in `submissions/tests/test_formatting_history.py` also
-checks all four Original/Corrected PDF/source combinations against final ZIP
-and both CrossCheck scopes. A missing selected corrected file must never fall
-back to an original, history, legacy path, or debug copy. Draft skips the paper
-with an incomplete pair; CrossCheck requires the selected PDF, not a source.
-Exercise a real multi-page PDF re-import followed by Process PDFs and compare
-the exported bytes with the new original, not the most recent revision.
-
-Verify that a second editor's stale save cannot add a revision, and an upload
-interleaved with export aborts the export without retaining a mixed package.
-History-only baseline capture must not invalidate a stable publication read.
-Inject a failure after copying the PDF but before copying the source, and a
-same-size/same-mtime mutation during capture; both must roll back completely.
-Confirm source-only and PDF replacement keep their existing distinct reset
-rules. Editor/Start2 conflicts, discard, multiple-active ambiguity, and Not
-Publishing must retain their existing export behavior even when history exists.
-
-### Formatting PDF Comparison Acceptance
-
-These are required release scenarios, not a claim they have passed. Run the
-[developer gate](developer_guide.md#regression-commands) and comparison Node
-tests, then record backend and browser acceptance separately. The research
-bundle and document-first prototype are references, not production test results.
-Use disposable records/files and hash-pinned reviewed expectations.
-
-#### Workflow And Safety
-
-1. Upload a corrected PDF in List/Single/Focus. It must save before the separate
-   automatic Original comparison POST. Title guard preview/cancel/validation
-   failure creates no receipt. Cover PDF-in-source-field recognition,
-   source-only/status/notes saves, filtered-out saved rows, HTMX return links,
-   loading, separate counts and explicit Retry without auto-navigation/polling.
-   A filtered-out upload receipt appears only on the first matching save
-   return. Save Review OK from Needs attention, then change tab/search/page:
-   neither that paper nor its comparison may leak into unrelated results.
-   Submit two PDFs and a stale review snapshot: detailed validation/conflict
-   feedback must restore the original card, with lazy previews still loading.
-2. Refresh a completed result without rebuilding. Upload A then B, including
-   identical bytes: A must never open B as its After. A later source-only
-   revision may reuse the same PDF. Interrupt/duplicate requests and inject
-   missing Original, OCR/model/worker, cache-write and audit failures. Comparison
-   failure must not roll back saved files, revision history or normal save resets.
-3. Compare Original and exact revision baselines while leaving unsaved work in
-   the originating tab. Reject another submission's revision, missing/corrupt
-   files, stale tokens, changed scope, ambiguous active versions and mutations
-   during/after build. Verify exact snapshot links and no fallback.
-   Complete a comparison, upload a newer PDF from another browser tab, then
-   change filters in the original tab. Its comparison must revalidate and hide
-   the old completed action; do the same through browser history. The old
-   endpoint must still reject access. Unrelated child-panel loads must not
-   start duplicate requests or rerun OCR for valid complete cache results.
-4. Rebuild method-8 and older signed results; never relabel them method 9.
-   Compare same-letter diacritics (e/é/è) and a neighboring true numeric edit:
-   diacritics must remain inspectable Info, while the numeric edit stays Warning.
-   Also test `real-time/realtime`, `real-time/real time`, changed wrap points and
-   repeated compounds. Hyphen-only words/wraps share the neutral Hyphens control,
-   not an additional UI. Verify neighboring text/numeric edits, negative values,
-   ranges, short variables, explicit equations and no-context wraps are still
-   Warning/handoff; forged numeric `word_hyphen` evidence must be rejected.
-   Check raw OCR, both paired locations, hover crops and one-to-one character
-   accounting. Test whole provided PDFs with fresh OCR, not only injected text.
-   A validated complete cache on either worker must bypass local confirmation;
-   wrong hashes/method/runtime, partial OCR and unfinished jobs must not start
-   new local computation without consent. Existing signed routes remain pinned.
-   Check expiry, display/input/work limits and malformed worker payloads.
-   Unresolved remainder and undisplayed counts remain explicit.
-5. Compare database/review flags, readiness, selected publication paths and
-   final/CrossCheck bytes before/after: all must remain unchanged. Build/audit
-   failure cleans temporary output. Ordinary cleanup protects open staging;
-   Clear Database removes it. State ZIP excludes comparison staging and retains
-   revision/review artifacts with State archive v8 unchanged.
-
-#### Actual Engine Evidence
-
-For local CPU optimization, compare complete pre-change results with cold,
-warm-pair and Original-only reuse on all three real pairs and authored controls.
-Require exact JSON equality, including scores, boxes, raw OCR, locations, counts
-and limitations. Verify direct BGR/old PNG-decoder pixel equality on colored,
-blank and rotated pages. Test cache/runtime/model invalidation, malformed and
-expired entries, active-lock pruning, disk failure and timeout recovery. A partial
-document may be retained, never a failed pair. Warm hits must still reject stale
-upload/scope/file evidence and preserve publication/CrossCheck bytes, readiness
-and review state. Verify cache exclusion from State ZIP, ordinary-cleanup
-protection and Clear Database removal. Record timing without claiming a cold
-Docker full-document pass from a warm or native-host run.
-
-Use actual PDF rendering and the provisioned RapidOCR models, not only injected
-OCR strings. Record runtime/model versions, input hashes, expected finding
-identities and side-specific locations. Pure engine runs must not access the
-database or invoke audit/publication workflows.
-
-- Confirm 300-DPI independent rendering and preserved raw OCR text, boxes/scores.
-  Cover image text, formulas, headers/footers and low-confidence text without
-  blanket exclusions. Native geometry may guide order, not repair OCR.
-- Use stale/identical hidden native layers over visible insertion/deletion,
-  garbled words and broken references; use different native layers with identical
-  visible pages and a raster PDF without native text. Native equality must not
-  bypass actual OCR, and absent native text must not disable rendered comparison.
-- Exercise same-region/same-visible-row correction alongside genuine word-order
-  swaps and table value swaps, with both updated and stale native layers.
-  Preserve within-word minus/decimal order and exact ownership/counting.
-- Cover shifted/resized/reflowed/repaginated controls, front/middle page removal,
-  inserted pages, repeated text and repeated table values. Inspect true locations,
-  not merely whether any alert exists. Matched movement is not a red edit;
-  unchanged context cannot cancel a changed value in another row.
-- Verify small additions, removals, number/punctuation changes, question-mark
-  references, garbled words, minus deletion and decimal deletion. Include edits
-  beside visual tolerances; mixed non-tolerated changes retain their original
-  span rather than being fragmented or partly excused.
-- Exercise all 38 direct groups, their raw text/rule/risk information, no
-  empty-string rule and no cross-group transitivity (8/B plus B/Greek Beta must
-  not imply 8/Greek Beta). Compare literal/core/broad controls where supported.
-  Real O/0, f/t, rn/m and S/5 edits and whitespace-only now here/nowhere or
-  1 1/11 changes are deliberate blind-spot cases, not detection successes.
-- Large rewrites, unrelated PDFs, absent context, empty OCR and local work
-  exhaustion remain unlocated/limited, not clean. Missing dependencies/models,
-  corrupt models, render/worker failure and timeout produce unavailable states
-  without runtime download or native-engine fallback. Verify offline operation
-  after explicit provisioning in the supported local and Docker/Linux runtimes.
-- On Docker, run thread settings 4/6/8 sequentially where that CPU capacity is
-  allocated. Record OCR strings, scores and boxes in addition to elapsed times.
-  Retain the wall limit and distinguish timeout rejection from completed PDF
-  acceptance. Native Intel and ARM64 Desktop timings are separate evidence.
-  Check that environment values survive an instance update, invalid/oversized
-  thread values fail explicitly, and CPU-time accounting permits supported
-  parallelism without removing the wall/address-space bounds.
-- Preserve complete one-to-one token/character accounting before display caps.
-  Do not use smaller counts or arbitrary zero-warning expectations as accuracy.
-  Recheck real pairs and explain residual OCR/order/formula limitations.
-
-#### Document-First Browser Evidence
-
-Test Esc from pure hover with focus still on `body`, not only after clicking a
-control inside the comparison. Verify Control also dismisses it and existing
-PDF magnification still works. Use an actual proxy route, including static
-modules and failure/retry behavior, for Docker UI acceptance.
-
-Use actual engine payloads, including the densest real result, at desktop and
-320/768 pixel widths. Record screenshots and nonblank page/crop pixel checks.
-
-1. Annotated pages appear as the primary view without a permanent findings
-   sidebar, initially Fit page. Red differences/arrows, amber unlocated ranges
-   without arrows and quiet information are distinct; filters/counts remain
-   usable and do not imply approval.
-2. Hover a mark or unmarked page: page selections and both scroll positions remain unchanged.
-   Move into the inspector, leave both surfaces, close explicitly and press
-   Escape. Verify crossing grace, keyboard focus/activation, touch access and
-   no hover persistence or host-state write-back loop.
-3. Verify both crops follow the same relative pointer position on the currently
-   displayed pages, including large unlocated ranges, one-sided findings,
-   off-page matches, hidden marks and zero findings. Repeat from each side,
-   at image edges and with different page dimensions/zoom/scroll offsets.
-   Crops show actual image pixels, not OCR-generated text or a substituted
-   matched page. Page labels and the non-correspondence status remain explicit.
-4. Show only the active finding's connection; unlocated candidates are dashed
-   amber. Additions/removals without counterparts show no fabricated opposite
-   mark/link. Cover overlapping marks and multi-page findings.
-5. Explicit previous/next commands navigate actual finding pages. Linked page
-   browsing uses alignment evidence, not equal page numbers. Actual locations
-   remain distinct from reference pages. Filters, independent navigation,
-   magnification and exact snapshot PDF links remain accessible.
-6. Test loading/retry, stale/out-of-order image responses and failed crops:
-   old page evidence must not leak into a newly selected page. Coverage reasons,
-   zero counts, missing metadata, truncation, unavailable comparison and viewer
-   errors stay distinct. Render markup-like OCR/reasons literally and wrap long
-   content without overlap or horizontal page overflow.
-
-7. In Formatting List/Single/Focus, verify exactly one service strip, above the
-   worklist and unaffected by filter/pagination HTMX swaps. Remote/Local report
-   actual GPU/CPU or explicit unknown/last-seen values. Observe ten-second
-   no-overlap health refreshes, hidden-tab pause, return/resume, manual refresh,
-   network errors and Details. These requests must only read health, never POST
-   PDFs, create comparison snapshots or change publication/review state.
-8. With a remote configured, disconnect it before selection: no CPU POST may
-   occur until explicit confirmation. Test remote recovery, busy/queued,
-   authentication rejection, stale green health and failure after health success.
-   Test expired/tampered/cross-paper consent and file/revision/config changes.
-   Keep accepted/lost-response work on its worker. Old CPU routes must not start
-   or wait for new work silently; completed results still open without consent.
-   Verify actual execution labels on results, legacy unknown labels and exact
-   Publication ZIP/CrossCheck bytes plus unchanged readiness/review flags.
-
-Manual figure, image-preservation, table, layout and full-math checks remain
-required regardless of counts. Record unresolved limitations and actual gate
-results before release; no fixture set provides a universal catch-all.
-
-### Stage 5: Publication Export
-
-20. Export a draft publication package while blockers exist and confirm the warnings CSV lists skipped and risky items.
-21. Resolve all blockers and export the final publication package. Request it
-    with gzip accepted and confirm the response remains `application/zip`, has
-    `Content-Length`, has no `Content-Encoding: gzip`, and opens normally.
-
-### Stage 6: Audit, Backup, And Recovery
-
-22. Open Audit Log and confirm recent import, Process PDFs, review, CrossCheck, exception, and export actions are searchable by Paper ID or Final ID.
-23. Download a System State ZIP, clear the database/files in a test environment, restore the ZIP, and confirm state/files and audit logs return. Compare archived automatic creation/update times, including revision dates and CrossCheck batch times; an expired CrossCheck upload preview must remain expired after restore. Point Reports temporarily at a shared external test folder and confirm Clear Database preserves it. Simulate a database-reset failure and confirm staged publication files are restored with the records.
-
-### Stage 7: Responsive And Accessibility Pass
-
-24. At 390px and desktop width, confirm the page itself does not overflow, tables scroll inside their containers, 15px table/body text and 12px badges remain readable, buttons fit their labels, focus is visible, modal/collapse controls remain keyboard-operable, and repeated POST clicks do not submit twice. Confirm the two-level application header keeps the current conference visible, the workflow navigation collapses below 1200px, and active/hover/dropdown states remain readable.
-
-### Stage 8: Docker Proxy And Recovery
-
-For GPU residency, use only isolated data/containers and real CUDA inference.
-Verify default 1800, explicit 0 (former lifetime), invalid settings and unchanged
-CPU defaults. Reuse one model PID for uncached jobs in separate namespaces and
-compare complete raw OCR/results with per-job output. Cache hits and repeated
-health polls must not reset idle time; expiry must remove the PID/release VRAM.
-A subsequent complete cache hit stays cold; an OCR miss reloads. Kill/stop only
-the test actor: require explicit failure, bounded timeout, no partial completion
-and safe reload after preflight. Kill the test parent and verify no GPU orphan.
-Use `scripts/accept_gpu_residency.py` as described in the Developer Guide. Preserve
-existing env/tokens and publication ZIP/CrossCheck bytes through update tests.
-
-For execution changes, verify standalone CPU defaults 2/Small/Small/300 with
-four threads per page, native/embedded CPU default one page, and CUDA defaults
-4/Small/Small/300 in resolved Compose, plus explicit page/model/timeout overrides.
-Confirm both updater entrypoints preserve an explicit one-page/two-thread
-worker configuration and private credentials. Use isolated workers/data:
-compare fresh Small-model CPU default two-page output with CPU sequential and CUDA
-parallel outputs against frozen same-backend pre-change text, exact scores,
-segmentation and boxes. Check dynamic out-of-order completion and failure cleanup,
-GPU reduction ties/nonfinite/signed-zero boundaries, selected Medium models on
-both providers, cache invalidation after model/concurrency changes, and watchdog
-budgets derived from the configured OCR limit. No partial/corrupt document may
-become complete evidence. Publication ZIP/CrossCheck bytes and signed revision
-binding must remain unchanged; never run acceptance against conference records.
-
-25. In a disposable Compose project with `SMS_DEBUG=0`, confirm Dashboard CSS,
-    local icons, one title/author verification image, one PDF thumbnail, one
-    formatting preview, and one publication PDF all load through the published
-    Nginx endpoint. Confirm `web` has no published host port, `proxy` owns the
-    configured port, and proxy mounts `sms_data` and `sms_static` read-only.
-    Stop only web and confirm Nginx displays the themed generic fallback, then
-    start web and confirm two successful readiness checks automatically replace
-    the fallback with the Dashboard. Confirm this navigation does not reload
-    the failed URL or resubmit a POST. Publish fresh backup/update status and
-    confirm the same shell changes its operation label and phase.
-    On a non-default published port, submit a normal CSRF-protected POST such
-    as a blocked Final Publication Package request and confirm it reaches the
-    application instead of returning 403. Repeat with `SMS_DEBUG=1`; file
-    availability and CSRF behavior must be unchanged.
-26. Create two disposable conference env files with unique
-    `COMPOSE_PROJECT_NAME`, port, and data folder values. Run the unified updater
-    with `--dry-run`; confirm it reports env changes and does not create the
-    missing project. Confirm duplicate project names, overlapping ports, shared
-    data folders, and an existing project's changed `SMS_DATA_DIR` are rejected
-    before any update. Use `--create-missing`, then change one web setting and
-    one proxy setting and apply another update. Confirm it builds first,
-    force-recreates web, recreates proxy only for the proxy change, retains the
-    data mount type, waits for readiness, verifies the loaded Nginx Host
-    directive, loads a collected static asset, and completes the non-mutating
-    CSRF POST smoke check. Also run the legacy rebuild `--dry-run` against a
-    single-service fixture and confirm it recovers the live port/settings rather
-    than applying an env file. Run raw backup and verify `sms_data` is mirrored
-    while rebuildable `sms_static` and `sms_gateway_state` are excluded.
-27. Through the Nginx endpoint, download a large generated ZIP with a
-    deliberately slow client. Confirm another browser can still load the
-    Dashboard, the completed ZIP opens and matches the expected manifest/files,
-    and no `proxy_cache` is configured. During transfer, confirm Nginx may use
-    request-scoped proxy temporary storage and releases it afterward. Stop web
-    before starting a request and confirm the gateway fallback still appears;
-    do not expect fallback to replace a download after response bytes have
-    already started.
-
-## Acceptance Checks
-
-### Data And State Safety
-
-- Import preview never mutates records or files before Apply.
-- Dashboard and Final Publication Package export use the same readiness blockers; Dashboard must never show Ready when strict final export is blocked.
-- Dashboard paper counts use active publication papers and do not count inactive old versions or count one paper twice merely because it has multiple findings.
-- Re-uploaded PDFs/sources reset only dependent review/check flags.
-
-### Publication Selection And Processing
-
-- Corrected PDFs are first priority for publication-facing links, CrossCheck export, duplicate checks, and publication packages.
-- If no corrected PDF exists, the original active-submission PDF is the publication-facing PDF source.
-- Process PDFs recalculates active versions, page counts, hashes, thumbnails,
-  the compatibility author cache, and debug copies, but it must not rewrite
-  original uploads, corrected uploads, extracted data, plagiarism scores, or
-  review flags. A stale concurrent batch must not overwrite a newer thumbnail
-  directory.
-- Editor Uploads are active over Start2 until the conflict is resolved, but unresolved conflicts block final publication export.
-- Discarded versions remain traceable and appear as old versions, not current publication candidates.
-- Paper Master owns Not Publishing, including before a Final exists. Such
-  records remain traceable but are excluded from publication processing,
-  readiness, CrossCheck, and final or draft packages.
-- Not Publishing and invalid-ID records are excluded from Title/Author and Formatting review queues; invalid-ID records remain visible in mapping/readiness workflows.
-- Final Submission Edit cannot directly change processing, Title/Author Review, duplicate-author review, or Not Publishing state; those states are owned by their dedicated workflows.
-
-### UI And Worklists
-
-- UI navigation, partial GET updates, display filters, thumbnail previews, and layout changes must not alter publication PDF/source priority, active-version selection, readiness categories, review reset behavior, publication ZIP contents, or audit requirements.
-- Expand an Audit Log JSON record and inspect inline path/action code on Settings and Integration pages; monospace content must use dark text on a muted light surface and remain readable.
-- UI-only GET requests must leave publication ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness blocker categories byte-for-byte/logically unchanged.
-- Empty or deliberately stale `PaperAuthor` compatibility rows must not change
-  Author Count, `Author Over Limit`, or final package blocking.
-- Django admin must show publication-critical models as read-only.
-- Old Versions classifies inactive records as Replaced, Discarded, or Other inactive; Not Publishing appears only as a secondary flag.
-- Error Report separates Critical, Medium, and Info items. With more than 25
-  issues in one severity, select that severity and confirm its first page shows
-  `1-25` of the severity total rather than an empty client-side tab. Combine a
-  workflow-area link with a severity tab and confirm both filters remain active.
-- Select two Error Report category pills and confirm the result includes either
-  category, excludes unselected categories, and paginates the complete filtered
-  result. Change severity and confirm it combines with the category selection;
-  use `Clear categories` and confirm area/severity context remains intact.
-- Open an exception-capable Critical finding from Error Report and expand
-  `Manage exception`. Confirm the panel uses the full table width, shows the
-  current value/limit and relevant PDF/report links, and does not appear on an
-  unrelated finding. Approve with a reason and confirm the complete worklist
-  refreshes, the blocker is gone, and the record appears as an Info allowed
-  exception. Remove it from Info and confirm the blocker returns. Repeat with
-  JavaScript disabled to confirm the POST/redirect fallback works. Change the
-  underlying value before submitting an old panel and confirm signed evidence
-  rejects the stale action; also confirm a Final Submission-scoped key cannot
-  be applied to another Final Submission.
-- Every paginated worklist shows the same page-size/page controls above and
-  below its rows. Use the bottom control to change page and confirm the next
-  view returns to the top of that worklist with search/filter/sort state intact.
-- Error Report duplicate rows show a compact matching-record count; opening
-  `Show matching records` must return the complete duplicate group without
-  changing any database or file state. Verify this on a numbered page and with
-  Page size `All`.
-
-### Readiness, Exceptions, And Export Integrity
-
-- Allowed exceptions do not block final export while their approved value still matches the current value.
-- After loading Dashboard readiness once, replace a publication PDF outside
-  the app and confirm readiness and Final Publication Package both require PDF
-  processing again. A warmed content-hash cache must never hide the change.
-- Replace a publication PDF/source after readiness inspection but before ZIP
-  entry reading and confirm final export fails, records a failed audit event,
-  and leaves no partial ZIP/manifest.
-- Create two distinct Paper IDs/titles that sanitize to the same publication
-  base filename. Confirm Error Report and Organized List both flag the
-  collision and final export does not create a ZIP.
-- Draft publication package is clearly marked and contains a warnings CSV.
-- Trigger a structural Draft blocker such as two active finals for one Paper ID.
-  Confirm Draft export fails closed and shows the full blocker table instead of
-  only a transient message.
-- Final publication package contains one PDF/source pair per publishable Paper Master record and no replaced, discarded, or Not Publishing records.
-- Final publication package file bytes match the current publication-facing PDF/source priority for each active publishable Paper Master record: Corrected PDF/source first, then Original PDF/source.
-- Formatting Review `Review OK` stores the current publication source hash.
-  A Pending/Needs Edit record with no source hash reports only `Formatting Not
-  Review OK`; it must not also report `Source Review Hash Missing`.
-  Confirm Organized List follows the same split: an available Original or
-  Corrected source is not counted under `Source File Issues` merely because
-  Formatting is not Review OK, while a genuinely missing source appears in both
-  Source File Issues and Format Not OK when both conditions apply.
-  Replacing that source externally, clearing the hash, or deleting a selected
-  Corrected PDF/source must block final export; no Original fallback is allowed
-  while a Corrected file is selected.
-- Change Paper Master, active/Not Publishing state, review status, or settings
-  from a second editor request while final export is assembling. Confirm the
-  export fails and removes all partial outputs.
-- Export each Excel report and confirm it does not create, delete, or rebuild
-  any `PaperAuthor` rows. Change publication state while the Editorial Workbook
-  is assembling and confirm the export fails, records a failed audit event, and
-  leaves no final or `.part.xlsx` file.
-- Enter disposable title/note text beginning with `=`, `+`, `-`, or `@`.
-  Confirm XLSX cells contain the exact literal text and are not formulas; confirm
-  generated manifest/warning CSV strings are neutralized while numeric values
-  remain numeric.
-- Preview generated reports/exports cleanup and confirm generated publication
-  manifest/warning CSV files are selected while an unrelated editorial CSV in
-  the Reports folder is retained.
-- Open Final Submission Edit, Paper Master Edit, Title/Author Review,
-  Exceptions, and Process PDF formatting triage in editor A. Change the same
-  evidence in editor B, then submit editor A's stale form. Confirm every action
-  is rejected and editor B's values remain unchanged.
-- Export a CrossCheck batch, create a newer active Final or replace its
-  publication PDF, then import the old result/report. Confirm it is counted as
-  stale, neither score nor report is attached to the replacement, and final
-  export remains blocked for missing current results.
-- Create a Paper Master record with no Final and confirm Missing Final
-  Submission blocks publication. Mark that Master paper Not Publishing with a
-  reason and scope-impact confirmation; confirm the blocker disappears and
-  both final and draft packages exclude it. Import a Final afterward and
-  confirm it inherits the Master exclusion. Undo the decision and confirm
-  review evidence is preserved while Missing Final or current-candidate
-  readiness returns.
-- Create a Paper Master `Decision Required` record in a disposable test
-  database and confirm both final and draft packages stop until an editor
-  explicitly keeps it in publication scope or marks it Not Publishing.
-- Mark an orphan Final Not Publishing, then preview/import a new Paper Master
-  record with the same ID. Confirm Preview names the affected Final, Apply
-  creates Decision Required, and Final, Draft, CrossCheck, and Verify remain
-  blocked until an explicit publication decision is made.
-- Create an unclassified active Final outside Paper Master. Confirm its decision
-  section appears before Missing Final, has no preselected exclusion reason,
-  and does not offer a generic Edit Paper ID shortcut. Expand Resolve Paper ID,
-  search by Master ID/title/author, confirm the selected title/authors summary,
-  and verify it. Repeat with stale page evidence and confirm no ID changes.
-  Submit Mark Not Publishing without a reason and confirm no state changes;
-  then select a valid reason and confirm the orphan is retained only as tracked
-  Not Publishing information.
-- In a disposable database, create a Publishing Master with an inconsistent
-  excluded Final mirror. Confirm Error Report shows Publication Decision
-  Integrity Conflict and neither Draft nor Final package can bypass it.
-- Duplicate CJK, Greek, and canonically equivalent accented publication titles
-  must appear as duplicate-title blockers.
-- Final publication manifest contains the publication fields plus the same
-  per-paper Exceptions summary used by the Editorial Publication Workbook.
-  Confirm allowed exception type, values, and reason are present, while Paper
-  Master editorial notes remain excluded.
-
-### Backup And Audit
-
-- System State ZIP restore remaps managed files into local `data/` folders and does not leave old absolute paths.
-- Audit Log records critical user/system actions as JSON Lines in `data/logs/audit.log`.
-- Audit Log canonical action names use
-  `<domain>_<operation>[_<phase>]`; category, action, status, and text filters
-  return the same events, and legacy action names remain visible in expanded
-  raw JSON.
-- Clear Database preserves Audit Log by default, and the optional audit-clear checkbox archives the old log before starting a new one.
-- System State ZIP includes active and archived audit logs.
+# Acceptance Runbook
+
+Run only against disposable checkout/database/media, private test workers and
+unique Docker project names. No real conference volume, container or external
+publication folder may be reused. Never submit real CrossCheck uploads without
+explicit permission for the target folder and papers.
+
+The [developer gate](developer_guide.md#regression-commands) is mandatory for code
+changes. This procedure adds operational/browser proof; it is not a claim that
+a release passed. Record results in [Validation Record](deployment_validation.md).
+
+## Fixtures And Evidence
+
+Create a small synthetic conference with:
+- A fully ready Publishing paper.
+- Two Start2 versions and a mixed Start2/Editor Upload paper.
+- Wrong/unresolved ID, orphan Final and missing-Final Master.
+- Missing PDF/source and selected-but-missing Corrected files.
+- Page/author/P/S limit cases, stale/allowed exceptions and duplicate authors.
+- Notes, manual override, review image, revision history and CrossCheck history.
+
+Record app/method/archive versions, source revision, hardware/backend/model
+settings, input hashes, commands, test counts/skips and unresolved limitations.
+Keep pre/post DB/review/readiness snapshots and exact publication file hashes.
+Use actual rendered PDF/OCR evidence when claiming recognition behavior.
+
+## Editorial Workflow
+
+| Test | Required outcome |
+| --- | --- |
+| Master import | Attention-first preview; notes preserve/apply choices; no notes-only review reset |
+| Final import/re-import | ID-keyed updates; unchanged Author-entered ID preserves populated Official ID; missing rows not deleted |
+| Record edit | Loaded-value Changed state, server preview/reset list, explicit confirm; no-op/file-identical changes preserve reviews |
+| Stale/concurrent preview | Reject; no partial writes or unseen merge |
+| ID review | Exact picker, correct Master metadata; invalid ID never auto-excluded |
+| Orphan decision | Resolve via shared verifier or explicitly exclude; valid reason required |
+| Master no Final | Can mark Not Publishing; Undo immediately restores missing-Final blocker |
+| New Master over excluded orphan | Decision Required, not silent publication |
+| Version rule change | Preview before Apply, correct old/new IDs, no review reset |
+| Editor Upload | Match/mismatch/error guard, pending processing, expandable note |
+| Discard/Undo | Version selection recalculates; history preserved; no whole-paper exclusion |
+| Process PDFs | Current scope only; page/hash/thumbnails/debug refreshed; manuscript/review invariants |
+| Processing triage | Issue appended to Formatting notes; correct page; stale evidence rejected |
+| Extraction | Built-in/GROBID/override share renderer and exact current PDF; review reset dependencies |
+| Manual override | Reason required, visible source, new evidence, audit, pending review |
+| Review OK | Completes metadata review; reviewed title difference tracked, not second blocker |
+| Formatting | Title guard before commit; source-only handling; stale signed evidence rejected |
+| Single/Focus | Correct filtered queue, Save stays, explicit navigation/dirty warning |
+| Exceptions | Separate limit types, reason required, approve/reapprove/remove, stale detection |
+| Author counts | Live candidate scope, exact current PDF links; no cache-derived publication authority |
+
+## Formatting History
+
+Test consecutive uploads, same-name/different bytes, PDF-only/source-only pairs,
+baseline capture, missing history and original-file invalidation.
+Every revision must retain exact paired bytes/provenance. Status/notes-only
+save creates no revision. Baseline is idempotent and labels capture time honestly.
+
+Preview/cancel, stale evidence, concurrent save and file/DB/audit failures must
+leave neither false revision nor partial pointer changes. History download checks
+parent ownership/path/hash; corrupted history never supplies current files.
+Check inactive/discarded records, lazy loading, over 25 revisions and narrow UI.
+
+## PDF Comparison
+
+### Engine
+
+Test actual PDFs plus frozen evidence for:
+- Insertions, deletions, changed words/numbers and broken references.
+- Pure shift, reflow, repagination, initial-page deletion and metadata-only edits.
+- Repeated words/table values, real swaps and field ownership.
+- Missing/stale/contradictory native text; visible OCR remains authority.
+- Minus/decimal deletion, numeric ranges, formulas and mixed tolerated edits.
+- Direct visual groups versus invalid transitive composition, accents and
+  known real-change tolerance blind spots.
+- Inline/split/wrapped hyphens versus variables, adjacent math, attached digits,
+  changed letters, missing context and anchor-cut boundaries.
+- Blank/rotated/image pages, unequal lengths, empty OCR and work bounds.
+- Corrupt/expired/runtime-mismatched cache; cold/pair/document reuse;
+  failed pairs never reused as success.
+
+Freeze raw OCR, locations, scores, geometry, accounting and render hashes.
+Reduced findings alone is not accuracy. Large unpairable rewrites must explicitly
+handoff. Missing Corrected/baseline or stale upload revision cannot fallback.
+
+### Browser
+
+At desktop, short window and 390 px:
+- Both documents/crops nonblank; no page overflow; top dock fully visible.
+- Neutral Info, red arrows and amber unlocated distinct; shared Hyphens filter.
+- Auto match and connection use the same pair; reverse hover, edges, multi-region,
+  hidden/offscreen connections and absent counterpart pages.
+- Pointer magnification stays available entering Evidence/dock; long evidence
+  can scroll without dismissing inspection.
+- Next/Previous, explicit page changes, close/reopen, keyboard/touch and late loads.
+- Retina DPR 1/2/3, min crop scale, cap/rotation/aspect, high-detail debounce/failure.
+- Exact-snapshot detail pixels and PDF links; no result/hash/state modification.
+- Automatic comparison stays on its owning card through saves, filters and HTMX.
+
+## CrossCheck
+
+Use mocked service/evidence for normal regressions. Real service tests require
+approved target folders, minimal uploads and retained result evidence.
+
+Validate service login/folder association, all/missing previews, exact publication
+PDF bytes, submit uncertainty/reconciliation, 15-second visible polling, partial
+results and explicit Apply. Retry-download must not upload again, overwrite an
+execution ZIP or replay an applied result. Change active Final/PDF/manual scores
+between preview/apply and verify rejection. Same-byte new Final is still a new
+identity. Check restore preserves history/timestamps and applied-result locks.
+
+## Exports And State
+
+| Test | Required outcome |
+| --- | --- |
+| Final ZIP | Exact current Corrected/Original bytes; scoped candidates only |
+| Draft | Clearly labelled warnings; structural ambiguity still rejected |
+| Filename collision | Fail before overwrite, case-insensitive sanitized names |
+| Mid-export file/DB/settings change | Abort/remove partial output |
+| Audit/output/ZIP validation failure | No promoted partial deliverable |
+| Manifest | Extracted metadata/counts/P/S plus Exceptions; no Master notes/override reasons |
+| Workbook | Selected sheets only; stable read-only snapshot, formulas inert, readable styles |
+| System State | Current-version round-trip retains timestamps/reviews/images/revisions/audit/CrossCheck evidence |
+| Legacy archives | Validate original v5/v6/v7 format before adapting; reject incomplete newer archives |
+| Restore failure | DB/files roll back together; no stale cross-install paths |
+| Cleanup | Protect references/revisions/debug/legacy outputs, including overlapping roots and post-preview changes |
+| Clear Database | App-owned data cleared, external roots protected, audit preserved/archive option, failure rollback |
+
+## Docker And Worker Lifecycle
+
+Use [Deployment](deployment.md) commands in an isolated setup.
+
+1. First CFM creates local CPU/models/tokens. First GPU uses explicit init.
+2. Update via both updater entrypoints; preserve env bytes, explicit settings,
+   tokens, DB/reviews and selected source hashes.
+3. Remove env/auth, introduce mismatched identity/foreign project/mount, or
+   concurrent env changes: reject without recreating identity.
+4. Fail image build/preflight: old service retained. Fail cutover: report actual
+   state without claiming automatic rollback.
+5. Check proxy Host/port, CSRF-protected POST, static assets, large ZIP/download
+   buffering, maintenance UI and fresh GET recovery without POST replay.
+6. Worker health/version/settings: no secrets; ready/busy/not-ready/cold states,
+   old/malformed metadata, safe gateway errors and custom-header round-trip.
+7. Auth/namespace isolation, duplicate requests, queue bounds, retry limit,
+   restarts, lost replies, stale jobs, runtime mismatch and timeout cleanup.
+8. Real CPU/GPU inference: compare exact evidence on each platform, not mocked
+   provider labels. Test GPU residency, idle unload, cold/warm cache, actor
+   failure/reaping, finite memory and unchanged CPU path.
+9. PDF.js reader: actual modules/thumbnails/search, wheel/keyboard/input focus,
+   direct/download fallback, rejected/expired same-snapshot sources.
+
+Do not claim a successful cold full-document run from a cache hit or a small
+fixture. State what hardware/quality/time budget was tested. Clean only the
+test-created containers/volumes/models/workspace afterward.

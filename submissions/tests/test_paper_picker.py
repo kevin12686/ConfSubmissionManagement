@@ -50,7 +50,7 @@ class PaperPickerSearchTests(TestCase):
         paper = InitialPaper.objects.create(
             paper_id="R084",
             title="Reliable Publication Workflows",
-            authors="Chih-Wei Hsu; Ada Lovelace",
+            authors="Alex Morgan; Ada Lovelace",
         )
 
         title_response = self.client.get(
@@ -70,7 +70,7 @@ class PaperPickerSearchTests(TestCase):
         )
         self.assertEqual(
             author_response.json()["results"][0]["authors"],
-            "Chih-Wei Hsu; Ada Lovelace",
+            "Alex Morgan; Ada Lovelace",
         )
 
     def test_selected_master_record_can_be_hydrated_by_pk_or_paper_id(self):

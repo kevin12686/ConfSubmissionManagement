@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Remove personal names from synthetic fixtures and require privacy-safe docs,
+  screenshots and public attribution. No publication or workflow logic changed.
+- Reorganize documentation around first-time setup, editorial work and maintenance.
+  Replace the old Docker guide with a copy/edit/run Deployment guide and a separate
+  Operations reference; consolidate current rules and remove obsolete experiment
+  paths and duplicated historical instructions. No runtime, publication, app-version
+  or State archive behavior changes.
+
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 

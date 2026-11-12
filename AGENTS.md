@@ -12,6 +12,8 @@ mistakes can be severe and effectively irreversible after IEEE release.
 4. Review/check state may only reset according to documented dependency rules.
 5. State-changing workflows must be audited.
 6. Code, tests, docs, and version metadata must be updated together when behavior changes.
+7. Keep personal information out of docs, screenshots and synthetic fixtures.
+   Use Kevin Hsu for public attribution and fictional names for examples.
 
 ## Required Workflow
 
@@ -25,6 +27,9 @@ mistakes can be severe and effectively irreversible after IEEE release.
 
 ## See Also
 
+- `docs/README.md`
+- `docs/deployment.md`
+- `docs/operations.md`
 - `docs/publication_rules.md`
 - `docs/operator_guide.md`
 - `docs/developer_guide.md`

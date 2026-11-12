@@ -1,432 +1,228 @@
 # Publication Rules
 
-## Comparison Compute Boundary
+This is the canonical business-rule reference. For tasks, use the
+[Operator Guide](operator_guide.md); for implementation, use
+[Architecture](architecture.md). A documentation rewrite must not change these rules.
 
-Local/remote comparison workers are advisory compute only. They receive exact
-snapshot bytes, never choose a publication candidate, and cannot write reviews,
-exceptions, source files or export packages. CFM validates returned evidence
-and rechecks current scope, file hashes and upload revision before retaining a
-comparison. Cache hits, completed jobs, failover or GPU execution never bypass
-these rules. Missing selected Corrected files still block rather than falling
-back. Worker failure is not proof of unchanged content or publication approval.
-Configurable OCR concurrency, Small/Medium model selection and execution timeout
-remain inside this advisory boundary. CUDA reduction/dynamic dispatch cannot
-change snapshot selection, revision binding, comparison tolerances or readiness.
-Model/runtime changes invalidate compute cache, never modify publication files
-or reset/approve editorial reviews. State archive remains v8.
+## Authority
 
-This document is the canonical description of publication-facing behavior.
-Operator and developer documentation may summarize these rules, but changes to
-publication scope, active versions, file resolution, readiness, or export must
-be reflected here. For task-oriented guides, start from the
-[Documentation Home](README.md).
-
-## Rule Ownership
-
-| Concern | Source of truth |
+| Concern | Authority |
 | --- | --- |
-| Publication scope | Paper Master List |
-| Per-paper publication decision | `InitialPaper.publication_decision_status` |
-| Active Final Submission | Active-version services and configured ordering rule |
-| Publication PDF | `publication_pdf_info()` |
-| Publication source | `publication_source_info()` |
-| Readiness blockers | `publication_readiness_rows()` |
-| Final and draft package assembly | Central publication export service |
-| State-change history | Audit Log |
+| Paper scope and decision | Paper Master / `InitialPaper.publication_decision_status` |
+| Active version | Active-version service and configured ordering |
+| PDF / source selection | `publication_pdf_info()` / `publication_source_info()` |
+| Readiness | `publication_readiness_rows()` on a publication read snapshot |
+| Package assembly | Publication export service |
+| State transitions | Audited workflow services, not templates or generated folders |
 
-Generated copies, legacy path fields, browser state, and compatibility caches
-must not replace these sources of truth.
+## Scope And Publication Decisions
 
-The shared PDF.js reader is a display layer only. It loads the exact existing
-endpoint supplied by the originating page; it cannot choose another submission,
-fallback file, revision or comparison side. Download and native-open actions
-use that same endpoint, with all its existing selection/integrity/expiry rules.
-Reader URL validation does not fetch or proxy the PDF. No PDF.js output,
-annotations, browser rendering or search result can enter publication files,
-readiness, processing, review state, manifests or ZIP assembly.
+Master decisions are Publishing, Not Publishing or Decision Required.
+A candidate must have a Master Paper ID, be undiscarded, belong to a Publishing
+Master and have unambiguous active state.
 
-## Publication Scope
+Not Publishing is a paper decision, even before a Final exists. It excludes that
+paper from processing/review candidates, CrossCheck, publication author/duplicate
+counts and both final/draft packages. The record remains for traceability.
+Marking requires an explicit reason, signed evidence and scope confirmation;
+the editorial note is optional.
+Undo restores Publishing without resetting reviews; a still-missing Final
+immediately blocks again.
 
-Paper Master defines which Paper IDs belong to the conference and owns the
-publication decision for each one:
+Final exclusion fields mirror the Master decision where a Master exists.
+Imports and Editor Uploads inherit it. Disagreement is a structural integrity
+blocker, not permission to choose whichever field is convenient.
 
-- `Publishing`: the paper is in publication scope and must satisfy readiness.
-- `Not Publishing`: the paper is retained for traceability but excluded from
-  processing, review queues, CrossCheck, duplicate and author counts, and
-  final or draft publication packages.
-- `Decision Required`: migrated or otherwise ambiguous state that blocks both
-  final and draft packages until an editor explicitly chooses Publishing or
-  Not Publishing.
+An orphan Final outside Master needs explicit ID resolution or Not Publishing.
+No invalid ID automatically implies exclusion. Resolution selects an existing
+Master and calls the same signed `verify_submission()` command as ID Review;
+it must not silently assign Official ID through a general edit.
 
-A Final Submission can participate only when:
+Creating/importing a Master whose orphan Final has an exclusion enters
+**Decision Required**, never silent Publishing. Ambiguous/migrated decisions
+must be resolved before either final or draft export.
 
-1. Its official Paper ID exists in Paper Master.
-2. It is not discarded.
-3. Its Paper Master decision is `Publishing`.
-4. Its active-version state is unambiguous.
+Discard is different: it removes one submission version from selection and
+retains its reason/history, not the whole paper's publication decision.
 
-Not Publishing can be recorded before any Final Submission exists. This is the
-correct workflow for an accepted Master paper that is unpaid, withdrawn, or
-otherwise removed from the proceedings. Marking it requires a reason, note,
-signed evidence, and explicit confirmation of publication-scope impact.
+## Active Versions
 
-Creating or importing a new Paper Master record is a publication-scope
-transition. If any existing orphan Final under that Paper ID retains a Not
-Publishing decision, the new Master record must enter `Decision Required`.
-Import Preview shows the affected Final IDs, and the editor must explicitly
-choose Publishing or Not Publishing. Import, manual Master creation, and
-normal Paper Master import use the same guarded creation service. Paper Master
-and Final Submission files are imported separately; legacy combined
-`Mapping Table` workbooks are rejected.
+For each Paper ID:
 
-Final Submission exclusion fields are compatibility mirrors, not authority, for
-Paper IDs that exist in Paper Master. Mark and undo synchronize those mirrors,
-and later Final imports or Editor Uploads inherit the current Master decision.
-Inconsistent mirror values cannot override the Paper Master decision and are a
-structural integrity blocker for final, draft, and CrossCheck exports. A Final
-outside Paper Master retains its legacy per-record classification workflow
-until its ID is corrected or it is explicitly excluded. This unresolved orphan
-workflow is shown before Missing Final and tracked decisions in Not Publishing
-List. Correcting the ID must select a real Paper Master record and call the
-same signed-evidence `verify_submission()` command as Paper ID Review; it must
-not assign Official Paper ID through the general edit form. Excluding the
-orphan requires an explicit valid reason. No reason is inferred from an invalid
-ID.
+1. Exclude discarded versions.
+2. Prefer undiscarded Editor Uploads; otherwise use Start2.
+3. Select newest by configured Final ID natural order or upload date, with
+   Final ID tie-breaker.
 
-Undo returns a Paper Master record to `Publishing`. If it still has no Final,
-`Missing Final Submission` immediately becomes a blocker again. Marking or
-undoing a publication decision does not reset Paper ID verification or other
-review evidence because the underlying files and reviewed metadata did not
-change.
+Undiscarded Start2 and Editor Uploads together are a version conflict. Editor
+Upload is provisionally active but final export blocks until the editor resolves
+the conflict by discarding unwanted versions. A labelled draft can use that
+deterministic candidate and record the conflict in warnings.
 
-Discard is version-level. It removes one version from consideration while
-preserving the record and reason for traceability.
+Changing the ordering rule requires preview and confirmation. It recalculates
+active/duplicate state but preserves both old/new rows' existing reviews,
+including Paper ID verification. Newly active rows must independently satisfy
+readiness; selection itself approves nothing.
 
-## Active Version Selection
+## Publication Files
 
-Active selection is evaluated separately for each Paper ID:
+| File | Selection |
+| --- | --- |
+| PDF | Selected Corrected PDF, otherwise active submission's Original PDF |
+| Source | Selected Corrected source, otherwise active submission's Original source |
 
-1. Ignore discarded versions.
-2. If undiscarded Editor Uploads exist, select the newest Editor Upload.
-3. Otherwise select the newest Start2/imported submission.
-4. Determine newest using the Settings rule: Final ID order or upload date,
-   with Final ID as the tie-breaker.
+Selection is independent for PDF and source. **Fallback means no Corrected
+selection, not a missing/broken Corrected file.** Missing, unreadable, changed
+or unbound selected evidence blocks publication; never silently substitute Original.
 
-When both Start2 and Editor Upload versions remain undiscarded, the Editor
-Upload is temporarily active, but the conflict blocks final export until one
-side is discarded with a reason. A clearly marked draft may use that
-deterministic Editor Upload selection and records the conflict in its warnings
-CSV.
+`current_file_path`, `source_current_file_path`, legacy active/old folders
+and `data/publication_pdf_debug/` do not select publication input.
+Debug copies are generated from the same publication helper for inspection;
+their absence does not block export. Final Submissions displays files belonging
+to that row, not a different active version for the same paper.
 
-Inactive, discarded, Not Publishing, Decision Required, and invalid-ID records
-remain available for history or correction but do not become publication
-candidates.
+## Process PDFs
 
-## Publication File Resolution
+Only current Publishing Master candidates are processed. The operation
+recalculates active versions, computes pages/hash, generates unique thumbnails,
+resets page exceptions when counts change, refreshes the compatibility author
+cache and synchronizes debug PDF copies.
 
-PDF and source files resolve independently:
+It does not scan incoming folders, create submissions, rewrite Original or
+Corrected files, change extracted metadata/plagiarism scores, or reset unrelated
+reviews. Global alerts, Dashboard and the processing page share this candidate
+scope; pending orphan/Not Publishing PDFs are not actionable processing work.
 
-| Kind | First choice | Fallback |
-| --- | --- | --- |
-| PDF | Corrected PDF | Original PDF on the active submission |
-| Source | Corrected source | Original source on the active submission |
-
-Fallback applies only when no Corrected file is selected. If a selected
-Corrected file is missing, unreadable, changed after validation, or fails its
-review binding, publication is blocked. The application must not silently use
-Original instead.
-
-`data/publication_pdf_debug/` is generated inspection output. It is never an
-input to publication links, duplicate checks, CrossCheck export, or final
-package export.
-
-Legacy fields such as `current_file_path`, `source_current_file_path`,
-`active_final_folder`, and `old_versions_folder` may remain for restored-state
-compatibility or diagnostics. They do not select publication files.
-
-## Process PDFs Contract
-
-Process PDFs recalculates active versions and processes only current Paper
-Master publication candidates. For those candidates it:
-
-- calculates page count and PDF hash;
-- generates operation-unique page thumbnails;
-- resets page-limit exceptions when the page count changes;
-- refreshes the compatibility author cache;
-- synchronizes publication PDF debug copies.
-
-It must not:
-
-- scan folders and create submissions;
-- rewrite Original or Corrected uploads;
-- change extracted title/authors or plagiarism scores;
-- reset unrelated review state;
-- treat discarded, Not Publishing, invalid-ID, or historical versions as
-  processing errors.
-
-Organized List, Dashboard, the global Process PDFs alert, and the Process PDFs
-page use this same candidate scope. An unmatched Final retains its pending PDF
-state, but it is not presented as actionable processing work until its Paper ID
-is resolved into a Publishing Paper Master record.
-
-Organized List may collapse derivative warnings into one root-cause row for
-editorial readability. This is presentation only: Error Report and Publication
-Package readiness continue to evaluate the full publication rules in this
-document.
-
-The compatibility author cache is not publication authority. Author counts and
-their blockers are derived from the current active Paper Master snapshot.
+The author cache is compatibility data, not publication authority. Publication
+author counts derive from the current active Master snapshot.
 
 ## Review And Reset Dependencies
 
-Review state resets only when its evidence changes.
-
-| Changed evidence | Required effect |
+| Evidence change | Required dependency effect |
 | --- | --- |
-| Author-entered ID on an existing Final | Re-resolve Official Paper ID and reset Paper ID review |
-| Final Title | Preserve Official Paper ID; reset Paper ID review and extracted-title comparison |
-| Final Authors | Preserve Official Paper ID and extracted metadata; return Title/Author Review to Pending |
-| Publication PDF bytes or selected PDF | PDF processing, page exception, Title/Author, duplicate-author, plagiarism, and Formatting state become stale |
-| Publication source bytes or selected source | Title/Author, duplicate-author, and Formatting state become stale |
-| Page count | Page-limit exception becomes stale |
-| Extracted title/authors | Title/Author Review and dependent author checks become stale |
-| Plagiarism or Single score | Matching approved score exception becomes stale |
-| Official Paper ID | Paper ID verification and active grouping are recalculated |
-| Paper Master notes only | No review state resets |
-| Active-version ordering rule | Preview and apply selection changes; do not reset unrelated review fields |
-| Paper Master publication decision | Recalculate scope and compatibility mirrors; do not reset review evidence |
+| Master Title | Reset affected Paper ID review |
+| Master notes only | No review resets |
+| Author-entered ID | Re-resolve Official ID; reset Paper ID review |
+| Final Title | Preserve Official ID; reset Paper ID review and extracted-title comparison |
+| Final Authors | Preserve Official ID/extracted values; Title/Author Review Pending |
+| Official ID | Re-evaluate ID review and active grouping |
+| PDF replacement | Reset processing/page evidence, Title/Author and duplicate-author review, author-number exception, plagiarism scores/report association and P/S exceptions, Formatting binding |
+| Source replacement | Reset Formatting binding, Title/Author and duplicate-author review, extracted-title comparison and manual override metadata |
+| Page count change | Invalidate page exception |
+| Extraction/manual override | Pending Title/Author Review; reset dependent author reviews/exceptions and recalculate title match |
+| P% / S% change | Approval becomes stale if approved score no longer matches |
+| Report upload alone | Does not clear score exceptions |
+| Master publication decision | Recalculate scope/mirrors; no unrelated review resets |
+| Active ordering rule | Recalculate selection/duplicates; preserve review evidence |
 
-`Review OK` is the single Title/Author completion decision. A reviewed
-Final-versus-extracted title difference remains tracked information, not a
-second publication blocker.
+The central reset helpers clear fields, rather than merely changing labels.
+Formatting corrected-PDF save retains prior extracted strings for reference but
+not their approval; re-extraction is still required. Replacing original files
+archives/unlinks invalidated corrected files only after history protection.
+Existing revisions remain.
 
-Final re-import is keyed by Final ID. When the Author-entered ID is unchanged
-and the current Official Paper ID is nonblank, re-import preserves that
-Official ID even if title-based matching would prefer another Master paper.
-Only a changed Author-entered ID, or a currently blank Official ID, invokes
-Official ID resolution. Failure to resolve remains a manual ID-review problem;
-it never silently creates a Not Publishing decision.
+Final re-import uses Final ID. Unchanged Author-entered ID plus nonblank
+Official ID preserves the mapping. A changed Author-entered ID or blank Official
+ID invokes resolution. Failure remains manual ID work, never automatic exclusion.
+Records absent from an import are not deleted.
 
-Formatting `Review OK` binds the SHA-256 of the selected publication source.
-Pending or Needs Edit is blocked by Formatting status. A missing review hash is
-an integrity blocker only after Review OK, so the same unfinished review is not
-reported twice.
+Title/Author **Review OK** is the completion decision; reviewed title differences
+are tracked information, not a second mandatory title-match blocker.
+Manual override requires a reason/new evidence and renewed Review OK.
+Built-in/GROBID re-extraction clears override reason/time.
+
+Formatting Review OK binds the selected publication source SHA256.
+Pending/Needs Edit blocks via status; Source Review Hash Missing is reserved
+for already Review OK records without their required integrity binding.
+An already reviewed record receiving corrected files returns to Pending.
 
 ## Readiness And Exceptions
 
-Dashboard, Organized List, Error Report, and final export consume the same
-publication-readiness rules. Dashboard must never show Ready when strict final
-export would be blocked.
+Dashboard, Organized List, Error Report and final export use the shared readiness
+rules. Presentation may group derivative warnings under one cause or count
+unique papers; it cannot remove export blockers or invent approval.
 
-Exceptions are narrow, evidence-bound decisions:
+Page, authors-in-paper, papers-per-author and separate P%/S% exceptions require
+reasons and matching current evidence. Approved values becoming different make
+exceptions stale. Valid approvals waive only their corresponding limit finding,
+not underlying values or unrelated blockers. Duplicate-author review is distinct.
+Cross-paper author-count decisions remain author-level.
 
-- Exception-capable Error Report findings, Organized List panels, Author Count,
-  and Exceptions Center are alternate entry points to the same exception
-  records and service commands. Entry-point UI must not duplicate or relax the
-  readiness rules.
-
-- page, author-limit, Plagiarism %, and Single % exceptions require a reason;
-- an exception is valid only while the approved value still matches current
-  evidence;
-- author paper-count exceptions remain author-level;
-- allowed exceptions move the corresponding finding out of blocking state but
-  do not modify the underlying measurement.
-
-Structural ambiguity is not an ordinary warning and cannot be bypassed by draft
-export. This includes a Paper Master `Decision Required` state, multiple active
-candidates, unresolved orphan Final publication decisions, disagreement between
-Paper Master and Final decision mirrors, and duplicate sanitized publication
-filenames.
+Structural blockers cannot be bypassed by draft: unresolved publication
+decisions/orphans, decision-mirror conflicts, multiple active candidates and
+sanitized case-insensitive filename collisions. Ordinary readiness warnings may
+appear in a clearly labelled draft's warnings CSV.
 
 ## Export Integrity
 
-Final export is a single validated operation:
+A publication export:
 
-1. Build one publication read snapshot for scope, settings, active submissions,
-   readiness, and file status.
-2. Reject readiness blockers and structural ambiguity.
-3. Strictly hash and read the exact PDF/source bytes selected by that snapshot.
-4. Reject changed filesystem identity or content.
-5. Reject sanitized, case-insensitive ZIP filename collisions.
-6. Build immutable manifest and ZIP entry bytes.
-7. Verify ZIP entries and CRCs.
-8. Recheck publication-critical database state.
-9. Atomically promote the completed package.
+1. Builds one scope/settings/active/readiness/file snapshot.
+2. Rejects blockers appropriate to final/draft and structural ambiguity.
+3. Strictly reads/hashes exact selected files and rechecks filesystem identity.
+4. Rejects sanitized case-insensitive ZIP filename collisions.
+5. Builds immutable entry/manifest bytes and verifies ZIP/CRCs.
+6. Rechecks publication-critical DB state and atomically promotes output.
 
-If Paper Master, submissions, settings, review state, waiver state, or selected
-files change during assembly, export fails and removes partial output.
+Changed records, settings, waiver state or selected files abort and remove partial
+output. Missing history/debug/cache cannot authorize fallback.
 
-A draft package is clearly marked and contains a warnings CSV, but it still
-fails closed on structural ambiguity and unsafe file selection.
+Manifest fields include extracted metadata, counts, P/S and the workbook's
+per-paper Exceptions summary **including reasons**. Master editorial notes and
+manual-override reasons are excluded.
 
-Binary downloads such as ZIP, PDF, image, and Office files are not dynamically
-gzip-compressed. Publication ZIP responses retain their normal content type and
-length.
+Internal Excel exports use stable read-only publication snapshots, not a
+PaperAuthor rebuild. They validate workbook structure, concurrent state and
+audit writes before atomic promotion. Formula-like text is non-executable in
+XLSX; CSV string fields receive text protection where needed. Excel style/sheet
+choices do not change scope or publication input. Not Publishing may appear in
+internal supporting sheets, never in the final package.
 
-Editorial XLSX reports are internal read-only snapshots. Their formatting and
-sheet order do not define publication scope. The Final and Draft Publication
-Package manifest explicitly reuses the Editorial Publication Workbook's
-per-paper `Exceptions` summary, including recorded reasons; other internal
-review columns do not enter the package manifest.
+## Preview, Concurrency And External Results
 
-Every Excel report is generated from a stable publication read snapshot without
-rebuilding or modifying the PaperAuthor cache. The workbook is written to a
-temporary file, reopened for structural validation, checked for concurrent
-publication-state changes, and atomically promoted only after its requested and
-successful audit events can be recorded. A failed validation, state check, or
-audit write removes the partial output.
+State-changing forms validate signed evidence for what the editor saw.
+Stale records/files reject instead of merging. Edit/import/settings/Editor
+Upload confirmations are not permission to bypass later identity checks.
 
-Imported editorial text that begins with a spreadsheet formula marker is stored
-as a non-executable string in XLSX reports. Machine-readable publication
-manifest and warning CSV values receive an explicit text prefix when a string
-could otherwise be interpreted as a formula by spreadsheet software. Numeric
-fields remain numeric. This protection does not alter publication file
-selection or readiness.
+CrossCheck binds exact active Final, PDF hash and batch provenance before
+submission and apply. Only explicit confirmed uploads with downloaded reports,
+valid scores and matching archive evidence can apply after human preview.
+Partial/missing/stale results do not clear prior scores or reviews.
+A new Final cannot inherit old-version results merely because bytes match.
 
-## Concurrency And Preview Safety
+Retry-download uses original confirmed uploads only: no PDF re-upload or batch
+renaming. Executions retain their own ZIPs/results. Apply rechecks manuscript
+identity where known, exact Final/hash and current plagiarism evidence.
+Applied results cannot be replayed or overwritten, including after restore.
 
-Automatic CrossCheck uses the same publication PDF selection and durable
-Final/PDF-hash provenance as manual CrossCheck export. Prepared inputs are named
-`PaperID.pdf`, with the conference batch token supplied separately as service
-postfix. Each source is checked again before submission and result apply.
-Job completion is not proof that a report exists. Only explicit confirmed
-uploads with downloaded reports, valid P/S scores and matching archive manifest
-may be applied after result preview. Stale, partial, unconfirmed or missing
-results must not clear prior values, waive exceptions, change review decisions,
-or substitute another active version. Local job evidence is never a publication
-PDF source. Final Publication Package selection remains Corrected -> Original.
+## Advisory Artifacts
 
-Retry-downloads reuse only the original confirmed uploads still missing reports;
-they do not upload PDFs, allocate a new batch token or change publication files.
-Each execution retains its own ZIP and immutable paper-result evidence.
-Only unapplied results can be confirmed. Apply rechecks the exact active Final
-identity, current publication PDF hash, original provenance, current plagiarism
-evidence and owning ZIP/report hash. A known original manuscript ID must match
-the retry report's manuscript ID. Already applied results cannot be replayed
-or overwritten by a retry, result re-preview or restored history. Old-version
-reports never migrate to a newer Final even when its PDF bytes are identical.
+| Artifact | Allowed role | Never allowed |
+| --- | --- | --- |
+| Formatting revisions | Immutable full-pair history/download | Restore pointers, substitute a missing current file or approve review |
+| PDF comparison | Inspect exact active After versus same-row Original/verified revision | Approve/reset review, waive a blocker or choose a publication file |
+| Comparison worker/cache | Byte/runtime-bound evidence computation/reuse | Read conference DB, choose files or change editorial state |
+| PDF.js reader | Display exact originating endpoint | Select another version or serialize edited output into publication |
+| Debug PDF copy | Human inspection of generated output | Publication/CrossCheck/duplicate-check authority |
 
-Formatting revision history is immutable traceability evidence only. Final
-Publication Package, CrossCheck, processing, and readiness continue to select
-the current FinalSubmission Corrected/Original files through the existing
-publication helpers. Historical snapshots never supply missing publication
-files or restore review approvals. Revision capture follows the existing
-corrected-upload reset rules; baseline capture and history GET/download leave
-all review flags and publication pointers unchanged. Missing/corrupt history
-is reported independently and cannot change publication selection.
+Comparison revalidates live scope, current files, revision binding and snapshot
+hashes on build/read. Automatic comparison runs after successful file save in a
+separate operation; failure leaves saved files intact. Missing counterpart pages
+and unlocated OCR are explicit, never equal text or a replacement page.
+Complete cache hits still require current scope/file/revision checks.
 
-Formatting PDF comparison is advisory and read-only. Its After input comes
-only from `publication_pdf_info()` for the exact active Master Publishing
-submission; its Before input is that row's Original or a verified revision.
-Temporary snapshots and difference findings are never publication sources,
-readiness conditions, or evidence that can approve/reset a review. Builds
-and subsequent snapshot access revalidate scope, identity, and SHA256. Missing
-corrected files or historical baselines never trigger a substitute. A comparison
-with no findings is not proof of intact figures, tables, equations, or layout.
-Headers/footers, image text and formulas remain in rendered-page OCR scope.
-Method 9 uses native geometry only for order/ownership guidance, not native
-strings as proof of equality. Context alignment preserves one-to-one occurrence
-accounting; reference-page navigation is not a text match. Unlocated or empty-OCR
-ranges remain explicit and require manual review.
+OCR can miss text and deliberately tolerates listed similar characters,
+diacritics, whitespace and word hyphens. Those tolerances are **not editorial
+exceptions**. Figures, tables, layout and mathematical structure need human
+inspection. Zero findings or successful CPU/GPU execution is not publication
+approval. See [PDF Comparison](pdf_comparison.md).
 
-Local CPU caches are optional execution evidence, never publication authority.
-Reuse requires exact PDF hashes and the validated engine/model/runtime; cached
-results still pass all live file, scope and upload-revision checks. Cache failure
-can require fresh OCR or leave comparison unavailable, not approve publication.
-No source, review, exception or readiness rule changes through reuse.
-Standalone CPU workers default to two concurrent pages/four threads per page;
-GPU remains four pages and native/embedded CPU one. These deployment defaults
-change scheduling only, not publication selection or OCR comparison tolerances.
-Existing explicit settings remain authoritative.
-GPU model residency shares weights only. Each job still validates its approved
-PDF hashes/runtime and keeps namespace signing/cache state isolated. Idle unload,
-model reload, cache hits, crashes and timeouts cannot select another file, approve
-a review or change readiness. Model state is deployment/runtime information,
-not publication evidence or System State archive data.
+## Audit And Change Control
 
-The approved broad policy tolerates complete local differences covered by 38
-direct visual groups, same-base/same-case letter diacritics and existing whitespace rules. Raw OCR, locations, rule
-IDs and risks remain inspectable as information. Real similar-character edits
-(such as O/0, f/t, rn/m and e/é/è) and whitespace-only edits can be missed. These are
-comparison tolerances, **not Exceptions Center decisions**, and cannot waive a
-publication blocker. A mixed non-tolerated edit must not disappear with a
-neighboring tolerated character.
+Audit state-changing operations and export outcomes with before/after values,
+resets and file hashes as applicable; no secrets or binaries. History GETs and
+revision downloads use their defined traceability events.
 
-Coverage is separate from publication readiness: complete describes supported
-execution only, limited describes a usable result with limitations, and missing
-metadata is not complete. Worker/OCR/model failure is Comparison unavailable,
-never zero-findings success. No result validates figures, image preservation,
-tables, layout or full mathematical structure. The
-[comparison contract](pdf_comparison.md) introduces no publication approval path.
-
-Automatic Original comparison starts separately after a successful Formatting
-PDF save, never within its transaction. A signed request binds the exact saved
-revision, corrected file identity/upload time, and SHA256. Builds and cached
-result access reject later PDF revisions or changed publication candidates;
-they do not substitute a newer file. Source-only/status/notes changes do not
-request a new PDF comparison. Comparison failure never rolls back the upload,
-restores a prior version, changes review flags, or creates/waives a publication
-blocker. Normal upload-dependent reset rules still apply exactly as before.
-
-Long-running processing and extraction capture semantic row/file evidence and
-recheck it under lock before persistence. Stale results must not overwrite
-newer files, review decisions, thumbnails, or database state.
-
-Import, existing Paper Master/Final Submission record edits, Editor Upload,
-Formatting Upload, restore, cleanup, and material Settings changes use
-preview-before-apply. Confirmation revalidates the server-owned preview token,
-stored file size/hash, current selected-file hash, and current database
-evidence. Temporary previews expire and are not part of System State backup.
-
-Record edit preview compares validated values, not browser input events. A
-field reverted to its persisted value is unchanged. A selected PDF/source/report
-with the same SHA-256 bytes as the current file is also unchanged and must not
-reset review state. Apply delegates to the established Paper Master or Final
-Submission edit service; preview logic must not recreate reset or publication
-selection rules.
-
-GET pages, filters, pagination, detail panels, browser caches, and HTMX
-navigation are read-only. They cannot select publication files or mutate
-review, active-version, or exception state.
-
-## Audit Requirements
-
-State-changing workflows, exports, cleanup, Settings changes, and System State
-operations write audit events through `submissions/services/audit.py`.
-
-Events include the relevant Paper ID, Final Submission ID, changed fields,
-before/after values, reset flags, file changes and hashes, result counts, and
-failure details where applicable. Paths are portable project/media-relative
-references; binary file contents are never logged.
-
-Clear Database preserves the active audit log unless the operator explicitly
-selects the archive-and-clear option.
-
-## Implementation Map
-
-| Rule area | Primary implementation |
-| --- | --- |
-| Active versions and PDF processing | `submissions/services/pdf_processor.py` |
-| Publication file selection | `submissions/services/file_manager.py` |
-| Request-scoped publication snapshot | `submissions/services/publication_read.py` |
-| Publication decision transitions and integrity | `submissions/services/publication_decisions.py` |
-| Readiness and author checks | `submissions/services/checks.py` |
-| Exceptions | `submissions/services/exceptions.py` |
-| Publication and report exports | `submissions/services/reports.py` |
-| Formatting source binding | `submissions/services/formatting.py` |
-| Signed workflow evidence | `submissions/services/workflow_evidence.py` |
-| System State backup/restore | `submissions/services/system_state.py` |
-| Audit logging | `submissions/services/audit.py` |
-
-## Change Checklist
-
-When a publication-facing rule changes:
-
-1. Update this document.
-2. Update the affected Operator, Developer, Architecture, Troubleshooting, and
-   Acceptance sections only where their audience needs the change.
-3. Add or update acceptance coverage proving Dashboard and export agree.
-4. Run the regression gate in `docs/developer_guide.md`.
-5. Increment `APP_VERSION`.
-6. Increment `STATE_ARCHIVE_VERSION` only if archive structure or restore
-   compatibility changes.
+Before changing a rule: inspect its service/callers, update its tests and this
+document, run the [developer gate](developer_guide.md#regression-commands), and
+evaluate app/archive versions independently.

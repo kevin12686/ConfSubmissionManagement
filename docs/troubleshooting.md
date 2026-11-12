@@ -1,1011 +1,141 @@
 # Troubleshooting
 
-## Checking A Running Worker Release
-
-Use Formatting > Comparison services; expand Details for the CFM/worker releases
-and effective OCR settings. If host `.env` values differ, verify that the worker
-was rebuilt/recreated; the display reflects its successful runtime validation,
-not the host file. An unloaded GPU model with Ready is normal. Idle retention
-keeps model sessions only, not individual article results.
-Version unavailable can mean a legacy worker; it is not proof of an outage.
-Last seen is historical, not a current check. Different release numbers alone
-do not prove incompatibility; the existing contract check determines that.
-On the worker host, `docker exec <worker-container> python -m comparison_slave.entrypoint --status`
-reads authenticated local health without printing tokens. Never paste clients
-JSON or custom auth headers.
-
-For normal task order, use the [Operator Guide](operator_guide.md). For the
-rules behind publication blockers and selected files, use
-[Publication Rules](publication_rules.md). This guide focuses on symptoms,
-diagnosis, and recovery. Docker procedures are centralized in the
-[Docker Guide](docker_guide.md); the complete guide map is on the
-[Documentation Home](README.md).
-
-## Startup
-
-### Startup preflight failed
-
-For automatic Docker setup use `python3 scripts/deploy.py conference --name
-<project> --port <port>`. Existing managed project settings are discovered and
-retained. Never change a project's name/data directory to bypass an error.
-The unified deployer downloads missing approved models, but preserves and
-rejects a corrupt existing model; move aside only that explicitly identified
-model after inspection, or provision the verified files and use `--offline`.
-An interrupted model-provision lock must be removed only after confirming no
-provisioner still runs. Busy-worker errors require a maintenance window, not
-forced interruption. Inspect private `runtime/deployment.log` for operation IDs
-and outcomes; it contains no tokens or PDF content.
-
-Remote GPU enrollment must be private mode 0600, match COMPOSE_PROJECT_NAME,
-and agree with existing remote credentials/URL. Prefer importing the trusted
-GPU-host file; manual env configuration is also supported when its URL/token
-exactly match the intended worker namespace. If deliberately changing a worker's bind
-address, stop that idle worker first: an already-running server is still on
-its old address and the deployer will not guess a new health-check target.
-
-Launchers now reject missing prerequisites before migrating the conference or
-opening its browser page. Do not remove `data/` or bypass the checker.
-
-Standalone CPU workers default to two concurrent pages/four threads each. An
-existing explicit `CFM_RAPIDOCR_PAGES=1` or thread value is retained, not silently
-retuned. Native/embedded CPU still defaults to one page; CUDA stays at four.
-Two CPU engines need more RAM; higher page counts may fail the unchanged memory
-bound. Reduce concurrency deliberately if necessary, not DPI/model quality, and
-never accept partial evidence as success. Update CFM and workers from the same
-checkout so their compute contracts agree.
-
-GPU memory remaining allocated between comparisons is expected with residency.
-The shared GPU worker defaults to 1800 idle seconds; set its
-`CFM_GPU_MODEL_IDLE_SECONDS=0` to use the former per-job release, or another
-1-86400-second interval, then recreate through the normal deployer. Do not change
-conference envs or remove cache/review data. Health polling and complete cache
-hits do not keep models warm. Ready + unloaded in Formatting Details is normal;
-new OCR loads models, valid cache does not. An active job delays unloading until
-it ends. Worker logs show safe `gpu_models_loaded` / `gpu_models_unloaded` reasons.
-Timeout/OOM/crash must stop the actor and leave comparison unavailable, not
-partial success. Recheck readiness and explicitly retry after resolving the
-cause; never compensate by changing publication files or bypassing version checks.
-
-- Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
-  and provision the two pinned OCR models using the Developer Guide. Run
-  `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.
-- Docker worker: use `scripts/deploy.py worker --init` only for a genuinely new
-  setup, optionally with `--template <initial-settings>`. Normal `worker` commands
-  update the existing env/auth; `start_comparison_slave.py` is an alias for the
-  same lifecycle, not a workaround for missing configuration.
-  Check the private `clients.json` (0600), read-only model directory and explicit
-  CPU/GPU selection. A missing CUDA provider is not silently replaced by CPU.
-- Docker conference: start the shared worker first, use the same network name,
-  and set its dedicated token. A configured local fallback must be healthy and
-  compatible even if a preferred remote is online. An unreachable optional
-  remote is a warning when local is ready; invalid authentication is an error.
-  New comparisons still pause for remote recovery or explicit local confirmation;
-  successful startup does not authorize an automatic CPU fallback.
-  For Cloudflare Access or another gateway, configure remote-only JSON in
-  `CFM_COMPARISON_REMOTE_HEADERS` in this conference's env file, retaining its
-  worker token. A browser login/redirect is not machine authentication: use a
-  Service Auth policy and service-token headers. Invalid JSON, duplicate or
-  reserved headers fail before requests; 401/403 never silently selects local.
-  Recreate via the unified updater after changing env; a restart alone retains
-  the old environment. Do not share raw env/Compose output containing secrets.
-  See [Remote Gateway Authentication](docker_guide.md#remote-gateway-authentication).
-- Cloudflare `HTTP 403 / error 1010` means browser-signature blocking, not proof
-  of a bad worker token. Shared client/preflight requests now identify CFM with
-  `ConferenceFinalManager/1`; remove an explicit obsolete Python-urllib UA
-  override if it is not intentional. Inspect Cloudflare security events using
-  the reported Ray ID; do not regenerate tokens or disable Access to hide it.
-  Only code/HTTP/provider IDs are displayed, not untrusted remote messages.
-  JSON `401 / protocol:1 / unauthorized` instead identifies worker token rejection.
-- Use `scripts/update_docker_instances.py` for complete CFM-host updates,
-  including local worker/models/credentials; `deploy.py update` is equivalent.
-  Both dry-runs now show actual redacted static/Compose plans, not just a
-  generic message. They do not prove a live service connection. A later batch
-  failure leaves earlier updates applied; after attempted cutover, retain the
-  env/recovery status rather than assuming rollback.
-- Update/migration failures during preflight leave the old web running. Backup
-  checks new-image restart prerequisites before stopping it. After fixing the
-  worker/configuration, retry the normal operation; do not delete volumes.
-
-Successful preflight verifies configuration, dependencies/model sessions and
-authenticated service readiness at that time. It cannot promise uninterrupted
-network availability or that every long OCR job finishes within its configured
-OCR budget (300 seconds by default).
-Optional GROBID and CrossCheck remain optional; this check does not log in to them.
-
-### Python was not found
-
-Install Python 3.12 or newer.
-
-On Windows, enable `Add python.exe to PATH` during installation. The Windows startup script tries `py -3` first, then `python`.
-
-On macOS, install Python 3 and run:
-
-```bash
-python3 --version
-```
-
-### macOS says the script is not executable
-
-Run:
-
-```bash
-chmod +x start.command scripts/start_local.sh
-```
-
-### Port 8000 is already in use
-
-Stop the other server or choose another port:
-
-```bash
-DJANGO_PORT=8001 ./scripts/start_local.sh
-```
-
-Then open <http://127.0.0.1:8001/>.
-
-### Packages fail to install
-
-The first run needs internet access. Retry after checking network access:
-
-```bash
-.venv/bin/python -m pip install -r requirements.txt
-```
-
-## PDF Reader Cannot Display A File
-
-The dedicated reader intentionally fills the window and omits the work pages'
-Navbar/footer. Close its tab or use browser Back to return to the prior page.
-Fit width and Fit page control the document zoom, not the reader's viewport
-size. On a small window the toolbar wraps and the PDF fills the remaining area.
-The default Single page layout uses wheel gestures to turn pages without
-continuous scrolling. At zoomed-page boundaries, pause briefly and start a new
-wheel gesture; the previous gesture's momentum is intentionally ignored.
-Previous/Next and the page number remain available, as does Continuous scrolling
-in the toolbar. Horizontal/modified gestures are not intercepted. A new reader starts in
-Fit page + Single page; layout/zoom are not saved to conference settings.
-
-Keyboard page navigation works in the PDF area, not while a search/page-number
-input or another control has focus. Click the PDF or Tab back to its region.
-Left/Right turn pages, Home/End jump to first/last, and vertical/page keys pan
-before turning at a boundary in Single page mode. Release a held key before
-crossing another page. Continuous mode keeps native vertical-key scrolling.
-
-The page-thumbnail sidebar starts closed on narrow windows. Use the thumbnail
-icon at the toolbar's left to open it; its list scrolls separately from the PDF.
-Unseen thumbnails are not all rendered in advance. `Preview unavailable` affects
-only that page's thumbnail: the button still navigates, and closing/reopening
-the panel retries failures. The main reader's missing/corrupt/stale-file rules
-remain authoritative. Browser thumbnails do not use or regenerate DB review
-images, and they are not publication evidence.
-
-Use Open directly to check the same endpoint with the browser's PDF viewer, or
-Download PDF for a local PDF reader. A missing Corrected file is not replaced
-with Original, and an expired/corrupt revision or comparison must be handled
-through its owning workflow. Rebuilding the reader page cannot repair a missing
-file or reapprove a review. Live publication links resolve again when fetched;
-they are not permanent historical snapshots.
-
-If the runtime fails to load after an update, refresh the page and check that
-all pinned PDF.js static files were deployed/collected, including the module
-worker, CMaps, fonts, WASM/ICC resources and viewer CSS/images. The display,
-worker and viewer versions must match. Static `.mjs` files need a JavaScript
-MIME type and `.wasm` files need `application/wasm`; use the supported
-Django/WhiteNoise setup or the Nginx template's explicit `.mjs` mapping. No npm install or CDN is needed on the
-operator's machine. Direct opening remains available when JavaScript is off.
-
-Search uses the PDF's text layer; scans may have no searchable text. Rendering
-in PDF.js is not proof that figures, references, fonts or layout are unchanged;
-inspect the full PDF and use the read-only comparison workspace as appropriate.
-
-Use this guide when the local app behaves unexpectedly.
-
-## Imports
-
-### Record edit says the preview is stale
-
-Existing Paper Master and Final Submission edits are previewed before apply.
-If the record, its selected current file, or its staged upload changed after the
-preview, the system rejects confirmation and removes the temporary token. Reopen
-the edit page, check the current values, select files again if needed, and create
-a new preview. Do not work around this check by editing the database or files.
-
-Selecting the same file bytes again produces `No effective changes to save`.
-This is intentional: a filename or upload event alone must not reset verified
-publication evidence.
-
-### CSV has encoding errors
-
-Use the app's template download when possible. If a CSV came from Excel, save it as UTF-8 CSV or upload XLSX instead.
-
-### Preview shows changes but Apply has not run
-
-Preview pages do not mutate records or files. Review the differences and click Apply Confirmed Changes when the preview matches the intended import.
-
-If Apply says a preview file changed, do not reuse the token. Upload and preview
-the metadata/files again; the stored size or SHA-256 no longer matches what was
-reviewed.
-
-Editor Upload and Formatting title-guard previews also expire after two hours.
-An expired, missing, or changed preview is intentionally not recoverable; start
-a new preview so the confirmation is bound to the exact current bytes.
-
-### Paper Master notes would be overwritten
-
-Paper Master Import Preview offers a notes choice. Keep the default Preserve existing system notes unless the import file intentionally contains the updated internal notes.
-
-### Final Submission files did not match
-
-File names should include the Final Submission ID, for example:
-
-- `34_file_Submit_PDF.pdf`
-- `34_file_Submit_Source.zip`
-
-The app uses file extension to identify PDFs and source files, so misplaced upload slots can still be corrected if the extension is clear.
-
-## Processing And Review
-
-### Dashboard looks clear but final export is blocked
-
-Dashboard and final package export use the same readiness service. Refresh the page after an import or review action. If they still disagree, do not force the final package; record the categories shown by Export Reports and inspect Audit Log. A disagreement is a system defect, not an editorial condition to work around.
-
-The Dashboard header distinguishes affected papers from blocking checks. One paper can have several checks, so the two numbers do not always match.
-
-Next-action card totals and their breakdowns also count affected papers. A
-paper may belong to several breakdowns, so do not add the breakdown values to
-reconstruct the card total. Valid Allowed exceptions are tracked information,
-not Next actions; stale exceptions are blockers. For P/S exceptions, the
-tracked row distinguishes papers from individual approvals because one paper
-can have both a Plagiarism % approval and a Single % approval.
-
-### Dashboard shows Process PDFs needed
-
-Run `/processing/pdfs/`. This alert means an active publication PDF source exists but page count, hash, thumbnails, or debug-copy refresh is missing or stale.
-
-Missing PDFs are separate issues and do not count as process-needed.
-Final Submissions outside Paper Master remain under `Needs decision` and do not
-count as process-needed until their Paper ID is resolved into a Publishing
-Paper Master record. Organized List, Dashboard, the global alert, and Process
-PDFs use the same scope.
-
-### What does Process PDFs change?
-
-Process PDFs is not only a page-count button. It:
-
-- Calculates page count and PDF hash.
-- Generates page thumbnails.
-- Clears page-limit exceptions if page count changed.
-- Recalculates active versions.
-- Rebuilds author cache.
-- Syncs `data/publication_pdf_debug/` from the same Corrected/Original PDF source used by publication export.
-
-It does not scan folders, create submissions, modify original uploads, modify corrected uploads, change source files, change extracted title/authors, change plagiarism scores, or change review statuses. Publication ZIP and CrossCheck ZIP do not read the debug folder.
-
-### Corrected PDF was uploaded but pages look old
-
-Run Process PDFs again. Corrected PDFs are the first publication PDF priority, but thumbnails, page count, hash, and debug copies must be refreshed.
-
-### Process PDFs page is long
-
-Every page thumbnail for each paper on the current worklist page stays expanded
-so blank middle/end pages remain visible. Use the paper status filters, the
-Paper ID / Final ID / title search, and page-size control. Filtering occurs
-before pagination, so an exact ID search can locate a paper that was previously
-on another page. Select `All` only when the complete filtered set must be
-inspected together. Images use fixed-size lazy-loaded tiles, so rapid scrolling
-should not change the layout.
-
-### I found a formatting problem while scanning Process PDFs
-
-Use `Record formatting issue` on that paper card. If the issue belongs to a
-specific page, open its enlarged thumbnail and choose
-`Record issue for this page`. The note is stored in the existing Formatting
-Review notes and the paper becomes `Needs edit`; no PDF or processing metadata
-is changed. Open Formatting Review from the same card to correct files or
-complete Review OK. If a previous Review OK existed, recording the issue
-intentionally invalidates that approval until the paper is reviewed again.
-
-### Formatting queue filter did not update
-
-Formatting, Process PDFs, Organized List, Final Submissions, Author Count,
-Exceptions, Title/Author Review, and Verify Paper IDs use the locally bundled
-HTMX asset for GET-only worklist updates. Dashboard readiness and global alerts
-also load asynchronously. If a partial request fails, the page shows a red
-alert and no workflow state is changed. Retry or refresh. Worklists remain
-normal Django GET URLs. If assets are missing after deployment, confirm
-`htmx-2.0.10.min.js`, `tabler-1.4.0.min.css`, and
-`tabler-1.4.0.min.js` exist under static files. For Docker/Gunicorn, also check
-that `web` completed `collectstatic`, became healthy, and `proxy` mounts the
-same `sms_static` volume read-only. Nginx serves the resulting `STATIC_ROOT` in
-Docker; WhiteNoise is only the non-Docker Gunicorn fallback.
-
-### First readiness load after restart is slower
-
-Dashboard readiness, Error Report, and publication duplicate checks must read
-the current publication files. The first request after restarting the Python
-process computes content hashes; later requests can reuse a hash only while
-the file's device, inode, size, modification time, and change time are
-unchanged. Worklist filters and normal pagination still inspect only the
-necessary scope and hydrate only visible rows.
-
-If repeated requests remain slow, check whether media is on a high-latency
-filesystem or Docker bind mount and confirm the files are not being rewritten
-continuously. Do not work around the delay by forcing a publication package:
-final export performs a strict fresh validation.
-
-### Publication ZIP download stalls through a proxy or tunnel
-
-Publication ZIP responses should include `Content-Type: application/zip` and
-`Content-Length`, without `Content-Encoding: gzip`. The application deliberately
-does not recompress ZIP, PDF, image, Office, or unknown binary responses. If the
-headers still show gzip, rebuild/restart the deployment from the current code
-and confirm the proxy or tunnel is not independently compressing the response.
-
-Current Docker Nginx uses response buffering for dynamic downloads. Large
-responses may temporarily consume proxy-container disk space, up to `10240m`
-(10 GiB) per
-request, while a slow browser receives the file. This is not a download cache:
-the temporary response is not shared or reused and is removed when the request
-finishes or is abandoned. Check Docker host free space if several large
-downloads run concurrently.
-Responses larger than `10240m` still download, but once the finite buffer is
-full Gunicorn may again wait for the client to consume data.
-
-Buffering lets Gunicorn finish its local handoff sooner, but it cannot repair a
-failed export or a connection interrupted after ZIP bytes have already reached
-the browser. Retry the export from the application and verify the downloaded
-archive normally. The gateway fallback may replace an upstream `502`, `503`,
-or `504` only before response delivery has begun; it never automatically
-replays the export POST.
-
-### Upload drop zone summary looks wrong
-
-The upload summary is only a pre-submit convenience based on filename extensions. Remove/reselect the affected files and submit again. The server remains authoritative: Final Submission import still previews metadata/file matches and uses extension/hash checks before Apply. No file is stored merely by dropping it into the browser zone.
-
-### Final import rejects a Mapping Table workbook
-
-Combined Mapping Table workbooks are no longer supported. Download and use the
-Paper Master template on the Paper Master page, apply that preview first, then
-use the Final Submission template and file upload on Final Submissions.
-
-For an existing Final ID, changing Final Title does not silently move the row
-to another Official Paper ID. The current Official ID is preserved and Paper ID
-review is reset. Change the Author-entered ID only when the submitted ID itself
-was corrected. An invalid/unresolved ID remains in Paper ID Review; it is not
-automatically classified as Not Publishing.
-
-### Why did Settings show a missing legacy processed PDF path?
-
-Settings Storage checks DB file references against files on disk. `Legacy processed PDF path` means the old `current_file_path` field. It is retained for older restored data and debug traces, but it is no longer used to choose publication files.
-
-If a real publication source is missing, Error Report shows Missing PDF based on the active submission's Corrected PDF or Original PDF.
-
-### Could publication debug or active-final affect the Publication ZIP?
-
-No. Current publication ZIP generation uses the publication-facing PDF helper:
-
-1. Corrected PDF.
-2. Original active-submission PDF.
-
-`data/publication_pdf_debug/`, legacy `data/active_final/`, and `current_file_path` are not read when building the final or draft publication package.
-
-### Editor Upload asks for confirmation
-
-Editor Upload performs a dry-run title extraction and compares the PDF title with the selected Paper Master title and Final Title. The uploaded title is shown once above vertically stacked comparisons so long titles do not overlap on short or narrow screens. If Paper Master and Final Title are exactly the same, they appear as one reference. Open the temporary PDF to inspect it, choose another PDF to replace the preview, or cancel without creating a record. Confirm a mismatch only after checking that the uploaded file is the intended paper.
-
-If confirmation reports that the preview file or Paper Master changed, the
-previous decision is stale. Reopen Editor Upload and review the current bytes
-and current Master record; no submission was created from the stale preview.
-
-### Formatting upload asks for confirmation
-
-Corrected PDF upload uses the same title safety component. A mismatch does not forbid saving, but it prevents accidental wrong-file upload by requiring confirmation. The ordinary word-level difference is shown first; character-level differences are available in an expandable detail.
-
-### Single Paper Mode loses Next or returns to the first paper
-
-Current versions create a stable Single Paper queue when the mode starts.
-Saving Review OK stays on the same paper; Go next follows the original queue
-instead of recalculating the Pending/Review OK sort. If an old bookmark contains
-only `mode=single&submission=...`, reopen Single Paper Mode from the current
-Formatting list. A message that the queue expired means its two-hour temporary
-session snapshot is gone; the fallback link preserves the original filter and
-search so a new queue can be started.
-
-If the current queued submission was discarded, marked Not Publishing,
-replaced, or otherwise removed from active publication scope, the page reports
-that transition and offers the next valid queue item. It must not display
-`Paper 0 of N`.
-
-### Formatting Save says the record or publication file changed
-
-The review page is stale. Formatting Save and corrected-PDF title confirmation
-are bound to the exact publication PDF/source shown when the page was rendered.
-Reload that paper, inspect the current preview/files, and save again. Do not
-work around the warning by copying an old review status into the database.
-
-The same stale-page rule applies to Final Submission Edit, Paper Master Edit,
-Title/Author Review, Exceptions, and Process PDF formatting triage. Reload the
-page and re-review the current values; do not retry with an old hidden token.
-
-### Title/Author extraction is wrong
-
-Use Title/Author Review:
-
-- Mark Red Flag if the PDF formatting likely needs correction.
-- Correct formatting and upload a corrected PDF/source if needed.
-- Re-extract only the needed records when possible.
-- If GROBID fallback is enabled in Settings, use single-row `Try GROBID` for rows where the built-in extractor misses authors or produces suspicious truncated output. The batch GROBID action only processes extraction errors and Red Flag rows. GROBID failures leave the existing extracted title/authors unchanged.
-- If extraction remains wrong and the PDF/source should not be changed, use row-level `Manual override`. A reason is required, the override is audited, and Title/Author Review returns to Pending. Do not try to edit extracted title/authors from Final Submission edit.
-- Review OK only after extracted title/authors and verification image are acceptable.
-
-Verification image URLs include a file-modification cache buster so a newly generated built-in or GROBID image should replace the previous browser image immediately.
-
-Verification headers use a bundled Unicode font plus a bundled math-symbol
-fallback, so extracted symbols such as `⋆` do not depend on fonts installed on
-the host computer or Docker image. If generation still reports an unsupported
-code point, neither bundled font can represent that exact extracted character;
-do not replace it silently. Review whether the extraction is correct, then use
-Formatting/Re-extraction or Manual Override as appropriate.
-
-Built-in, GROBID, and Manual Override now use the same verification layout. The
-header reuses only confirmed blank space above the PDF title and expands
-upward for the remainder. It always keeps a small safety gap from the first
-visible PDF content; a top logo, line, image, or text forces additional
-expansion rather than being covered. Numbered authors in the header correspond to separate green
-outline/underline regions in the PDF. If a single person appears as two
-numbered entries or two adjacent boxes, the extracted author list was split
-incorrectly even when all text was found.
-
-### GROBID fallback cannot connect
-
-GROBID is optional and disabled by default. If enabled, confirm the API URL in Settings points to a trusted local/internal service such as `http://localhost:8070` or your lab server. Settings shows a green/red health indicator using the GROBID `/api/isalive` endpoint; the indicator refreshes as you edit the URL or timeout, before the settings are saved. The Title/Author page also checks API health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction aborts before processing rows, so unavailable service does not create extraction errors for every paper. If the service drops during a batch, the batch stops at that point; completed rows remain saved and the current/unprocessed rows are counted as skipped. The app calls `/api/processHeaderDocument` for extraction and does not send PDFs to a cloud service unless you configure a cloud URL yourself. Connection, timeout, HTTP, or TEI parsing failures are logged and shown as messages, but they do not overwrite existing extracted title/authors.
-
-### A paper disappeared from a filtered page
-
-Check the page filter. Organized List defaults to All, but review pages can be filtered by status. Use All if you need to confirm whether the record still exists.
-
-## Version And Publication Decisions
-
-### Start2/Editor version decision needed
-
-The same Paper ID has both an undiscarded Start2 version and an undiscarded Editor Upload. The editor upload is temporarily prioritized, but final export is blocked until one side is discarded with a note.
-
-### Discard vs Not Publishing
-
-Discard excludes one Final Submission version from active selection.
-
-In Final Submission Edit, Discard is intentionally under the collapsed bottom `Version actions` danger zone and uses a separate form from `Save Final Submission`. If you mean to exclude the entire paper, leave Edit and use Not Publishing instead.
-
-### Edit returned to the wrong page
-
-Open Edit from the worklist button rather than manually rewriting the URL. Organized List (Checklist or Compact candidates), Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions include a safe local return URL. External `next` URLs are rejected and fall back to Final Submissions.
-
-## A Workflow Link Shows Several Similar Papers
-
-Normal search fields use partial matching, so a search such as `58` may match
-Final ID `58` and Paper ID `R058`. System-generated links from Final Submission
-Edit and worklist details should instead open a `Focused ...` banner and one
-exact record. If a current link still includes a prefilled `q=` solely to locate
-one record, treat it as stale UI and report the source and destination pages.
-
-A focused page may show `Outside review scope` for an inactive, discarded, Not
-Publishing, or non-Master version. That message is safer than showing another
-active record. Use the Edit link or return to the full worklist to resolve the
-version state; do not change the URL to force an out-of-scope record into a
-publication workflow.
-
-Not Publishing excludes the paper from publication output because of an editorial decision such as unpaid, withdrawn, or not in the final publication scope.
-
-Old Versions shows version history. Not Publishing List shows publication decisions.
-
-### A Paper Master record has no Final and will not be published
-
-Do not delete the Paper Master record and do not create a placeholder Final.
-Open Not Publishing List, focus the Paper Master record, choose the editorial
-reason, enter a note, review the scope-impact warning, and confirm. The decision
-is stored on Paper Master, so it works before a Final exists and excludes the
-paper from both final and draft packages.
-
-If the paper later receives a Final Submission, the imported or Editor Upload
-version inherits the Master decision and remains outside publication scope.
-Undo Not Publishing only when the paper should return to the proceedings. If no
-Final exists at that point, Missing Final Submission correctly returns as a
-blocker.
-
-### Publication Decision Required
-
-This state means older data, manually inconsistent data, or a newly imported
-Master ID matching an orphan Not Publishing Final could not be safely
-classified. It blocks final, draft, and CrossCheck exports. Open Not Publishing
-List and explicitly choose either Keep in publication scope or Mark Not
-Publishing; the system must not guess.
-
-### Publication Decision Integrity Conflict
-
-Paper Master is authoritative, but all mapped Final decision mirrors must agree
-with it. This Critical error means an import, restore, or legacy record left
-them inconsistent. Final and draft force export cannot bypass it. Open Not
-Publishing for the Paper ID and explicitly apply Keep Publishing or Not
-Publishing so every mapped version is synchronized. Do not edit the Final
-exclusion fields directly.
-
-### ID cannot be verified
-
-A Paper ID must exist in the Paper Master List and that Master paper must be in
-Publishing state before it can be verified. Correct the ID, undo the Master
-Not Publishing decision, or classify an orphan Final as Not Publishing when it
-should not be published.
-
-For a Final outside Paper Master, open Not Publishing List. Use `Resolve Paper
-ID` to search the real Paper Master records and verify the selected ID, or use
-`Open full Paper ID Review` when you need the detailed title/author comparison.
-Do not use general Final Submission Edit to force an Official Paper ID. If the
-paper truly should not publish, use `Mark Not Publishing` and select an
-explicit reason; leaving the reason blank applies no change.
-
-## Plagiarism / CrossCheck
-
-### Automatic service is unavailable or uses the wrong folder
-
-Test connection/load folders in Settings. Check the saved base URL and confirm
-the exact folder belongs to the displayed conference. A Conference name or URL
-change requires confirming the binding again. IEEE credentials are optional;
-the service's default account is used unless a local/environment override exists.
-Service WebLogin and IEEE credentials are separate accounts. A service 401
-requires its WebLogin credentials, not an IEEE password.
-Expand Optional account settings and enter that service login before testing;
-the connection check uses the current fields, even before Settings is saved.
-Use Save optional credentials to keep them for the entered URL without leaving
-the page, then select/confirm the folder and save Settings. Testing alone does
-not save credentials. New configurations leave the address blank; clearing it
-does not secretly test the previous address. Environment credentials take
-precedence over entered/local values, including after Remove local credentials.
-
-Inside Docker, `127.0.0.1` points at the CFM container. Use a reachable private
-service address or the host-gateway setup in the Docker Guide. System State
-does not carry local credentials; configure them on the receiving machine.
-
-### Batch is uncertain, partial, or timed out
-
-Use Check progress to recover the existing remote job by folder/token. Do not
-upload the same batch again after a connection timeout. A busy-service 409 means
-the request was rejected; a later explicit start is allowed. Browser polling
-stops on connection failure and resumes through Check progress. Results remain
-on the service for its configured retention period (currently seven days), so
-retrieve them before expiry.
-
-The service checks Unprocessed once after its wait period and may include
-per-file IEEE error details in the evidence ZIP. A completed job can contain
-no reports. Inspect batch_results.csv and the original website messages; a PDF
-with too little text may never produce a report. No automatic re-upload occurs.
-For late reports, use Check progress, then Retry remaining downloads and confirm
-the wait limit. The retry-download API creates a new execution for confirmed
-uploads still lacking reports; it does not upload manuscripts again. An older
-API without retry support must be upgraded. If busy, wait and check again.
-An expired/deleted source job cannot be recovered by guessing another job.
-Execution history preserves earlier ZIPs and report links. A retry may also end
-without a report, particularly for blank/very short PDFs or website errors.
-No unlimited background retry occurs. Newly retrieved results still require
-confirmation; already applied results can never be replayed by this batch.
-
-If a publication PDF/active Final changed, the old result is stale. Prepare a new
-batch for the current publication PDF. If only existing plagiarism data changed
-after result preview, use Refresh result preview and review it before applying.
-
-### CrossCheck result import has no report
-
-Reports are optional. The CSV imports `filename`, `plagiarism_percent`, and `single_percent`. Upload report PDFs separately if they exist.
-
-### CrossCheck import reports stale batch/version
-
-The token manifest points to a different Final ID or publication PDF SHA-256
-than the current candidate. Do not rename or reuse the old result. Prepare a new
-CrossCheck token for the current publication PDF, then import that result and
-report.
-
-### Percent values include `<1%`
-
-The app treats `<1%` as 1 for score storage/display.
-
-### Report link is missing
-
-Upload report PDFs through the report upload workflow. The app matches reports by filename and then shows an open-report link.
-
-### Plagiarism score is over threshold but allowed
-
-Open Exceptions and approve `Plagiarism %` or `Single %` separately with a reason. A valid allowed exception moves the issue to Info and does not block final export. If the imported score changes later, the exception becomes stale and blocks export until it is re-approved or removed.
-
-### Review image magnifier does not appear
-
-The in-place magnifier is intentionally enabled only for a mouse or trackpad
-that reports hover and a fine pointer. It does not appear on touch/coarse-pointer
-devices. In Formatting list mode, expand the paper first. Wait for the
-Formatting preview or Title/Author verification image to load, place the pointer
-over it, and hold `Ctrl`. The lens closes when `Ctrl` is released or the browser
-loses focus. The in-image `Hold Ctrl to magnify` hint should disappear
-immediately while the lens is active; it is not a browser-native tooltip. Use
-`Open Publication PDF` or click the full verification-image
-link when the browser or device does not support the modifier-controlled lens.
-
-## Exports
-
-### Final publication package is blocked
-
-Open Error Report and resolve Critical blockers, or approve valid exceptions in Exceptions.
-
-Common blockers:
-
-- Missing active final for a Paper Master record.
-- Invalid or unverified Paper ID.
-- Missing PDF/source, including a selected Corrected file that is no longer on disk.
-- Formatting review Pending/Needs Edit.
-- Source review hash missing after Review OK, or source bytes changed after
-  Formatting Review.
-- PDF not processed.
-- Page count outside limits without allowed exception.
-- Title/author review not OK.
-- Formatting not Review OK.
-- Missing plagiarism scores, or over-threshold plagiarism scores without valid allowed exceptions.
-- Duplicate publication title/PDF/source.
-- Duplicate publication filename after Paper ID/title sanitization.
-- Unresolved duplicate author.
-- Start2/Editor conflict.
-
-If export reports that a file changed during inspection, do not use an older
-generated package. Confirm that no external synchronization or editor is
-replacing files, run Process PDFs again, clear all resulting blockers, and
-export a new final package.
-
-Before Formatting Review is complete, Error Report should show only
-`Formatting Not Review OK`; an empty source review hash is expected at that
-stage. For `Source Review Hash Missing` on a record already marked Review OK, or
-for `Source Changed After Review`, inspect the current source in Formatting
-Review and save `Review OK` again. Do not copy a hash from another record or
-restore an older status directly in the database.
-
-### Error Report count does not match the visible page
-
-Select the relevant `Critical`, `Medium`, or `Info` severity tab. Severity is a
-server-side filter and pagination applies to that filtered result, so the
-worklist should show `1-25 of N` for the selected severity. `All` intentionally
-sorts all issues by severity. Workflow-area links can be combined with severity
-tabs. Category pills are also server-side filters: several selected categories
-match with OR, then combine with the current workflow area and severity using
-AND. Their counts reflect the current severity before category filtering. If
-the result is unexpectedly empty, inspect the selected category pills or use
-`Clear categories`. If the selected severity/category result reports a nonzero
-count but an empty first page, record the URL and app version; that indicates a
-pagination regression rather than missing readiness data.
-
-### Need an intermediate package anyway
-
-Use Download Draft Package Anyway from Export Reports after reviewing the warning. The draft ZIP may skip missing files and includes a warnings CSV. Do not treat it as final-ready.
-
-If the draft request shows a detailed structural-blocker table instead of a
-download, the package cannot unambiguously choose publication records or
-filenames. Draft mode does not bypass those safety checks. Resolve the listed
-version, publication-decision, or filename conflicts and retry.
-
-### Excel export fails
-
-Run:
-
-```bash
-.venv/bin/python manage.py check
-```
-
-If the error mentions dates, inspect uploaded `upload_date` values and re-import with valid dates. If the export still fails, use the Error Report text and recent import preview to identify the row with invalid data.
-
-Excel report generation is atomic and audited. A failed workbook validation,
-concurrent publication-state change, or audit write removes the partial file;
-refresh the current worklist, resolve the reported condition, and generate a
-new workbook. Exporting a report does not rebuild author records or change
-review state.
-
-## Storage And Backup
-
-### Need to trace who changed what
-
-Open `/reports/audit-log/`. Search by Paper ID, Final ID, action, status, or message. The raw file is `data/logs/audit.log`, and the page can download it.
-
-Useful actions to filter or search for include `paper_master_import_apply`,
-`final_submission_import_apply`, `final_submission_edit`, `pdf_process`,
-`formatting_review_update`, `editor_upload_apply`,
-`final_submission_discard`, `paper_id_verify`, `crosscheck_result_import`,
-`publication_package_export`, `system_state_export`,
-`system_state_restore_apply`, `storage_cleanup_apply`, and
-`database_clear_complete`.
-
-### Audit log is missing or empty
-
-The log file is created the next time an audited action runs. If Clear Database was run with `Also archive and clear audit log`, check `data/logs/archive/` for the previous log.
-
-If the whole `data/logs/` folder is missing after moving machines, restore from a System State ZIP made with a current app version. Current snapshots include both active and archived logs.
-
-### Audit log is large
-
-The Audit Log page shows the latest events and search results without loading the whole file into the table. Download the raw log if you need a full external review. Do not manually edit `audit.log`; archive it through Clear Database only when starting a fresh environment.
-
-### Generated reports are taking space
-
-Use Settings > Storage Management > generated reports/exports cleanup. It
-removes regenerated Excel/ZIP downloads, generated publication
-manifest/warning CSV files, and external upload packages. Other CSV files in
-the Reports folder are preserved.
-
-It does not remove original uploads, corrected files, plagiarism report PDFs, System State backups, or thumbnails/previews still referenced by the database.
-
-Conservative cleanup selects only unreferenced generated cache. It does not select publication debug, legacy active-final, or old-version output folders. Review the preview before Apply and stop if any candidate looks like a real upload or review artifact.
-
-### Storage Management keeps showing Loading
-
-Settings loads Storage Management separately so a large or slow Docker bind
-mount cannot block the editable form. Wait for the panel request to finish or
-use Refresh. If it repeatedly fails, check the global request error shown by
-the page, confirm the configured folders are readable inside the container,
-and compare the container paths with the mounted data directory. The scan reads
-metadata but does not change files. Cleanup still requires a preview and typed
-confirmation.
-
-### Thumbnails or previews are missing
-
-Run Process PDFs for page thumbnails. Run Title/Author Review extraction for verification images. Referenced thumbnails and previews are not removed by conservative cleanup.
-
-If they are missing after a System State restore, the ZIP may have been created by an older app version that did not include all review artifacts. Use a fresh System State ZIP from the original machine when possible; otherwise regenerate the missing artifacts and re-check the affected reviews before final export.
-
-### System State restore says unsupported version
-
-The ZIP was created by a different state archive version. Use the matching app version shown in the footer and in the ZIP manifest.
-
-### Restored record times show the restore time
-
-Versions before 1.18.5 could replace automatic creation/update times during
-restore on records such as Master, Final and CrossCheck jobs. Current restores
-preserve these archived times and CrossCheck batch age. Formatting revision
-capture times were already retained. The application cannot infer
-times already lost by an earlier restore; recover them from an original backup
-if needed. Publication files and review decisions are not selected by these
-automatic timestamps, and expired upload previews must be prepared again.
-
-### Restored paths point to the wrong computer
-
-System State restore should remap managed files into this project's `data/` tree. If a path still points to another machine or a temp folder, do not continue publishing from that state. Export a fresh System State ZIP from the original machine and restore again.
-
-### Docker instance problem
-
-Use the [Docker Guide](docker_guide.md) for the current commands and ownership
-model. Start with these checks:
-
-```bash
-docker compose ps
-python3 scripts/update_docker_instances.py --dry-run
-```
-
-Confirm that:
-
-- the command is running from the checkout that owns the Compose project;
-- Docker Desktop is running;
-- `web` is healthy and `proxy` owns the public port;
-- both services use the same `sms_data` source, with the proxy mount read-only;
-- every maintained environment file has a unique
-  `COMPOSE_PROJECT_NAME`, endpoint, and `SMS_DATA_DIR`.
-
-For a maintained environment file, apply changes with
-`scripts/update_docker_instances.py`. A new environment file is not started
-without `--create-missing`. `scripts/rebuild_docker_instances.py` is an alias
-for that same updater; managed envs take precedence and legacy live settings
-are retained only when no managed env is available.
-
-If an update reports missing `worker.env`, clients or a namespace, restore its
-original files/entry before retrying. Do not copy a sample over it, run `--init`,
-delete its volume or generate replacement tokens. The worker default path is
-`runtime/comparison-slave/worker.env`, not an env discovered from a container.
-Pass `--env-file` for a different existing worker file. A backend/project/port/
-mount mismatch requires reconciling the original deployment, not forcing an
-update. Static lifecycle rejection creates no env/auth, models or containers;
-accepted deployment attempts and subsequent failures are separately audited.
-
-If static or media files disappear with `SMS_DEBUG=0`, do not re-enable debug
-as a workaround. Verify the proxy's `sms_static` and read-only `sms_data`
-mounts and rebuild through the updater.
-
-If POST actions return CSRF 403 while GET pages load, confirm Nginx forwards
-`Host $http_host`, including the browser-visible non-default port. Do not use
-`csrf_exempt`, broad trusted origins, or a changed `SMS_ALLOWED_HOSTS` value
-as a substitute for correct proxy headers.
-
-A fallback page with a named backup, migration, update, or restart phase should
-be allowed to finish. A generic unavailable page means no fresh operation
-status explains the outage. The fallback returns to a new Dashboard GET after
-readiness succeeds; verify any interrupted POST, upload, import, or export
-before repeating it.
-
-Update, rebuild, migration, and raw backup share
-`runtime/.docker-data-operation.lock`. Do not remove an active lock. Locks
-older than 12 hours are treated as stale. Preserve both the host mirror and any
-`.backup-swap` directory when both exist, then inspect
-`.sms-docker-backup-history.jsonl` before retrying.
-
-To run temporarily from the verified host mirror, use the bind-rollback
-procedure in the [Docker Guide](docker_guide.md#roll-back-to-the-host-mirror).
-Never add `-v` to `docker compose down`.
-
-### Formatting history missing or unavailable
-
-After upgrading to 1.14.0, apply migrations and run
-`python manage.py backfill_formatting_revisions` using the app environment.
-Capture is idempotent and includes inactive/discarded corrected submissions;
-it does not recover revisions that were never recorded. Check command errors
-and free disk space if a baseline or upload cannot be copied.
-
-History downloads verify their own stored SHA256 and return a readable error
-for missing or changed files. They never substitute a current file. Reopening
-Formatting Review or processing PDFs will not reconstruct historical bytes.
-Recover missing history files from a verified System State backup. If the
-pre-restore safety backup reports incomplete history, recover those exact files
-from the ZIP first; do not substitute a current file or bypass hash checks.
-Current publication safety checks validate current files independently.
-
-New System State archives use v6 and include revision records/files. A v5
-restore legitimately has no recorded history; capture existing corrected files
-afterward. An incomplete or damaged v6 ZIP must be rejected, not downgraded.
-
-### PDF comparison unavailable or unexpectedly noisy
-
-In service mode, first check the configured local/remote worker endpoint, API
-token, worker model provisioning and exact application/worker code compatibility.
-Do not substitute embedded execution or change models to hide an unavailable
-worker. An explicit authentication error needs the correct namespace token.
-Busy means queued/running, not offline. After a lost response, Retry checks the
-same job on the same worker; restoring connectivity is preferable to starting
-another copy. Deployment changes during that job are rejected until the original
-configuration is restored or its routing lease expires (130 minutes after its
-last use). The lease deliberately outlives a job's two-hour retention boundary.
-
-If CFM reports a rendering mismatch, the worker and viewer produced different
-inspection pixels for the same bytes. Align the PyMuPDF/rendering runtime and
-retest; do not remove the hash check or apply shifted overlays. A GPU backend
-must actually initialize CUDA; a failed CUDA setup cannot silently claim GPU
-execution while doing CPU OCR. Shared-worker storage and credentials are not
-restored from a conference System State ZIP.
-
-Method 9 uses rendered-page RapidOCR, not the former method-6 glyph-proof
-engine. **Text differences** are OCR-localized candidate edits; **unlocated
-ranges** need manual confirmation; **information** includes tolerated visual
-differences and spacing/wrap records. Inspect actual page pixels, raw OCR and
-the reason, not just the count. Image text/formulas can still be misrecognized.
-
-The broad 38-group policy deliberately tolerates some real edits, including
-O/0, f/t, rn/m and S/5. Whitespace-only now here/nowhere and 1 1/11 changes can
-also be missed. This is not spelling correction or proof of equality. Minus,
-decimal, question-mark or word deletion is not automatically exempted; mixed
-ordinary edits must remain visible. Identical OCR errors or omitted text on both
-sides can still hide changes. Manual figure/layout/table/math review is required.
-
-Hyphen-only words are shown as Info under **Hyphens**, not silently omitted.
-`real-time/realtime` and changed wrapping may pass only the bounded word rule;
-the letters/case must still agree. Negative values, numeric ranges, short
-variables, ambiguous dash forms and explicit math syntax remain warnings.
-`re-sign/resign` may be Info despite a real meaning change. Rebuild a comparison
-to apply a new policy; an old signed snapshot is not retroactively relabelled.
-Update CFM and workers together, because this rule changes the compute/cache
-contract. A first post-update comparison may need fresh OCR, even for old PDFs.
-
-**Engine coverage: limited** means a result with inspection limitations, even
-with zero changes. Missing coverage metadata is not complete. **Comparison
-unavailable** means no usable result, including missing dependencies/models,
-OCR/render failure or worker timeout; it must not appear as zero differences.
-A page-image display error is separate. Model files must be provisioned before
-requests, with no automatic request-time download or native-text fallback. Check
-`BASE_DIR/runtime/rapidocr-models` by default, or the explicitly configured
-`CFM_RAPIDOCR_MODEL_DIR` when present. For embedded execution, conference Compose exposes the default as
-`/app/runtime/rapidocr-models` through its app mount; do not add another mount just
-for that default. External overrides require a container-visible mount and the
-container environment variable. Check for a stale override before changing the
-default files; an invalid override does not fall back. Service mode instead uses
-the worker's read-only `/opt/rapidocr-models` mount, not the conference app's model
-folder. See
-[local setup](developer_guide.md#pdf-comparison-runtime) and
-[Docker setup](docker_guide.md#pdf-comparison-runtime). The research environment
-under a temporary directory is not a production dependency.
-
-The optional CPU evidence cache is keyed by PDF bytes and validated runtime, not
-Paper ID alone. A model/runtime/thread change or corrupt/expired cache triggers
-fresh OCR. A busy identical pair must finish or fail before retry. Cache storage
-errors do not invalidate saved files; computation proceeds fresh where possible.
-Completed Original extraction can survive a later corrected-side timeout, so a
-retry may be faster, but first-time work can still exceed the configured budget. Never
-increase confidence merely because a cache hit is fast. The seven-day, 512-MiB
-embedded cache is excluded from backups and emptied by Clear Database. Ordinary
-cleanup preserves it, independently of review images and revisions. Shared-worker
-cache/job storage is separate: Clear Database does not delete worker namespaces.
-Worker TTL and quotas bound retention; remove service storage only through a
-deliberate maintenance operation, never conference cleanup.
-
-For worker tuning see [Worker OCR Settings](docker_guide.md#worker-ocr-settings).
-Change the worker's environment/Compose, not a conference's inference settings in
-service mode. If Medium cannot load, provision the exact selected pinned pair;
-never rename a Small model to satisfy a Medium filename. Recreate only during
-maintenance. A model/concurrency runtime change makes old completed worker jobs
-require explicit retry. A 240-second CFM request returning Retry is not the same
-as the worker's default 300-second OCR timeout. GPU OOM is an explicit failure;
-reduce configured concurrency deliberately, not image resolution or model checks.
-
-Rebuild method-8 and older cached results for method 9. If unexpected differences
-remain, retain input hashes, runtime/model versions, raw OCR, actual locations
-and tolerance rule IDs for diagnosis. Do not edit source PDFs, suppress all
-unlocated ranges or add paper-specific rules to reduce counts. The
-[comparison contract](pdf_comparison.md) explains the accepted policy and limits.
-
-A saved Formatting PDF now starts an Original comparison through the returned
-page, not as part of saving the upload. If comparison fails, the corrected PDF,
-revision history, and normal upload resets remain saved. Use Retry comparison
-for network/extraction/storage problems. An already-running message means a
-duplicate build was not started; Retry can check it again without polling.
-Leaving the page can interrupt comparison; a subsequent page load reuses a
-completed result or starts the still-pending latest receipt. An expired receipt
-or newer PDF upload cannot be retried as if it were the old version: open manual
-Compare PDF for the current files. Missing Original is reported, never replaced
-with a previous revision. Title guard previews/cancelled uploads do not trigger
-comparison, and source-only/status/notes changes create no new request.
-The identified out-of-filter status is shown only on a fresh upload's first
-return. After Review OK removes a paper from Needs attention, its comparison
-belongs under Review OK/Edited/All, not above an unrelated empty list. Reopening
-a card rechecks its receipt; a stale revision shows unavailable instead of an
-old completed action. Validation errors reopen the submitted card, but browser
-security requires selecting failed uploads again.
-
-Compare PDF uses saved files only; save an upload before comparing. Rebuild
-after two hours or when a PDF, baseline, active version, or publication scope
-changes. A missing selected corrected PDF never falls back to Original. Recover
-missing/corrupt revision files from a verified backup; comparison does not
-repair files or create revisions. Temporary comparison data is deliberately
-absent after System State restore.
-
-Scanned/textless PDFs can be recognized from pixels; empty OCR is not proof of a
-blank page. Password-protected or over-limit PDFs may need manual comparison.
-Some inputs can also crash the native OCR library. Isolated macOS testing found
-a generated two-page blank PDF with a rotated first page fails in both the
-pre-optimization and optimized workers. The parent reports Comparison unavailable;
-do not interpret that as equality or skip manual PDF inspection. Cache reuse does
-not repair this native-runtime availability limitation.
-Matched movement/reflow is not a red edit. Unlocated ranges can reflect large
-rewrites, repetition, absent anchors, formulas or unreliable OCR/order; they
-are neither confirmed deletion nor equality. Bounded work and display limits
-must leave explicit reasons/counts rather than silently discarding remainder.
-Ordinary cleanup protects open comparison folders even if Reports overlaps
-them; normal expiry and Clear Database remain responsible for removal.
-
-Hover inspection does not change pages or scroll either document. Use explicit
-result/page controls to navigate; existing linked-page behavior is unchanged.
-Move anywhere on either page to magnify using the current connection's region
-pair, or relative position only when no current-page pair exists. Next/Previous,
-multi-region and candidate connections use the same endpoints as magnification.
-Candidate positioning is explicitly unverified. A hidden/offscreen line does not
-remove its logical pair; choose Relative position to deliberately bypass it.
-Missing OCR counterparts do
-not hide a valid page crop. These are position
-previews, not matched-character regions. Keyboard/touch and the close control
-remain available. Missing counterparts have no fabricated connection. If a page
-or crop fails to load, retry rather than trusting stale image content.
-**No corresponding text** means any opposite reference page is navigation only.
-Review all actual locations and unresolved content; no count certifies layout,
-figures or full mathematical structure.
-
-Magnification first uses the immediate page preview, then sharpens on a short
-pointer pause. High detail means the same verified snapshot was rendered locally
-at the requested display density. Preview only means this extra render failed;
-it is not a new OCR failure. A changed/expired snapshot hides the crop and needs
-a rebuilt comparison, never a substituted PDF. Check the browser request to the
-comparison's `/detail/<page>.png` endpoint if detail consistently fails. Scanned
-PDFs or embedded raster figures remain limited by their original resolution.
-
-### Need a completely clean conference
-
-Download a System State ZIP first if the current work must be preserved. Then use Settings > Clear Database. This wipes database records and managed files so the app starts a new conference environment.
-
-Clear Database preserves `data/logs/audit.log` by default. Check `Also archive and clear audit log` only if the new environment should start with a fresh log; the old log will be moved to `data/logs/archive/`.
-
-Configured folders outside the application `data` and media roots are reported
-but preserved. This prevents a shared absolute Reports, extraction, plagiarism,
-incoming, or output folder from being recursively erased. Remove an external
-folder manually only after confirming that every file in it belongs to the
-conference.
+Find the symptom, inspect its exact Paper/Final ID, then use the normal workflow.
+Do not repair publication state by editing SQLite or swapping files in `data/`.
+
+## Startup And Deployment
+
+| Symptom | Check / safe next step |
+| --- | --- |
+| Python/venv fails | Native needs Python 3.12+. Rename only the broken `.venv`, recreate/install; preserve DB/data |
+| Port 8000 in use | Stop the known server or choose another native `DJANGO_PORT`; do not kill an unidentified process |
+| Startup preflight fails | Read the category: models, dependency/provider, worker auth/contract or network; repair that prerequisite before migrations |
+| Missing/corrupt OCR models | Provision exact selected models; checksum failures refuse overwrite. Do not substitute models or bypass checks |
+| Worker env/auth missing on update | Restore original `worker.env`/clients; never use `--init` to invent replacements |
+| Worker project/backend/mount mismatch | Verify owning checkout and preserved identity; a rename is not an update |
+| Existing env edits seem ignored | Run selected-conference updater; `docker restart` does not reload Compose env |
+| Dry-run succeeds but apply fails | Dry-run is configuration planning, not live build/API/runtime validation |
+| Deployment cutover failed | Inspect retained env/containers and earlier completed updates; do not assume migrations rolled back |
+| New UI but old worker | Update both from compatible code; check Formatting Comparison services version and Details |
+
+Use [Deployment](deployment.md) for commands and
+[Operations](operations.md#recovery) for recovery.
+
+### Remote Worker / Gateway
+
+| Observation | Meaning / action |
+| --- | --- |
+| 401 or worker unauthorized | Verify that conference's worker bearer token/clients entry |
+| Cloudflare 1010 | Browser-signature policy rejected the client, not proof of bad worker token |
+| Access redirect/login HTML | Use the direct API origin and correct Service Auth headers/policy; redirects are not followed |
+| 403 without recognized provider code | Access denied; do not guess the layer from status alone |
+| Ready/cuda health | Worker runtime is validated; it does not certify PDFs or guarantee job duration |
+| Busy | Service has work; do not force another copy elsewhere |
+| Not ready / preflight pending | Wait/check the reported runtime category; do not treat as auth success plus usable compute |
+| GPU models unloaded, service Ready | Expected idle state; a new inference reloads weights |
+| Local fallback confirmation | Remote is configured but new work would use local CPU; you can repair remote instead |
+
+CFM uses the shared application User-Agent. Optional custom headers must be
+valid one-line JSON in each conference env. They supplement, not replace,
+`Authorization`. Do not paste token/env/inspect output into support logs.
+
+## Imports And Record Edits
+
+| Symptom | Action |
+| --- | --- |
+| Preview changed records but nothing saved | Apply is a separate confirmation |
+| Edit/preview says stale | Reopen/review current values and re-upload if required; no unseen-state merge |
+| Master notes would be lost | Keep default Preserve existing system notes |
+| Existing paper absent from import | Import is not a replace-all/delete operation |
+| Mapping Table rejected | Use separate Master/Final templates |
+| Upload files unmatched | Check Final ID and template filename rules; verify preview before Apply |
+| Too many uploaded files | Split requests above 5000 files; not a CSV row limit |
+| Official ID changed unexpectedly | Check Author-entered ID, prior blank mapping and audit; unchanged populated mapping is preserved on re-import |
+
+## Scope, Processing And Reviews
+
+| Symptom | Action |
+| --- | --- |
+| Master has no Final, will not publish | Mark Master Not Publishing with reason, optional note and confirmation |
+| Final not in Master | Resolve through signed Paper ID picker or explicitly exclude; invalid ID is not auto-exclusion |
+| Decision Required | Resolve Master publication decision; neither draft nor final can bypass it |
+| Integrity conflict | Resolve Master/Final decision mirrors through normal services; do not trust the more convenient field |
+| Start2/Editor conflict | Inspect/discard unwanted version with reason |
+| Dashboard Process needed | Run Process PDFs for current candidates; missing PDFs are a different issue |
+| Old preview/pages after correction | Run Process PDFs, then re-extract/review as requested |
+| Pending Format shows no source hash | Normal until Review OK; missing hash is an integrity issue only after approval |
+| Review link shows similar IDs | Use exact system link/target; remove a manual broad search if needed |
+| Saved paper disappears from filter | Status changed out of that filter; use All/exact link. Single mode retains its captured queue |
+| Single queue stale/expired | Return to list and start a new queue |
+| Manual override/review panel stuck loading | Check failed request/console; reload. Do not repeatedly save or edit DB |
+| GROBID unavailable | Check Settings URL/health; prior extraction is retained on failure |
+| Extraction failed with a field error such as 'lines' | Read card message and audit/server traceback; malformed extraction data is failure, not reviewed metadata |
+
+Process PDFs does not rewrite manuscripts. Debug-copy loss cannot change export
+selection. A missing **selected Corrected** PDF/source must be restored/replaced,
+not worked around by pointing at debug/legacy paths.
+
+## PDF Reader And Images
+
+| Symptom | Check |
+| --- | --- |
+| PDF reader blank/error | Same-origin endpoint validity, file availability, static worker/module request and MIME type |
+| Works with Open directly only | Reader/static problem, not permission to select another PDF |
+| Images missing after restore | Verify archive includes referenced review artifacts; do not re-extract automatically and reset approved review |
+| Image appears broken before loading | Shared loading/error component should hide incomplete image; inspect failed image request |
+| Magnifier absent | Hold Ctrl on supported first-page/verification image; check lazy/HTMX initialization |
+| Low-detail comparison crop | High-detail fetch may fail/time out; Preview only is explicit. Embedded raster images cannot gain detail beyond their original pixels |
+
+Nginx must serve PDF.js `.mjs` as JavaScript and retain fonts/CMaps/WASM assets.
+Do not "fix" this by changing file selection, disabling CSRF or enabling PDF scripts.
+
+## Comparison
+
+| Symptom | Meaning / next step |
+| --- | --- |
+| Many red marks | OCR can misread; inspect raw evidence. Counts are not confirmed document defects |
+| Many Info marks | Deliberate visual/spacing/hyphen tolerances; these can hide genuine similar-looking edits |
+| Limited/unlocated | Missing reliable local correspondence; inspect actual PDFs |
+| Unavailable/timeout | No completed result, not no changes. Check backend/work bounds; cold CPU can exceed 300 s |
+| Old-method snapshot rejected | Rebuild with current CFM/worker contract |
+| Comparison on wrong-looking card | Verify owning Final/revision; refresh/reopen. Never approve from another card's cached panel |
+| Blank opposite side | Valid when the linked page has no counterpart; manual page navigation is available |
+| Auto match seems relative | Inspect selected finding/pair; no valid pair means relative position |
+| Current Corrected missing | Restore/replace current file; history/cache is not fallback |
+
+New-compute confirmation is unnecessary only for complete validated cache.
+Health, job completion and zero findings do not approve publication.
+See [comparison limits](pdf_comparison.md#accepted-blind-spots).
+
+## CrossCheck
+
+| Symptom | Action |
+| --- | --- |
+| Login prevents Test connection | Enter optional service credentials before testing/loading folders |
+| Service on Docker host unreachable | Use reachable host address, often `http://host.docker.internal:18765`; container localhost is not the host |
+| Wrong folder risk | Confirm exact folder/conference association in Settings before upload |
+| Countdown but scores unchanged | Poll updates job evidence, not paper scores; result Apply is explicit |
+| Complete job, missing reports | Inspect per-paper outcomes; Retry remaining downloads only for confirmed uploads |
+| Lost submit/retry response | Check progress to reconcile original job; don't re-upload blindly |
+| Result stale | Exact Final/PDF or current plagiarism evidence changed; refresh preview or create a new batch |
+| Retry won't overwrite applied result | Intentional replay protection, including after restore |
+| P/S exception stale | Score changed from approved value; re-review/re-approve |
+| Missing report but scores present | Reports are optional for manual missing-score export; automatic apply needs its required report evidence |
+
+## Exports, Audit And Recovery
+
+| Symptom | Action |
+| --- | --- |
+| Final package blocked | Follow exact Error Report findings; draft cannot bypass structural ambiguity |
+| Workbook contains Not Publishing | Expected in selected internal supporting sheets; not in final ZIP |
+| Source missing after Review OK | Restore/review exact selected source; don't weaken source binding |
+| Excel generation failed | Check output permissions, snapshot concurrency and audit failure; no partial workbook should be promoted |
+| Error count differs from visible rows | Counts can span all filtered results; confirm severity/category/search before pagination |
+| Audit empty/unwritable | Check application storage/permissions; don't fabricate past events or hide audit failures |
+| Storage inventory fails | Inspect inaccessible roots; cleanup must not treat unreadable storage as empty |
+| Restore rejected | Check archive version/completeness/hashes; never bypass validation or relabel its version |
+| Old-machine path remains | Stop publication, inspect restore preview/reference warnings and backup completeness |
+| Restored timestamps look new | Current restore preserves them; an old restore's overwritten history needs the original backup |
+
+Keep original ZIP/logs when investigating. [Operations](operations.md) covers
+what is backed up, cleanup boundaries and mirror rollback.

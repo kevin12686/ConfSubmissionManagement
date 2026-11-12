@@ -1,896 +1,182 @@
-# Architecture Notes
-
-## Comparison Service Observability
-
-Release identity lives in dependency-free `submissions/version.py`, shared by
-Django and the minimal CPU/GPU images. Authenticated health adds packaged version
-and allowlisted effective settings captured after successful runtime validation.
-`comparison_metadata.py` sanitizes both server output and peer input; it never
-serializes environment dictionaries or credentials. Formatting reuses its
-existing bounded poll/cache and responsive Details. These fields are not routing,
-readiness, compute-contract or signed-cache identity. Embedded settings are labelled
-configured, not independently validated. GPU idle lifetime retains model sessions
-only; namespace settings, file caches and article evidence remain isolated.
-
-## PDF Browsing Boundary
-
-`submissions/services/pdf_viewer.py` builds presentation URLs and validates
-the reader's allowlisted local PDF sources. `controllers/pdf_viewer.py` renders
-a GET-only shell without opening, proxying, hashing or selecting the file.
-Templates use the shared `pdf_viewer_url` filter / `pdf_viewer` URL tag;
-`PDFFileInput` uses the same presentation path for the original-PDF widget.
-This works on normal navigation and lazy/HTMX fragments without click handlers
-or per-page initialization.
-
-The local PDF.js 6.4.299 legacy display/worker and viewer components provide
-document parsing, lazy rendering, text selection, internal PDF
-navigation and search. CFM supplies the shared toolbar and site styling. The
-reader reuses the base template's layout slots to fill the viewport without
-work-page chrome; only its scoped CSS owns viewport sizing and scrolling.
-No alternate PDF loader or endpoint is used for the full-window layout.
-The same viewer defaults to Fit page and native `ScrollMode.PAGE`; its optional
-continuous layout uses `ScrollMode.VERTICAL`. These are transient browser
-display choices, not stored workflow state or a different file source.
-Its shared reader-only navigation module advances via public viewer methods;
-gesture locking prevents trackpad momentum from skipping pages, while zoomed
-pages retain native scrolling before a fresh boundary gesture can turn a page.
-Keyboard input uses the same boundary/positioning functions and scopes keydown
-to the PDF container. Held keys may pan, but need release before another page
-turn; controls, modifiers and input focus remain native.
-The collapsible thumbnail sidebar uses that exact loaded PDFDocumentProxy and
-native page rendering. It never loads another PDF or reads DB thumbnail folders.
-Serial, near-visible rendering and a bounded in-browser canvas cache keep long
-documents manageable. Sidebar page clicks/selection and rotation synchronize
-through the existing viewer; no file/version selection is introduced.
-Annotation editing, interactive form filling, PDF scripting and XFA execution
-are disabled; application files are never serialized from the viewer.
-Download/direct links still target the original endpoint. No external PDF URL,
-general application URL or arbitrary filesystem path is accepted.
-
-Publication and row-scoped helpers, file endpoints, immutable revision checks
-and comparison snapshot validation remain authoritative. The browser cannot
-change active versions, review state, readiness or export bytes. Existing
-images and comparison overlays remain on their prior renderer. The new reader
-has no model or stored workflow state; the thumbnail UI does not change System
-State v8 or add archived preview files.
-
-Conference Final Manager is a local Django application with SQLite storage and local file management. The application is intentionally no-login and single-machine.
-
-This document explains system boundaries and safety rationale. The canonical
-business rules are in [Publication Rules](publication_rules.md), and shared
-presentation behavior is in [UI Conventions](ui_conventions.md). Procedures
-belong in the audience-specific guides listed on the
-[Documentation Home](README.md).
-
-## Application Boundaries
-
-- Controllers handle HTTP forms, redirects, Django messages, downloads, and template rendering.
-- Application selectors assemble read-only page contexts and query composition.
-- Application commands wrap state-changing workflows and return result objects.
-- Services contain domain logic for imports, verification, PDF processing, formatting, title/author extraction, CrossCheck/plagiarism integration, exceptions, reports, storage cleanup, and backup/restore.
-- Templates stay server-rendered Django pages using locally pinned Tabler 1.4.0 with Bootstrap-compatible markup; there is no React or separate frontend build.
-
-Formatting comparison is a separate read-only service/controller/workspace,
-not a branch of PDF processing or Formatting save. Method 9 renders each exact
-saved PDF independently and compares local RapidOCR output. The current
-publication helper selects After; Before is the same submission's Original or a
-hash-verified Formatting revision. No FinalSubmission or mirrored state is
-written. The build checks scope/files again before retaining signed, two-hour
-snapshots in `data/formatting_comparison_previews/<token>/`. PDF/image access
-rechecks current scope, live identities/hashes and the snapshot SHA256.
-Generated page images never become publication input. Missing/changed documents
-fail explicitly. Comparison data is excluded from archives, protected from
-ordinary Reports cleanup and covered by full Clear Database. Archive v8 is
-unchanged because retained state/artifact contracts do not change.
-
-The isolated worker performs rendering, local OCR and bounded alignment; the
-parent service owns source selection, audit, snapshots and revision binding.
-`pdf_comparison_cache.py` owns signed, bounded CPU evidence reuse shared by
-manual and automatic builds. The worker validates the actual model/runtime
-fingerprint before accepting byte-identical document/pair evidence, and can
-exchange bounded JSON only through a private parent-created temporary directory.
-Completed document evidence can survive a later failure; failed pair results
-cannot. Cache hits still pass live source/revision checks and create new inspection
-snapshots. Direct BGR input removes only the lossless PNG roundtrip, not rendering
-or OCR. See [cache contract](pdf_comparison.md#local-cpu-evidence-reuse) for bounds,
-invalidation and lifecycle. Embedded execution is the native default. Service
-mode delegates this same computation to `comparison_slave`, an independent
-single-scheduler HTTP service with a private job ledger and per-client cache.
-`comparison_client.py` owns routing/idempotent reconciliation; neither client
-nor worker is allowed to select publication files. `comparison_protocol.py`
-binds code/model contract, ordered PDF hashes and inspection render checks.
-CPU/GPU cache profiles remain separate. Remote unavailability pauses new work
-unless a bound short-lived local-execution confirmation is supplied;
-verified full-result cache reads on either worker do not require compute consent.
-Read-only reuse on another worker never moves or restarts an accepted route.
-busy/uncertain accepted jobs stay pinned to one worker. Old local routes do not
-implicitly authorize new submissions or waiting for unfinished local work.
-Completed evidence remains reusable with all existing identity/render checks.
-`comparison_execution_choice.py` owns consent binding and sanitized execution
-labels; successful snapshots retain this metadata independently of live health.
-`comparison_health.py` owns bounded, briefly cached observations for Formatting's
-ten-second visible-tab status polling. This observer cannot submit jobs, renew
-routes or authorize fallback. The dispatcher always checks independently.
-The shared worker Compose has no conference volume. Both conference update
-commands use one orchestration layer to prepare it once for the selected batch
-when code/configuration or client enrollment requires an update, reusing an
-unchanged healthy worker. `docker_update_engine.py` owns validated container
-planning/cutover; `update_docker_instances.py` is a thin compatibility CLI into
-the same workflow as `deploy.py update`, without a recursive CLI dependency.
-Batch preparation validates all static settings/data/port constraints before
-provisioning. Apply is per conference, not a distributed transaction. Keep
-earlier completed updates and retain staged config after attempted cutover
-for recovery. See the
-[service contract](pdf_comparison.md#shared-comparison-service).
-Optional remote gateway headers are per-conference env-only JSON. A shared
-standard-library parser validates them for deployment/preflight and the HTTP
-client. Every remote API call uses them alongside the worker Bearer token;
-local endpoints never receive them. Reserved auth/evidence/transport headers
-cannot be replaced, redirects remain forbidden, and gateway denial fails
-explicitly rather than selecting another worker. Header credential rotation
-does not change the worker route or cache identity. Values are secret deployment
-state, redacted by management tools and excluded from conference archives.
-The standard-library `comparison_http.py` shares application User-Agent and safe
-HTTP diagnostics between worker clients and host checks. It reports status,
-allowlisted provider codes and bounded Ray IDs, not arbitrary response prose,
-cookies, redirect URLs or credentials. These headers/diagnostics are not part
-of the inference contract or signed route identity. Accepted-job pinning remains
-unchanged; local selection after remote unavailability now requires consent.
-RapidOCR 3.10.0 uses independently selected, pinned PP-OCRv6 Small/Medium
-detection/recognition models with ONNX Runtime
-1.31.1. Models are explicitly provisioned before use, not downloaded by a
-comparison request. The unified deployment provisioner can download missing
-models from fixed HTTPS URLs and verifies the canonical pinned SHA256 policy
-before installing them. Existing invalid models are preserved and rejected,
-not silently replaced. Offline and dry-run never download. This is host
-deployment state, not a publication or extraction workflow.
-Execution policy is centralized in `rapidocr_comparison/config.py`. Standalone
-CPU workers default to two independent OCR lanes, native/embedded CPU to one
-sequential page, and CUDA to four independent lanes, dynamically
-dispatched with bounded in-flight images and deterministic page-order assembly.
-CUDA recognition's weight-free shared reduction graph transfers indices/maxima
-to the unchanged CTC decoder, retaining original NumPy handling for exceptional
-values. Both default to a 300-second OCR budget with supervisor budget +30.
-Selected models/concurrency are runtime/cache identity, not publication authority.
-Workers and conferences must share the updated compute contract. No schema or
-State archive version changes are needed for these deployment settings.
-GPU residency is owned by `comparison_slave/resident.py`, not conference state.
-It supervises one pure OCR child (`rapidocr_comparison/resident_worker.py`) and
-private bounded IPC (`resident_protocol.py`). Namespace jobs/cache signing remain
-fresh isolated children; inference never configures Django. Per-job capability
-tokens, approved PDF hashes, runtime identity and deadlines bind every request.
-Cold/warm results use the same renderer/models/decoder. Model residency defaults
-to 1800 idle seconds on CUDA only; 0 retains per-job execution. Warm probes and
-metadata-only cold probes do not refresh idle time or allocate model sessions.
-The broker owns cancellation, kill/reap and idle expiry; Linux parent-death
-protection prevents orphan GPU processes. CPU time has a renewed per-job soft
-budget for the persistent actor, with the same finite wall/cgroup memory bounds.
-Changing lifetime alone does not relabel evidence or require a new archive schema.
-The default lookup is `BASE_DIR/runtime/rapidocr-models`,
-already exposed in Docker by the existing `.:/app` mount. An optional absolute
-`CFM_RAPIDOCR_MODEL_DIR` overrides it; external Docker directories need an explicit
-mount and container environment setting. Dependencies and models belong to the
-production runtime, not a research environment. Worker/model failures return Comparison unavailable;
-they never fall back to the retired native glyph-proof engine.
-
-Each document's own native geometry can guide region ownership and actual row
-order, but native words cannot repair/replace OCR or establish equality.
-Visible OCR remains authoritative even with a stale or absent text layer.
-Unchanged context anchors bounded local small-edit alignment; relative position
-only breaks alignment ties. Repeated/table values retain field ownership and
-one-to-one accounting. Page matches support navigation, not absolute-page
-identity. Large rewrites, absent anchors, empty OCR and exhausted bounds remain
-explicit unlocated ranges/limitations.
-
-All 38 approved direct visual groups are enabled by the broad policy. A complete
-local difference explained by those rules and existing spacing tolerance becomes
-inspectable neutral information. A mixed residual edit retains the original
-change finding. Rules are not transitive, spelling correction, general Unicode
-normalization or exact visual proof. Real similar-character edits and
-whitespace-only changes can deliberately be missed; the
-[comparison contract](pdf_comparison.md) records the policy and risks.
-
-The workspace is document-first: annotated pages, compact controls and an in-flow
-inspection area with independent selected evidence and pointer-following crops,
-not a permanent findings sidebar. Magnification starts from the currently loaded
-side-specific images, then sharpens a stationary crop through a bounded,
-display-only endpoint reading `comparison_pdf_bytes()` from the same verified
-snapshot. This renderer is independent of the shared evidence/render-hash
-contract and does not change OCR or signed findings. Retina canvases and canceled,
-identity-checked asynchronous requests keep detail aligned with the current view.
-One current finding/region pair supplies connection endpoints, focus controls and
-Auto-match crop centers. Explicitly selected multi-region endpoints are retained;
-initial selection uses the first available region on each displayed page.
-Candidate links remain unverified positioning aids. Relative positioning is used
-only without a pair or when explicitly requested. Hiding an SVG line does not
-discard the logical pair. Endpoints are revalidated against current pages; no
-counterpart page is substituted. Missing linked pages show an empty state.
-Finding metadata and its recorded marks remain separate from crop positioning.
-Red text changes, amber unlocated ranges and neutral information stay
-distinct. Hover cannot move pages or scroll either document; explicit result
-navigation can. Only the active finding is connected, with no fabricated
-counterpart. Coverage and evidence totals never certify figures, layout or full
-math. Temporary method 9 requires rebuilding method-8 and older results,
-independently of System State archive v8.
-
-Word/line-wrap hyphen tolerance is centralized in `rapidocr_comparison/hyphens.py`.
-It uses literal OCR offsets, Latin word boundaries and ownership. Anchors avoid
-splitting eligible compounds; a dedicated transition in the existing bounded
-local DP accounts for the whole pair. Explicit math/numeric/identifier context
-cannot be discarded when slicing the gap. This is not a global dash deletion
-or native-text correction. Parent validation and the shared Info presentation
-retain both word and wrap evidence. The rule changes the CPU/GPU compute/cache
-contract, not publication selection or archive v8.
-
-Automatic upload comparison orchestration belongs to
-`automatic_pdf_comparison.py`, not the Formatting transaction. A typed
-`FormattingSaveResult` carries the exact newly captured revision; compatibility
-entry points still return FinalSubmission. The controller retains a signed
-two-hour request in the session (up to 20, one per submission). It contains
-revision ID/key, saved corrected SHA256, and file identity, not an instruction
-to look up the latest row later. After redirect, the shared status component
-uses GET to read cached status and a separate CSRF-protected POST to build a
-pending latest-upload comparison. No browser polling or GET builds are
-introduced. In service mode that POST polls a separate worker job within the
-existing bounded wait; a queued/running job can be retrieved by Retry. Other
-receipts require an explicit Retry if not already built.
-`formatting_comparison_previews/requests/<revision-key>/` holds signed cached
-result references and a portable Django OS file lock. A completed result is
-revalidated and reused; process exit releases the lock. A failed comparison
-cannot compensate/rollback the already committed upload. Newer PDF revisions,
-scope/file changes, or expired evidence reject the old request, never substitute
-a newer PDF. Later source-only revisions do not change the compared PDF.
-
-Core route groups:
-
-- `/papers/`: Paper Master List.
-- `/submissions/`: Final Submissions and Editor Upload.
-- `/reviews/`: Paper ID, title/author, formatting, exceptions, and Not Publishing workflows.
-- `/processing/pdfs/`: page count, hashes, thumbnails, publication debug copies, and active-version recalculation.
-- `/reports/`: readiness reports, author count, version history, and publication exports.
-- `/reports/audit-log/`: searchable audit trail and raw audit log download.
-- `/integrations/crosscheck/`: plagiarism/CrossCheck package export, score import, and report upload.
-- `/integrations/system-state/`: complete System State backup and preview-before-apply restore.
-- `/settings/`: app settings, active-version rule preview, storage management, and clear database.
-
-## FinalSubmission State Split
-
-`FinalSubmission` remains the compatibility record and behavior source of truth
-for submission-version state. The Paper Master publication decision is the
-intentional exception: `InitialPaper.publication_decision_status` is
-authoritative and Final exclusion fields are mirrors for mapped Paper IDs.
-Newer one-to-one state models mirror lifecycle domains:
-
-- `FinalSubmissionIdentityState`
-- `FinalSubmissionFileState`
-- `FinalSubmissionReviewState`
-- `FinalSubmissionPublicationState`
-- `FinalSubmissionPlagiarismState`
-
-The split supports gradual refactoring. Reads can move to state models one workflow at a time, but writes must stay synchronized until legacy fields are fully retired.
-
-State persistence is centralized in
-`submissions/services/final_submission_state.py`. Its domain mapping is the
-single definition of how compatibility fields populate Identity, File, Review,
-Publication, and Plagiarism state rows. Normal `FinalSubmission.save()` calls
-upsert only affected domains. Full repair/restore synchronization performs bulk
-upserts, and database-heavy workflows use the same service for bulk main-table
-updates plus matching state upserts.
-
-Do not call `FinalSubmission.objects.bulk_update()` directly for mirrored
-fields. Use `bulk_update_submissions()` so derived review fields, timestamps,
-and mirror rows remain synchronized in one transaction. Short import workflows
-may defer mirror writes inside an outer transaction. Long PDF, file, or remote
-service loops flush bounded batches so SQLite is not locked for the duration of
-external processing.
-
-## Workflow Rules
-
-### Editorial State Ownership
-
-- Paper Master List is the publication scope.
-- Final Submissions can come from Start2 imports or Editor Uploads.
-- Editor Uploads are prioritized over Start2 records, but unresolved Start2/Editor conflicts block final publication export until one side is discarded.
-- Editor Upload and corrected-PDF formatting uploads share one server-rendered title
-  safety component. Services build a common comparison payload, templates render the
-  uploaded title once with vertically stacked references, and character-level detail
-  remains collapsed by default. Preview files stay temporary until apply; opening,
-  replacing, or canceling a preview never changes publication state. Editor
-  Upload apply locks and rechecks Paper Master evidence plus the exact temporary
-  PDF/source size and SHA-256 before creating a version.
-- Discard is version-level: it excludes one Final Submission version but does not mean the paper is not publishing.
-- Not Publishing is Paper-Master-level: `InitialPaper.publication_decision_status`
-  is authoritative even before a Final exists. It keeps records for
-  traceability but excludes the paper from publication processing, reviews,
-  readiness, and package output. Final Submission exclusion fields are
-  synchronized compatibility mirrors for mapped Paper IDs.
-- Publication PDF priority is corrected PDF, then original author PDF.
-
-Dashboard readiness is derived from `publication_readiness_rows()`, the same service used to block Final Publication Package export. The Dashboard controller owns one workflow registry that groups those rows, derives both primary and breakdown counts as unique affected papers, and builds exact-category worklist links. It must not recreate publication-blocking rules with independent counters. The readiness header separately reports the number of individual blocker rows. An unregistered readiness category is rendered as `Other publication blockers` and suppresses the clear-workflow summary, so a new blocker cannot disappear from Next actions while final export remains blocked.
-- Publication source priority is corrected source, then original source.
-- Active version selection is previewed before changing the active-version rule in Settings.
-- Import/re-upload workflows are preview-before-apply when they may change existing records or files.
-- Paper Master and Final Submission imports are separate boundaries. Final
-  re-import is keyed by Final ID and preserves an existing Official Paper ID
-  while Author-entered ID is unchanged; Final Title alone never remaps it.
-- Review flags are reset only when dependent data changes.
-- Final Submission Edit owns submission metadata, original files, and P/S score/report entry. Processing, Title/Author Review, duplicate-author review, and Not Publishing decisions are read-only there and are changed only through their dedicated workflows.
-- Manual Final Submission creation and editing are separate service operations. `create_final_submission_manual()` accepts only an unsaved form instance and owns initial Paper ID evaluation, file-path initialization, Pending review state, active/duplicate recalculation, and create audit logging. Existing edits first pass through `record_edit_preview.py`, then confirmation delegates to `apply_final_submission_manual_edit()`. The apply service requires an existing record and remains the sole owner of dependency-based reset rules; it must never receive `None` or synthesize an original record.
-- Editorial worklists preserve navigation context when they link into Final Submission Edit. Organized List, Formatting Review, Title/Author Review, Not Publishing, Verify Paper IDs, and Exceptions pass a return URL that is restricted to the local host. The legacy Publication Candidates URL redirects to Organized List compact mode.
-- Not Publishing List treats unresolved Final Submissions outside Paper Master
-  as an attention-first decision queue. Its inline Paper Master search is only
-  a second entry point to `verify_submission()` and the signed Paper ID review
-  evidence contract; it is not a separate ID-editing implementation. The
-  alternate action calls the existing orphan publication-decision service and
-  requires an explicit reason.
-- Cross-page record navigation is separate from search. System-generated links
-  identify a Final Submission by database primary key, a Paper Master record by
-  exact Paper ID, or an exception by its service-generated key. Controllers
-  build a shared focused-worklist context and services keep their normal
-  publication scope. If the exact target is outside that scope, the UI reports
-  why; it never substitutes another fuzzy match. GET focus modes are read-only.
-- Final Submission Edit separates editable identity/metadata/files/plagiarism data from a read-only workflow summary. Its normal Save form is structurally separate from the collapsed bottom version-action danger-zone form. Discard and undo continue to call the existing audited service; Not Publishing remains owned by its dedicated workflow.
-- Formatting Review exposes a compact list, a stable Single Paper Mode queue,
-  and a separate exact-record Focus mode. List rows show publication
-  file/status context before expansion, Bootstrap's shared parent keeps one
-  paper expanded at a time, and HTMX enhances GET-only filter/search navigation
-  without owning workflow state. The Single Paper Mode entry lives inside that
-  swapped worklist so it always carries the filter/search currently on screen.
-  Starting the mode stores an ephemeral, naturally sorted snapshot of matching
-  submission IDs plus the filter/search in the Django session. Status changes
-  do not reorder that snapshot. Previous/Next skip IDs that later leave
-  publication scope, and the queue expires after two hours. Focus mode never
-  creates or mutates a queue.
-- Formatting previews and Title/Author verification images use one shared native
-  Image Magnifier component. It initializes after lazy Bootstrap collapse
-  loading and HTMX worklist swaps, runs only for fine hover pointers, requires
-  the `Ctrl` modifier, resets on key release/window blur, and never supplies
-  publication or workflow state. Normal verification-image links still open the
-  complete image. The shared lens uses a responsive `3:2` landscape viewport
-  constrained by the source image's displayed bounds. A shared in-image hint
-  replaces the browser-native tooltip so it hides immediately while the lens is
-  active and returns without browser-dependent delay when the lens closes.
-- Process PDFs deliberately keeps complete page-thumbnail strips expanded. Search and `Needs processing / Page issues / Processed / All` filters narrow papers only; paper jump, sticky identity headers, fixed thumbnail geometry, lazy image loading, and the enlarged preview modal do not change processing scope. Its integrated formatting-triage action is the only state-changing exception: it appends to the existing `FinalSubmission.format_notes`, sets `format_status=needs_edit`, and clears the Formatting Review source binding. It does not create a second issue store or modify files and processing metadata.
-- Organized List separates current-view publication blockers from tracked information and uses stable table columns. Paper Master rows whose active final is Not Publishing are omitted from this publication-current view, while replaced versions remain inactive history. Final Submissions keeps its Import/Re-upload workflow collapsed until requested.
-- Organized List owns both the full Checklist and Compact candidates views. This removes a second publication-current UI implementation while preserving `/reports/active-versions/` as a compatibility redirect.
-- `Review OK` is the single Title/Author completion decision. The Final-versus-extracted title comparison remains visible evidence; a reviewed difference is tracked but does not create a second blocker.
-- Paper ID Review, Title/Author Review, and Formatting Review share one
-  presentation-only post-action navigation component. Ordinary audited POSTs
-  remain server-owned; the browser records the active card, adjacent cards,
-  viewport offset, and expanded collapse state. The safe server redirect retains
-  the complete worklist URL. After reload, the component returns to the same
-  card or the next/previous visible card if the selected filter removed it.
-
-### Server-Rendered Worklists
-
-The UI remains server-rendered. Tabler 1.4.0 and HTMX 2.0.10 are vendored
-locally. Normal worklist URLs support GET filter/search/tab/pagination
-navigation, while HTMX replaces the named worklist container and updates
-browser history. Dashboard readiness and global workflow alerts are separate
-read-only partial endpoints so their global scans do not delay unrelated page
-content. Global alerts may use a short display-only cache; publication
-readiness and exports never do. State-changing POST actions remain normal
-audited Django requests.
-
-Large worklists use the shared `WorklistPage` boundary. The complete lightweight
-scope is classified and sorted first, then the selected `25 / 50 / 100 / 200` page
-is hydrated with file checks, previews, suggestions, and diffs. `page_size=all`
-hydrates the complete filtered result and is the explicit compatibility path
-for full-list inspection. Organized List, Process PDFs, Author Count,
-Exceptions, and Old Versions expose separate lightweight-selection and
-display-hydration functions; controllers must paginate between those two
-steps.
-
-Paper Master List and Final Submissions apply validated server-side sort keys
-before `WorklistPage` pagination. Natural identifier ordering is shared through
-`natural_text_key()`. Worklist tabs use the common `cfm-tabs` component, so
-active state, count badges, and spacing remain consistent across reports and
-review queues.
-
-### Publication Read Boundary
-
-`PublicationReadContext` is the request-scoped read boundary for Paper Master,
-active Final Submissions, settings, and filesystem inspection. Dashboard
-counts, publication readiness, duplicate detection, Error Report, and global
-workflow alerts reuse this context rather than loading independent publication
-scopes. It is immutable request data, not a publication cache, and GET requests
-do not persist derived state.
-
-`InitialPaper.publication_decision_status` is the authoritative publication
-decision boundary. `PublicationReadContext` loads only `Publishing` Master
-records into publication scope, keeps `Not Publishing` records as tracked
-information, and reports `Decision Required` as structural ambiguity. Mark and
-undo lock the Master plus mapped Final rows, validate signed evidence, update
-the Master decision, and synchronize legacy Final exclusion fields in one
-transaction. Later imports and Editor Uploads apply the same mirror.
-
-New Master creation is centralized in
-`create_paper_master_with_publication_guard()`. Existing orphan exclusion
-evidence produces Decision Required instead of default Publishing. Mapped Final
-mirror disagreement does not change scope or override the Master, but the
-shared integrity checker blocks final, draft, and CrossCheck export. Decision
-Required preserves legacy mirror evidence until an explicit decision
-synchronizes it. Verify/remap checks the original and target Paper ID groups
-before changing the ID. Mixed legacy Final decisions are inspected only for
-records outside Paper Master, where no authoritative Master decision exists.
-Start2/Editor conflict groups continue to use database conditional aggregation
-and load details only for actual conflicts.
-
-`FileInspectionContext` reuses request-local filesystem observations for normal
-reads. SHA-256 results may be reused across requests only when device, inode,
-size, mtime, and ctime all match. A strict fresh hash re-stats the path even
-inside an existing context, and hashing verifies the signature again after
-reading, so a file changed during inspection is rejected.
-
-### Export Transaction
-
-Final Publication Package export keeps the same `PublicationReadContext` from
-readiness validation through manifest construction and ZIP assembly. PDF/source
-entries are written from `FileInspectionContext.read_snapshot_bytes()`, which
-rejects a path whose full filesystem signature changed after inspection.
-Manifest and warning CSV bytes are immutable ZIP inputs rather than files that
-are re-read after creation. The package is written to a temporary path, reopened
-for entry and CRC verification, checked against the final database signature,
-and atomically promoted only after every check succeeds.
-Export also blocks when Paper ID/title sanitization would produce the same
-case-insensitive ZIP base name for more than one publication record. Therefore
-validated files cannot be silently replaced or overwritten by a later path
-read or duplicate archive entry.
-
-Editorial Excel reports are read-only views built separately from package
-assembly. `reports.py` may reuse `PublicationReadContext`, readiness rows, and
-exception rows to describe the current state, while `excel_workbook.py` owns
-XLSX-only presentation such as headers, widths, wrapping, filters, and number
-formats. `Publication Detail` is the mandatory editorial-workbook core;
-supporting sheets are selected from an explicit whitelist, while raw active and
-old-version data remain separate debug exports. Excel formatting and report
-sheets must not feed publication selection or modify Final/Draft package CSV
-schemas.
-
-All Excel exports use one atomic audited transaction. They load a stable
-`PublicationReadContext`, compute author/report rows without rebuilding
-`PaperAuthor`, write a `.part.xlsx`, force formula-like report values to literal
-text, reopen the workbook to validate its exact sheet set, recheck the database
-snapshot, and then rename it into place. Requested, successful, and failed
-events use the same canonical report action. If final audit persistence fails,
-the promoted workbook is removed so an unaudited report is never left behind.
-The Editorial Publication Workbook reuses the same context, author rows,
-readiness rows, exception rows, Paper Master rows, and Not Publishing snapshot
-for all selected sheets.
-
-Final export also fingerprints publication-critical database state before
-loading the snapshot and after ZIP assembly. A concurrent editor change to
-Paper Master, submissions, settings, or author waivers deletes the
-partial output and requires a fresh export. Publication source bytes are bound
-to a completed Formatting Review by `source_hash`. A Pending or Needs Edit
-Formatting status is blocked by `Formatting Not Review OK` and is not also
-reported as a missing review hash. Once status is Review OK, a missing or
-changed source hash is a Critical integrity blocker. A configured Corrected
-PDF/source that is missing never falls back to the Original file.
-
-### Stale-Write Protection
-
-Formatting writes use a second ephemeral review snapshot containing the
-submission update timestamp and filesystem identity of the selected publication
-PDF/source. Save revalidates that snapshot under a database row lock before
-calling the central formatting update service. Corrected-PDF title-guard
-previews carry the same snapshot plus hashes of their temporary uploads, so a
-later confirmation cannot bind an old review decision to changed publication
-files. Preview SHA-256 is accumulated while the upload is streamed to temporary
-storage; confirmation still performs a fresh independent hash. Abandoned
-Editor Upload and Formatting preview directories expire after two hours, and a
-changed preview is removed when it is rejected. Queue/review/title-guard tokens
-are temporary workflow state and are not part of System State backup.
-TTL cleanup removes only directories with a complete parseable payload; it
-does not guess that a directory still being built by another request is stale.
-
-`workflow_evidence.py` supplies signed, expiring digests for other multi-editor
-mutation boundaries. Final Submission Edit, Paper Master Edit, Title/Author
-Review, Exceptions, Settings, and Process PDF formatting triage compare the
-submitted digest with current locked state. Settings active-rule confirmation
-also locks the candidate set before recomputing active/duplicate state. Tokens
-are generated only after pagination and require no database or file I/O. Paper
-ID review canonicalizes the Paper Master evidence once per response and reuses
-its digest in each displayed-row token; POST validation recomputes that digest
-after locking the current Master rows.
-
-Final import apply does not trust preview paths. Each selected upload is copied
-into an operation-unique staging file while size and SHA-256 are checked against
-preview evidence; FileField storage reads only that validated copy.
-Built-in/GROBID extraction and Process PDFs capture semantic row/file evidence
-before long work and lock/recheck before persistence. PDF thumbnails are
-rendered into unique immutable directories so a rejected stale batch cannot
-overwrite a newer editor's visible preview.
-
-### Read-Only Reporting And Upload UI
-
-Error Report keeps duplicate categories and blocker messages unchanged in the
-readiness/report services. Its HTML worklist uses a compact duplicate-group
-summary and a read-only HTMX detail endpoint for the full matching-record list,
-preventing `page_size=all` from repeating an O(n) group description in every
-row. Workflow-area filtering runs first. Category selections are validated
-against that area, severity and category filtering are then applied on the
-server, and sorting/pagination operate only on the selected result. Multiple
-categories use OR; area, severity, and category dimensions use AND. Category
-pill counts use the current area/severity rows before category filtering, while
-severity tab counts reflect the current category selection. Repeated `category`
-query parameters remain shareable and survive pagination. The detail endpoint
-has a complete non-HTMX fallback page.
-
-All paginated worklists render one shared pagination component above and below
-their rows. The `WorklistPage.scroll_anchor` identifies the stable worklist
-container. Normal links use the anchor fragment, while the shared HTMX handler
-scrolls the swapped worklist into view after a successful page change.
-
-Final Submission and Paper Master upload zones are presentation helpers only. File extension/hash validation and preview/apply remain server-owned. The browser may summarize selected files or remove them before submit, but cannot classify publication files or bypass import preview.
-
-Presentation tokens, alert behavior, accessibility, and shared component rules
-are centralized in `base.html` and documented in
-[UI Conventions](ui_conventions.md). These are presentation boundaries only:
-they must not alter publication scope, readiness, active versions, review state,
-or file selection.
-
-## Publication Read And Export Path
-
-The canonical selection rules live in
-[Publication Rules](publication_rules.md). Architecturally, publication reads
-follow one path:
-
-1. `PublicationReadContext` captures Paper Master scope, settings, active
-   submissions, readiness inputs, and request-local file inspection.
-2. Active-version services select the current undiscarded candidate by origin
-   priority and the configured ordering rule.
-3. `publication_pdf_info()` and `publication_source_info()` resolve the
-   publication-facing files.
-4. Readiness, Dashboard, Organized List, Error Report, CrossCheck, duplicate
-   checks, and export reuse that shared scope instead of reconstructing it.
-5. Final export performs strict fresh file reads, rechecks publication-critical
-   database state, verifies the ZIP, and atomically promotes the result.
-
-`FinalSubmission` remains the compatibility source of truth while its
-one-to-one state tables mirror lifecycle domains. `PaperAuthor` is a
-compatibility cache, not publication authority. Legacy current-path and
-generated debug-copy fields remain diagnostic or restore-compatibility data and
-never select package input.
-
-## File And Path Safety
-
-### Managed State And Restore
-
-Managed files live under the project `data/` tree by default. Database fields may store file paths, but System State export/restore must remap managed paths into the receiving project folder. The snapshot includes referenced review artifacts such as title/author verification images, PDF thumbnails, and format previews because they preserve manual review context.
-
-### Docker Runtime Boundary
-
-Docker runs `web` behind the published Nginx `proxy`. Conference state lives
-in the project-scoped `sms_data` volume; `sms_static` is rebuildable and
-`sms_gateway_state` is temporary operational status. The proxy serves
-static/media, preserves the browser-visible Host header, buffers large dynamic
-responses without caching them, and shows a safe GET-only recovery page while
-web is unavailable.
-
-The proxy cannot write conference data and does not participate in publication
-scope, file resolution, readiness, or export. Raw host mirrors are verified
-operational rollback copies, while System State ZIPs are portable, versioned
-application backups.
-
-Deployment, update, backup, migration, and rollback procedures are centralized
-in the [Docker Guide](docker_guide.md).
-
-Comparison deployment checks are outside conference state. The shared runtime
-checker loads embedded model sessions in a bounded child or checks authenticated
-worker readiness/contract compatibility. Native and container startup run it
-before migrations. Candidate-image probes run before conference update/migration
-cutover; worker probes use disposable storage before replacing a worker. Backup
-checks restart prerequisites only for images declaring the startup-preflight
-capability. These boundaries never select publication files or modify review
-state. Readiness at deployment time is not a guarantee of later service uptime.
-
-Worker lifecycle planning is read-only and separates initialization from update.
-`worker --init` alone may create absent env/auth, optionally using an initial
-template. Updates require preserved identity and authorization, including the
-existing conference namespace, before any provisioning/cutover. Markers, stopped
-containers, backend/port and auth/data mounts prevent accidental reassignment;
-initialization refuses existing state and project volumes. Both historical
-worker/rebuild CLI names delegate to the unified policy. The first conference
-create may prepare a new CPU worker, but an update cannot substitute a new one
-for lost configuration. Missing-input rejection precedes even the audit/lock
-directory; accepted attempts retain deployment auditing. No conference model,
-publication selector, OCR contract or archive format participates in this policy.
-
-Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
-Restore extracts and verifies files into sibling staging directories before the
-database transaction begins. Live files move to quarantine only after model
-restore succeeds; Python, database-commit, or filesystem failures restore the
-quarantine and roll back the database. Staging and quarantine live on the
-target filesystem so promotion uses rename rather than cross-device copying.
-
-### Storage Inventory And Cleanup
-
-Storage cleanup is split by risk:
-
-- Conservative cleanup removes only unreferenced regenerated cache. It does not delete publication debug, legacy active-final, or old-version output folders.
-- Generated reports/exports cleanup removes regenerated Excel/ZIP downloads,
-  generated publication manifest/warning CSV files, and external upload
-  packages. Arbitrary editorial CSV files in the Reports folder are retained.
-- Original uploads, corrected uploads, plagiarism report PDFs, system state backups, and referenced thumbnails/previews are retained.
-
-`submissions/services/storage_inventory.py` builds one request-scoped
-`StorageReferenceIndex` from the path fields needed by the inventory. Exact file
-references use normalized canonical-path set lookup. Directory references such
-as `thumbnail_folder` use a separate tree-path set and parent lookup, so every
-file below a referenced directory remains protected. Existing references also
-carry device/inode identity as a fallback, preventing case-only path spelling
-differences on macOS from turning the same file into an orphan. The filesystem is scanned
-once into immutable file records containing canonical path, category, and size;
-inventory classification then uses those records without repeated `stat()` or
-database queries. This keeps inventory work proportional to database references
-plus managed files instead of comparing every file with every reference.
-When configured roots overlap, category assignment uses an explicit protection
-priority: canonical/corrected files and reports/backups outrank managed output,
-and every publication-managed category outranks generated cache. Classification
-must never depend on dictionary or root iteration order. Category and total
-counts use that single primary classification, so overlapping roots do not
-double-count one file.
-Cleanup previews also bind each candidate to its filesystem identity. Apply
-skips a candidate if the path now resolves to a different file, even when it is
-still unreferenced, and rebuilds current classification so folder-setting
-changes cannot turn a newly protected file into a stale cleanup target. Known
-non-regenerable subtrees such as System State backups,
-import/restore previews, extraction results, plagiarism reports, and managed
-media remain protected if a configurable Reports folder overlaps them.
-Per-file filesystem deletion errors are recorded as skipped items so a batch
-never returns an opaque 500 after partially succeeding.
-During a long SQLite cleanup batch, `PRAGMA data_version` is checked before
-each candidate. A commit from another editor request rebuilds the reference
-index and current candidate classification before deletion continues.
-Unreadable managed roots are returned as explicit scan errors. Inventory still
-renders the readable results, but cleanup preview fails closed until the scan is
-complete. Apply also requires a complete fresh scan before deleting its first
-candidate. Files that cannot be deleted are kept and counted in the UI/audit;
-preview-file or empty-directory housekeeping failures are audited without
-turning already completed candidate processing into an opaque server error.
-Creating a cleanup preview removes expired or malformed temporary preview JSON
-files while retaining every unexpired token.
-
-The Settings form does not build this inventory during its main request.
-Storage Management is loaded from `/ui/storage-inventory/` after the page opens,
-and GROBID health uses its existing JSON endpoint. The inventory is not cached
-across requests because paths and bind-mounted files may change independently
-of Django. Cleanup preview builds a current inventory, and cleanup apply builds
-a fresh reference index before deleting anything; a file newly referenced
-after preview is skipped.
-The storage endpoint renders only the panel for HTMX requests and a complete
-base-layout page for ordinary GET/no-JavaScript navigation.
-Settings, middleware context, and storage inventory use a non-persisting
-default settings object when the singleton row does not exist. Read-only GETs
-therefore do not initialize database state; the row is created only by a write
-workflow or explicit reset.
-
-`SelectiveGZipMiddleware` compresses only an explicit allowlist of dynamic
-HTML, text, JSON, JavaScript, and XML MIME types. ZIP, PDF, image, Office, and
-unknown binary responses bypass dynamic gzip; this avoids recompressing archive
-downloads and preserves their `Content-Length` for proxies and tunnels.
-
-Plagiarism exceptions are per FinalSubmission publication-version decisions.
-`Plagiarism %` and `Single %` exceptions are approved separately, require a
-reason, and are valid only while the current score still matches the approved
-score. They affect readiness/export blocking but do not change the score
-itself. Their current status, values, limits, and reason appear in the
-Publication Package manifest's shared `Exceptions` summary.
-
-Organized List exposes row-level exception panels for page count, authors-in-paper, plagiarism scores, and duplicate-author review. Those panels reuse the same exception service rows and approve/remove commands as Exceptions Center. Author paper-count exceptions remain author-level records and are not attached to a single Organized List row.
-
-Each Organized List checklist record is a stable per-submission table body.
-An exception action remains a normal audited Django POST, then reloads and
-hydrates that complete row from current database/file state. HTMX selects only
-the matching row body from the server-rendered response. Other unsaved reason
-fields are submitted as typed drafts; the controller reattaches a draft only
-when no stored reason exists, while stored data, successful remove/reset, and
-validation errors follow explicit server-side precedence. The browser never
-calculates exception validity or merges persisted workflow state.
-
-## Audit Log
-
-Audit logging is file-based, not database-backed. The active log is `data/logs/audit.log`, written as JSON Lines. Keeping it outside the database lets Clear Database preserve the trail by default.
-
-Each event includes timestamp, event ID, app version, state archive version,
-actor (`local_user`), action, status, request path, Paper ID, Final Submission
-ID, changed fields, before/after snapshots, reset flags, file changes, hashes,
-result counts, and error text when applicable. Canonical actions are registered
-in `submissions/services/audit_actions.py` and use
-`<domain>_<operation>[_<phase>]`. Result words such as success, failed, and
-blocked belong in `status`, not the action name.
-
-Use `submissions/services/audit.py` for all audit writes. Do not open-write the log directly from controllers or other services. File paths in events must be portable: use project/media-relative paths, hashes, sizes, and filenames instead of machine-specific temp paths or binary content.
-
-The default Audit Log view reads a bounded UTF-8 tail. A non-empty search or
-structured category/action/status filter may scan the complete append-only
-file. Legacy action aliases are resolved only while reading; the original JSON
-is never rewritten. Archive filenames include microseconds and a random
-identity so repeated operations cannot replace an earlier log.
-
-System State backup includes `data/logs/audit.log` and `data/logs/archive/*.log`. Restore brings those logs back with the rest of the managed state. Temporary preview tokens, including `data/record_edit_previews/`, are excluded.
-
-Model restore preserves validated archived creation/update timestamps after
-bulk insertion; Django's automatic timestamp hooks must not replace them with
-the restore time. This keeps record chronology and CrossCheck preview age
-intact; revision times stored with an ordinary default were already retained.
-The correction does not change archive schema, publication sources,
-review flags or reset dependencies.
-
-`record_edit_preview.py` owns the common two-step edit boundary for existing
-Paper Master and Final Submission records. It stores validated proposed values
-and staged uploads for two hours, compares files by SHA-256, and revalidates
-signed database evidence plus current-file hashes on apply. It never selects a
-publication version and never applies reset rules itself; confirmed changes
-flow through `paper_master.py` or `manual_edit.py` inside their existing atomic
-transactions.
-
-Clear Database writes `database_clear_request` first. If the audit-clear
-checkbox is selected, it archives the current log, creates a new log with
-`audit_log_archive_clear`, and then writes `database_clear_complete` after the
-wipe succeeds.
-
-Django admin registrations for Paper Master, Final Submission, Settings,
-author waivers, and `PaperAuthor` are read-only. Admin must not become an
-unaudited mutation path around editorial services.
-
-Clear Database never recursively empties arbitrary configured absolute folders.
-Only app-owned paths below `BASE_DIR/data` or the configured application
-`MEDIA_ROOT` are staged. Staging uses same-filesystem sibling directories; the
-database transaction runs while those files remain recoverable, failed database
-deletes restore them, and successful commits then remove the staged content.
-Existing configured external folders are preserved and reported in the result
-and audit event.
-
-## Versioning
-
-Formatting history is stored in `FormattingRevision`, separate from the
-FinalSubmission compatibility/state mirrors. Each record owns an immutable
-PDF/source pair under `MEDIA_ROOT/formatting_revisions/<submission-pk>/<key>/`.
-The snapshot records selected-file origins and relative live names, allowing
-read-only current-file identification without selecting publication input.
-Only committed corrected uploads add revisions; existing corrected pairs may
-be captured as explicitly labeled baselines. Status/notes updates remain audit
-events. Snapshot copies and live uploads share a compensating file transaction
-with the owning DB transaction. Original-file invalidation captures any
-unrecorded corrected pair before unlinking it.
-
-History is loaded through one submission-scoped partial with verified,
-revision-scoped file endpoints. It is available for inactive/discarded records
-and never enters publication selection, readiness, or review-reset decisions.
-Cleanup protects its files; Clear Database and full restore handle them with
-the existing managed-file transaction.
-
-The app version is defined in `conference_final_manager/settings.py` as `APP_VERSION`.
-
-The System State archive format is defined separately as `STATE_ARCHIVE_VERSION`. Increment the archive version only when backup/restore structure or compatibility changes. Increment the app version for user-visible behavior, workflow, docs, or schema changes.
-
-The footer displays both values so a user can match a System State ZIP to the expected application version.
-
-Archive version 8 adds CrossCheck execution/result records and immutable
-per-execution ZIPs. Version 7 adds automatic CrossCheck jobs/items, prepared publication
-PDFs, result evidence ZIPs and durable batch provenance. Local service secrets
-are excluded; raw Docker backups still contain the machine's secret file.
-Archive version 6 added revision records and files. The v5 reader validates the
-original v5 payload/count/hash contract and restores an empty history; v6
-requires the revision payload and matching file evidence. Versions earlier
-than v5 remain unsupported. The explicit v7 reader validates its original
-payload first, then captures one original execution/result set from legacy
-metadata without moving files or changing applied state. V8 requires both new
-model groups, valid ownership/parent sequences and matching ZIP hashes. No compatibility branch changes publication
-decisions or silently reconstructs historical approvals.
-
-## Automatic CrossCheck Service
-
-`crosscheck_client.py` owns HTTP, streamed multipart bodies, bounded downloads,
-same-origin endpoints, and write-only local credentials. `crosscheck_service.py`
-owns preview/start/recovery/result validation/apply. Controllers remain thin.
-The service URL defaults to blank. Connection checks accept request-scoped
-credential overrides; they never persist those values or enable the service.
-The separate credential command validates Settings evidence and stores local
-secrets for the explicitly entered URL without saving other Settings. Validation
-alone does not create a Settings record. Environment overrides retain precedence
-and saved local credentials cannot cross URL boundaries.
-Settings evidence canonicalizes decimal values, making unsaved model defaults
-and identical persisted defaults equivalent without ignoring real changes.
-`CrossCheckServiceJob` and `CrossCheckServiceJobItem` retain batch identity and
-the cumulative per-paper outcome. `CrossCheckServiceAttempt` retains each
-upload/retry execution and its immutable ZIP; `CrossCheckServiceResult` binds
-each report, score and apply evidence to its owning attempt and paper. The
-metadata-only migration captures existing jobs without copying files or touching
-Final state. `crosscheck_service_history.py` owns shared parsing, archive paths,
-lineage checks and batch presentation. `crosscheck.py` remains authoritative for publication PDF
-selection, scope, exported bytes, durable provenance and percent parsing.
-
-The preview snapshots the existing manual export bytes as `PaperID.pdf`.
-Immediately before sending, it verifies the prepared bytes and rechecks the
-current publication candidate. A committed submitting state precedes the
-external POST; uncertain responses are recovered by folder/token from service
-job history, never by automatic re-upload. Service 409 allows a later explicit
-retry because the request was rejected as busy. Browser-visible POST polling
-updates only this job; GETs never perform network calls or workflow writes.
-
-Result archives validate member paths/counts/sizes, duplicate identities,
-original/uploaded filename mappings, explicit upload confirmation, per-file
-download status, scores and PDF signatures. Partial/unconfirmed results remain
-visible but cannot update a submission. Apply rechecks provenance and existing
-plagiarism evidence under a DB transaction, writes operation-unique reports,
-syncs the plagiarism mirror, and compensates new files if the transaction fails.
-Publication helpers, readiness and review-reset rules are unchanged.
-
-Retry-download commits a submitting attempt before the external POST and uses
-the original remote source, exact parent, folder/token and captured eligible
-confirmed uploads. No PDF upload or daily sequence allocation occurs. A lost
-response is recovered from remote history by exact lineage; definitive rejection
-allows a later explicit retry. The first ZIP remains at the legacy root path;
-later ZIPs live in `attempts/<attempt-uuid>/results.zip`. Applying resolves the
-report's owning ZIP, never assumes it is in the first ZIP. Applied records remain
-untouched even after manual edits or restore. Browser progress replaces only
-the result panel, not retry controls or inputs.
-
-## Optional GROBID Fallback
-
-The built-in title/author extractor remains the primary extractor. `submissions/services/grobid_extractor.py` is an optional fallback client for trusted local/internal GROBID services and is disabled by default in `AppSetting`.
-
-GROBID extraction is never a publication-ready shortcut. Successful GROBID results write to the same extracted title/authors fields, create a verification image under `data/media/title_author_verification/`, reset Title/Author Review to Pending, and recalculate Extracted Title Match with the same normalized-title logic used by the built-in extractor. Manual Review OK is still required before final export. Failed GROBID attempts must not modify existing extracted data.
-
-GROBID actions run an `/api/isalive` health check before extraction. Single-row extraction skips without changing the row if the API is unavailable. Batch suspicious-row extraction checks once before processing and aborts the batch with zero row errors when the service is unavailable. Batch rows are processed sequentially, not in background threads; if connection or timeout errors indicate the service became unavailable mid-run, the batch stops and counts the current/unprocessed rows as skipped.
-
-Manual title/author override is implemented as a first-class exception workflow in the title/author service, not as ordinary Final Submission editing. It writes `title_author_source=manual_override`, stores a required reason/time, creates a new verification image when a PDF is available, resets review-dependent flags, and logs before/after values. Re-extraction or PDF/source changes clear manual override metadata.
-
-Metadata extraction and evidence rendering are deliberately separate.
-`builtin_title_author_extractor.py` keeps the established built-in metadata
-heuristics. Built-in, GROBID, and Manual Override all pass their resulting
-title/authors to `title_author_verification.py`, which is the only verification
-renderer. It uses a conservative grayscale scan of the rendered first-page
-upper area to measure genuinely blank top space. The dynamically sized header
-uses that space first and shifts the source page down only by the remaining
-required height. A fixed safety gap keeps the header away from the first
-non-white PDF content; uncertain or occupied space is never reused. Title
-header text uses one shared font-run pipeline for measurement, wrapping, and
-drawing. MuPDF's bundled Unicode font remains primary, with the repository's
-OFL-licensed Noto Sans Math asset as a portable symbol fallback. The renderer
-does not substitute or remove extracted characters; if neither bundled font
-contains a glyph, evidence generation still fails closed. The fallback is a
-code asset and is not part of System State archives. Title
-evidence keeps its normalized word-sequence locator for title discovery, then
-maps the located sequence back to raw PDF character coordinates. Only source
-characters represented by the extracted title are drawn; PDF-only punctuation
-is excluded, while a symbol present in both the extraction and PDF is retained.
-Unavailable or inconsistent character geometry produces no title evidence
-rather than a misleading whole-word rectangle. Author evidence uses a separate
-case-sensitive character locator. Internal extracted words and
-punctuation must match; the final extracted word may be a prefix of the PDF
-word so attached affiliations, ORCIDs, separators, and alphabetic continuations
-cannot suppress otherwise visible evidence. Its outline is built solely from
-raw PDF character boxes corresponding to extracted characters. Numeric or
-symbolic trailing metadata remains green; an alphabetic continuation is orange
-to expose a partial word such as `Smith` in `Smithson`. Unavailable or ambiguous
-geometry produces no author outline rather than a whole-word fallback. This
-evidence rule does not modify stored extraction. Title evidence uses yellow
-marking plus blue underlines; each parsed author receives an independent
-outline/underline and a numbered header legend. If an author has any complete
-green match, orange partial matches for that author are suppressed. The header
-legend reflects the selected evidence state: green for complete/metadata,
-orange for partial-only, and red when no evidence was found.
-
-The Title/Author worklist keeps its large verification images lazy-loaded and
-reads each PNG header for its actual intrinsic dimensions, avoiding distortion
-and unnecessary image decode/layout work even though header height varies.
-Manual Override forms are loaded from a read-only HTMX partial only when an
-editor expands that action; the state-changing submission still posts through
-the audited Title/Author controller and service.
-
-## Regression Gate
-
-Run these checks before merging or handing off changes:
-
-```bash
-.venv/bin/python manage.py check
-.venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python manage.py test submissions
-.venv/bin/python -m compileall -q submissions conference_final_manager manage.py
+# Architecture
+
+CFM is one Django application with SQLite and managed files. It is a trusted
+local editorial system, not a public multi-tenant service. Docker can run
+separate conferences and a shared advisory compute worker.
+
+## Mental Model
+
+```text
+Paper Master (scope + publication decision)
+    -> Final Submission versions
+        -> selected active submission
+            -> selected Corrected or Original PDF/source
+                -> evidence-bound editorial reviews
+                    -> publication read snapshot
+                        -> readiness -> strict final export
+
+Formatting revisions / comparison images / debug copies
+    -> inspection and traceability only
 ```
 
-For documentation-only changes, `check` and `makemigrations --check --dry-run` are usually enough, plus a link/stale-term review.
+The browser, generated folders and compute workers never become publication
+authority. [Publication Rules](publication_rules.md) is the business specification.
+
+## Request And Domain Boundaries
+
+```text
+URL -> controller -> selector / command -> domain service -> models + managed files
+                \-> Django templates -> shared HTMX/JS enhancement
+```
+
+Controllers own HTTP concerns. Selectors compose read-only contexts; commands
+invoke state transitions. Services own rules, locking, signed evidence, reset
+dependencies and audit. Templates render supplied state; JS enhances interaction,
+not publication decisions.
+
+The UI uses local Tabler/Bootstrap-compatible markup and HTMX. Normal URLs/forms
+remain usable without partial navigation. There is no separate React service or
+frontend build. See [UI Conventions](ui_conventions.md).
+
+## State Ownership
+
+| State | Owner |
+| --- | --- |
+| Master decision | `InitialPaper`; Final exclusion fields are compatibility mirrors for mapped IDs |
+| Version and editorial state | `FinalSubmission` compatibility record |
+| Domain mirrors | Identity/File/Review/Publication/Plagiarism one-to-one state models |
+| Historical Formatting pair | Immutable `FormattingRevision` and independent copies |
+| Author cache | Derived compatibility data; live publication counts use read snapshots |
+| CrossCheck execution/results | Conference-owned durable provenance/evidence records |
+| Audit | Append-only file, separate from DB |
+| Worker jobs/cache/models | Deployment-owned, outside conference storage |
+
+`final_submission_state.py` maps compatibility fields into domain mirrors.
+Normal saves synchronize affected domains; bulk workflows use its matching bulk
+update/upsert service. Restore/repair performs full synchronization.
+Do not introduce an unsynchronized second state authority.
+
+## Publication Reads And Exports
+
+`publication_read.py` builds one request/operation snapshot for settings, Master
+scope, current submissions, authors and file inspection. Strict export hydrates
+fresh filesystem hashes rather than trusting compatibility caches.
+
+`file_manager.py` selects Corrected -> Original independently for PDF/source.
+A selected but missing Corrected file fails closed. It never reads legacy
+processed paths, revision history or debug copies as fallback.
+
+Export stages exact byte entries, validates filenames/ZIP structure/CRCs,
+rechecks publication-critical DB state and promotes atomically. XLSX exports
+use the same read boundary and do not rebuild authors. Audit/validation failures
+remove incomplete outputs. [Export integrity](publication_rules.md#export-integrity)
+defines the full contract.
+
+## Writes And Expensive Work
+
+Signed form evidence binds what an editor reviewed. Apply locks/reloads the
+record and checks evidence rather than overwriting unseen concurrent changes.
+Record-edit/import/settings previews are separate from Apply.
+
+Do not hold SQLite write locks across long PDF or remote calls. Capture identity
+first, do expensive work outside the write transaction, then lock/revalidate
+before applying. Files use staging, verified copies and rollback/promotion
+coordination; a DB rollback alone cannot reverse filesystem changes.
+
+Formatting writes own title-guard confirmation, evidence resets, current pointers
+and immutable revision capture. Status-only writes do not create revisions.
+Automatic comparison starts **after** a successful save, bound to that saved
+revision, and cannot roll back or redirect the file save.
+
+## Comparison Compute
+
+```text
+CFM: select + freeze PDFs + bind revision
+    -> completed validated cache?
+        yes -> new signed inspection snapshot
+        no  -> preferred remote worker, or confirmed local CPU work
+                    -> bounded OCR / alignment
+                    -> CFM validates result + render hashes + current identity
+                    -> signed inspection snapshot
+```
+
+Native defaults to embedded CPU. Docker uses a separate host-shared worker;
+optional remote CPU/GPU service is preferred when configured.
+`comparison_client.py` owns transport/idempotent routing, not file selection.
+`comparison_execution_choice.py` binds local-compute consent.
+Accepted/uncertain work stays on its original worker; disconnects must not cause
+duplicate execution elsewhere.
+
+Each worker has private namespace authorization, ledger, signing/cache storage,
+one heavy job at a time and bounded fair queueing. It receives exact PDF bytes
+and hashes, never a conference DB/media mount. Job children isolate settings and
+namespace evidence. GPU residency adds one supervised model actor: it shares
+weights, not namespace state. See [Worker Protocol](../comparison_slave/README.md).
+
+`comparison_health.py` observes services without submitting jobs.
+`comparison_metadata.py` allowlists packaged version and effective settings.
+Formatting polls while visible; last-seen is labelled. These observations are
+not readiness, route authorization, model-cache identity or evidence approval.
+
+The [PDF Comparison contract](pdf_comparison.md) owns OCR ordering, tolerances,
+limits, cache validation and inspection behavior.
+
+## Optional Integrations
+
+| Integration | Boundary |
+| --- | --- |
+| Built-in/GROBID extraction | Version-bound metadata extraction; success resets reviews and uses one verification renderer |
+| Manual override | Reasoned metadata exception, new evidence, no manuscript edits |
+| GROBID health | Bounded optional availability probe; no startup dependency |
+| CrossCheck Service | Previewed publication PDFs -> confirmed uploads -> execution ZIPs -> explicit result preview/apply |
+| CrossCheck retry-download | Original confirmed uploads only, immutable execution history; no PDF re-upload/replay |
+| PDF.js | Same-origin allowlisted file endpoint only, read-only browser renderer |
+
+GROBID uses header TEI without external consolidation. Failure preserves prior
+extraction rather than replacing it with empty metadata.
+CrossCheck optional login/IEEE overrides are machine-local secrets. They are
+separate from workflow records and excluded from System State.
+PDF.js disables scripting/editing/XFA and never writes back a manuscript.
+See [Operator Guide](operator_guide.md) for interaction steps.
+
+## Storage, Audit And Restore
+
+Managed storage includes upload files, corrected files, revision copies,
+review images, generated reports and audit logs. Paths are remapped into the
+receiving installation during validated restore. Temp tokens, comparison caches
+and machine secrets have different lifetimes; do not serialize them as workflow
+state.
+
+System State validates models/counts/hashes, file membership, parent relationships
+and portable paths before Apply. DB/file rollback is coordinated. Original
+timestamps survive restore, so old previews do not become young again.
+Explicit legacy adapters do not waive validation of newer archives.
+
+Storage inventory registers references including revision files and protects
+them even under overlapping roots. Cleanup rechecks identity/references at
+Apply. Clear Database stages app-owned data and preserves audit by default.
+[Operations](operations.md) owns the maintenance procedures.
+
+Audit writes JSON Lines to `data/logs/audit.log`; central action names and
+legacy aliases belong to `audit_actions.py`. UI formatting never rewrites
+stored events. Log safe metadata/hashes, not secrets or binary content.
+
+## Docker Runtime Boundary
+
+Conference Compose runs web plus Nginx and project-specific data/static volumes.
+The worker is a separate Compose project on the comparison network.
+`SMS_DATA_DIR` is a verified raw backup mirror, not Docker's live data volume.
+
+The deployer validates ownership/env/data/network before changes, provisions
+models/credentials only under explicit lifecycle rules, and preflights candidate
+images before replacement. Updates are not distributed transactions: an earlier
+conference can be updated even if a later one fails. Cutover failure is not
+automatic migration/data rollback.
+
+The proxy preserves Host/port and CSRF, serves pinned static assets and provides
+maintenance feedback while web is unavailable. Recovery navigates to a new GET,
+never replays a POST. Binary ZIP/PDF/Office responses avoid dynamic gzip;
+bounded proxy buffering is not shared response caching.
+
+See [Deployment](deployment.md), [Operations](operations.md) and the
+[developer regression gate](developer_guide.md#regression-commands).

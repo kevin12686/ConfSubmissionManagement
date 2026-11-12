@@ -1,239 +1,123 @@
-# Standalone Comparison Slave
+# Comparison Worker Protocol
 
-This is a private, shared HTTP compute service, not a conference Django app.
-It never opens a conference database, imports application models, selects
-publication files, or writes original PDFs. Input bytes come only from an
-authenticated client's bounded upload. Comparison remains advisory evidence.
+A private shared HTTP compute service, not a conference Django app.
+For deployment/update commands use [Deployment](../docs/deployment.md);
+configuration/backup ownership is in [Operations](../docs/operations.md).
+Do not mount conference data or databases into this service.
 
-## Deployment
+## Responsibilities
 
-Authenticated `/v1/health` reports the image's packaged `worker_version` and
-allowlisted effective `settings` from successful runtime validation. Formatting
-shows these in Comparison services/Details; release versions do not replace the
-existing contract check. Use `docker exec <worker-container> python -m
-comparison_slave.entrypoint --status` for a local, token-safe status read. The
-deployer prints this observation after a healthy start. No version override or
-new `.env` setting is needed. Before runtime validation, or after a failed
-validation, settings can be unavailable; old workers may omit metadata entirely.
+CFM selects and freeze-reads the PDFs. The worker receives exact bytes and hashes,
+runs the shared bounded comparison engine and returns evidence. It cannot choose
+publication files, change reviews or assemble publication ZIPs.
 
-The normal operator entry point is now `scripts/deploy.py`; see the Docker Guide
-for automatic model provisioning, private client enrollment and conference setup.
-First setup requires `worker --init`; ordinary `worker` requires existing env
-and authorization and cannot reconstruct missing names/tokens. An optional
-`--template` supplies custom initial settings only while the target is absent.
-Existing files, enrollments, project containers/volumes and mount/identity
-conflicts fail closed. The historical `start_comparison_slave.py` CLI delegates
-to the same lifecycle, not a second initialization path.
+`entrypoint.py` validates configuration/runtime before serving.
+One scheduler runs one heavy namespace job at a time. Per-job subprocesses own
+namespace settings/signing/cache. CUDA optionally reuses one supervised inference
+actor sharing weights only. Runtime settings/defaults are in the Operations table;
+algorithm/result constraints are in [PDF Comparison](../docs/pdf_comparison.md).
 
-For an existing Docker worker, use the compatible wrapper from its checkout;
-it requires the preserved env and clients, and provisions missing pinned models:
+## Authentication And Health
 
-```sh
-python scripts/start_comparison_slave.py --env-file runtime/comparison-slave/worker.env --dry-run
-python scripts/start_comparison_slave.py --env-file runtime/comparison-slave/worker.env
+Every route requires `Authorization: Bearer <token>`. The token selects a
+namespace from the private mode-0600 clients JSON; callers cannot select another
+namespace by URL. Up to 32 distinct namespaces/tokens are supported.
+Responses are bounded JSON with `Cache-Control: no-store`.
+
+`GET /v1/health` reports protocol 1, code contract, backend (cpu/cuda),
+state (ready/busy/not_ready), safe error category, packaged worker version and
+allowlisted validated settings. No paths, tokens or arbitrary environment values.
+
+Active work reports busy. Queued work reports busy only while runtime readiness
+is valid. Successful preflight caches readiness for 60 s; failures back off for 30 s.
+Health can request scheduler revalidation, not perform OCR in the HTTP handler.
+GPU cold metadata validation must not reload idle model pools.
+Settings may be unavailable until validation; release labels are observational,
+not a substitute for code/runtime compatibility.
+
+## Job API
+
+| Request | Behavior |
+| --- | --- |
+| `GET /v1/jobs/<key>` | Namespace-scoped state/evidence lookup |
+| `POST /v1/jobs/<key>` | Idempotent submit: 202 queued/running, 200 existing terminal |
+| Same POST plus `X-CFM-Retry-Failed: 1` | Explicitly requeue failed job only, at most 3 total attempts; no TTL renewal |
+
+POST uses `application/octet-stream`, mandatory Content-Length,
+`X-CFM-Contract`, `X-CFM-Before-SHA256` and `X-CFM-After-SHA256`.
+Body is `struct.pack('>QQ', len(before), len(after))` then both byte sequences;
+each PDF is nonempty and at most 64 MiB. Hashes and
+`comparison_protocol.job_key(hashes, contract)` must match. No chunked upload.
+
+Job replies include protocol, contract, key, ordered hashes, state and safe error.
+Completed replies additionally contain result, diagnostics and per-side page
+render hashes. Retrieval requires unexpired evidence and current validated runtime;
+CFM independently checks evidence/render hashes against its snapshots.
+
+| HTTP | Meaning |
+| --- | --- |
+| 400 | Invalid framing/hashes |
+| 401 | Authorization failure |
+| 404 | Missing or other-namespace job |
+| 409 | Contract conflict or retry limit |
+| 411 / 413 / 415 | Missing length / oversize / unsupported media |
+| 429 | Capacity/concurrent-upload bound |
+| 503 | Evidence/runtime temporarily unavailable |
+
+429/503 include `Retry-After: 5`. Fixed error codes, not raw subprocess stderr,
+are returned. Failed jobs remain terminal until an explicit user retry, not an
+automatic polling loop. An uncertain POST must be reconciled on the same worker,
+not duplicated locally/remotely.
+
+## Queue, Retention And Recovery
+
+| Bound | Limit |
+| --- | --- |
+| Outstanding | 4 per namespace, 32 total |
+| Dispatch | Least-recently-served namespace, FIFO inside it |
+| Retained jobs | 128 |
+| Logical input/result reservation | 512 MiB; SQLite/journal overhead is additional |
+| Job TTL | 2 hours from original creation; retries do not renew |
+| Signed cache per namespace | 7 days, 512 entries, 512 MiB |
+| Namespace directories per root lifetime | 32; removed names are never reassigned |
+
+Terminal transitions discard input blobs. Minute-granularity cleanup and lookup
+checks expire jobs; expired queued work cannot start. Already running work remains
+visible/idempotent until bounded execution ends, then follows its original expiry.
+Dormant caches are pruned too. Cleanup never follows symlinks/arbitrary trees.
+
+A durable SQLite ledger retains jobs and transitions. Startup marks previously
+running jobs interrupted/failed; queued jobs survive. A root lock and watchdog
+prevent concurrent/orphan dispatch. The supervisor kills/reaps the process group
+on timeout; failure cannot produce partial completed evidence. Explicit retries,
+web restarts and cache reads must preserve original creation time.
+
+GPU broker IPC authenticates/bounds metadata/PDF/raw OCR, validates byte/runtime
+identity and replaces a failed actor only after reaping it. Idle unload releases
+weights/CUDA memory, not another conference's persisted history. Health and cache
+reads do not keep the actor loaded.
+
+## Runtime And Storage
+
+Use one Gunicorn process with 4 threads and worker-owned private storage.
+`CFM_SLAVE_ROOT` is mode 0700; clients/signing secret files mode 0600.
+The deployer supplies container paths and a persistent worker volume.
+`CFM_SLAVE_SECRET`, when set, is a secret **file path**, not secret text;
+otherwise the worker creates a stable signing secret in its root.
+
+The child uses minimal Django settings without application models/databases.
+Approved model checks/provider/fingerprint and normal OCR/time/memory bounds
+remain mandatory. Configure proxy finite upload limits for two 64 MiB PDFs plus
+16-byte framing. Do not expose the origin to the public internet or log bodies,
+Authorization, custom gateway headers or raw errors.
+
+## Tests
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p 'test_worker_deployment.py'
+.venv/bin/python -m unittest submissions.tests.test_comparison_slave
 ```
 
-CPU is the initialization default; updates retain the recorded backend. The wrapper
-validates rendered Compose configuration, rejects project names already owning
-non-worker containers, builds the candidate image, and runs an isolated runtime
-preflight before `up --force-recreate --wait`. Every successful deployment
-recreates the worker, even when its image and environment are unchanged, so
-mounted clients-file rotations and model changes are applied to a fresh
-process. Persistent worker volumes are retained; existing running jobs may be
-interrupted and follow the documented recovery/retry rules. Schedule updates
-accordingly. `--wait-seconds` bounds readiness waiting (default
-240, range 30-600). A failed build/probe never stops or recreates the existing
-worker. Dry-run only reads configuration and project ownership; it performs no
-build, model probe or startup. The selected env file takes precedence over
-inherited conference Compose settings. Models and credentials are never
-downloaded or generated by this wrapper.
-
-The container entrypoint also preflights before initializing persistent worker
-state or starting Gunicorn. Its `--preflight` target validates the mounted private
-clients file and actual model/provider sessions using disposable storage and
-the existing bounded child runner. Persistent tokens, signing material, jobs
-and caches are not changed by that probe. `--healthcheck` remains a lightweight
-HTTP check and does not directly load models. A successful preflight cannot
-guarantee a later Docker cutover; an `up --wait` failure still needs operator
-inspection and does not trigger automatic volume or data rollback.
-
-Run from the repository checkout with its provisioned, backend-specific Python
-environment and approved local models. CPU uses the normal requirements; CUDA
-must use the parent's separate GPU runtime and `CFM_OCR_BACKEND=cuda`. Runtime
-model/provider validation is never bypassed and models are never downloaded.
-
-Required environment:
-
-OCR execution defaults: CPU two concurrent pages, CUDA four, four threads per
-page, Small detector and Small recognizer, 300-second per-pair timeout.
-Existing explicit page/thread
-settings are retained; native/embedded CPU still defaults to one page.
-Update CFM and workers together to retain compute-contract compatibility.
-`CFM_RAPIDOCR_PAGES` (1-8),
-`CFM_RAPIDOCR_DET_MODEL` / `CFM_RAPIDOCR_REC_MODEL` (small/medium), and
-`CFM_RAPIDOCR_TIMEOUT` (30-3600) are passed by worker Compose. Configure them in
-the worker env/Compose, not per-conference service clients. See
-[Worker OCR Settings](../docs/docker_guide.md#worker-ocr-settings). GPU reduction
-and dynamic dispatch do not change OCR precision, batch 6, 300 DPI or file binding.
-
-Standalone CUDA additionally defaults to `CFM_GPU_MODEL_IDLE_SECONDS=1800`.
-Use 0 for the former per-job model lifetime, or 1-86400 idle seconds. CPU ignores
-this option. Set it in the worker env, not per-conference env, and recreate the
-worker through the existing deployer; existing explicit values are preserved.
-One private broker supervises a GPU-only inference process. Fresh namespace
-children still own Django settings, signing and document/pair caches. Only
-PDF bytes and bounded OCR evidence cross authenticated local IPC; no namespace
-paths or signing keys enter inference. Complete cache reuse does not load models.
-The idle clock starts after loading/last completed inference, not after health
-polls/cache hits; an active job is never unloaded. At expiry, shutdown, timeout
-or inference failure the GPU process is killed/reaped to release its CUDA arena.
-Parent-death protection prevents orphan models after a server crash. Cold health
-validates the previously loaded engine's current models/dependencies/device in
-a short metadata-only process, not a second loaded model pool. Changed identity
-requires fresh validation and invalidates obsolete evidence. Worker logs record
-`gpu_models_loaded`, `gpu_models_unloaded` and safe failure categories.
-
-- `CFM_SLAVE_ROOT`: absolute, worker-owned directory with mode 0700, separate
-  from every conference's storage. Do not mount existing conference data.
-- `CFM_SLAVE_CLIENTS_FILE`: absolute worker-owned JSON file, mode 0600, containing
-  `{"conference-a":"a-unique-random-token-at-least-32-characters-long"}`.
-  Use distinct high-entropy tokens; up to 32 client namespaces are supported.
-- `CFM_RAPIDOCR_MODEL_DIR`: absolute approved-model directory. When omitted,
-  the default is the checkout's `runtime/rapidocr-models`, not a conference path.
-
-Optional `CFM_SLAVE_SECRET` names a private mode-0600 secret **file**, not the
-secret itself. Otherwise a cryptographically random secret is durably created
-at `CFM_SLAVE_ROOT/signing.secret`. Each namespace's cache signing key is derived
-from this worker secret, never from a CFM application's secret. Keep this file
-stable across restarts. Use the same Python environment for the runner and OCR;
-do not point `CFM_RAPIDOCR_PYTHON` at an incompatible environment.
-
-Start exactly one Gunicorn process with four threads:
-
-```sh
-gunicorn --workers 1 --threads 4 --bind 127.0.0.1:8010 \
-  --timeout 30 --graceful-timeout 280 comparison_slave.server:application
-```
-
-Use a trusted network and TLS at a reverse proxy for remote access. Configure
-the proxy for a maximum request body of 134217744 bytes and a finite upload
-timeout. WSGI cannot impose a portable socket read deadline. Do not expose the
-service directly to the public internet. Restrict access logs and never log
-Authorization headers or request bodies. The service returns fixed error codes,
-discards subprocess stderr, and never logs tokens or PDFs. Token changes take
-effect on restart. Paths and private configuration files may not be symlinks.
-Linux/macOS are supported; process-group supervision uses POSIX facilities.
-
-## HTTP Contract
-
-All routes, including health, require `Authorization: Bearer <token>`.
-The token determines the namespace; callers cannot choose a namespace in a URL.
-All responses are bounded JSON with `Cache-Control: no-store`.
-
-- `GET /v1/health`: HTTP 200 with `protocol: 1`, current `contract`, `backend`
-  (`cpu` or `cuda`), and `state` (`ready`, `busy`, or `not_ready`). Active work
-  reports busy even after readiness expires. Queued work reports busy only
-  while readiness is valid; failed/expired readiness remains not-ready with
-  its safe error category, without hiding already accepted jobs. Preflight is performed
-  only by the scheduler, in a subprocess, at startup and on demand from health,
-  completed-result requests, or queued work. Successful checks are cached for
-  60 seconds; failed checks have a 30-second retry floor. Without requests or
-  queued work, idle workers do not reload models. Compose's periodic health
-  requests can trigger one revalidation after that interval. It validates models, both lazy ONNX
-  sessions, the selected provider, shared imports, and runtime fingerprint.
-  A safe `error` category explains not-ready states. Startup, preflight,
-  subprocess timeout/exit, job failure, and scheduler failure log fixed
-  operational categories and exception types, never exception messages,
-  credentials, model paths or PDF contents. Scheduler faults back off 30 seconds.
-- `GET /v1/jobs/<key>`: namespace-scoped lookup. Jobs include `protocol`,
-  `contract`, `key`, ordered `hashes`, `state`, and safe `error` (empty unless
-  failed). Completed jobs additionally contain `result`, `diagnostics`, and
-  `render_hashes: {before: [...], after: [...]}`. Retrieval requires unexpired
-  evidence, current contract, and a fresh successful preflight with matching
-  runtime fingerprint. Otherwise it fails closed with 503. The parent must
-  independently validate evidence and render hashes against its own PDFs.
-- `POST /v1/jobs/<key>`: `Content-Type: application/octet-stream`, required
-  `Content-Length`, `X-CFM-Contract`, `X-CFM-Before-SHA256`, and
-  `X-CFM-After-SHA256`. The body is `struct.pack('>QQ', len(before), len(after))`
-  followed by exact PDF bytes; each side is nonempty and at most 64 MiB. Both
-  hashes and `comparison_protocol.job_key(hashes, contract)` must match.
-  Returns 202 for queued/running work, 200 for an existing terminal job.
-  Repeated matching submissions never enqueue duplicate work. PDF semantic
-  validation runs in the child; malformed PDFs become failed jobs.
-- An explicit `X-CFM-Retry-Failed: 1` on the same POST atomically requeues only
-  a failed job. Queued/running/completed jobs remain unchanged. Up to three
-  total attempts are allowed per job; further failed-job retries return 409
-  with `error: retry_limit`. The reply includes `attempts`. Concurrent retries
-  create only one new attempt. Retry does not extend the original two-hour TTL.
-
-Auth failures are 401; missing or other-namespace jobs are 404; contract mismatch
-is 409; missing Content-Length is 411; oversized body is 413; unsupported media
-type is 415. Malformed framing/hashes are 400. Chunked uploads are not supported.
-Queue/storage capacity or a concurrent upload returns 429. Temporary inability
-to serve evidence returns 503. 429/503 include `Retry-After: 5`.
-
-Failed jobs remain terminal and idempotent under ordinary GET/POST, including
-after configuration repair. Use the explicit retry header only for a user
-Build/Retry action, never polling or an automatic retry loop. Jobs expire after
-two hours; a later submission can then create a new job. There is no delete
-endpoint. Clients must not turn uncertain POSTs or busy jobs into duplicate
-local/remote work. Successful executions with a matching validated runtime
-fingerprint refresh readiness immediately, even when they take over 60 seconds.
-
-## Execution And Retention
-
-The web process imports no Django app models and does no PDF rendering/OCR.
-A dedicated scheduler dispatches one heavy subprocess at a time. A durable
-SQLite ledger stores input bytes, terminal evidence, and bounded transition
-events. Namespace dispatch is least-recently-served, FIFO within each namespace.
-There are at most four outstanding jobs per namespace, 32 outstanding jobs in
-total, 128 retained jobs, and 512 MiB of reserved input/result payloads. Capacity
-is checked transactionally. Terminal transitions discard input blobs. SQLite
-reuses freed pages; retained database/journal overhead can exceed the logical
-payload quota but cannot grow by accumulating job history indefinitely.
-
-Jobs expire after two hours, with minute-granularity cleanup and immediate expiry
-checks on lookup. Expired queued jobs cannot start. An already running job
-remains visible to GET and idempotent POST until its bounded process terminates,
-even past TTL. Terminal jobs then follow the original expiry; running work and
-failed-job retries never renew creation time. Clients must retain their
-same-worker routing lease beyond the job TTL plus the bounded execution
-bound and network margin. Shared signed caches retain the existing seven-day, 512-entry,
-512-MiB per-namespace bounds. Dormant caches receive bounded TTL cleanup too.
-At most 32 namespace directories may exist over a root's lifetime (at most
-16 GiB of retained cache payloads); changing many namespaces requires offline
-operator cleanup or a new root. Removed namespace data is never reassigned.
-Interrupted temporary job artifacts are removed before scheduling more work.
-Cleanup never follows symlinks or recursively scans arbitrary storage trees.
-
-The child configures only minimal Django settings: namespace `BASE_DIR`, derived
-`SECRET_KEY`, empty apps and databases. It invokes
-`pdf_comparison_execution.local_pdf_evidence`, retaining the shared signed cache
-and shared error semantics. The OCR wall limit defaults to 300 seconds, configured
-with `CFM_RAPIDOCR_TIMEOUT` (30-3600); the wrapper deadline is that budget plus
-30 seconds and kills the process group,
-including descendants. CPU/address-space limits reuse the common worker and
-file output is also bounded. A watchdog survives a web-process crash. An
-inherited exclusive root lock prevents another process from dispatching while
-an orphan runner remains alive. Startup marks every previously running job
-failed/interrupted; queued jobs survive, and interrupted work is never reported
-as successful. A second process for the same root fails closed.
-
-## Verification And Ownership
-
-Current measured Docker/CPU/GPU outcomes and their limits are recorded in
-[Deployment Validation](../docs/deployment_validation.md); installation and
-upgrade procedures are owned by the [Docker Guide](../docs/docker_guide.md).
-
-Run `.venv/bin/python -m unittest discover -s tests -p test_worker_deployment.py`
-for mocked deployment ordering, preflight failure, project ownership, CPU/GPU
-selection and entrypoint isolation tests. These never invoke Docker.
-
-Run `.venv/bin/python -m unittest submissions.tests.test_comparison_slave` for
-isolated temporary-storage and real local HTTP tests with mocked compute.
-These tests need no OCR models and no conference data. Real CPU/CUDA acceptance
-still requires approved models and the parent's full deployment/renderer checks.
-
-This package does not alter System State archive compatibility. Update central
-docs, release notes and APP_VERSION alongside user-visible changes;
-STATE_ARCHIVE_VERSION does not need a bump for isolated worker storage.
+These mock inference and use isolated storage/HTTP; they do not prove CUDA
+inference. Run the [acceptance procedure](../docs/editorial_acceptance_runbook.md#docker-and-worker-lifecycle)
+for actual Docker/GPU changes. Worker data is not System State data.

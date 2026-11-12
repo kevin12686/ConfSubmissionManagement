@@ -4651,47 +4651,47 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
         )
 
     def test_author_count_displays_distinct_original_author_spellings(self):
-        self.make_master_paper("P001", "First", "Chih-Wei Hsu")
-        self.make_master_paper("P002", "Second", "ChihWei Hsu")
-        self.make_master_paper("P003", "Third", "Chih-Wei Hsu")
+        self.make_master_paper("P001", "First", "Alex-James Morgan")
+        self.make_master_paper("P002", "Second", "AlexJames Morgan")
+        self.make_master_paper("P003", "Third", "Alex-James Morgan")
         self.make_final_submission(
             final_submission_id="1",
             paper_id_filled="P001",
             final_submission_title="First",
             extracted_title="First",
-            extracted_authors="Chih-Wei Hsu",
+            extracted_authors="Alex-James Morgan",
         )
         self.make_final_submission(
             final_submission_id="2",
             paper_id_filled="P002",
             final_submission_title="Second",
             extracted_title="Second",
-            extracted_authors="ChihWei Hsu",
+            extracted_authors="AlexJames Morgan",
         )
         self.make_final_submission(
             final_submission_id="3",
             paper_id_filled="P003",
             final_submission_title="Third",
             extracted_title="Third",
-            extracted_authors="Chih-Wei Hsu",
+            extracted_authors="Alex-James Morgan",
         )
 
         rebuild_paper_authors()
         rows = author_count_rows()
-        author_row = next(row for row in rows if row["normalized_author_name"] == "chihwei hsu")
+        author_row = next(row for row in rows if row["normalized_author_name"] == "alexjames morgan")
 
         self.assertEqual(author_row["publication_paper_count"], 3)
-        self.assertEqual(author_row["display_author_names"], ["Chih-Wei Hsu", "ChihWei Hsu"])
-        self.assertEqual(author_row["display_author_name"], "Chih-Wei Hsu; ChihWei Hsu")
+        self.assertEqual(author_row["display_author_names"], ["Alex-James Morgan", "AlexJames Morgan"])
+        self.assertEqual(author_row["display_author_name"], "Alex-James Morgan; AlexJames Morgan")
 
         response = self.client.get(reverse("submissions:author_count"))
         self.assertContains(response, "Display Names")
-        self.assertContains(response, "Chih-Wei Hsu")
-        self.assertContains(response, "ChihWei Hsu")
+        self.assertContains(response, "Alex-James Morgan")
+        self.assertContains(response, "AlexJames Morgan")
 
         frame = author_count_frame()
-        exported_row = frame[frame["normalized_author_name"] == "chihwei hsu"].iloc[0]
-        self.assertEqual(exported_row["display_author_name"], "Chih-Wei Hsu; ChihWei Hsu")
+        exported_row = frame[frame["normalized_author_name"] == "alexjames morgan"].iloc[0]
+        self.assertEqual(exported_row["display_author_name"], "Alex-James Morgan; AlexJames Morgan")
 
     def test_author_count_paper_ids_link_to_current_publication_pdfs(self):
         for paper_id, title in [

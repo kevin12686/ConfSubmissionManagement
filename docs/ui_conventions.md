@@ -1,724 +1,149 @@
 # UI Conventions
 
-This document is the canonical implementation guide for shared UI, worklist,
-navigation, and presentation behavior. Publication decisions remain governed by
-[Publication Rules](publication_rules.md) and server-side services. For
-task-oriented guides, start from the [Documentation Home](README.md).
+The UI is one server-rendered application, not a set of feature-specific widgets.
+Use shared templates, vocabulary and progressive enhancement. Publication state
+always belongs to [server rules](publication_rules.md).
 
-## Design Boundary
+## Visual Language
 
-The UI is server-rendered Django using locally pinned Tabler 1.4.0 and HTMX
-2.0.10. Progressive enhancement may improve navigation and file selection, but
-must not own workflow state, publication scope, file resolution, exceptions,
-or review decisions.
-
-Every enhanced GET must remain a valid normal URL. Every state-changing action
-must remain a normal CSRF-protected, audited server POST.
-
-Browser titles use `<Page Name> · <Conference Name>` from the shared base
-template so tabs and bookmarks remain identifiable across conference
-instances. Individual pages provide only their page-name title block.
-
-## Feedback And Alerts
-
-Use the feedback channel that matches the lifetime of the message:
-
-| Content | Presentation |
+| Element | Convention |
 | --- | --- |
-| Successful save or short-lived update | Django message in the shared Toast stack |
-| Warning or failed operation | Dismissible Toast that does not autohide |
-| Workflow state, readiness blocker, confirmation, or validation | Persistent inline content |
-| Alert containing lists, tables, or multi-step forms | `.cfm-alert-stack` |
-| Short message paired with compact actions | Explicit `.d-flex` alert |
+| Red | Blocker or dangerous action |
+| Amber | Needs human attention |
+| Green | Named check is complete |
+| Blue / neutral | Tracked information, provenance or history |
+| Color meaning | Always accompanied by readable text |
+| Tables | Uniform rows, separators and hover; no zebra striping |
+| Long text | Wrap within bounded cells; never widen the document |
+| Typography | Body/table 15px, supporting text at least 13px, badges 12px |
+| Badges | Noninteractive status, not button-like commands |
+| Tooltips | Supplemental clarification only; essential state remains visible |
+| JSON / paths | Dark monospace text on a muted light surface |
 
-Tabler alerts default to horizontal flex layout; ordinary CFM alerts use
-vertical document flow. Never put persistent publication state only in a Toast.
+Shared page titles are `Page name · Conference name`. Keep footer at the
+viewport bottom on short pages. Use shared icon assets, focus states and
+contrasting buttons; do not invent a local color palette.
 
-## Visual Language And Accessibility
+The page must not overflow at 390px. Wide data tables may scroll inside their
+own containers. Avoid nested cards and constrained alert columns containing
+full-width tables.
 
-- Red means blocker or danger.
-- Amber means manual attention.
-- Blue means tracked or informational state.
-- Green means the named review is complete.
-- Gray means inactive or history.
-- Every color-coded state also includes text.
-- Body and table text use 15px; supporting text has a 13px minimum; badges use
-  12px.
-- Tables use uniform row surfaces and horizontal separators, not zebra striping.
-- Long tables use `cfm-table-sticky` and scroll inside their container.
-- Buttons retain visible focus, sufficient height, and labels that fit at
-  narrow widths.
-- Technical paths, actions, and JSON use dark monospace text on a muted light
-  surface.
+## Vocabulary And Feedback
 
-The page itself must not overflow at 390px. Wide tables may scroll within their
-containers. Keyboard operation must remain available for controls, modals, and
-collapses.
+Use `submissions/presentation.py` labels. Short forms include Current final,
+Replaced, Discarded, Original, Corrected, Pending, Review OK, Needs edit,
+Needs processing and Allowed exception. Display strings never drive rules.
 
-### Shared Worklist Vocabulary
-
-Repeated workflow concepts use the exact shared wording below. The canonical
-implementation is `submissions/presentation.py`; database values, query
-parameters, and service decisions must not depend on these display strings.
-
-| Concept | Canonical compact labels |
+| Message lifetime | Presentation |
 | --- | --- |
-| Version | `Current final`, `Replaced`, `Discarded`, `Other inactive`, `Version conflict` |
-| Origin | `Start2`, `Editor Upload` |
-| Paper ID | `Verified`, `Auto-verified by title`, `Verified, title differs`, `Paper ID needs review`, `Paper ID title mismatch`, `Paper ID not in Master List` |
-| Publication decision | `Publishing`, `Not Publishing`, `Decision required`, `Integrity conflict` |
-| Review | `Pending`, `Red Flag`, `Review OK`; Formatting may also use `Needs edit` |
-| PDF processing | `Needs processing`, `Processed`, `PDF error` |
-| Exception | `Not allowed`, `Allowed exception`, `Stale allowed exception` |
-| Submission file | `Original`, `Corrected`, `No PDF`, `No source` |
+| Save/update success | Shared Toast |
+| Failed operation / warning | Dismissible, non-autohiding Toast where appropriate |
+| Validation, confirmation, readiness blocker | Persistent inline content |
+| Table/list/multi-step alert | Vertical `.cfm-alert-stack`, not Tabler's implicit horizontal flex |
+| Missing prerequisite | One clear root cause; suppress derivative badge noise in the compact row |
 
-- Let the column header provide context. Do not repeat `Version`, `Status`,
-  `Author Number`, or another obvious field name inside every badge.
-- A badge communicates one state. Put origin, extractor source, or other
-  supporting metadata in compact text when the table already has a dedicated
-  status column.
-- Use `Needs attention` for an umbrella work queue. Do not present it as a
-  replacement for a domain state such as `Pending`.
-- Do not add a generic status guide to one list. Put the current state in the
-  row and keep specialized evidence guides only where they explain an actual
-  review task, such as Paper ID title differences.
-- Import, audit, and operational result terms remain domain-specific when they
-  do not represent one of the shared workflow concepts above.
+Toast stack sits below a visible navbar, otherwise near the viewport's upper
+right. Text/close icons must remain readable. Never put a publication blocker
+only in a disappearing Toast.
 
-Full-width content expanded inside a table row must inherit the existing cell
-width and may use a viewport-relative `max-width`; it must not use a
-viewport-relative fixed `width`, because expanded content must never change the
-table's calculated width.
+## Navigation And Worklists
 
-## Navigation And Exact Targets
+- User search is fuzzy; workflow links use exact record targeting.
+- Do not navigate to a paper by using a short numeric ID as broad `q`.
+  Preserve the canonical exact-target parameters supplied by the selector.
+- Keep originating filter/search/sort/return context where applicable. Validate
+  return URLs against same-origin rules.
+- Filter/sort **before** pagination. Shared sizes are 25/50/100/200/All, default 25.
+  Counts describe their stated scope, not only the current page.
+- Show top and bottom controls for main worklists. A nested lazy history list
+  does not duplicate outer page-size controls unnecessarily.
+- Bottom navigation returns to the list start. Top navigation avoids needless
+  scrolling when its header is already visible.
+- HTMX and full navigation must preserve equivalent URL/filter behavior.
+  Card saves restore the owning card; do not leave another paper's async result
+  attached after filtering/reordering.
+- Use the shared panel reveal positioning for table details and card reviews:
+  if the row/card plus panel fits but is clipped, center it; otherwise align its
+  owner at the viewport start. Expansion must not widen a table.
+- Header actions operate on the current page or dataset. General navigation
+  belongs in Navbar; condition-specific workflow links belong beside evidence.
 
-User search is fuzzy; system navigation is exact.
+## Forms And Dynamic Fragments
 
-### Page Header Actions
+Titles and authors use wrapping textareas. Notes preserve useful paragraphs.
+Changed markers compare against loaded values and clear when restored.
+Server preview, not browser dirty state, decides effective changes and resets.
 
-The Navbar owns ordinary cross-page navigation. A page header is reserved for:
+Paper pickers share the searchable lookup/selection component and server
+validation. Selection must remain distinguishable from free text. Scope-changing
+actions require explicit confirmation; no implicit publication decisions.
 
-- commands that act on the current page or its records;
-- switches between views of the same dataset;
-- local summaries such as Note Summary;
-- explicit Back actions in focused, confirmation, or detail views.
+Lazy panels use shared loading, success and error states. Initialize images,
+magnifiers and forms after HTMX replacements as well as full loads. Position
+restoration must open/load a lazy panel, not leave permanent Loading text.
+Hide broken-image placeholders until load completes; show a retry/error state
+rather than stale pixels.
 
-Do not repeat a generic Navbar destination in the upper-right header merely as
-a shortcut. Put a cross-workflow link beside the condition or result that makes
-it relevant:
+Keep event listeners scoped/delegated and clean up timers/observers on removal.
+Do not duplicate a page-specific fix in every template.
 
-- Dashboard readiness links to Error Report when blocked and to the anchored
-  Final Publication Package when clear;
-- Process PDFs links to the Organized List PDF-issue filter only when PDF
-  issues exist;
-- Plagiarism import/report results offer their review link only after data was
-  changed;
-- Export Reports places readiness review inside the Final Publication Package
-  section and blocked-export alert;
-- Author Count links to the author exception filter only when an over-limit
-  author exists.
+## Formatting Workspace
 
-Operational controls such as extraction, import, upload, save, add, and
-Checklist/Compact view switches remain in their page headers. Moving a link
-must never change the server-side scope, readiness result, review state, or
-publication source.
+List, Focus and Single use shared review content and revision-history partials.
+Single queue derives from current filter/search. Save stays on the current
+paper; navigation is explicit and warns on dirty form state.
+A saved paper leaving a filter uses its bounded one-return receipt, not an
+async comparison panel floating into unrelated lists.
 
-| Destination | Exact parameter |
+Revision history loads on expansion, newest first. Use responsive rows rather
+than an overflowing table; show current-file identity only when bytes/sources
+match. Missing/corrupt files have explicit errors; no restore/select controls.
+
+Comparison services is Formatting-only: compact remote/local release,
+backend/status with detailed settings and last-seen labelling. Poll every ten
+seconds only while visible, no overlapping requests. Polling must not start
+work or silently grant CPU consent.
+
+## Images And PDFs
+
+| Surface | Shared behavior |
 | --- | --- |
-| Final Submission workflow | `submission=<pk>` |
-| Organized List paper | `paper_id=<exact Paper Master ID>` |
-| Exception row | `exception_key=<service row key>` |
-
-Reserve `q` for user-entered search. An exact target outside the workflow scope
-renders the shared focused-worklist explanation; it never substitutes a nearby
-record or widens the service queryset.
-
-Dashboard tracked-information links must open the exact subset represented by
-their count. Verified Paper Master title differences, reviewed extracted-title
-differences, and combined Plagiarism/Single exceptions use dedicated filters
-instead of opening a broader workflow tab.
-
-Dashboard Next-action totals and breakdowns use affected-paper counts from the
-same readiness rows. A paper may appear in more than one breakdown, so the UI
-does not imply that breakdown values sum to the card total. Desktop action rows
-reserve one stable-width count column; mobile rows return to a single-column
-layout. Error Report actions carry the exact blocker categories represented by
-the card and must not mix Allowed Info records into a blocking count.
-
-Exceptions computes summary and status-tab counts after applying exception type
-and user search, but before applying the selected status tab. This keeps the
-tabs useful as a distribution of the current scope and makes their counts agree
-with the active type/search controls.
-
-Contextual links to Final Submission Edit pass a same-site `next` URL. The
-controller validates it with `url_has_allowed_host_and_scheme()`. Save returns
-to the originating worklist with its view, filter, search, sort, tab, page, and
-single-paper context.
-
-## Worklist Contract
-
-Shared worklists follow this sequence:
-
-1. Select lightweight rows for the complete scope.
-2. Apply server-side filters and validated sorting.
-3. Paginate.
-4. Hydrate file checks, previews, diffs, suggestions, and signed evidence only
-   for the displayed page or exact focused record.
-
-Supported page sizes are `25`, `50`, `100`, `200`, and `all`; the default is
-25. Pagination uses `submissions/application/pagination.py` and renders the
-shared component above and below the rows.
-
-Local child lists such as Formatting revision history omit both pagination
-bars when their total fits the smallest supported page size. The threshold is
-derived from `PAGE_SIZE_OPTIONS`, not the currently selected size: a longer
-history shown as All/50 still needs controls to return to 25. Longer child
-lists retain both bars with scope-specific labels (`revision history`,
-`Revisions per page`) so their controls are not confused with the parent
-worklist. Main worklist top/bottom controls remain unchanged.
-
-Top pagination preserves its visible viewport position when the user changes
-page or page size, so a table or card-list header that is already visible does
-not move unnecessarily. Bottom pagination returns immediately to the refreshed
-worklist start. Both behaviors also protect against invalid absolute scroll
-offsets when the next page is shorter. Pagination and worklist restoration must
-not inherit framework-level smooth scrolling: routine navigation should not
-visibly travel across replaced content. Keep this policy in the shared
-pagination component and `worklist_navigation.js`, not in page-specific scripts.
-
-Filtering, sorting, tabs, and pagination preserve one another's query
-parameters. Natural identifier sorting uses `natural_text_key()`, so `P2`
-precedes `P10`.
-
-Worklist tabs use `nav nav-tabs cfm-tabs`. Tabs that change the result set are
-server-side filters applied before pagination; they must not partition only the
-current browser page. Tab and filter labels use the shared vocabulary when they
-represent a workflow state; page-specific aggregate filters may use concise
-task language such as `Needs attention`, `Page issues`, or `Edited`.
-
-## Partial Navigation And Position Restoration
-
-HTMX may replace only the named worklist container and update browser history.
-The underlying URL remains directly refreshable and shareable.
-
-`submissions/static/submissions/worklist_navigation.js` restores post-action
-position. Worklists opt in with `data-cfm-worklist`; cards provide stable
-`data-cfm-worklist-card` IDs. After an ordinary POST/redirect it:
-
-- returns to the original card and viewport offset;
-- selects the next or previous visible card if a filter removed the changed row;
-- reopens a card-owned collapse where appropriate.
-
-Workflow mutation, evidence checks, filtering, and publication decisions remain
-server-side. Lazy components listen for `cfm:worklist-expanded`, and HTMX
-initialization uses `htmx:load` with `event.detail.elt`.
-
-## Searchable Paper Pickers
-
-Large Paper ID selectors use the shared local Tom Select component rather than
-rendering the full Paper Master List into every form.
-
-- Do not preload results. An empty query shows no papers.
-- Master searches rank exact Paper ID first, then ID prefix/contains, Master
-  Title, and Master Authors; responses are capped at 20.
-- Editor Upload, Paper ID Review, and orphan resolution in Not Publishing use
-  the same three-line layout:
-  Master Paper ID, Master Title, and Master Authors. The selected input remains
-  compact as Paper ID; a separate summary may show the full Master metadata.
-  Distinguish Title and Authors through typography, spacing, and the shared
-  Users icon rather than adding verbose labels or badge-like metadata.
-- Let the open result list use available viewport height while retaining a
-  bounded mobile height. Do not add a second picker where an existing worklist
-  search already finds the same records.
-- Do not auto-select the first result and do not allow arbitrary values.
-
-Tables with uncommon, high-impact row actions keep only compact command buttons
-in the main row. Expand a full-width action row for searchable selectors,
-required reasons, warnings, and confirmation controls. Do not force those
-controls into a narrow Actions cell. Hide the entire action section when no
-record requires it.
-- Table rows and review cards opt into the shared
-  `data-cfm-context-expansion` behavior. After a user opens the Bootstrap
-  collapse, the browser treats the owning row or card header and expanded
-  content as one reading group. If that group fits in the available viewport
-  but is clipped, it is centered; if it cannot fit, the owning row or card
-  header is aligned below the app header. A fully visible group does not move.
-  Programmatic reopening after a form POST remains under worklist position
-  restoration, so the two behaviors do not compete. Horizontal table scroll,
-  button focus, reduced-motion preferences, and collapse-on-close behavior
-  remain unchanged.
-- Server-side form/service validation remains authoritative.
-- Initialize on `DOMContentLoaded` and `htmx:load`; destroy instances before
-  HTMX removes their elements.
-- Keep picker styling scoped under `.cfm-paper-picker` so ordinary selects and
-  other worklists retain the shared site styling.
-
-## Metadata Forms
-
-Plagiarism / CrossCheck uses Automatic service and Manual workflow tabs within
-one integration page. A batch detail page holds upload preview, progress and
-result preview in the same paper table. Settings groups its thresholds,
-service status, exact folder and optional accounts together. Credentials remain
-collapsed and write-only; service default IEEE account needs no form input.
-Connection checks and folder loading are explicit actions, and job polling runs
-only while its progress page is visible. Existing site typography, surfaces,
-responsive tables and persistent inline state apply to these pages.
-The conference-folder selector uses the existing Tom Select library in a
-full-width field. Both options and the selected name wrap completely; do not
-truncate conference names or rely on native datalist popups for long names.
-Keep the enable checkbox on its own row so Service base URL and Report wait
-minutes align. Explain folder confirmation beside the checkbox, not in a
-separate warning panel.
-Leave unconfigured service addresses blank. Place optional account inputs before
-the explicit connection/folder-loading action so authenticated setup follows the
-same flow as unauthenticated setup. Credential save/remove stays within Settings,
-preserves unsaved destination edits and uses the existing inline status styles.
-Invalidate connection status on address/credential edits; late responses must not
-populate folders for obsolete inputs or erase newer credential edits.
-In batch result cells, stack the status, optional message and report link with
-explicit spacing so the action cannot run into the status text.
-Show the batch auto-update countdown as inline secondary text in the progress
-section, not a separate card. Distinguish countdown, request in progress and
-paused states; do not announce every second through an ARIA live region.
-
-Keep retries inside the original batch page: one cumulative paper table and an
-expandable execution history, not a second upload page or one batch per retry.
-Summary counts distinguish applied, ready, awaiting report and attention papers;
-they count each paper once. Reveal wait/confirmation controls on request above
-the results. Poll only the results panel, preserve open details/scroll, process
-its HTMX controls and never replace a form the user is editing. Stopped/failed
-polling requires an explicit progress check, not an automatic retry POST.
-
-Paper titles and author lists are multiline metadata. Editable Master, Final,
-Editor Upload, and manual-override title fields use the same three-row textarea
-pattern as their corresponding authors field. Search fields and Paper ID
-pickers remain single-line controls.
-
-Existing Paper Master and Final Submission forms use the shared record-edit
-pattern. A low-profile field marker appears only while the browser value differs
-from the value loaded with the form; reverting the value removes it. File input
-markers say that a new file is selected because byte equality is decided by the
-server. The primary action is **Review changes**, followed by one integrated
-preview showing User changes and Workflow impact. Do not add page-specific
-confirmation modals or duplicate reset explanations beside individual fields.
-
-## Expensive Evidence And Request Context
-
-Do not decode, hash, or render evidence for rows that will not be displayed.
-Signed evidence tokens are also generated after pagination and must not perform
-database queries or publication-file reads.
-
-Deferred image previews use the shared `image_loader.js` and
-`image_loader.css` component. Keep the image hidden while its source is being
-resolved, show the standard loading surface, and replace it with either the
-loaded image or an explicit retryable error. Formatting Review list previews
-load when their review collapse opens; Process PDFs modal previews load when
-the selected page opens. Do not render an empty or unresolved `src` directly,
-because the browser's broken-image indicator is not an editorial status.
-Placeholder dimensions apply only before loading, while loading, or after a
-load failure. Once an image is ready, its natural aspect ratio controls the
-container so unused placeholder space cannot resemble a partial or broken
-preview. Do not stretch or crop PDF evidence to fill a placeholder.
-
-Publication-wide read pages share
-`submissions.services.publication_read.PublicationReadContext`. Pass its
-`FileInspectionContext` through publication-facing helpers so a path is
-inspected once per request. UI caches and display summaries never feed export
-decisions.
-
-Final export uses strict fresh hashing and snapshot byte reads as defined in
-[Publication Rules](publication_rules.md#export-integrity).
-
-## Formatting Review Modes
-
-Formatting Review has three distinct modes:
-
-- List mode: compact worklist with one expanded paper at a time.
-- Single Paper Mode: session-backed, naturally sorted queue captured from the
-  current filter/search result.
-- Focus mode: one exact record opened from another workflow.
-
-Status changes do not reorder a Single Paper queue. Previous/Next skip records
-that later leave publication scope. Single and Focus modes do not show normal
-worklist pagination, and Focus mode never creates a queue.
-
-Every Formatting POST includes a short-lived review snapshot. Save and
-title-guard confirmation recheck row time, active scope, and selected file
-identity. Do not bypass `save_formatting_review()` with a direct controller
-write.
-
-Validation accepts a recognized PDF/source pair even if the two upload fields
-were swapped. It rejects two PDFs, two recognized source files, and unknown
-files in the PDF field. Bound status, notes, and errors remain visible; browser
-file inputs must be selected again after failure.
-Pass the bound submission ID into the shared worklist return context so a
-failed POST restores and expands its original card, including lazy preview and
-history initialization. Render that bound card expanded, with its preview
-source set, so lost browser storage or submitting during the collapse animation
-cannot hide its errors or leave its preview waiting for another toggle. Do not
-add a second error-only card/navigation system.
-
-Automatic comparison status is paper-card scoped. An out-of-filter upload
-receipt may appear only on the first matching post-upload return; it is not a
-session-wide fallback for unrelated filters, searches, pages or later status
-saves. The browser deduplicates in-flight requests, not completed validation:
-new HTMX panels and browser-history re-entry revalidate with a read-only GET.
-Unrelated child-panel loads must not repeatedly restart comparison requests.
-
-Corrected-PDF title confirmation presents pending PDF, source, workflow, and
-notes as a structured summary between the title comparison and confirmation
-actions. File metadata must not be compressed into an unstructured inline
-sentence; notes occupy a full row and the summary stacks at narrow widths.
-
-## Formatting Revision History
-
-Formatting revision history uses one shared full-width panel at the bottom of
-the expanded review workspace and in Final Submission edit's file section.
-Keep it collapsed by default, load on demand with retryable loading feedback,
-and render unframed revision entries with wrapping filenames and stacked mobile
-columns. Count queries are batched after main-worklist pagination; file reads
-and hashes belong only to the requested history page/download. History uses
-the shared pagination component with `pagination_local=True`, preserving the
-main URL, queue, and unsaved form. Small histories have no redundant pagination
-bars; larger histories identify their own pagination scope. Capture-time status is historical metadata;
-`Current files` never implies publication eligibility. Do not add restore or
-version-switch actions to this read-only component.
-
-## Shared PDF Reader
-
-General PDF open links use the server-rendered `/pdf-viewer/?file=...` shell
-through one template filter/tag, not per-page JavaScript click interception.
-Retain target/new-tab semantics, native-open and raw download links. Use the
-shared `PDFFileInput` for the original-PDF form widget. History fragments and
-HTMX worklists require no separate PDF viewer initialization.
-
-The reader extends the existing base through its body/main/header/footer layout
-blocks and uses site surfaces, type, focus and control styles. Only this reader
-omits the site header, navigation, footer and main padding. It fills `100dvh`
-(with a `100vh` fallback), not a height calculated by subtracting site chrome.
-Keep the document as the primary scrolling region; flex ancestors and the PDF
-area use `min-height: 0` instead of a fixed minimum that adds outer scrolling.
-This is a full-window page, not a forced browser/OS fullscreen session.
-Its compact wrapping toolbar includes file identity and direct/download
-actions, and separates page navigation, fit/zoom/rotation and
-text search, using PDF.js's bundled toolbar icons. PDF.js owns page geometry,
-text placement, lazy rendering and search highlights; never alter document
-colors or stretch the rendered PDF to fit a placeholder. General workflow
-alerts are omitted only inside this dedicated reader; they stay on work pages.
-Isolate Tabler's `.page` app-layout display/minimum-height rules inside the
-reader so PDF.js's internal `.page` elements retain normal block layout and
-their own calculated dimensions. Do not replace PDF.js page sizes with CSS.
-
-Default to Fit page and Single page on every reader open. The compact page-layout
-segmented control uses the bundled single-page/vertical-scroll icons, native
-tooltips, and `aria-pressed` states reflecting PDF.js's actual scroll mode.
-The shared toolbar icons use direct `mask-image` declarations and alpha mode
-for consistent SVG visibility, including cached reloads in WebKit.
-Use `ScrollMode.PAGE` / `ScrollMode.VERTICAL` through the existing `PDFViewer`;
-do not hide extra pages with CSS or create a second renderer.
-`pdf_navigation.mjs` handles only unmodified, vertical, cancelable wheel
-events inside the document container in Single page mode. Allow native panning
-until the page edge, then require a fresh gesture before turning. Accumulate
-small deltas and keep a gesture lock through momentum; do not lock ordinary
-continuous scrolling, horizontal input, modified input or toolbar controls.
-Keyboard and wheel share boundary checks and post-navigation positioning.
-Scope navigation keydown to the PDF container, not the document. Preserve input,
-button, selection/modifier, IME and toolbar behavior. Left/Right turn pages;
-Up/Down and Page Up/Down retain native panning until a fresh press can turn at
-the edge in Single page mode. Repeated keydowns must not cross pages.
-Home/End jump to first/top and last/bottom. Continuous mode keeps native vertical
-keys. Release held-key state on keyup, window blur or focus leaving the PDF;
-remove all listeners on teardown. Initial PDF focus must not steal control focus.
-Navigation uses the same public next/previous methods as the toolbar and public
-page-number assignment for Home/End; it never selects or reloads a file.
-Keep the current page/zoom when switching modes and keep
-search/internal PDF destinations able to navigate across the document.
-
-Keep thumbnail navigation inside this reader: one toolbar icon with
-`aria-expanded`/`aria-controls`, one left sidebar and one independent list scroll.
-Desktop (900px+) starts open; narrow screens start collapsed and use a reader-only
-overlay that closes on selection. Do not squeeze the PDF into a narrow mobile
-column, add another page/card, or move the outer document when revealing a
-thumbnail. Use a fixed preview slot, page number, current-page border and roving
-tab stop. Arrow/Home/End move thumbnail focus; native Enter/Space selects, and
-Escape closes. Preserve focus while the operator browses the sidebar. Render
-near-visible previews serially, show loading/failure inside each slot, and use
-the same PDFDocumentProxy and rotation as the main view. Never show a broken
-image or let a thumbnail failure replace the main PDF. Sidebar resizing must
-trigger existing native fit behavior; explicit numeric zoom stays unchanged.
-
-Keep the same PDF source visible through its source-kind heading and row/revision
-context. Loading/failure/password feedback stays inline with direct/download
-actions available even if the runtime cannot load. The reader has no save,
-review approval or editable annotation/form controls. Preview images,
-verification evidence and comparison overlays keep their established renderers.
-
-## Formatting PDF Comparison Workspace
-
-After a saved corrected PDF, show the shared comparison-status strip inside
-the review card between its header and collapsible body, not as an unrelated
-alert/card/toast. Identify the saved revision and Original-to-Corrected baseline,
-then show loading, content-warning counts, Open comparison, or Retry. When the
-list filter removes that saved paper, reuse the same strip above the queue with
-Paper ID/Final ID so the operation remains identifiable. Save retains the
-current position/Single queue; do not auto-open/navigate. AJAX updates must not
-touch unsaved forms. Initialize the component on full-page/HTMX loads with one
-in-flight request per signed receipt, no polling. Keep failures explicitly
-separate from upload success and never show a green publication approval.
-When reusing a result after an HTMX filter change, refresh its return link from
-the current panel context rather than retaining the previous worklist URL.
-
-Compare PDF is a contextual link beside saved Formatting PDFs, shared by all
-review modes. Open the separate workspace in a new tab so upload inputs and
-unsaved notes stay untouched. Use site typography, compact icon controls and
-existing image loading/magnification; do not embed the primary documents inside
-narrow cards or add a permanent result-list sidebar.
-
-Formatting List/Single/Focus share one compact Comparison services band above
-the worklist, outside HTMX replacements. Show Remote/Local, reported GPU/CPU,
-packaged release, text plus status color, check time, a refresh icon and a
-Details disclosure. Effective model/concurrency/timeout/idle settings belong in
-shared responsive Details, not more badges or a separate settings form. Use
-text-only bounded metadata and explicit Unavailable/Last seen states. A release
-mismatch must not imply contract failure.
-Do not repeat it per paper, expose credentials or imply available means selected.
-Keep last-seen hardware visibly qualified. Poll ten seconds between completed
-requests while visible, without overlap; pause on hide/navigation and resume on
-return. Keep errors persistent here rather than in a disappearing toast.
-Verified full-result caches on either worker are displayed without compute
-confirmation; partial caches and unfinished jobs are not complete results.
-Remote unavailability on a complete-cache miss pauses new comparison work with a Recheck action and,
-only when permitted, a distinct local confirmation action warning it may take
-longer. That choice is not a saved default or an upload failure. The per-upload
-status and completed comparison show small recorded worker/backend labels;
-old snapshots without metadata do not borrow today's green service status.
-
-Show annotated Before/After pages immediately, initially Fit page. Each side
-keeps its own source, filename and page controls. Small screens retain both
-documents with independent navigation, readable controls and no horizontal page
-overflow. Preserve page aspect ratios. Loading/failure clears stale marks and
-inspection crops; an empty/broken image is not a successful preview.
-
-Use three distinct visual groups:
-- Text differences: red outlines and arrows, strongest emphasis.
-- Unlocated ranges: amber highlight/outline, no arrows; correspondence is not
-  established and manual review remains necessary.
-- Information: quiet neutral outlines for tolerated visual differences,
-  whitespace joins/splits and word/line-wrap hyphens. Do not turn these back into
-  warnings or label them verified unchanged.
-
-Keep one **Hyphens** checkbox, finding-type option and Info group for both
-`word_hyphen` and `wrap_hyphen`. Sum their counts without adding another toolbar
-or coloring them like text warnings. The selected finding retains its exact
-kind, label, raw OCR and paired locations; both kinds use the existing hover,
-connection and magnification components. Wrap-only findings use the same group;
-older-method snapshots require rebuilding rather than severity relabelling.
-
-Keep totals/displayed counts distinct and filters local to the comparison.
-Do not infer paper counts, accuracy or safety scores. Preserve raw OCR text,
-contexts, locations, rule IDs, risks and plain-text reasons. Never rewrite OCR,
-invent character correspondence or reclassify engine findings in the browser.
-A mixed non-tolerated edit must not be hidden by visual-tolerance presentation.
-
-Use a top-docked inspection area before the documents, not a transient overlay.
-Keep Magnification fully visible without internal scrolling; reserve equal body
-height for Evidence, which alone may scroll. Adapt crop height to the viewport
-and its canvas aspect ratio to the displayed shape; never stretch page pixels.
-Measure remaining document height instead of subtracting a fixed toolbar size.
-Comparison canvases must match CSS dimensions and device pixel density without
-changing normalized crop coordinates. Display-only snapshot detail loading is
-debounced and bounded; retain immediate previews, reject stale replies, release
-decoded bitmaps, and identify unavailable detail. Never alter the evidence
-renderer or PDF selection to improve display quality. Use a PDF-point-based
-readability floor when Fit page shrinks the page; do not derive lens text size
-solely from a tiny thumbnail. Technical diagnostics belong under one closed
-disclosure, not three persistent rows; retain prominent coverage warnings.
-Pointer motion
-updates crops; clicking selects Evidence independently. Reading, text selection
-and internal scrolling must not dismiss or replace selected evidence. Evidence
-and Magnification use separate views. Preserve keyboard/touch and explicit close.
-Inspection never writes host state or moves pages/scroll positions.
-Handle inspector dismissal at document level while it is visible: a pure hover
-can leave focus on `body`, outside the comparison root. Escape and Control must
-still close the panel without intercepting keys when it is already closed.
-
-Use one current region-pair resolver for both connection endpoints and Auto match,
-including Next/Previous selection, multi-region findings and candidate links.
-Candidate positioning is not verified correspondence. Preserve endpoint choices
-and pointer offsets when reversing sides or leaving box edges; briefly crossing
-another finding must not switch immediately. Relative positioning is the explicit
-alternative and fallback only when a current-page pair is absent. Hiding lines
-or scrolling endpoints offscreen does not discard a valid logical pair. Revalidate
-on finding/page changes and never accept stale detail from another finding.
-Empty linked pages never show an
-unrelated image or crop. Label actual page numbers and positioning mode. Preserve aspect ratios and clamp at
-image edges; loading failures hide the empty canvas and show a status rather
-than use another page. Keyboard inspection starts at the focused mark's center;
-touch inspection may start anywhere on the page. Display overlapping
-findings without losing access to any item. Draw only the active finding's
-connection. Candidate unlocated links are dashed amber; one-sided additions or
-removals have no fabricated opposite mark or connection. Links are finding-level,
-not character-level.
-
-Explicit previous/next-result commands may navigate to actual recorded pages.
-Page synchronization uses page-alignment evidence only; uncertain/absent
-alignment cannot choose a false counterpart. Side-specific finding pages stay
-distinct from navigation-only reference pages. Do not focus unloaded images or
-invent locations. Ordinary browsing must not retain stale selection/crops.
-
-Keep coverage status/reasons and evidence counts separate from the three groups.
-Complete means supported execution completed, not publication safety; limited
-remains visible with zero findings, and missing metadata is not complete.
-Keep a brief notice visible and long reasons/counts in disclosures. Comparison
-unavailable and page-image failure are different states. No Review OK action,
-green approval badge or universal change-detection claim belongs here.
-Figures, tables, layout and full math still need manual review. The broad
-visual policy deliberately tolerates some real similar-character edits; it is
-not an exact-identity proof or Exceptions Center waiver. See the
-[comparison contract](pdf_comparison.md).
-
-Test actual engine payloads as well as UI fixtures, including the densest real
-case, empty/unlocated results, information-only results and one-sided changes.
-At desktop and narrow widths verify nonblank pages/crops, no hover movement,
-keyboard/touch access, crossing/dismissal, synchronized relative magnification,
-active-only connections and explicit navigation. Prototype browser checks alone
-do not establish production acceptance.
-
-## Title/Author Evidence
-
-Built-in, GROBID, and Manual Override use the shared renderer in
-`submissions/services/title_author_verification.py`.
-
-The renderer:
-
-- reuses only verified blank space above the source page;
-- extends upward when the header cannot safely fit;
-- measures, wraps, and draws header text through one shared font-run pipeline;
-- uses bundled Unicode text first and bundled Noto Sans Math only for symbols
-  the primary font cannot represent;
-- fails closed rather than replacing or omitting a character unsupported by
-  both bundled fonts;
-- preserves case, punctuation, hyphens, superscripts, and digits;
-- locates title text with normalized word sequences, then draws only raw title
-  character geometry represented by the extraction;
-- excludes PDF-only title punctuation and includes a title symbol only when the
-  same symbol is present in the extracted title;
-- leaves title evidence unmarked when reliable raw character geometry is not
-  available;
-- draws only raw author character geometry represented by the extraction;
-- allows the last extracted word to be a prefix of a longer PDF word;
-- marks alphabetic continuation as an orange partial-word warning;
-- treats numeric or symbolic continuation as normal metadata;
-- prefers complete matches over partial matches;
-- keeps the `A1...AN` legend color consistent with evidence state.
-
-If reliable raw character geometry is unavailable, render no title or author
-boundary instead of inventing a whole-word box. This affects evidence only; it
-must not rewrite extracted metadata or title comparison.
-
-Manual Override forms load only when their panel opens. The partial endpoint is
-read-only; the audited POST remains the only mutation path.
-
-## Shared Image Magnifier
-
-Formatting previews and Title/Author verification images use
-`image_magnifier.js` and `image_magnifier.css` through
-`data-cfm-image-magnifier`.
-
-The magnifier:
-
-- runs only on fine hover pointers;
-- activates while `Ctrl` is held;
-- uses a constrained responsive `3:2` lens;
-- clears modifier state on key release and window blur;
-- reinitializes after lazy collapse loading and HTMX swaps;
-- never writes workflow or publication state.
-
-Touch/coarse-pointer layouts retain the static image and normal full-file link.
-Hint text comes from `data-cfm-image-magnifier-hint`, not the browser-native
-`title` tooltip.
-
-## Docker Service Fallback
-
-The Nginx fallback uses one responsive shell for planned and unplanned service
-outages. It retains the application header, cool gray surfaces, compact
-typography, restrained borders, and blue primary action used by the Django UI.
-Operation state changes content rather than selecting a separate page:
-
-- blue represents backup, migration, and update;
-- teal represents an ordinary restart;
-- amber represents an unexplained outage;
-- red is reserved for failed automatic recovery that needs operator attention.
-
-Show only known phases from the host operation status. Missing or stale status
-must use generic unavailable language and must not guess that a backup or
-update is running. The page may poll readiness, but it must never replay a
-POST, upload, import, or export. Returning to the workspace always starts a new
-GET.
-
-## Workflow-Specific Conventions
-
-- Process PDFs keeps complete page-thumbnail strips expanded. Filters narrow
-  papers, not pages within a matching paper. Fixed dimensions prevent layout
-  shift during lazy loading.
-- Process PDF formatting triage appends to the existing Formatting notes, sets
-  Needs Edit, and clears the previous source binding without changing files or
-  unrelated review state.
-- Organized List separates publication blockers from tracked information and
-  owns both Checklist and Compact candidates views.
-- Organized List uses one structural blocker row for Missing Final, unresolved
-  Paper ID, publication-decision, and multiple-active-Final states. Merge the
-  downstream workflow columns into a persistent root-cause explanation and an
-  exact resolution action; do not render derivative missing-state badges in
-  every column.
-- Normal Organized List candidates assign missing prerequisites to one root
-  column. A missing PDF belongs to PDF while Pages waits for it. Missing
-  extracted metadata belongs to Extraction while Title and Authors wait for
-  extraction. Summary metrics and filters use the same root-cause ownership.
-- Organized List keeps workflow badges short and self-contained in their column
-  context. Status badges do not hide workflow explanations in hover tooltips;
-  actionable reasons belong in the row's Details metadata or another persistent
-  review surface. Reserve hover text for icon controls and visibly truncated
-  content, never publication-safety information.
-- Error Report uses server-side area, severity, and multi-category filtering
-  before pagination. Category checkbox pills are arranged in workflow-area
-  matrix rows, apply immediately through the scoped HTMX worklist, and use
-  Error Report-scoped Critical/Medium/Info colors; do not change shared
-  badge/button styling to represent their selected state. Large duplicate
-  groups load complete details through a read-only endpoint. Exception-capable
-  findings use a full-width collapse row, not a reason field inside the Message
-  cell. The panel renders the shared exception row state and replaces the
-  complete Error Report worklist after an action because the finding may move
-  between Critical and Info or disappear from the selected category.
-- Final Submissions keeps Import/Re-upload collapsed by default.
-- Upload zones may summarize and remove browser-selected files, but server
-  extension/hash validation and preview-before-apply remain authoritative.
-- Destructive version actions live in a separate collapsed danger area.
-- Export Reports keeps Final Deliverable visually and behaviorally separate
-  from Excel reporting. The Editorial Publication Workbook presents its
-  mandatory core sheet and optional supporting sheets in one selector; raw
-  active/old-version spreadsheets live in one collapsed Advanced / Debug Excel
-  area and are never mixed into the editorial workbook.
-- Final and Draft package failures use the same full-width blocker panel. Draft
-  wording explains that structural ambiguity cannot be overridden and omits the
-  force-download action; do not replace this with a toast-only failure.
-- POST forms that return file attachments use the shared
-  `data-cfm-download-form="true"` lifecycle. The browser adds a one-use token,
-  prevents duplicate submission while the server prepares the file, and
-  re-enables only the controls it temporarily disabled after the matching
-  completion cookie arrives. Do not add page-specific download-button reset
-  scripts. These same forms constrain their width and wrap long button labels
-  within the available space, including narrow screens and export-blocker
-  panels; never let a download action widen the whole page.
-
-## Review Checklist
-
-When adding or changing shared UI:
-
-1. Verify the normal non-HTMX GET or POST path.
-2. Verify URL, filter, sort, tab, page, and focus context preservation.
-3. Verify publication and review state are unchanged by read-only requests.
-4. Verify keyboard, narrow-width, and coarse-pointer behavior.
-5. Verify expensive hydration occurs only after pagination.
-6. Add acceptance coverage for shared behavior.
-7. Update this document instead of duplicating the rule in every workflow guide.
+| Formatting / Title-Author image | Ctrl-hover magnifier, readable nonoverlapping hint, hint hidden immediately while active |
+| Lazy image frame | Loading state; after load sizing follows actual image ratio, no fake empty strip |
+| Verification image | One renderer for built-in, GROBID and manual override; clear source/title/authors |
+| PDF open action | Shared PDF.js URL/tag, exact originating file endpoint |
+| PDF reader | Full viewport, compact toolbar, Fit page / Single default, optional continuous mode and lazy thumbnails |
+
+Reader wheel and keyboard share boundary/gesture logic. Inputs/toolbars retain
+normal behavior. Open directly / Download keep the same file identity.
+No PDF scripting, editing or serialized output enters editorial data.
+
+## Comparison Inspection
+
+The documents are primary, findings secondary. Text changes use red outlines
+and arrows; unlocated ranges use amber emphasis; information uses quiet neutral
+marks. Word/wrap hyphens share one Hyphens group.
+
+The upper inspection dock reserves stable space for Magnification/Evidence.
+Full aspect-correct crops are visible without internal scrolling; only Evidence
+can scroll. Hover follows the pointer. Click selects persistent evidence;
+entering the dock freezes the last crop instead of dismissing it.
+
+Connection and Auto match share one selected side-specific pair. With a pair,
+opposite crop follows the offset even beyond box edges; without one, relative
+position. No counterpart means explicit empty state, never an unrelated page.
+Candidate links remain unverified. Hiding/offscreen lines does not destroy a
+valid logical pair. Page/finding changes invalidate stale callbacks.
+
+High-resolution detail comes from the same validated snapshot, never a fresh
+publication resolution. Preserve pixel aspect/scale at narrow widths and Retina
+DPR. Loading/failure must not show another finding's crop. Technical evidence
+counts/policy/identities stay in a disclosure; coverage warnings stay visible.
+Full interaction and render bounds live in [PDF Comparison](pdf_comparison.md).
+
+## UI Review Checklist
+
+Test desktop, short window and 390px; keyboard/touch; normal/HTMX navigation;
+top/bottom pagination; lazy open/close; dirty-state warning; Toast contrast;
+image/crop loading/failure; and exact-target links with similar Paper/Final IDs.
+Check actual screenshots and canvas pixels, not just CSS assertions.

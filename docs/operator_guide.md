@@ -1,1089 +1,275 @@
 # Operator Guide
 
-This guide is for editors running the local system to prepare final submissions for publication.
+Use this guide to prepare a conference from import to final delivery.
+For installation see [Deployment](deployment.md); for exact safety rules see
+[Publication Rules](publication_rules.md).
 
-It explains what to do and what result to expect. For the authoritative rules
-that determine publication scope, active versions, selected files, readiness,
-and export safety, see [Publication Rules](publication_rules.md). For setup or
-failure recovery, see [Troubleshooting](troubleshooting.md). Return to the
-[Documentation Home](README.md) to choose a different guide.
+## Start With One Conference
 
-## Start And Restore
+Set the Conference name, timezone and editorial limits in Settings. Restore an
+existing conference through System State if needed; do not re-import CSVs as a
+replacement for a full restore.
 
-Startup now validates the selected PDF-comparison runtime before migrations.
-On a new Docker computer, use the unified deployer to download pinned models,
-register private per-conference credentials and start the shared CPU worker.
-Native/manual startup still requires the approved models provisioned first.
-Worker-only first deployment requires `deploy.py worker --init`; updates omit
-`--init` and require the original worker.env and private authorization. Missing
-worker configuration must be restored, not regenerated from a sample or live
-conference token. Both historical deployment CLI names use these same guards.
-See the [Docker Guide](docker_guide.md) for the worker launcher and safe
-conference updater. Missing prerequisites stop startup with instructions,
-without deleting conference data. GROBID/CrossCheck remain optional services.
-
-1. For native operation, use `start.command`, `start_windows.bat`, or
-   `./scripts/start_local.sh`. For Docker, follow
-   [Unified Deployment](docker_guide.md#unified-deployment).
-2. Open <http://127.0.0.1:8000/>.
-3. If continuing an existing conference on a new machine, go to `/integrations/system-state/` and preview the System State ZIP before applying it.
-4. Set the conference name and limits in `/settings/`.
-
-The Conference Final Manager icon appears in the browser tab and beside the application name in the top navigation bar. The navigation bar uses the high-resolution app icon so it remains sharp on high-density displays.
-
-The two-level navigation separates context from work. The top identity row shows
-the application and current conference. The workflow row keeps `Dashboard` and
-`Organized List` as direct links; `Submissions` contains Paper Master, Final
-Submission, Editor Upload, and Not Publishing records; `Reviews` contains ID,
-PDF, title/author, formatting, and exception work; `Reports & Output` contains
-readiness reports, versions, exports, and CrossCheck/plagiarism; `Administration`
-contains Audit Log, System State backup/restore, and Settings. Each dropdown item
-includes a short purpose statement, and the current page is marked by a blue
-underline and soft blue background.
-
-Ordinary navigation belongs in the Navbar rather than being repeated at the
-upper-right of every page. Page-header buttons are therefore limited to local
-commands such as Add, Import, extraction, view switching, Note Summary, or Back.
-Cross-workflow links appear beside the state that requires them: blocked
-Dashboard readiness opens Error Report, clear readiness opens the anchored
-publication-package section, Process PDFs exposes PDF Issues only when they
-exist, and plagiarism review appears after score/report data is updated.
+Dashboard answers "what still blocks publication?" Organized List is the
+per-paper workspace. Next actions are unresolved work; Tracked information
+includes reviewed differences and permitted exceptions, not more required work.
 
 ## Page Map
 
-| Page | URL | Main use |
+| Page | URL | Use |
 | --- | --- | --- |
-| Dashboard | `/` | Final-package readiness and current editorial actions |
-| Paper Master List | `/papers/` | Official paper scope, publication decisions, titles, authors, acceptance status, editorial notes |
-| Final Submissions | `/submissions/` | Imported Start2 submissions, uploaded files, editor uploads, discarded versions |
-| Editor Upload | `/submissions/editor-upload/` | Add email-provided replacement versions |
-| Organized List | `/submissions/organized/` | Publication checklist by Paper Master record |
-| Process PDFs | `/processing/pdfs/` | Page count, hash, thumbnails, and publication PDF debug copies |
-| Verify Paper IDs | `/reviews/paper-ids/` | Correct author-entered IDs and verify mapping |
-| Title/Author Review | `/reviews/title-authors/` | Extract and review title, authors, image evidence, and title comparison together |
-| Formatting Review | `/reviews/formatting/` | Review first-page title/author formatting and upload corrected files |
-| Not Publishing List | `/reviews/not-publishing/` | Track paid/published scope exclusions |
-| Exceptions | `/reviews/exceptions/` | Approve rare page/author/plagiarism exceptions |
-| Error Report | `/reports/errors/` | Critical, Medium, and Info readiness issues |
-| Author Count | `/reports/author-count/` | Per-author publication paper counts |
-| Audit Log | `/reports/audit-log/` | Searchable record of important actions and file/state changes |
-| Export Reports | `/reports/` | Excel exports and publication package ZIPs |
-| Compact candidates | `/submissions/organized/?view=compact` | Compact read-only roster inside the same Organized List publication scope |
-| Plagiarism / CrossCheck | `/integrations/crosscheck/` | Prepare publication PDFs and import scores/reports |
-| System Backup / Restore | `/integrations/system-state/` | Download or preview/apply a complete system snapshot |
+| Dashboard | `/` | Readiness and next actions |
+| Paper Master List | `/papers/` | Official roster, titles, notes and publication scope |
+| Final Submissions | `/submissions/` | All submission-version records |
+| Editor Upload | `/submissions/editor-upload/` | A new replacement submission |
+| Organized List | `/submissions/organized/` | Per-paper publication checklist and Details |
+| Process PDFs | `/processing/pdfs/` | Pages, hashes, thumbnails and debug copies |
+| Paper ID Review | `/reviews/paper-ids/` | Resolve and verify the Official Paper ID |
+| Title/Author Review | `/reviews/title-authors/` | Extract, inspect and review metadata |
+| Formatting Review | `/reviews/formatting/` | Review formatting, upload corrections, compare PDFs |
+| Not Publishing | `/reviews/not-publishing/` | Publication decisions, missing Finals and orphan Finals |
+| Exceptions | `/reviews/exceptions/` | Central approvals for supported limits |
+| Error Report | `/reports/errors/` | Blocking and informational findings |
+| Author Count | `/reports/author-count/` | Authors across publication papers |
+| Old Versions | `/reports/old-versions/` | Inactive submission history |
+| Export Reports | `/reports/` | Final/draft ZIPs and internal Excel |
+| Plagiarism / CrossCheck | `/integrations/crosscheck/` | Publication PDF batches and result imports |
+| System State | `/integrations/system-state/` | Portable backup and restore |
+| Audit Log | `/reports/audit-log/` | Search actions and before/after details |
+| Settings | `/settings/` | Conference configuration and Storage Management |
 
-Organized List keeps the main table compact. Open a paper's `Details` to review
-its publication metadata, the complete extracted author list and extraction
-status, current publication PDF/source files, optional debug copy, and editorial
-notes in one publication-record view. Routine pages show file actions and source
-labels rather than machine-specific absolute paths.
+Organized List Details includes extracted authors, source labels, current
+publication PDF/source, workflow links and notes. Compact candidates is a
+read-only alternate view of the same scope; `/reports/active-versions/`
+redirects there.
 
-Its summary is split into `Publication blockers` and `Tracked information`. Blocker cards link to focused filters and only appear when the current view contains that issue. Tracked information remains visible without competing with work that can stop final export.
+## 1. Import The Roster And Files
 
-`Source File Issues` identifies a missing source or a source-integrity problem
-after Review OK. An available Original or Corrected source with Formatting still
-Pending/Needs edit is shown only under `Format Not OK`; both categories appear
-together only when both the file and the Formatting workflow need attention.
+1. Download the templates in the application.
+2. Import Paper Master first; inspect its preview.
+3. Preserve existing system notes unless intentionally replacing them from the
+   file. This is the default for existing records; new papers use imported notes.
+4. Import Final metadata with matching PDFs/source files; inspect its preview.
+5. Confirm Apply only after reviewing changed IDs, files and reset effects.
 
-Use the `Checklist / Compact candidates` control to switch views. Both use the same active Paper Master publication rows and publication-facing Corrected-to-Original file helpers. The old `/reports/active-versions/` link redirects to Compact candidates.
+Previews sort attention-needed records before unchanged ones. Imports update
+or create by ID; a record missing from the file is not a request to delete it.
+Combined Mapping Table workbooks are not supported. The request limit is
+5000 uploaded files, not 5000 CSV rows; split larger upload batches.
+
+Re-importing the same Final ID preserves its Official Paper ID while the
+Author-entered ID is unchanged and the Official ID is nonblank. A changed
+Author-entered ID re-resolves the mapping and resets its review. Final Title
+changes reset review, not the Official ID. An unresolved ID needs human
+resolution; it is not automatically Not Publishing.
+
+Paper Master notes are internal. Note Summary on Master and Organized List
+shows complete notes; internal workbooks include them, the publication manifest
+does not. Stored notes trim outer/per-line whitespace and repeated blank lines.
+
+### Editing A Record
+
+Paper Master and Final Submission edits use **Review changes**, then
+**Confirm and save changes**. Changed badges mean values differ from the loaded
+form, not merely that a control was touched. Inspect server-calculated old/new
+values and resets before confirming. If evidence changed meanwhile, reopen
+the record; stale previews do not overwrite it.
+
+## 2. Resolve Identity, Versions And Scope
+
+| Situation | Action |
+| --- | --- |
+| Incorrect/unresolved Official Paper ID | Choose the real Master record in Paper ID Review and verify |
+| Final outside Master | Resolve Paper ID or explicitly mark Not Publishing; neither happens automatically |
+| Master has no Final and will not publish | Mark the **Master paper** Not Publishing with reason, optional note and impact confirmation |
+| Decision Required | Explicitly choose Publishing or Not Publishing before export |
+| Mixed Start2 and Editor Uploads | Inspect versions; discard the unwanted side with a required reason |
+| A particular version should not be used | Discard that version; it remains in history |
+| A paper is withdrawn/unpaid/excluded | Use Not Publishing, not Discard |
+
+Editor Upload creates a separate submission, not a Formatting correction.
+Its dry-run title guard compares the PDF title to both Master and effective
+Final Title. Blank Final Title uses Master Title. A mismatch/error requires
+confirmation and leaves ID review pending; a match can verify the ID.
+The new PDF still needs processing and the normal reviews. Expand Editor note
+to read the full upload note.
+
+Old Versions classifies inactive versions as Discarded, Replaced or Other
+inactive. Origin is separate. A Not publishing flag is a secondary decision,
+not a type of old version.
+
+## 3. Process PDFs And Review Metadata
+
+Run **Process Publication PDFs** after new/corrected PDFs. It refreshes
+page counts, PDF hashes, thumbnails and inspection debug copies. It does not
+change source manuscripts, extracted metadata, plagiarism scores or unrelated
+reviews. Only current Publishing Master candidates are processed.
+
+All page thumbnails remain expanded for blank-page scanning. If a page has a
+formatting problem, record it there with an optional page number: this appends
+Formatting notes and marks Needs Edit through the existing workflow.
+
+In **Title/Author Review**:
+
+1. Extract using the built-in extractor.
+2. Inspect the verification image and extracted metadata against the actual PDF.
+3. Use Red Flag if formatting needs correction and re-extraction.
+4. Mark Review OK when the metadata/differences have been reviewed.
+
+Review OK is the completion decision. A reviewed title difference is Tracked
+information, not a second mandatory Confirm match task.
+
+| Extraction option | Use / consequence |
+| --- | --- |
+| Built-in | Default local extractor |
+| GROBID | Optional trusted service configured in Settings; availability checked before use |
+| GROBID suspicious batch | Extraction error or Red Flag records; stops on service loss rather than failing the remaining batch blindly |
+| Manual override | Exceptional correction of extracted metadata only; requires a reason, new evidence image and renewed Review OK |
+
+All three use the shared verification renderer. Manual override is visibly
+marked and audited; it does not edit Final Title or the PDF. Re-extraction
+clears its override metadata. Filters include manual overrides and title-match
+states. Re-extraction resets dependent reviews even if the new text looks good.
+
+## 4. Formatting And Revision History
+
+Open a paper's review panel, inspect its files, choose status and save.
+Source buttons identify Word/ZIP/TeX/etc. Upload Corrected files here, not through
+a general extracted-metadata edit.
+
+A Corrected PDF first undergoes a dry-run title check against Final Title.
+Mismatch/extraction failure requires confirmation before files are saved. This
+guard never overwrites official extracted metadata. Source-only uploads do not
+run a PDF title guard.
+
+Changing files invalidates dependent evidence; follow the resulting processing
+and review tasks. If an already Review OK record receives new files, it returns
+to Pending. Saving Review OK binds the selected source bytes.
+
+### Single Paper Mode
+
+Start from the desired filter/search; the queue captures that worklist.
+Save stays on the current paper, including when it leaves that filter.
+Use Go next when ready. Previous/Next/Back preserve the queue context;
+unsaved changes trigger a leave confirmation. Ineligible or expired queue
+members cannot authorize stale saves. Single mode is not an auto-save workflow.
+
+### Revision History
+
+Expand Revision history to view/download complete captured PDF/source pairs.
+A PDF-only or source-only upload captures the other file as it was used then.
+Status/notes-only saves create audit events, not revisions.
+
+Existing files captured is a baseline, not a reconstructed upload history.
+Current files means matching current row files/bytes, not publication approval.
+History has no restore, delete or "make current" operation; missing history
+never causes another version to be selected. History also appears on Final edit
+for inactive/discarded records.
+
+### PDF Comparison
+
+A saved PDF upload starts a separate comparison with Original, bound to that
+exact saved revision. Failure does not undo or replace saved files.
+
+| Result | How to review |
+| --- | --- |
+| Red text difference with arrow | Inspect added/removed/changed OCR text |
+| Amber unlocated range | Manually locate the passage; not proof of a deletion or a match |
+| Neutral Info | Inspectable visual, spacing or hyphen tolerance; not equality proof |
+| Unavailable | Comparison failed; never means no changes |
+| Limited / complete coverage | Describes engine execution, not publication approval |
+
+The paired documents are primary. Hover to magnify; the upper dock keeps both
+crops visible. Auto match uses the same selected region pair as its connection,
+following the pointer even beyond the box. Without a pair it uses relative
+position. Click a mark for persistent Evidence; entering the dock freezes
+crops. Linked pages without a counterpart show an empty state, not page one.
+Technical details contains evidence counts, policy and file identities.
+
+Formatting shows remote/local version, CPU/GPU, availability and settings.
+Status refreshes every ten seconds while visible. A configured unavailable
+remote pauses new work; confirm local CPU only if willing to wait.
+Complete verified cache results display without new-compute confirmation.
+A result's execution label records who actually computed it, not current health.
+
+Comparison cannot certify figures, tables, layout or formulas. Review those
+visually. [PDF Comparison](pdf_comparison.md) lists accepted blind spots.
+
+## 5. Plagiarism / CrossCheck
+
+### Automatic Service
+
+1. In Settings, enter service URL and optional login, test/load folders, select
+   the exact folder and confirm its conference association.
+2. Preview All publication PDFs or Missing results only; check scope, folder,
+   Final IDs and PDF sources, then confirm upload.
+3. Monitor progress or return later. Visible pages poll every 15 seconds; hidden
+   pages pause, and failed checks wait for Check progress.
+4. Inspect per-paper retrieved scores/reports and explicitly confirm Apply.
+5. For confirmed uploads still lacking reports, use Retry remaining downloads.
+   It starts another download execution, not another PDF upload.
+6. Use Execution history for immutable ZIPs and report evidence.
+
+Job completion does not imply every report exists. Retry results need the same
+preview/apply confirmation. Already applied papers cannot be replayed or
+overwritten; changed active Final/PDF makes an old result stale, even if another
+version has identical bytes. On a lost response, Check progress before retrying;
+do not blindly submit again.
+
+New service URL is blank by default. Optional credentials are saved locally
+for that URL, not in System State. Environment overrides take precedence.
+Confirm the folder again after changing conference name, service URL or folder.
+
+### Manual Workflow
+
+Enter a batch token; prepare All PDFs or Missing Results Only ZIP, upload to the
+external tool, then import its CSV and optional report PDFs. Both exports use
+current publication PDFs and retain exact Final/hash provenance.
+Missing results means either P% or S% is missing, not a missing report or stale
+report flag. All and Missing ZIPs do not overwrite one another.
+
+## 6. Resolve Exceptions And Export
+
+Exceptions support page limits, authors per paper, papers per author and
+separate P%/S% thresholds. Approve only with a reason; changed values make the
+approval stale. Report replacement alone does not clear score exceptions.
+Organized List shows only relevant per-paper sections; author paper-count
+decisions belong to Author Count/Exceptions. Error Report provides exact
+exception actions too.
+
+| Export | Purpose |
+| --- | --- |
+| Final Publication Package ZIP | Strict checked deliverable; Not Publishing excluded |
+| Draft Package ZIP | Intermediate output with warnings; structural ambiguity still blocks |
+| Editorial Publication Workbook | Internal Publication Detail plus selected supporting sheets |
+| Advanced / Debug Excel | Raw active/old-version data, not the deliverable or a backup |
+
+Publication Detail is always included. Optional sheets: Exception Detail,
+Readiness Issues, Paper Master, Not Publishing and Author Count. Thus a workbook
+may intentionally include excluded records in its supporting sheets.
+The manifest contains publication metadata plus Exceptions and reasons, but not
+Master editorial notes or internal manual-override reasons.
+
+Before handoff: review Error Report, inspect actual publication PDFs/source,
+export the final ZIP, and save a System State ZIP.
+[Operations](operations.md) covers backup, cleanup and audit recovery.
 
 ## PDF Reader
 
-PDF open links use the shared reader at `/pdf-viewer/`. This includes Organized
-List, Publication Candidates, Final Submissions, Paper ID and Title/Author
-Review, Formatting, Author Count, exceptions, plagiarism reports, revision
-history, Editor Upload previews and the comparison workspace's PDF links.
-
-The reader fills the browser viewport, without the work pages' Navbar, footer
-or outer page margins. One compact wrapping toolbar keeps file identity and
-controls above the PDF; the document uses the remaining space as its main
-scrolling area. This does not force browser/OS fullscreen. Existing new-tab
-links leave the original worklist and its position intact.
-
-Each PDF opens in **Fit page + Single page** mode. The page-layout buttons beside
-page navigation switch between Single page (no continuous scrolling) and
-Continuous scrolling. Single page shows only the current page; the wheel,
-page number or Previous/Next move between pages. When zoomed, the wheel first
-scrolls within the page. At its top/bottom, pause and start a fresh wheel gesture
-to turn the page. One continuous gesture turns at most one page, so trackpad
-momentum cannot skip multiple pages. Going back enters the previous page at its
-bottom. Horizontal and modified wheel gestures retain native browser behavior.
-Switching layout keeps the current page and zoom; reopening a reader uses the
-defaults again and does not change any review or file state.
-
-The thumbnail button at the left of the toolbar opens/closes the page sidebar.
-On desktop it starts open; below 900px it starts closed and overlays only the
-reader area when opened, leaving the document width unchanged. The sidebar
-lists all page numbers and scrolls independently. Click a thumbnail to jump to
-that page; mobile closes the panel after selection. The current page is marked
-and kept visible as you navigate by wheel, keyboard, page number or search.
-Sidebar Up/Down and Home/End move thumbnail focus; Enter/Space selects the page,
-and Escape closes the sidebar. Thumbnails load near the visible part of the list,
-not all at once. A failed thumbnail shows `Preview unavailable`; navigation and
-the main PDF remain available. Reopen the panel to retry failed thumbnails.
-These previews come from the already loaded PDF, not DB thumbnails or a new
-file-selection endpoint, and are never saved as publication/review evidence.
-
-Keyboard controls apply while the PDF area has focus (click the PDF or Tab back
-to it). The reader initially focuses that area only if no control already has
-focus. Left/Right turn pages; Up/Down and Page Up/Down first scroll a zoomed page,
-then require a fresh press at its edge to turn in Single page mode. Holding a
-key may continue panning but cannot repeatedly turn pages. Home goes to the
-first page/top; End goes to the last page/bottom. Continuous mode retains native
-vertical-key scrolling, with Left/Right and Home/End still available. Inputs,
-selects, buttons, text-editing/modifier keys and search shortcuts keep their
-normal behavior. Keyboard and wheel navigation use the same page boundaries
-and backward-bottom/forward-top positioning.
-
-The reader has page navigation, optional continuous scrolling, Fit width/Fit page,
-numeric zoom, rotation, text selection and Find in PDF. Enter advances to the
-next match; Shift+Enter goes to the previous one. Password-protected PDFs ask
-for a password in the reader; it is not saved in application data or audit logs.
-There are no PDF editing or form-filling controls. Existing annotations can be
-displayed without changing the PDF.
-
-Open directly uses the browser's native PDF handling, useful for printing or
-checking a rendering discrepancy. Download PDF requests the same underlying
-file endpoint; it does not export a modified PDF.js document. Live publication
-links continue to follow the current publication helper when fetched again.
-Historical revisions and compared snapshots keep their existing identity and
-integrity/expiry checks. The reader does not pin a live publication file into a
-new permanent snapshot or label a historical file as publication-approved.
-
-Loading, missing/corrupt files, expired comparisons and rendering failures are
-shown explicitly. No other version is substituted. JavaScript-disabled or
-unsupported browsers can use Open directly or Download PDF. PDF.js and its
-fonts/decoders are bundled locally, and PDF contents are not sent to a CDN or
-external service. Textless/scanned PDFs remain readable but need OCR outside
-this reader before text search can find their content.
-
-Verification images, Formatting first-page previews, Process PDFs thumbnails
-and comparison difference overlays keep their existing renderers/magnifiers;
-they are not replaced with PDF.js and do not become new review evidence.
-
-Revision history has its own pagination only when there are more than 25
-revisions. Its Revisions per page controls affect that history alone, not the
-main Formatting worklist. Smaller histories do not repeat the main list's
-pagination controls. This applies in Formatting Review, Final Submission edit
-and the standalone history page.
-
-## Dashboard And Readiness
-
-Dashboard uses the same blocking rows as Final Publication Package export. Its
-top panel answers whether the final package can be created now; it is not an
-approximate status calculation.
-
-- **Blocking papers** counts unique affected Paper IDs.
-- **Blocking checks** counts individual findings, so one paper can contribute
-  more than one check.
-- **Next actions** lists only workflows with current blockers. Its primary
-  number and each breakdown number count unique affected papers from the same
-  readiness findings. Breakdown groups can overlap, so they are not intended
-  to add up to the primary number.
-- **No current blockers** lists workflow groups whose checks are clear.
-- **Tracked information** shows non-blocking editorial context.
-
-Valid Allowed exceptions stay out of Next actions. A stale exception is no
-longer valid and therefore remains a blocker. The allowed P/S tracking row
-shows both the number of affected papers and the number of active P/S approvals,
-because one paper can have separate Plagiarism % and Single % approvals.
-
-Next-action links open only the blocking categories represented by that card.
-They do not add Allowed Info records from the broader Error Report area.
-
-Uploading a corrected PDF intentionally returns the paper to PDF processing and
-Title/Author Review. `Review OK` is the single Title/Author completion
-decision; a reviewed title wording difference remains tracked information
-instead of becoming a second blocker.
-
-Tracked-information links open the matching subset rather than the broader
-workflow tab: verified Paper Master title differences, reviewed extracted-title
-differences, and allowed Plagiarism/Single exceptions each have a focused list.
-
-### Worklists And Navigation
-
-Large worklists default to 25 rows and support `25 / 50 / 100 / 200 / All`.
-Filtering and sorting apply before pagination. Use `All` only when the complete
-filtered set must be compared together.
-
-Search is broad matching. Links created by the application target an exact
-Paper ID, Final Submission, or exception and show a focused banner. An
-out-of-scope target is explained instead of being replaced by a similar active
-record.
-
-Opening Final Submission Edit from a worklist preserves a safe local return
-URL. Save returns to the originating view, filter, sort, search, tab, page, or
-single-paper context. External return URLs are rejected.
-
-Final Submissions opens with its tabs and version list first; `Import /
-Re-upload` is collapsed until requested. Destructive version actions are kept
-in the separate bottom danger zone. Not Publishing remains a dedicated
-paper-level workflow.
-
-Status colors are consistent: red is blocking or dangerous, amber needs manual
-attention, blue is tracked information, green is complete, and gray is inactive
-or historical. Color is never the only status signal.
-
-Error Report filters severity, workflow area, and categories on the server
-before pagination. Multiple categories use OR; area, severity, and category
-dimensions combine with AND. Duplicate groups use a read-only detail view.
-Exception-capable findings show `Manage exception` directly below the finding.
-The full-width panel shows the current value, configured limit, recorded
-approval, publication PDF/report links, and the same allow, re-approve, or
-remove actions as Exceptions Center. After an action, the complete filtered
-worklist refreshes: a valid approval moves the item to Info, while removing an
-approval restores the blocker. Author paper-count findings can also be handled
-there even though they are author-level rather than tied to one Final ID.
-
-Implementation and presentation contracts for partial navigation, exact
-targets, pagination, accessibility, and shared components live in
-[UI Conventions](ui_conventions.md).
-
-## Import Workflow
-
-1. Download templates from the app.
-2. Import the Paper Master List first.
-   The page header shows the total publication-scope paper count; while searching, it
-   shows the number of matching rows alongside the unchanged total.
-3. Review the Paper Master Import Preview. Rows needing attention are sorted above unchanged rows.
-4. For existing Paper Master notes, choose whether to preserve existing system notes or apply imported notes. The default is preserve.
-5. Import Final Submission metadata and upload all PDF/source files together.
-6. Review the Final Submission Import Preview. ID/reset risks, file changes,
-   new rows, metadata-only changes, and unchanged rows appear in that order.
-7. Apply only after the preview matches the intended import.
-
-Paper Master and Final Submission imports are intentionally separate. Combined
-`Mapping Table` workbooks are rejected because they bypass the normal source
-and confirmation boundaries.
-
-For an existing Final ID:
-
-- the same Author-entered ID preserves the current Official Paper ID;
-- a changed Author-entered ID re-resolves the Official Paper ID and resets
-  Paper ID review;
-- a blank current Official Paper ID is resolved from the imported
-  Author-entered ID;
-- a changed Final Title preserves the Official Paper ID but resets Paper ID
-  review and extracted-title comparison;
-- changed Final Authors return Title/Author Review to Pending without replacing
-  the current extracted title/authors.
-
-An unresolved Official Paper ID is not automatically marked Not Publishing. It
-remains an ID problem for manual correction/verification, or an editor may use
-the explicit Not Publishing workflow when that is the real publication
-decision.
-
-Not Publishing List places `Final Submissions Outside Paper Master` before
-Missing Final and tracked decisions. For each row:
-
-- choose `Resolve Paper ID`, search Paper Master by ID, title, or author, review
-  the selected Master metadata, then verify the selection; or
-- choose `Mark Not Publishing`, explicitly select a reason, and confirm the
-  decision.
-
-The compact row never edits Official Paper ID directly. `Open full Paper ID
-Review` remains available when title/author diffs need closer inspection. A
-successful resolution removes the orphan row because it now belongs to a valid
-Paper Master ID.
-
-Final Submission file upload supports large PDF/source batches up to 5000 files per request. This is a Django request-parsing limit, not a CSV row limit. If a conference upload set exceeds that number of files, split the file upload into multiple batches.
-
-Paper Master notes are internal editorial notes. They appear in review workbooks and Note Summary, but they do not go into the final publication package manifest.
-
-Editing an existing Paper Master or Final Submission is a two-step operation.
-The form marks a field only while its current browser value differs from the
-value originally loaded. Select **Review changes** to see server-validated
-current/proposed values and every workflow reset before anything is saved.
-Select **Confirm and save changes** only after checking that list. Selecting a
-byte-identical file again is reported as no effective change and does not reset
-review state. If the record or current file changes before confirmation, apply
-is rejected and you must reopen the record.
-
-## Version Decisions
-
-Final Submissions can be Start2 imports or Editor Uploads.
-
-- Start2 imports are the normal author-uploaded records.
-- `Add Final Submission` creates a normal Start2-origin record through a dedicated create workflow. It evaluates the entered Paper ID against Paper Master, initializes PDF/title-author/format checks as Pending, stores uploaded PDF/source paths, recalculates active and replaced versions, and writes a `final_submission_create` audit event.
-- Editor Uploads are email-provided replacement versions created by the editorial team.
-- Before an Editor Upload is created, the PDF title is extracted in dry-run mode.
-  The title safety check shows the uploaded title first and each applicable reference
-  below it. Identical Paper Master and Final titles are combined instead of shown
-  twice. Review the word-level highlight first; use the expandable character diff
-  only when necessary. You can open the temporary PDF, choose another PDF, or cancel
-  without creating a submission. Confirming a real mismatch creates an unverified
-  Editor Upload that still requires Paper ID review.
-- Editor Uploads are prioritized when both sources exist for the same Paper ID.
-- If Start2 and Editor Upload both exist and neither is discarded, the system shows a Start2/Editor conflict and blocks final export.
-
-Use Discard when a specific version should not be used. Discard keeps the record and note for traceability.
-
-Use Not Publishing when the paper should not be published at all, such as unpaid, withdrawn, or intentionally excluded.
-
-Old Versions is version history. Not Publishing is a publication decision.
-The Paper Master record owns that decision, including when no Final Submission
-has been received. Open Not Publishing List, focus the Paper Master record,
-choose a reason, enter a note, review the publication-scope impact, and confirm.
-The paper remains traceable but is removed from publication processing,
-reviews, CrossCheck, readiness, and final or draft packages.
-
-Existing and future Final Submission versions inherit the Paper Master
-decision. Their exclusion fields are compatibility mirrors and do not override
-the Master decision. Undo returns the paper to publication scope; if it still
-has no Final, Missing Final Submission becomes a blocker again. Neither action
-clears Paper ID verification or review work because no reviewed evidence
-changed.
-
-`Decision Required` means migrated state or a new Master/orphan transition was
-ambiguous. For example, importing a Master ID that matches an orphan Final
-already marked Not Publishing does not silently revive that Final. Import
-Preview identifies the affected Final IDs, and the Master remains outside
-publication scope until an editor explicitly keeps the paper in publication
-scope or marks it Not Publishing. Decision Required and any Master/Final
-decision integrity conflict block final, draft, and CrossCheck exports.
-Old Versions uses the same tab treatment and active-count styling as the other
-editorial worklists.
-
-## Final Publication Version Rules
-
-The complete rules are maintained in
-[Publication Rules](publication_rules.md). Operationally:
-
-- Paper Master defines the conference paper set and owns each paper's
-  Publishing / Not Publishing decision.
-- Discarded and Not Publishing records do not enter publication output.
-- Editor Upload wins active selection over Start2, but a mixed undiscarded
-  source conflict blocks final export until one side is discarded with a reason.
-- Corrected PDF/source wins over Original. If a selected Corrected file is
-  missing, publication is blocked rather than falling back.
-- Generated debug copies and legacy path fields never select publication input.
-
-Use Organized List and Error Report to resolve these conditions. Do not decide
-the publication version by browsing files under `data/`.
-
-## PDF And Source Workflow
-
-Process PDFs does all of the following:
-
-- Calculates page count.
-- Calculates PDF hash.
-- Generates page thumbnails.
-- Resets page-limit exceptions if the page count changed.
-- Recalculates active versions.
-- Refreshes the compatibility author cache; publication author counts are
-  calculated from current active Paper Master submissions.
-- Syncs `data/publication_pdf_debug/` from the same Corrected/Original PDF source used by publication export.
-
-Process PDFs does not scan folders and does not silently create submissions. It does not intentionally rewrite original uploaded PDFs, corrected PDFs, original source files, corrected source files, extracted title/authors, plagiarism scores, or review status.
-
-Run Process PDFs whenever Dashboard or the global alert says it is needed. Corrected PDFs require Process PDFs again so page count, hash, thumbnails, and debug copies match the current publication PDF source.
-
-The page-preview area defaults to `All` and keeps the complete thumbnail strip for every matching publication candidate expanded. This is intentional: editors can scan first, middle, and last pages without opening each record. Use `Needs processing`, `Page issues`, `Processed`, or the single worklist search to narrow papers by Paper ID, Final ID, or title. Filtering happens before pagination, so an exact ID search locates the matching current publication candidate even when it was previously on another page. Paper headers remain visible while their strip is near the top, page tiles keep a fixed size while loading, and selecting a thumbnail opens a larger preview. These display tools do not alter processing or publication selection.
-
-Each preview card also shows the current Formatting status. If you notice a
-problem while scanning, use `Record formatting issue` on the card, or open a
-page thumbnail and choose `Record issue for this page`. Entering a note:
-
-- appends the note to that Final Submission's existing Formatting notes;
-- records the selected page number when applicable;
-- changes Formatting status to `Needs edit`;
-- clears a previous Formatting Review OK source binding;
-- does not alter the PDF, page count, hash, thumbnails, Title/Author review, or
-  plagiarism results.
-
-Use `Open Formatting Review` when you are ready to download files, upload a
-corrected version, or complete Review OK. Process PDFs deliberately does not
-offer corrected-file upload or Review OK actions.
-
-The Process PDFs status area uses the full page width when only one issue type is
-present. It splits into two columns only when both unprocessed PDFs and missing-PDF
-issues need to be shown at the same time.
-
-Organized List presents structural blockers once instead of repeating their
-effects across every workflow column. Missing Final, Paper ID decision,
-publication decision, and multiple-active-Final rows merge the workflow columns
-into one explanation with an exact resolution action. `Details` retains the
-underlying metadata for traceability.
-
-For a normal publication candidate, each issue belongs to its root workflow:
-
-- a missing PDF is a PDF issue; Pages shows `Requires PDF` rather than a second
-  blocker;
-- missing extracted title/authors is an Extraction issue; Title and Authors
-  show `Awaiting extraction`;
-- independent page, source, review, plagiarism, and formatting findings remain
-  visible in their own columns.
-
-This presentation does not relax Error Report or Publication Package readiness.
-Those services continue to report every formal publication blocker.
-
-Formatting Review queue mode keeps one paper expanded at a time. Its compact row identifies Paper ID, status, edited state, PDF/source origin, and processing warning before you open the full preview/upload workspace. Single Paper Mode remains the safer sequential workflow; Save stays on the current paper and Go next remains a separate action with unsaved-change protection.
-
-## Paper ID Review
-
-Use `/reviews/paper-ids/` to compare author-entered IDs and titles against the Paper Master List.
-
-- IDs not in Paper Master cannot be verified.
-- Not Publishing List uses the same Paper Master picker, signed review
-  evidence, and verification command for its orphan Final resolution panel.
-- An orphan Paper ID group marked Not Publishing cannot be remapped or verified
-  until that decision is explicitly undone.
-- If a paper is intentionally not publishing, mark it in the Not Publishing workflow instead of verifying an invalid ID.
-- Verified hard title differences remain visible but are lower priority than unverified mappings.
-- After Verify, Unverify, or publication-decision actions, the worklist returns
-  to the same card or continues with the next visible card when the current
-  filter no longer includes it.
-
-## Title/Author Review
-
-Use `/reviews/title-authors/` to extract title/authors from active publication PDFs.
-
-Review statuses:
-
-- Pending: needs review.
-- Red Flag: extraction looks wrong or formatting likely needs correction.
-- Review OK: title/authors have been checked.
-
-The page also shows extracted title vs Final Submission title while you review the card. Missing metadata or a Pending/Red Flag review can block final export. Marking the card Review OK records that the displayed title difference was accepted; the difference remains visible and tracked but does not create a second blocker.
-
-Single-row extraction, GROBID, Manual override, and review-status actions return
-to the same card. When a status change moves the paper out of the selected view,
-the worklist continues at the next visible card rather than jumping to the page
-header. If the Manual override panel was open, it reopens with the editable form
-loaded; the loading placeholder is not the restored state.
-
-The built-in extractor is the default path. It stores parsed author lists in a
-consistent readable form: one author as `A`, two as `A and B`, and three or more
-as `A, B, and C`. The stored string, displayed author count, and verification
-image use the same parsed list.
-
-Settings can enable an optional GROBID fallback for local/internal GROBID services; the Settings page shows a green/red API health indicator beside the GROBID API URL and refreshes it while you edit the URL. The Title/Author page checks GROBID health before any GROBID action. If the API is unavailable, GROBID buttons are disabled and batch extraction is not started, so rows are not incorrectly turned into extraction errors. During a suspicious-row batch, rows are processed one at a time; if the GROBID service becomes unavailable mid-run, the batch stops, successful rows remain saved, and unprocessed rows are skipped rather than marked as paper-level errors. Use `Try GROBID` on individual rows, or `Try GROBID for suspicious rows` for rows with extraction errors or Red Flag status. If a row has missing/truncated authors but is not an extraction error, mark it Red Flag first or use the single-row button. A successful GROBID extraction overwrites extracted title/authors, creates a verification image, resets Title/Author Review back to Pending, and recalculates Extracted Title Match the same way the built-in extractor does. A failed GROBID attempt does not overwrite the current extraction.
-
-Manual override is an exception path for cases where extracted title/authors must be corrected without editing the PDF/source. Use the row-level `Manual override` action on the Title/Author page, enter the corrected extracted title/authors, and record a required reason. Manual override resets Title/Author Review to Pending, recalculates extracted-title match, writes an audit event, and appears as an Info item in Error Report. Final Submission edit does not silently edit extracted title/authors; use the Title/Author workflow so the reason and review reset are recorded.
-
-All three result sources use one verification-image renderer. The image has a
-header for the review-sample label, extraction source, filename, wrapped
-extracted title, and numbered author legend. The renderer first confirms how
-much visibly blank space exists above the PDF title, places the header in that
-space, and adds only the extra height still required. Small top/bottom padding
-and a safety gap before the first PDF content are always retained. If a logo,
-line, image, or text occupies the top area, the renderer expands rather than
-covering it. Header text uses bundled portable fonts, including a math-symbol
-fallback for characters such as `⋆`; the renderer preserves the extracted
-character instead of replacing it with a similar ASCII symbol. The PDF evidence
-marks only title characters represented by the extracted title in yellow with
-a blue underline
-and gives every parsed author an independent green box and underline. Compare
-the `A1`, `A2`, and later legend entries with those boundaries; two adjacent
-boxes can reveal that one person's name was incorrectly parsed as two authors.
-Author evidence is case-sensitive, and internal extracted words and punctuation
-must appear in the PDF. The final extracted word may match the beginning of a
-longer PDF word, but the renderer outlines only extracted characters. Attached
-list markers, affiliations, ORCIDs, and symbols therefore stay outside a green
-boundary. If the remaining characters begin with a letter, the boundary is
-orange: for example, `John Smith` is visibly outlined only through `Smith` in
-`John Smithson`. A different internal hyphen still does not match. If reliable
-PDF character coordinates are unavailable, the renderer leaves the author
-unmarked rather than drawing a misleading whole-word box.
-When the same author has both a complete match and a partial match elsewhere on
-the page, only the complete green evidence is shown. The numbered author legend
-uses the same state colors as the PDF: green for complete/attached metadata,
-orange when only partial evidence exists, and red when no evidence was found.
-This does not change extracted authors, the PDF, or title comparison. Title
-location remains tolerant of case, spacing, and punctuation for discovery, but
-its final evidence boundary comes from raw PDF character coordinates. A
-trailing affiliation symbol or other PDF-only punctuation is therefore left
-outside the yellow evidence. If the same symbol is present in the extracted
-title, it is included. If reliable character coordinates are unavailable, the
-renderer leaves the title unmarked rather than drawing a misleading whole-word
-box.
-Hold `Ctrl` while pointing at the verification image to inspect the title
-underline and individual author boundaries with the same magnifier used by
-Formatting Review. Its `3:2` landscape shape preserves horizontal title and
-author context. A normal click still opens the complete verification image.
-The magnifier remains available after changing a review filter, page, or page
-size; those actions replace the worklist without requiring a browser refresh.
-
-## Formatting Review
-
-Use `/reviews/formatting/` to review title/author formatting visually.
-
-- List mode is a compact worklist; select `Review paper` to expand one full workspace.
-- Single Paper Mode shows one paper at a time to reduce wrong-file uploads.
-  Its entry is part of the current worklist toolbar, so changing a tab or search
-  also updates which list will be reviewed. When it starts, the system snapshots
-  the papers matching that filter and search in natural Paper ID order. That
-  sequence remains stable even after a paper changes from Pending/Needs edit to
-  Review OK.
-- Corrected PDF upload performs the same responsive title safety check in dry-run
-  mode before the file is saved. It compares with the Final Submission title without
-  replacing stored extracted metadata.
-- Source file buttons show type labels such as Word, ZIP, or TeX.
-- On a desktop or laptop, place the pointer over the first-page preview and hold
-  `Ctrl` to magnify a wide title/author area in place. The landscape lens follows the
-  pointer, stays inside the image, hides its hover hint while active, and closes
-  as soon as `Ctrl` is released.
-  Touch devices show the normal preview; use `Open Publication PDF` when closer
-  inspection is needed.
-- Review OK means the current publication version's format is acceptable.
-- Edited means corrected PDF/source files exist.
-- In List mode, Save and title-guard confirm/cancel return to the same expanded
-  paper workspace. If the saved status removes that paper from the current tab,
-  the next visible paper is opened instead. The first-page preview and its
-  magnifier load automatically in the restored workspace.
-
-If corrected files are uploaded, related review flags reset as needed and Process PDFs may be required.
-
-Single Paper Mode remains the sequential review workspace. Save and Go next are
-separate: Save returns to the same paper for inspection, while Go next follows
-the queue snapshot. Previous, Next, Go next, and Back to list warn before leaving
-with unsaved changes. The queue keeps its original filter/search and expires
-after two hours; start it again if the expiration message appears. If a queued
-submission is discarded, excluded, or replaced while the queue is open, it is
-shown as outside scope and Continue moves to the next valid queued paper.
-
-An `Open Formatting Review` link from a specific Final Submission uses Focused
-Formatting Review. Focus mode shows that exact active publication candidate
-without adding neighboring papers or altering the sequential queue. Use `Start
-Single Paper Mode here` when a sequential review should begin at that record.
-
-Every formatting Save is bound to the publication PDF/source displayed when the
-page opened. If either file or the submission changes before Save or before a
-corrected-PDF title warning is confirmed, the system rejects the stale action.
-Reload and review the current files rather than confirming an older page.
-
-### Formatting Revision History
-
-Open **Revision history (N)** inside the expanded Formatting workspace or the
-Final Submission edit file section. The same panel works in List, Single, and
-Focus modes; edit also exposes history for inactive/discarded submissions.
-History loads on demand, newest first, with independent top/bottom pagination.
-It does not navigate the main worklist or submit unsaved form changes.
-
-Each successful corrected PDF/source upload saves the complete file pair used
-at that moment. An unchanged counterpart is copied too; missing files are
-recorded explicitly. Status-only and notes-only saves stay in Audit Log and
-do not create file revisions. Notes and Formatting status shown in history
-describe the capture time, not current review approval.
-
-Use **Open PDF** or **Download source** for that exact revision. Downloads
-verify SHA256 and never substitute another file. **Current files** means the
-origins, stored file references, and bytes match this submission's current
-files; it does not mean the submission is active or publication-ready. There
-are no history restore, switch, or delete controls in this release.
-
-After upgrading, run `python manage.py backfill_formatting_revisions` after
-migrations. This can be repeated safely. **Existing files captured** describes
-the current corrected pair at capture time; original upload times are shown
-separately. Prior revisions cannot be reconstructed. Upload and original-file
-replacement also capture an unrecorded corrected pair before replacing it.
-If capture fails, resolve the storage error and retry; do not remove current
-files to bypass capture. History uses additional disk space and remains part
-of backups until an explicit Clear Database or full System State replacement.
-
-### Compare Original / Corrected PDFs
-
-After a corrected PDF is successfully saved in Formatting Review, the page
-automatically compares that exact saved upload against its Original submission
-PDF. Title guard warnings must be confirmed first. The card shows progress,
-content-warning counts, **Open comparison**, and **Retry comparison** when needed;
-this status remains visible with Review paper collapsed. If the current list
-filter excludes the saved paper, an identified status row appears above the
-list only on that upload's first return. It does not follow later status saves,
-tab changes, searches or pagination. Return to the paper's card to see its
-comparison again. Save still stays at the current card/Single queue position, never opens a
-new tab automatically, and never advances to the next paper.
-
-Comparison is a separate browser-triggered request after save. A comparison
-failure does not undo the upload or its normal review resets: the status says
-the files remain saved. The browser does not run periodic background polling.
-Embedded execution can be interrupted when the request ends. In service mode,
-an accepted job continues independently; Retry retrieves the same worker job
-instead of starting another one. On refresh, a valid cached result is
-reused. Only the latest upload receipt auto-starts if still pending; older
-receipts can be explicitly retried. Source-only/status/notes changes create no
-new PDF-comparison request. Start2 imports and Editor Upload are not included.
-Re-entering a card through a filter change or browser history checks its
-comparison against the server again. A newer PDF revision hides the old Open
-comparison action and explains that the upload is no longer current; cached
-browser success is not evidence of currentness. This check does not run OCR for
-a valid complete cache result. Failed form validation reopens the submitted
-card so detailed errors remain visible; file inputs must be selected again.
-
-For manual comparison, choose **Compare PDF** beside the PDF links. It opens
-separately, leaving the current List/Single/Focus workspace and unsaved inputs
-untouched. Both automatic and manual comparisons include saved files only,
-not a file still selected in an upload input. Manual comparison may select an
-Original or revision baseline; automatic comparison always uses Original.
-
-Automatic requests bind the revision ID/key, corrected filename/upload time and
-SHA256, and original file identity. A newer PDF upload (even identical bytes),
-inactive/discarded submission, or changed publication scope invalidates the old
-request instead of comparing a newer version. A later source-only revision
-does not invalidate a comparison of the same PDF. Missing Original is an error,
-not permission to use a revision or another submission. Request/result caches
-expire after two hours; use manual Compare PDF when a request has expired.
-
-Choose Original submission PDF or a recorded revision and build the comparison.
-The After side is always the current publication-helper PDF for this exact
-active Publishing submission, normally Corrected. It never reads a debug copy,
-another submission, or a history file as publication input. A missing selected
-file is an error, not permission to fall back.
-
-Method 9 compares rendered pages with local RapidOCR. Same-letter diacritic
-changes (e/é/è) appear as Info with raw evidence; genuine accents may differ.
-The existing **Hyphens** controls combine word and line-wrap hyphen information:
-`real-time/realtime`, `real-time/real time` and changed wrap positions can be
-Info when their ordered Latin letters/case match. The raw words and both PDFs
-remain available. Numbers, ranges, short variables and explicit mathematical
-syntax do not receive this word exception. Hyphenation can change meaning
-(`re-sign/resign`), so Info is not a claim of semantic equality.
-Complete validated worker results are reused without CPU/GPU confirmation.
-Partial OCR cache still requires fresh computation and follows normal consent.
-Update CFM and all workers together; older method caches are not relabelled.
-Native PDF geometry can
-help order text within each document, but hidden/stale text cannot replace what
-OCR reads from the page. Image text, formulas, headers/footers and low-confidence
-recognition are not excluded. This remains an aid for small revisions, not an
-automatic certification of every PDF change.
-
-The workspace opens on annotated documents, initially Fit page, without a
-permanent findings sidebar. Red outlines/arrows mark text differences; amber
-regions mark ranges without a reliable counterpart; quiet neutral outlines mark
-information such as tolerated visual differences and whitespace joins/splits.
-Counts are records, not affected papers or accuracy. Filters and explicit
-previous/next-result navigation let you inspect the relevant recorded pages.
-Browse all pages and open each exact snapshot PDF for manual review.
-
-The collapsible inspection area is above the two documents and stays at the top
-while scrolling. Magnification shows both crops completely, without scrolling
-inside the area; short windows use a shallower crop. Evidence has its own scroll
-area for long text and does not replace or move the document workspace.
-The two views share the same reserved height. Small Fit-page previews keep a
-minimum readable magnification instead of shrinking the lens text with the page.
-Engine counts, visual policy and file hashes are under Technical details, closed
-by default; coverage warnings remain visible. Auto match
-uses the current pointer position. On a brief pause, the magnifier sharpens from
-the same verified PDF snapshot and shows High detail. While moving it uses the
-immediate page preview. Preview only means detail retrieval failed; a changed or
-expired comparison instead requires rebuilding. This does not rerun OCR or
-change reviews. Scanned images cannot gain detail beyond their original pixels.
-Auto match
-uses the same pair of regions as the current connection, including when selecting
-Next/Previous or a multi-region finding. Hover/click a different region to choose
-that endpoint. It follows pointer movement beyond box edges and in either
-direction; only absent pairs fall back to relative positions. Candidate connections
-are still unverified, not confirmed text matches. Hiding the line does not disable
-the pair. Choose Relative position to scan freely.
-Click a mark to select Evidence: later hover does not replace selected details.
-Moving into the area freezes the last crops, and scrolling does not dismiss it.
-Linked pages with no counterpart show an explicit empty state, never page one or
-a retained unrelated page. Disable Link pages for manual comparison. Page images
-and crops label actual page numbers and never substitute another PDF. Only the
-active finding's connection is shown; an amber dashed connection is a candidate,
-not verified equality. Added/removed text has no fabricated opposite mark.
-
-Matched reflow and movement can be accounted for without a red change mark.
-Unlocated text can reflect a large rewrite, missing unchanged context, reading
-order or OCR difficulty; it is neither proof of deletion nor a passed check.
-Page synchronization follows alignment evidence, not equal page numbers.
-A missing counterpart is explicitly labeled; any reference page is navigation
-only, never the location of nonexistent text. Actual passage pages remain
-independently selectable, including multi-page findings.
-
-The approved broad visual policy tolerates all 38 listed direct groups, including
-`O/0`, `rn/m`, `f/t` and `S/5`. Tolerated occurrences retain original text,
-locations, rule IDs and risks as information. Only a completely explained local
-difference is tolerated; a nearby real residual edit keeps its original finding.
-There is no spelling correction or cross-group transitive matching. Minus-sign,
-decimal-point, question-mark or word deletion is not an empty-string exception.
-The full table is in the [comparison contract](pdf_comparison.md#visual-tolerance-policy).
-
-These tolerances can deliberately miss real edits, for example
-`safety/satety`, and whitespace-only `now here/nowhere` or `1 1/11` changes.
-OCR can also read both sides incorrectly in the same way or miss text entirely.
-Inspect the page pixels, not just the OCR strings. **Figures, image preservation,
-tables, layout and full mathematical structure still require manual review.**
-Zero red marks, reduced counts and tolerated differences are not publication
-approval or a universal catch-all.
-
-Coverage reasons and engine evidence counts remain separate from findings.
-A limited result has inspection limitations even with zero changes; missing
-coverage metadata is not complete. Supported execution being complete does not
-certify document safety. Comparison unavailable means no usable result, for
-example after missing OCR models, worker timeout or parse/render failure. A
-viewer image-load failure is separate. Correct installation issues and retry;
-do not treat a failed comparison as an unchanged paper.
-
-Method-8 and older results must be rebuilt for method 9. Comparisons expire
-after two hours and reject changed scope, selected identities/bytes, missing
-baselines or damaged snapshots. Size/page/token/work limits and display caps
-remain bounded (including 64 MiB, 40 pages and 30,000 tokens per PDF); consult
-the [work bounds](pdf_comparison.md#work-bounds) and review unresolved or undisplayed
-content manually. Scanned PDFs can be recognized from page pixels, but empty
-OCR does not prove a page is blank. Password-protected or over-limit PDFs may
-need manual comparison. No failed OCR/model check silently substitutes native
-text. See [setup](developer_guide.md#pdf-comparison-runtime) and
-[Docker setup](docker_guide.md#pdf-comparison-runtime).
-
-Local CPU work reuses completed Original OCR and identical-pair results when
-PDF bytes and the validated runtime match. Keep using the same Compare PDF / Retry
-controls; no new mode is needed. An already-running identical pair reports busy.
-Reuse does not select another version or waive any current-file/revision checks.
-First-time comparisons may still time out. The optional seven-day cache is not
-backed up, is protected from ordinary cleanup and is emptied by Clear Database;
-it is separate from preserved review images/revisions. See the
-[cache contract](pdf_comparison.md#local-cpu-evidence-reuse).
-
-For shared-worker deployments, these same controls use the configured compute
-service; there is no separate publication workflow. CFM prefers a ready compatible
-remote worker. If it cannot use a configured remote, the comparison waits instead
-of quietly starting local CPU. Use Recheck remote and start after fixing the
-connection, or explicitly choose local CPU for this comparison (which may take
-longer). The confirmation expires after five minutes and cannot be reused after
-files/revision/configuration change. A local-only setup still runs normally.
-Busy work stays on its
-selected worker. If the connection drops after submission, use Retry to retrieve
-that job; the app does not submit a second copy locally. A running/queued message
-is not completion. An unavailable result never changes the saved Formatting files.
-Worker credentials/routing are configured by the operator in the deployment env
-file, not in conference settings or backups. Shared-worker storage is independent:
-Clear Database clears this CFM's receipts/cache, not the shared service's other
-clients. See [service contract](pdf_comparison.md#shared-comparison-service).
-
-Comparison worker tuning belongs to deployment, not the paper's Formatting
-Review. Standalone defaults are GPU four concurrent pages, CPU two, four threads
-per page, Small detector/recognizer
-and 300-second OCR work. Small/Medium models can be selected independently in
-worker Compose/env; see [Worker OCR Settings](docker_guide.md#worker-ocr-settings).
-Native/embedded CPU remains single-page. Existing explicit page/thread settings
-are retained, including one-page workers. Update CFM and workers together for
-compute-contract compatibility. Model/concurrency changes invalidate the old
-worker runtime cache and require Retry, not reuse as the new model. No setting
-changes publication files, version selection, Title/Author extraction or Review OK.
-
-GPU workers keep models loaded for 30 idle minutes by default. This reduces
-repeated initialization, not OCR inference time. Worker operators can change
-`CFM_GPU_MODEL_IDLE_SECONDS` (0 disables residency); no conference setting is
-needed. Service Details reports loaded/loading/unloaded separately from Ready.
-Ready with unloaded models is normal: new OCR reloads them, completed cache does
-not. Health polling and cache reads do not extend the model's idle timer. A model
-timeout/crash makes that attempt fail explicitly; it never approves a review or
-switches to CPU. Existing manual Retry and remote/local consent still apply.
-
-Formatting's small Comparison services strip shows Remote/Local availability and
-reported GPU/CPU and packaged release, with Details for safe connection errors
-and effective model sizes, concurrent pages, threads, OCR timeout and GPU idle
-duration alongside the CFM release. Changing `.env` alone does not update a
-running worker. Unavailable means that metadata was not reported. Last-seen
-versions/settings are explicitly marked; a release mismatch alone is not a
-contract failure. Model idle retention keeps reusable sessions, not article
-results; evidence caches have separate lifetimes. It refreshes every ten
-seconds between requests while the tab is visible; hidden tabs pause. This never
-starts a paper comparison. Unreachable hardware may show a clearly marked last
-seen value, not a confirmed current backend. Existing comparisons separately
-show Compared by Remote/Local/Embedded and the recorded GPU/CPU; a new green
-service status does not relabel an old result. Old results without that metadata
-show Worker not recorded. Previously started local jobs remain local and need
-confirmation to resume waiting or retry computation; completed results can reopen.
-
-No comparison changes Review OK, review flags, exceptions,
-publication selection, or export eligibility. Temporary comparisons are not
-backups or retained review evidence; the build itself is recorded in Audit Log.
-Expired staging folders are removed when another comparison is built; there
-is no browser comparison-job polling or deletion timer. Formatting's separate
-service-health polling reads only availability. The independent shared worker
-has its own bounded job scheduler and retention.
-
-## Plagiarism / CrossCheck Workflow
-
-Go to `/integrations/crosscheck/`.
-
-The Automatic service tab uses the optional service configured under Settings
-> Plagiarism / CrossCheck. Set its base URL, load the exact conference folder,
-confirm its association with the Conference name, and enable the integration.
-New configurations leave the URL blank; no localhost address is assumed.
-Existing saved addresses are retained. If the service requires login, expand
-Optional account settings and enter its service-login username/password before
-using Test connection / load folders.
-The searchable folder selector shows complete names, wrapping long options and
-the selected folder so similarly named conferences can be distinguished.
-Folder confirmation prevents routing papers into the wrong conference: confirm
-when first enabling the service or changing the conference name, service URL
-or folder. Unchanged settings do not require confirmation again. The checkbox
-does not submit papers or change any review flags.
-By default the service's saved IEEE account is used; no IEEE override is needed.
-Optional service login/IEEE overrides are write-only, stored on this machine in
-`data/secrets/crosscheck.json`, and excluded from audit and System State ZIPs.
-Loading folders with an IEEE override updates the account saved on the service.
-Test connection uses entered credentials without saving them locally. Use Save
-optional credentials to persist them for the entered URL; this works before
-enabling/saving the integration and stays on the page, retaining the URL and
-folder edits. Then save Settings to enable and bind the destination. Blank
-credential fields retain saved values only for the same service URL; a different
-URL does not inherit another host's local credentials. Remove local credentials
-removes the local override, but environment overrides still take precedence.
-Only one service URL's local credentials are stored at a time; explicitly
-saving credentials for another URL replaces the previous local set.
-
-1. Preview all publication PDFs or only papers missing either P/S value.
-2. Review conference/folder, Paper IDs, Final IDs, Corrected/Original source,
-   and PDF hashes, then confirm the upload.
-3. Keep the batch page open to check progress every 15 seconds, or return later
-   and use Check progress. The service continues while the browser is closed.
-   A visible countdown shows the next check, switches to Checking progress
-   during a request, and pauses while the tab is hidden. Returning starts a
-   fresh 15-second countdown. A failed check pauses automatic updates until
-   you use Check progress. While running, the batch shows the service's phase,
-   confirmed-upload and ready/downloaded-report counts. Individual submitted
-   rows remain Awaiting results until the final ZIP provides per-paper evidence;
-   an aggregate upload count is not treated as per-paper confirmation.
-   Retrieved results update the batch panel, not your
-   scores, scroll position or retry-form inputs.
-4. Review the retrieved per-paper scores and report availability. Confirm and
-   apply available results. A completed service job may still contain failures.
-5. If reports remain missing, use Check progress to refresh availability, then
-   Retry remaining downloads. Confirm the wait limit. This starts one new
-   execution of the original confirmed uploads without uploading any PDF again.
-   Earlier ZIPs and applied results remain unchanged. Results retrieved by a
-   retry require the same explicit confirmation before application.
-6. Open Execution history for each run's outcomes, report links and evidence ZIP.
-   Summary counts are unique papers, not retry attempts. A partially applied
-   batch is not Completed until all its papers have been applied.
-
-Retries require a retained source job and a service supporting retry-download.
-Busy services and unconfirmed uploads cannot be retried. There is no automatic
-retry loop. On a lost response, use Check progress to recover the existing
-execution by original/parent job identity; do not submit again. If publication
-versions changed, old reports cannot apply to newer Finals, even with identical
-PDF bytes. When only some remaining papers changed, explicitly acknowledge
-that those reports remain history only; when all changed, prepare a new batch.
-
-Batch tokens are `ConferenceName_CFM_MONDDYYYY_N`, using the conference's
-Settings timezone and a reserved daily sequence. Non-ASCII letters, spaces and
-punctuation become underscores; consecutive underscores collapse. Uploads are
-named only `PaperID.pdf`; the service appends `_<token>`. Automatic Paper IDs
-must contain ASCII letters/numbers. Previews expire after two hours, and used
-batch numbers are not recycled. Cancelled/failed previews remain in history.
-
-Each applied result rechecks the active Final and publication PDF SHA-256.
-Changes to the candidate/PDF make returned results stale. Changes to existing
-plagiarism data after the result preview also prevent overwriting it; use
-Refresh result preview to review those changes again. Other checks/reviews
-keep their existing state. Changed scores can make P/S exceptions stale;
-a newly applied report replaces the report link and preserves old report files.
-Partial, timed-out and unconfirmed rows do not clear previous scores/reports.
-Each execution ZIP retains service manifests, reports, screenshots and logs.
-This evidence is separate from the Final Publication Package. Rechecking a
-finished execution never replaces its ZIP. Already applied papers are skipped,
-including after restore or later manual score/report changes.
-
-The Manual workflow tab retains the existing fallback:
-
-1. Enter a token and export the plagiarism upload ZIP.
-2. Upload the PDFs to the outside plagiarism tool.
-3. Import the result CSV with `filename`, `plagiarism_percent`, and `single_percent`.
-4. Upload optional report PDFs separately. Reports are matched by filename.
-
-CrossCheck ZIP exports are limited to active, undiscarded, not-Not-Publishing submissions whose Paper ID exists in the Paper Master List. The PDFs use the same Corrected/Original publication source priority as the publication package.
-Each token/scope export writes a manifest that binds Paper ID, exact Final ID,
-and publication PDF SHA-256. A token/scope cannot be overwritten. Result rows
-and report PDFs are accepted only while that exact Final and PDF remain the
-current publication candidate; replacement-version and changed-PDF results are
-reported as stale and are not applied.
-
-Scores are displayed as whole percentages. Reports are opened through app links, not by manually browsing paths.
-
-## Exceptions
-
-Exceptions are rare approvals for:
-
-- Page count below/above configured limits.
-- Too many authors on one paper.
-- One author appearing on too many publication papers.
-- Plagiarism % above the configured threshold.
-- Single % above the configured threshold.
-
-Default status is Not allowed. Only Allowed exception with a required reason note can stop the issue from blocking final export. Plagiarism % and Single % are approved separately. If the underlying count or score changes, the exception becomes stale and must be re-approved.
-
-For paper-level exceptions, start from Organized List when reviewing one paper
-as a whole. Rows with page, per-paper author-count, plagiarism score, or
-duplicate-author review items show an `Exceptions` panel. Use Error Report when
-working from a blocker or tracked Info finding; its `Manage exception` panel
-opens the exact exception represented by that finding. Use Exceptions Center
-for centralized review. Author paper-count exceptions remain author-level
-decisions across multiple papers, but their Error Report finding also opens the
-correct author-level exception rather than guessing from a Paper ID.
-
-Saving or removing one Organized List exception refreshes that paper's complete
-row from the system without reloading the full page. Other reason fields that
-you have typed in the same panel remain visible if they do not yet have stored
-data. Stored reasons and approval state always replace browser drafts, and only
-the action you clicked is written to the database. Validation errors stay
-beside the affected section so you can correct them without finding the paper
-again. A normal page refresh recalculates list summaries, filtering, and
-sorting from the latest state.
-
-Exceptions also supports Paper/Final ID text search and exception-type
-filtering. Its summary metrics and status-tab counts recalculate within the
-selected type/search scope, while the selected status tab controls which of
-those scoped records are listed. Author Count supports focused views for
-over-limit authors, duplicate names inside a paper, allowed exceptions, and all
-authors. These filters are review aids only and do not change exception
-validity.
-
-`Manage exception` from Author Count opens the exact author exception. Row-level
-exception actions from Organized List continue to use the exact active Final
-Submission. Dashboard issue actions open the matching workflow subset rather
-than the full Error Report or a broad Needs Attention list.
-
-## Export Workflow
-
-Use `/reports/` for exports.
-
-- Final Publication Package ZIP is strict and should be used only when readiness is clean.
-- Draft Publication Package ZIP can be downloaded after warnings. It may skip missing files and includes a warnings CSV.
-- Final and draft package manifests contain ID, extracted title, extracted
-  authors, author number, page number, Plagiarism %, Single %, and the same
-  per-paper Exceptions summary shown in the Editorial Publication Workbook.
-  Exception summaries include their recorded reasons. The manifest does not
-  include Paper Master editorial notes.
-- Editorial Publication Workbook is the primary internal Excel output. Its
-  Publication Detail sheet uses Extracted Title as the primary publication
-  title, keeps Master and Final titles as references, and lists each paper's
-  current exceptions and readiness findings. Publication Detail is always
-  included. Select only the supporting sheets needed for the current task:
-  Exception Detail, Readiness Issues, Paper Master, Not Publishing, or Author
-  Count. Unchecked supporting sheets are omitted.
-- Raw Active Submission Data and Raw Old Version Data are technical/debug
-  exports. They are collapsed under Advanced / Debug Excel and are not
-  included in the Editorial Publication Workbook. They are not publication
-  deliverables or complete backups.
-- Generated XLSX files share frozen/filterable headers, bounded column widths,
-  wrapped long text, whole-number percentage display, and consistent readable
-  styling. They are read-only snapshots and do not rebuild author records or
-  change review state. CSV files remain unformatted machine-readable data.
-- Formula-like editorial text is kept as literal, non-executable text when an
-  XLSX or package CSV is opened in spreadsheet software.
-- Final and draft package PDFs use the publication-facing priority above: Corrected PDF, then Original PDF. They do not read the publication debug folder or legacy active-final/current-file paths.
-- Draft export can carry ordinary readiness warnings, but it still blocks when
-  publication scope/version decisions are ambiguous or sanitized ZIP filenames
-  collide. The blocked page shows the same detailed issue table as final export
-  so the structural problem can be resolved without guessing.
-- Final export blocks if two records would receive the same sanitized ZIP
-  filename, or if a selected PDF/source changes after the readiness inspection.
-  Resolve the Error Report item or reprocess the changed PDF before retrying.
-- Formatting Review binds `Review OK` to the exact publication source bytes.
-  After upgrading to archive format 3, existing ready records without this hash
-  must be opened in Formatting Review and saved as `Review OK` again. If a
-  Corrected PDF/source is selected but missing, restore or replace it; the
-  system will not silently publish the Original file.
-- Pending or Needs Edit Formatting records do not have a completed source-review
-  hash yet. Error Report tracks them as `Formatting Not Review OK`; `Source
-  Review Hash Missing` is reserved for records already marked Review OK whose
-  integrity binding is unexpectedly absent.
-
-## Backup, Cleanup, And Clear Database
-
-### System State
-
-Download a System State ZIP before moving machines, archiving work, performing
-major maintenance, or clearing data. It includes settings, conference records,
-managed files, Formatting revisions and their files, reports, review artifacts,
-and active and archived audit logs.
-Temporary preview tokens are excluded.
-
-New backups use State archive v8, including automatic CrossCheck batches,
-executions, per-paper results, prepared PDFs, immutable ZIPs and provenance. Local service secrets
-are excluded and existing receiving-machine secrets are preserved during restore.
-Check the service URL/folder after moving machines before resuming a job.
-Versions 5, 6 and 7 are accepted through explicit validation paths. Version 7
-captures each existing job as its original execution, with no file movement or
-review reset. Version 8 requires the execution/result payloads and matching
-evidence; it cannot silently restore an incomplete history. Version 5
-restores existing files and review state without revision records.
-Version 6 must contain its revision payload and all referenced history
-files with matching hashes; older snapshots restore without automatic jobs.
-A damaged newer archive cannot be treated as an older version.
-
-Archived record creation/update times are retained, including revision capture
-times and CrossCheck batch age. Restore does not renew an expired upload
-preview. This cannot recover original times already overwritten by a restore
-performed with an earlier app; use an original backup if those times are needed.
-
-Restore is preview-before-apply and remaps managed paths to the receiving
-installation. Do not continue publishing from a restore that reports an
-unsupported archive version, corrupt file, or unresolved old-machine path.
-
-### Docker Data
-
-Docker runtime backup, update, named-volume migration, and host-mirror rollback
-are documented in the [Docker Guide](docker_guide.md). The raw
-`SMS_DATA_DIR` mirror is for immediate operational rollback; the System State
-ZIP is the portable, versioned application backup.
-
-Never run `docker compose down -v` for a conference instance because `-v`
-deletes its named data volume.
-
-### Storage Cleanup
-
-Use Settings > Storage Management and review every preview before Apply:
-
-- Conservative cleanup selects only unreferenced regenerated cache.
-- Generated reports/exports cleanup selects reproducible downloads and external
-  upload packages, including generated publication manifest/warning CSV files.
-  It does not select unrelated CSV files placed in the Reports folder.
-- Original and corrected uploads, Formatting revision files, plagiarism reports, System State backups, and
-  referenced thumbnails/previews remain protected.
-- Apply skips files that changed, became referenced, or became protected after
-  Preview.
-- An unreadable managed folder blocks cleanup instead of being treated as
-  empty.
-
-The Settings form loads before Storage Management and GROBID health checks
-finish. Their separate read-only requests do not change records.
-
-### Clear Database
-
-Clear Database wipes database records and app-owned managed files so the
-application can start a new conference. Download a System State ZIP first when
-the current work must be preserved.
-
-Only application-owned `data` and media locations are staged for deletion.
-Configured absolute folders outside those roots are preserved. If the database
-reset fails, staged files are restored.
-
-The active audit log is preserved by default. Select **Also archive and clear
-audit log** only when intentionally starting a fresh action trail.
-
-## Audit Log
-
-Use `/reports/audit-log/` when you need to trace a mistake or confirm what the
-system did. Filter by workflow category, canonical action, or status, and
-search Paper ID, Final ID, action name, or message. Action names consistently
-use `<domain>_<operation>[_<phase>]`; preview, apply, cancel, and undo remain in
-the action name when they represent distinct workflow stages.
-
-The log is append-only JSON Lines stored at `data/logs/audit.log`. It records key actions such as import previews/applies, manual edits, uploads, Editor Uploads, discard/undo, Not Publishing, verification, title/author review, formatting, Process PDFs, CrossCheck export/import/report uploads, exception approvals/removals, settings changes, publication export, System State backup/restore, storage cleanup, and Clear Database.
-
-Historical logs are not rewritten. The Audit Log page maps legacy action names
-to their canonical action for filtering and display, while expanded JSON keeps
-the original stored event. Expanded edit events show readable User changes,
-System changes, Workflow effects, and File effects before the syntax-highlighted
-Formatted/Plain JSON views and Copy JSON action. These presentation tools do
-not modify the append-only log.
-
-The log records metadata, reset flags, counts, file names, hashes, and portable paths. It does not store PDF/source/report binary content.
-
-Multi-editor review forms carry signed evidence for the exact values shown on
-the page. Final Submission Edit, Paper Master Edit, Title/Author Review,
-Exceptions, Settings, and Process PDF formatting triage reject a submit if
-another editor changed the relevant record first. Editor Upload confirmation
-also rejects changed temporary file bytes or changed Paper Master data. Reload
-and review the new values; stale forms never merge or overwrite
-publication-critical state. Temporary record-edit, Editor Upload, and Formatting previews
-expire automatically after two hours; a changed preview is deleted when the
-system rejects it, so the files must be uploaded and reviewed again.
-
-`/admin/` is a read-only diagnostic view for publication-critical records. Use
-the normal editorial pages for all changes.
+Open PDF actions use the same full-window PDF.js reader and originating endpoint.
+Default is Fit page / Single page; Continuous is optional. Wheel turns pages;
+when zoomed it pans first, then a fresh edge gesture turns the page. Keyboard:
+Left/Right change pages, Up/Down and Page Up/Down pan before turning, Home/End
+jump to ends. Inputs/toolbars retain their native keys. Thumbnail clicks jump
+to pages. Open directly and Download use the same selected file endpoint.
+
+Ctrl-hover magnification is shared by Formatting first-page previews and
+Title/Author images; the hint hides while magnifying.
+
+## Trace A Change
+
+Audit Log supports category/action/status/search and readable edit summaries,
+with expanded formatted/raw JSON. Events include before/after values, resets
+and file metadata, not PDF/source binaries. Old action names are normalized for
+display without rewriting the log. If something seems stale, inspect the exact
+Paper/Final ID and audit trail before re-uploading or re-approving.
