@@ -47,8 +47,9 @@ class UpdateDockerAcceptance(unittest.TestCase):
                 "CFM_SLAVE_BIND_HOST": "127.0.0.1", "CFM_SLAVE_PORT": str(ports[0]),
                 "CFM_SLAVE_MODEL_DIR": str(models), "CFM_SLAVE_MEMORY_LIMIT": "8g",
                 "CFM_RAPIDOCR_THREADS": "2", "CFM_RAPIDOCR_PAGES": "1"}
-            worker_env.write_text("".join(tools.format_env_line(k, v) for k, v in worker_values.items()))
-            worker_env.chmod(0o600)
+            worker_template = worker_env.parent / "worker.template"
+            worker_template.write_text("".join(tools.format_env_line(k, v) for k, v in worker_values.items()))
+            worker_template.chmod(0o600)
             envs = []
             for index, project in enumerate(projects):
                 env = root / f".env.test-{index}"
@@ -78,8 +79,11 @@ class UpdateDockerAcceptance(unittest.TestCase):
             def snapshot(index):
                 return run(compose(index, "exec", "-T", "web", "python", "-c", snapshot_code)).strip()
             try:
+                initialized = run([sys.executable, "scripts/deploy.py", "worker", "--init", "--template", str(worker_template),
+                                   "--client", projects[0], "--client", projects[1]])
+                self.assertEqual(initialized.count("Worker deployment is healthy."), 1)
                 output = run([sys.executable, "scripts/update_docker_instances.py", "--create-missing"])
-                self.assertEqual(output.count("Worker deployment is healthy."), 1)
+                self.assertEqual(output.count("Worker deployment is healthy."), 0)
                 self.assertEqual(output.count("verified: proxy config, static asset, and same-origin CSRF POST"), 2)
                 clients = json.loads((worker_env.parent / "clients.json").read_text())
                 self.assertEqual(set(clients), set(projects))
@@ -98,6 +102,25 @@ class UpdateDockerAcceptance(unittest.TestCase):
                 env_before = [p.read_bytes() for p in envs]
                 worker_before = (worker_env.parent / "clients.json").read_bytes()
                 worker_env_before = worker_env.read_bytes()
+                # Missing state must fail read-only, even with both conferences
+                # running and recoverable values in their live environments.
+                for missing in (worker_env, worker_env.parent / "clients.json"):
+                    saved = missing.read_bytes()
+                    audit_before = (root / "runtime/deployment.log").read_bytes()
+                    try:
+                        missing.unlink()
+                        for command in (["scripts/update_docker_instances.py"], ["scripts/deploy.py", "update"],
+                                        ["scripts/rebuild_docker_instances.py"], ["scripts/start_comparison_slave.py"]):
+                            rejected = subprocess.run([sys.executable, *command], cwd=root,
+                                env=environment, text=True, capture_output=True, timeout=120)
+                            self.assertNotEqual(rejected.returncode, 0)
+                            self.assertFalse(missing.exists())
+                            self.assertNotIn("Worker deployment is healthy.", rejected.stdout)
+                            self.assertEqual([snapshot(i) for i in range(2)], before)
+                            self.assertEqual((root / "runtime/deployment.log").read_bytes(), audit_before)
+                    finally:
+                        missing.write_bytes(saved)
+                        missing.chmod(0o600)
                 for entry in (["scripts/update_docker_instances.py"], ["scripts/deploy.py", "update"]):
                     preview = run([sys.executable, *entry, "--dry-run"])
                     for project in projects:
@@ -116,6 +139,18 @@ class UpdateDockerAcceptance(unittest.TestCase):
                 self.assertEqual([p.read_bytes() for p in envs], env_before)
                 self.assertEqual((worker_env.parent / "clients.json").read_bytes(), worker_before)
                 self.assertEqual(worker_env.read_bytes(), worker_env_before)
+                # The historical worker CLI uses the same update identity/auth;
+                # a stopped worker is still an update, not initialization.
+                worker_compose = ["docker", "compose", "--env-file", str(worker_env), "-f", "compose.comparison-slave.yml",
+                                  "-p", worker_project]
+                secret_code = "import hashlib; from pathlib import Path; print(hashlib.sha256(Path('/worker-data/signing.secret').read_bytes()).hexdigest())"
+                signing_before = run([*worker_compose, "exec", "-T", "comparison-slave", "python", "-c", secret_code])
+                run([*worker_compose, "stop", "comparison-slave"])
+                run([sys.executable, "scripts/start_comparison_slave.py", "--env-file", str(worker_env)])
+                self.assertEqual(run([*worker_compose, "exec", "-T", "comparison-slave", "python", "-c", secret_code]), signing_before)
+                self.assertEqual((worker_env.parent / "clients.json").read_bytes(), worker_before)
+                self.assertEqual(worker_env.read_bytes(), worker_env_before)
+                self.assertEqual([snapshot(i) for i in range(2)], before)
                 # A minimal legacy env must not rotate the live signing key or
                 # discard the worker token when the updater fills prerequisites.
                 retained = deploy.EnvFile(envs[0]).values

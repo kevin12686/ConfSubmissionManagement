@@ -59,8 +59,17 @@ class WorkerDeploymentTests(unittest.TestCase):
             raise deployment.DeploymentError("simulated operation failure")
         return ""
 
+    def engine(self, **options):
+        """Exercise the internal build/probe/cutover engine, not the CLI policy."""
+        try:
+            deployment.deploy(self.env_file, **options)
+            return 0
+        except deployment.DeploymentError as exc:
+            print(str(exc), file=self.errors)
+            return 1
+
     def test_cpu_build_probe_then_bounded_up(self):
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 0)
+        self.assertEqual(self.engine(), 0)
         build = next(i for i, (cmd, _) in enumerate(self.commands) if "build" in cmd)
         probe = next(i for i, (cmd, _) in enumerate(self.commands) if "--preflight" in cmd)
         start = next(i for i, (cmd, _) in enumerate(self.commands) if "up" in cmd)
@@ -85,21 +94,21 @@ class WorkerDeploymentTests(unittest.TestCase):
 
     def test_optional_status_failure_does_not_undo_healthy_cutover(self):
         self.fail_stage = "--status"
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 0)
+        self.assertEqual(self.engine(), 0)
         self.assertIn("Worker deployment is healthy.", self.output.getvalue())
         self.assertIn("could not be retrieved", self.output.getvalue())
 
     def test_gpu_is_only_enabled_explicitly(self):
         self.config["services"]["comparison-slave"]["environment"]["CFM_OCR_BACKEND"] = "cuda"
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 1)
+        self.assertEqual(self.engine(), 1)
         self.assertFalse(any("build" in cmd for cmd, _ in self.commands))
         self.commands.clear()
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file), "--gpu"]), 0)
+        self.assertEqual(self.engine(gpu=True), 0)
         compose_commands = [cmd for cmd, _ in self.commands if cmd[:2] == ["docker", "compose"]]
         self.assertTrue(all(str(deployment.ROOT / "compose.comparison-slave.gpu.yml") in cmd for cmd in compose_commands))
 
     def test_dry_run_is_read_only_and_does_not_probe(self):
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file), "--dry-run"]), 0)
+        self.assertEqual(self.engine(dry_run=True), 0)
         self.assertEqual(len(self.commands), 2)
         self.assertIn("config", self.commands[0][0])
         self.assertEqual(self.commands[1][0][:2], ["docker", "ps"])
@@ -107,7 +116,7 @@ class WorkerDeploymentTests(unittest.TestCase):
 
     def test_failed_probe_never_recreates_or_stops_existing_service(self):
         self.fail_stage = "--preflight"
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 1)
+        self.assertEqual(self.engine(), 1)
         self.assertFalse(any("up" in cmd or "down" in cmd or "stop" in cmd for cmd, _ in self.commands))
         probe = next(cmd for cmd, _ in self.commands if "--preflight" in cmd)
         cleanup = next(cmd for cmd, _ in self.commands if cmd[:2] == ["docker", "rm"])
@@ -115,10 +124,10 @@ class WorkerDeploymentTests(unittest.TestCase):
         self.assertIn("existing worker was not stopped", self.errors.getvalue())
 
     def test_clients_only_rotation_recreates_worker_after_successful_probe(self):
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 0)
+        self.assertEqual(self.engine(), 0)
         self.commands.clear()
         self.clients.write_text(json.dumps({"conference-a": "b" * 40}))
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 0)
+        self.assertEqual(self.engine(), 0)
         probe = next(i for i, (cmd, _) in enumerate(self.commands) if "--preflight" in cmd)
         starts = [(i, cmd) for i, (cmd, _) in enumerate(self.commands) if "up" in cmd]
         self.assertEqual(len(starts), 1)
@@ -130,12 +139,28 @@ class WorkerDeploymentTests(unittest.TestCase):
 
     def test_failed_build_never_runs_probe_or_cutover(self):
         self.fail_stage = "build"
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 1)
+        self.assertEqual(self.engine(), 1)
         self.assertFalse(any("--preflight" in cmd or "up" in cmd for cmd, _ in self.commands))
+
+    def test_failed_up_reports_cutover_instead_of_claiming_existing_worker_untouched(self):
+        self.fail_stage = "up"
+        with self.assertRaises(deployment.WorkerCutoverStartedError):
+            deployment.deploy(self.env_file)
+        self.assertTrue(any("up" in cmd for cmd, _ in self.commands))
+        self.assertNotIn("Worker deployment is healthy.", self.output.getvalue())
+
+    def test_interruption_during_up_preserves_recovery_classification(self):
+        def interrupted(command, **options):
+            if "up" in command:
+                raise KeyboardInterrupt()
+            return self.fake_run(command, **options)
+        self.runner.side_effect = interrupted
+        with self.assertRaises(deployment.WorkerCutoverStartedError):
+            deployment.deploy(self.env_file)
 
     def test_project_collision_fails_before_build(self):
         self.owned_services = "web\nproxy\n"
-        self.assertEqual(deployment.main(["--env-file", str(self.env_file)]), 1)
+        self.assertEqual(self.engine(), 1)
         self.assertEqual(len(self.commands), 2)
         self.assertIn("non-worker containers", self.errors.getvalue())
 
@@ -163,16 +188,18 @@ class WorkerDeploymentTests(unittest.TestCase):
     def test_shell_conference_settings_cannot_override_worker_env_file(self):
         with patch.dict(os.environ, {"COMPOSE_PROJECT_NAME": "production-conference", "COMPOSE_FILE": "docker-compose.yml",
                                      "CFM_SLAVE_PROJECT_NAME": "wrong-worker", "CFM_COMPARISON_NETWORK": "wrong-network"}):
-            self.assertEqual(deployment.main(["--env-file", str(self.env_file), "--dry-run"]), 0)
+            self.assertEqual(self.engine(dry_run=True), 0)
         environment = self.commands[0][1]["environment"]
         for key in ("COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "CFM_SLAVE_PROJECT_NAME", "CFM_COMPARISON_NETWORK"):
             self.assertNotIn(key, environment)
 
-    def test_env_file_is_required_and_wait_is_bounded(self):
-        for args in ([], ["--env-file", str(self.env_file), "--wait-seconds", "0"],
-                     ["--env-file", str(self.env_file), "--wait-seconds", "601"]):
-            with self.subTest(args=args), self.assertRaises(SystemExit):
-                deployment.main(args)
+    def test_historical_cli_delegates_init_update_and_wait_to_single_policy(self):
+        from scripts import deploy
+        for args in ([], ["--env-file", str(self.env_file), "--gpu", "--wait-seconds", "300"],
+                     ["--init", "--template", "worker.template", "--dry-run"]):
+            with self.subTest(args=args), patch.object(deploy, "main", return_value=0) as dispatch:
+                self.assertEqual(deployment.main(args), 0)
+                dispatch.assert_called_once_with(["worker", *args])
         self.runner.assert_not_called()
 
 

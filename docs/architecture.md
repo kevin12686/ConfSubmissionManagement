@@ -576,6 +576,18 @@ checks restart prerequisites only for images declaring the startup-preflight
 capability. These boundaries never select publication files or modify review
 state. Readiness at deployment time is not a guarantee of later service uptime.
 
+Worker lifecycle planning is read-only and separates initialization from update.
+`worker --init` alone may create absent env/auth, optionally using an initial
+template. Updates require preserved identity and authorization, including the
+existing conference namespace, before any provisioning/cutover. Markers, stopped
+containers, backend/port and auth/data mounts prevent accidental reassignment;
+initialization refuses existing state and project volumes. Both historical
+worker/rebuild CLI names delegate to the unified policy. The first conference
+create may prepare a new CPU worker, but an update cannot substitute a new one
+for lost configuration. Missing-input rejection precedes even the audit/lock
+directory; accepted attempts retain deployment auditing. No conference model,
+publication selector, OCR contract or archive format participates in this policy.
+
 Do not preserve machine-specific absolute paths in restored state. Snapshot manifests may include portable path references and hashes, but restore must reject corrupted or unsupported archives. Temporary preview token folders are excluded from snapshots.
 Restore extracts and verifies files into sibling staging directories before the
 database transaction begins. Live files move to quarantine only after model

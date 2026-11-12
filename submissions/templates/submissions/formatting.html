@@ -219,13 +219,13 @@
             </div>
             <div class="cfm-table-actions">
                 {% if mode == "list" %}
-                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#format-review-{{ item.pk }}" aria-expanded="false" aria-controls="format-review-{{ item.pk }}">Review paper</button>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#format-review-{{ item.pk }}" aria-expanded="{{ row.review_expanded|yesno:'true,false' }}" aria-controls="format-review-{{ item.pk }}">Review paper</button>
                 {% endif %}
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:final_submission_edit' item.pk %}?next={{ request.get_full_path|urlencode }}">Edit Metadata</a>
             </div>
         </div>
         {% include "submissions/partials/formatting_comparison_status.html" with comparison=row.automatic_comparison %}
-        <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue" data-cfm-context-expansion{% endif %}>
+        <div id="format-review-{{ item.pk }}" class="{% if mode == 'list' %}collapse{% if row.review_expanded %} show{% endif %}{% endif %}" {% if mode == "list" %}data-bs-parent="#formatting-queue" data-cfm-context-expansion{% endif %}>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-xl-4">
@@ -243,7 +243,7 @@
                             {% endif %}
                         >
                             <img
-                                {% if mode != "list" %}
+                                {% if row.review_expanded %}
                                     src="{{ row.preview.url }}"
                                 {% endif %}
                                 loading="lazy"

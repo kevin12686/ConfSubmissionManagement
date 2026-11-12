@@ -6,6 +6,33 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
+## Worker Lifecycle Acceptance (1.31.2 / Method 8)
+
+- Final disposable native source: all 1,049 Django tests and 125 JavaScript
+  tests passed. Standalone discovery ran 127 tests with two opt-in skips; both
+  real Docker opt-ins were run separately and passed. Check, migration drift,
+  docs, compile and whitespace gates passed. No database/archive change (v8).
+- A production-Dockerfile Linux app image ran all 1,049 Django tests with ten
+  platform skips; corresponding host-side coverage passed. Actual custom-header
+  round-trip acceptance preserved fake gateway credentials safely.
+- Real isolated initialization used a separate template, generated worker auth,
+  two synthetic conferences and unique Docker projects/images/networks/volumes.
+  Both updater entrypoints retained database/review state, Original/Corrected
+  hashes, conference envs, worker env, tokens and explicit one-page/two-thread
+  settings. A stopped CPU worker was recreated through the historical worker
+  CLI with its volume/signing secret retained.
+- Removing worker.env or clients in that isolated deployment caused all four
+  CLI entrypoints to fail without recreating files, writing deployment audit or
+  changing either conference. Unit boundaries additionally cover empty/corrupt/
+  public auth, missing namespaces, custom env/export paths, repeated init,
+  residual project state, stopped/foreign/ambiguous containers, backend/port/
+  mount mismatch, concurrent changes and post-cutover failure/interruption.
+- No production conference/worker was mounted, stopped or deployed. GPU selection
+  and explicit settings were covered in host tests; no new remote CUDA inference
+  was run for this deployment-only release. Compute contract remains
+  `3ea6e26d3f9f24c6150b00bf57d0bb18af6edc9ea373750b8db735abcf8f4b26`;
+  publication selectors, PDF/revision binding, OCR and review resets are unchanged.
+
 ## Worker Metadata Acceptance (1.31.1 / Method 8)
 
 - Disposable native source copy: 1,049 Django tests passed, standalone discovery

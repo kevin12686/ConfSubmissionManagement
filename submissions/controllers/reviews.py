@@ -91,7 +91,9 @@ from submissions.services.formatting import (
     preview_formatting_upload,
     save_formatting_review_result,
 )
-from submissions.services.automatic_pdf_comparison import remember_upload_comparison, upload_comparison_entries
+from submissions.services.automatic_pdf_comparison import (
+    consume_upload_comparison_return, remember_upload_comparison, upload_comparison_entries,
+)
 from submissions.services.file_manager import (
     corrected_pdf_needs_processing,
     publication_pdf_info,
@@ -1303,6 +1305,10 @@ def formatting(request):
     file_inspection = FileInspectionContext()
     comparison_entries = upload_comparison_entries(request.session)
     comparisons_by_id = {entry["submission_id"]: entry for entry in comparison_entries}
+    return_token = (
+        consume_upload_comparison_return(request.session, request.get_full_path())
+        if request.method == "GET" else ""
+    )
     rows = []
     for submission in all_submissions:
         publication_pdf = publication_pdf_info(
@@ -1317,6 +1323,7 @@ def formatting(request):
             {
                 "submission": submission,
                 "automatic_comparison": comparisons_by_id.get(submission.pk),
+                "review_expanded": mode != "list" or bound_submission_id == submission.pk,
                 "form": (
                     bound_form
                     if bound_submission_id == submission.pk
@@ -1358,11 +1365,18 @@ def formatting(request):
         {**option, "count": filter_counts.get(option["value"], 0)}
         for option in FORMAT_FILTER_OPTIONS
     ]
+    visible_ids = {row["submission"].pk for row in rows}
+    comparison_fallback = next(
+        (entry for entry in comparison_entries
+         if entry["token"] == return_token and entry["submission_id"] not in visible_ids),
+        None,
+    ) if mode == "list" else None
     return render(
         request,
         "submissions/formatting.html",
         {
             "rows": rows,
+            "bound_submission_id": bound_submission_id,
             "q": q,
             "current_filter": current_filter,
             "filter_options": filter_options,
@@ -1373,11 +1387,7 @@ def formatting(request):
             "focused_context": focused_context,
             "focused_submission": focused_submission,
             "pagination": page,
-            "comparison_fallback": (
-                comparison_entries[0] if mode == "list" and comparison_entries
-                and comparison_entries[0]["submission_id"] not in {row["submission"].pk for row in rows}
-                else None
-            ),
+            "comparison_fallback": comparison_fallback,
         },
     )
 
@@ -1408,8 +1418,9 @@ def _formatting_success_message(submission, mode):
 
 
 def _formatting_saved_response(request, result, current_filter, q, mode, queue_token):
+    response = _formatting_redirect_after_save(request, current_filter, q, mode, queue_token=queue_token)
     try:
-        remember_upload_comparison(request.session, result)
+        remember_upload_comparison(request.session, result, return_url=response.url if mode == "list" else "")
     except Exception as exc:
         logger.exception("Formatting saved but automatic comparison could not be prepared")
         try:
@@ -1418,7 +1429,7 @@ def _formatting_saved_response(request, result, current_filter, q, mode, queue_t
             logger.exception("Could not audit comparison preparation failure")
         messages.warning(request, "Formatting files saved, but automatic comparison could not be prepared. Use Compare PDF to retry manually.")
     messages.success(request, _formatting_success_message(result.submission, mode))
-    return _formatting_redirect_after_save(request, current_filter, q, mode, queue_token=queue_token)
+    return response
 
 
 def _formatting_redirect_after_save(

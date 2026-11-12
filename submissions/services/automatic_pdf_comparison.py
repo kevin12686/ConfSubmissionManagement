@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from django.core import signing
 from django.core.files import locks
@@ -20,11 +21,13 @@ from submissions.services.preview_storage import PREVIEW_TOKEN_PATTERN, purge_ex
 
 logger = logging.getLogger(__name__)
 SESSION_KEY = "formatting_upload_comparisons"
+RETURN_RECEIPT_KEY = "formatting_upload_comparison_return"
 REQUEST_SALT = "submissions.formatting-upload-comparison.v1"
 CACHE_SALT = "submissions.formatting-upload-comparison-cache.v1"
 
 
-def remember_upload_comparison(session, result):
+def remember_upload_comparison(session, result, *, return_url=""):
+    session.pop(RETURN_RECEIPT_KEY, None)
     revision = result.revision
     if not revision or "pdf" not in revision.changed_files:
         return None
@@ -41,7 +44,22 @@ def remember_upload_comparison(session, result):
     }
     entries = [item for item in session.get(SESSION_KEY, []) if item.get("submission_id") != result.submission.pk]
     session[SESSION_KEY] = [entry, *entries][:20]
+    if return_url:
+        session[RETURN_RECEIPT_KEY] = {"url": _return_path(return_url), "token": entry["token"]}
     return entry
+
+
+def _return_path(url):
+    parts = urlsplit(url)
+    return parts.path + (f"?{parts.query}" if parts.query else "")
+
+
+def consume_upload_comparison_return(session, return_url):
+    """The out-of-filter receipt belongs only to the first post-upload return."""
+    receipt = session.pop(RETURN_RECEIPT_KEY, None)
+    if receipt and receipt.get("url") == _return_path(return_url):
+        return receipt.get("token", "")
+    return ""
 
 
 def decode_upload_comparison(submission_id, token):

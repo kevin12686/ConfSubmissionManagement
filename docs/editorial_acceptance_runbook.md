@@ -308,6 +308,15 @@ the blank-default migration.
 
 ### Worker Version And Settings Visibility
 
+Before deployment acceptance, verify worker lifecycle guards in disposable
+storage: `--init` creates only absent identity/auth, optionally from a template;
+updates with missing env/clients/namespaces fail read-only. Include repeated init,
+existing project volumes, stopped/foreign containers, mismatched backend/port/
+mounts and concurrent edits. Worker/rebuild compatibility CLIs must use the same
+guards. Update two existing test conferences through both updater entrypoints;
+verify names, explicit settings, tokens, database/reviews and publication bytes
+remain unchanged. No missing worker may be recreated from conference credentials.
+
 - In isolated Formatting List/Single/Focus, check Remote/Local version, backend
   and availability plus effective model sizes, pages, threads, timeout and GPU
   idle duration in Details. Verify narrow/short viewport wrapping.
@@ -370,6 +379,11 @@ Use disposable records/files and hash-pinned reviewed expectations.
    failure creates no receipt. Cover PDF-in-source-field recognition,
    source-only/status/notes saves, filtered-out saved rows, HTMX return links,
    loading, separate counts and explicit Retry without auto-navigation/polling.
+   A filtered-out upload receipt appears only on the first matching save
+   return. Save Review OK from Needs attention, then change tab/search/page:
+   neither that paper nor its comparison may leak into unrelated results.
+   Submit two PDFs and a stale review snapshot: detailed validation/conflict
+   feedback must restore the original card, with lazy previews still loading.
 2. Refresh a completed result without rebuilding. Upload A then B, including
    identical bytes: A must never open B as its After. A later source-only
    revision may reuse the same PDF. Interrupt/duplicate requests and inject
@@ -379,6 +393,11 @@ Use disposable records/files and hash-pinned reviewed expectations.
    the originating tab. Reject another submission's revision, missing/corrupt
    files, stale tokens, changed scope, ambiguous active versions and mutations
    during/after build. Verify exact snapshot links and no fallback.
+   Complete a comparison, upload a newer PDF from another browser tab, then
+   change filters in the original tab. Its comparison must revalidate and hide
+   the old completed action; do the same through browser history. The old
+   endpoint must still reject access. Unrelated child-panel loads must not
+   start duplicate requests or rerun OCR for valid complete cache results.
 4. Rebuild method-7 and older signed results; never relabel them method 8.
    Compare same-letter diacritics (e/é/è) and a neighboring true numeric edit:
    diacritics must remain inspectable Info, while the numeric edit stays Warning.

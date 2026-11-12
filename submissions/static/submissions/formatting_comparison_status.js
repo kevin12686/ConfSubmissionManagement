@@ -1,6 +1,7 @@
 (function () {
     "use strict";
     const requests = new Map();
+    const initialized = new WeakSet();
     function render(panel, result) {
         const query = selector => panel.querySelector(selector);
         const complete = result.state === "complete";
@@ -45,7 +46,7 @@
         const timeout = window.setTimeout(() => controller.abort(), 120000);
         try {
             const response = await fetch(panel.dataset.comparisonUrl + (method === "GET" ? `?${params}` : ""), {
-                method, credentials: "same-origin", signal: controller.signal,
+                method, credentials: "same-origin", cache: "no-store", signal: controller.signal,
                 headers: {"Accept": "application/json", ...(method === "POST" ? {"X-CSRFToken": panel.dataset.comparisonCsrf, "Content-Type": "application/x-www-form-urlencoded"} : {})},
                 ...(method === "POST" ? {body: params} : {}),
             });
@@ -56,14 +57,17 @@
             window.clearTimeout(timeout);
         }
     }
-    async function start(panel, retry = false, localConfirmation = "") {
+    async function start(panel, retry = false, localConfirmation = "", revalidate = false) {
         const token = panel.dataset.comparisonToken;
         const previous = requests.get(token);
-        if (previous?.running || (previous && !retry)) {
+        if (previous) {
+            initialized.add(panel);
             render(panel, previous.result);
             return;
         }
-        requests.set(token, {running: true, result: {state: "loading"}});
+        if (initialized.has(panel) && !retry && !revalidate) return;
+        initialized.add(panel);
+        requests.set(token, {result: {state: "loading"}});
         update(token, {state: "loading"});
         try {
             let result = await fetchResult(panel, retry ? "POST" : "GET", retry, localConfirmation);
@@ -76,11 +80,11 @@
                 ? "Comparison timed out or is still running. Retry to check it; no duplicate build will start."
                 : "Comparison could not be loaded. Retry comparison; the saved files are unchanged."});
         } finally {
-            requests.get(token).running = false;
+            requests.delete(token);
         }
     }
-    function initialize() {
-        document.querySelectorAll("[data-upload-comparison]").forEach(panel => start(panel));
+    function initialize(revalidate = false) {
+        document.querySelectorAll("[data-upload-comparison]").forEach(panel => start(panel, false, "", revalidate));
     }
     document.addEventListener("click", event => {
         const button = event.target.closest?.("[data-upload-comparison-retry]");
@@ -88,8 +92,8 @@
         const local = event.target.closest?.("[data-upload-comparison-local]");
         if (local && local.dataset.confirmation) start(local.closest("[data-upload-comparison]"), true, local.dataset.confirmation);
     });
-    document.addEventListener("htmx:load", initialize);
-    window.addEventListener("pageshow", initialize);
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, {once: true});
+    document.addEventListener("htmx:load", () => initialize());
+    window.addEventListener("pageshow", () => initialize(true));
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => initialize(), {once: true});
     else initialize();
 })();

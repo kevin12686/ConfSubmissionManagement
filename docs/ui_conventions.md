@@ -351,6 +351,19 @@ Validation accepts a recognized PDF/source pair even if the two upload fields
 were swapped. It rejects two PDFs, two recognized source files, and unknown
 files in the PDF field. Bound status, notes, and errors remain visible; browser
 file inputs must be selected again after failure.
+Pass the bound submission ID into the shared worklist return context so a
+failed POST restores and expands its original card, including lazy preview and
+history initialization. Render that bound card expanded, with its preview
+source set, so lost browser storage or submitting during the collapse animation
+cannot hide its errors or leave its preview waiting for another toggle. Do not
+add a second error-only card/navigation system.
+
+Automatic comparison status is paper-card scoped. An out-of-filter upload
+receipt may appear only on the first matching post-upload return; it is not a
+session-wide fallback for unrelated filters, searches, pages or later status
+saves. The browser deduplicates in-flight requests, not completed validation:
+new HTMX panels and browser-history re-entry revalidate with a read-only GET.
+Unrelated child-panel loads must not repeatedly restart comparison requests.
 
 Corrected-PDF title confirmation presents pending PDF, source, workflow, and
 notes as a structured summary between the title comparison and confirmation

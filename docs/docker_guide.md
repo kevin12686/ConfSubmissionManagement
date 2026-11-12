@@ -54,8 +54,10 @@ selection, scope, review flags, upload files, OCR thresholds or deadlines.
 
 Existing project names, data paths, secrets, client credentials and explicit
 settings are preserved. Conflicting or corrupt existing values cause an
-actionable error instead of replacement. Generated environment defaults are
-filled only when absent. Dry-run does not download, write settings, generate
+actionable error instead of replacement. Worker identity/authorization is required
+on update; only explicitly authorized initialization can create it. New
+non-identity defaults may be filled without replacing explicit values.
+Dry-run does not download, write settings, generate
 credentials or start/stop containers. Update previews render actual redacted
 Compose plans and local-worker/model requirements using temporary private env
 staging only; those temporary files are removed. They do not run live HTTP,
@@ -66,6 +68,8 @@ Deployment requests/results are appended without credentials to private
 conference Audit Log and is not System State data. Failure to record a request
 prevents deployment; a success-log failure explicitly reports that completed
 deployment side effects were not rolled back.
+Read-only lifecycle/configuration rejection occurs before the operation lock or
+request audit is created. Accepted attempts and later failures remain audited.
 Running workers must belong to this checkout; an ambiguous or foreign Compose
 project is rejected rather than automatically replaced. To use an externally
 managed worker, retain its explicit URL/token and manage its lifecycle from
@@ -104,7 +108,7 @@ On the GPU host, set a private LAN address explicitly and name the conference
 projects allowed to use it (example IP only):
 
 ```bash
-python3 scripts/deploy.py worker --gpu --bind-host 192.168.4.90 \
+python3 scripts/deploy.py worker --init --gpu --bind-host 192.168.4.90 \
   --client conference-a --client conference-b
 ```
 
@@ -124,6 +128,54 @@ the bind address; wildcard bind addresses cannot be advertised as endpoints.
 Remote enrollment files are not general administrator keys and cannot register
 new clients through the HTTP API. Adding another remote conference is an explicit
 trusted GPU-host `worker --client <project>` operation, not manual token editing.
+
+Standalone worker commands **without `--init` are updates**. They require the
+existing `runtime/comparison-slave/worker.env` unless `--env-file` selects another
+existing file; no other env is searched or inferred from a container. Missing
+env, project/network/address/port/model/client-path identity, or missing/empty/
+invalid private clients is an error. Restore the original configuration and
+authorization; do not initialize replacement tokens. Existing conferences must
+already have their namespace in the worker. `--client <new-project>` is explicit
+new enrollment only while existing authorization is intact; an orphaned old
+enrollment cannot be recreated with a different token.
+
+Update a GPU worker using its original checkout and configuration:
+
+```bash
+python3 scripts/deploy.py worker --gpu --dry-run
+python3 scripts/deploy.py worker --gpu
+```
+
+Do not repeat `--init`, `--client`, `--endpoint` or bind options for an ordinary
+update. Stored backend selects CUDA without `--gpu` too; explicit `--gpu` may
+fill a legacy missing backend marker, but never overwrite a conflicting value.
+CPU configurations without a backend marker must restore
+`CFM_DEPLOY_WORKER_BACKEND=cpu` explicitly. Stopped/absent containers can be
+recreated from intact identity/auth, preserving project-scoped worker data.
+An existing marker, stopped container or mount mismatch cannot silently become
+a different deployment. A rename/data migration is not an update operation.
+
+For custom first-time settings, use a separate template with an absent target:
+
+```bash
+mkdir -p runtime/comparison-slave
+cp -n .env.slave.example runtime/comparison-slave/worker.template
+# Edit worker.template for this new host, not an existing worker.env.
+python3 scripts/deploy.py worker --init --gpu \
+  --template runtime/comparison-slave/worker.template --dry-run
+python3 scripts/deploy.py worker --init --gpu \
+  --template runtime/comparison-slave/worker.template
+```
+
+`--init` rejects an existing target env (even empty), clients, deployment marker,
+enrollments, same-project containers/volumes or another worker using that clients
+path. It does not have a force-overwrite switch. A new conference can initialize
+its first local CPU worker only if no previous worker identity is present;
+updates through either CLI cannot substitute initialization for missing state.
+If image build or disposable preflight fails, the previous env/auth are restored.
+Once container replacement is attempted, failure retains its staged env/auth for
+recovery; inspect the container and retry an ordinary update, not `--init`.
+Docker cutover is not transactional, and completed earlier updates are not undone.
 
 Later, on each host run the appropriate unified command again. On the CFM host:
 
@@ -310,9 +362,7 @@ Protect env files from other users too. The secret is mounted read-only at
 namespace supplied by the client. Restart the worker after editing credentials.
 
 ```bash
-mkdir -p runtime/comparison-slave
-cp .env.slave.example runtime/comparison-slave/worker.env
-# Provision clients.json and approved models; edit worker.env for this host.
+# Existing worker update; configuration and authorization must already exist.
 python3 scripts/start_comparison_slave.py \
   --env-file runtime/comparison-slave/worker.env --dry-run
 python3 scripts/start_comparison_slave.py \
@@ -325,8 +375,9 @@ in a disposable preflight container before replacing the existing worker. It
 then waits for Docker health, not just a successful `up` command. Missing models,
 invalid credentials or an unavailable provider fail before replacement. Dry run
 does not build, start containers or infer; it cannot certify provider readiness.
-This lower-level launcher does not provision models/client credentials; the
-unified deployer does so before invoking it. Neither interface overwrites
+This historical CLI delegates to `deploy.py worker`; it is not an alternate
+initialization or authorization path. The internal build/preflight engine remains
+shared, and the deployer provisions checksum-pinned models. Neither interface overwrites
 existing credentials or silently replaces corrupt models. Rerun the launcher after editing credentials; successful deployment
 recreates the worker so file-backed secrets are reloaded. Allow current jobs to
 finish first; interrupted jobs are not automatically moved to another worker.
@@ -357,7 +408,9 @@ and do not clone it to create another worker identity. Rebuild/update the worker
 with the explicit commands above, separately from conference maintenance.
 Store the operational env file outside the root `.env.*` discovery pattern.
 The conference updater excludes the reserved `.env.slave` and `.env.slave.*`
-names, including `.env.slave.example`; it never starts or updates the worker.
+names, including `.env.slave.example`. The unified updater separately manages
+the shared CPU worker from its existing worker.env; it never treats that file
+as a conference or recreates missing worker credentials.
 It retains comparison transport, network, URLs and separate tokens during
 conference recreation, and masks both tokens in update/rebuild plans.
 
@@ -591,8 +644,9 @@ Then preview/apply using the same worker project, client registration and
 deployment command previously used (`deploy.py worker`, with `--gpu` for CUDA).
 The unified deployer downloads only missing selected pinned models, rejects
 corrupt existing files, and detects Compose edits as worker changes. Offline
-requires the selected files already present. Lower-level startup never downloads;
-it validates the selected runtime before replacing the worker. Allow jobs to finish
+requires the selected files already present. The internal build/runtime engine
+does not download models; both worker CLI names delegate provisioning to the
+unified deployer. Allow jobs to finish
 before recreation. Conference publication files, DBs and review flags are untouched.
 
 GPU combines dynamic page dispatch with on-device CTC reduction. CPU defaults to
@@ -791,20 +845,18 @@ new volume. The original host folder is preserved.
 
 ## Recover A Legacy Instance
 
-Use `scripts/rebuild_docker_instances.py` only when a running legacy instance
-does not have a maintained environment file:
+`scripts/rebuild_docker_instances.py` is a compatibility alias for the same
+unified update workflow:
 
 ```bash
 python3 scripts/rebuild_docker_instances.py --dry-run
 python3 scripts/rebuild_docker_instances.py
 ```
 
-This recovery path treats the running containers as the source of effective
-ports, settings, and mount type. It intentionally does not apply later edits
-from an environment file.
-
-For ordinary maintained instances, use
-`scripts/update_docker_instances.py` instead.
+Managed envs are used when available; legacy instances without one retain their
+live settings and mount type. Both paths require intact managed worker env/auth
+when they use the local shared worker. Neither command can rebuild missing
+credentials. Prefer `scripts/update_docker_instances.py` for normal operation.
 
 ## Roll Back To The Host Mirror
 

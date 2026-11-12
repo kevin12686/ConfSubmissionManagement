@@ -69,9 +69,10 @@ cause; never compensate by changing publication files or bypassing version check
 - Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
   and provision the two pinned OCR models using the Developer Guide. Run
   `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.
-- Docker worker: use `scripts/deploy.py worker` for automatic first setup, or
-  `scripts/start_comparison_slave.py --env-file <worker.env>` for lower-level
-  lifecycle operations with already provisioned files.
+- Docker worker: use `scripts/deploy.py worker --init` only for a genuinely new
+  setup, optionally with `--template <initial-settings>`. Normal `worker` commands
+  update the existing env/auth; `start_comparison_slave.py` is an alias for the
+  same lifecycle, not a workaround for missing configuration.
   Check the private `clients.json` (0600), read-only model directory and explicit
   CPU/GPU selection. A missing CUDA provider is not silently replaced by CPU.
 - Docker conference: start the shared worker first, use the same network name,
@@ -789,9 +790,18 @@ Confirm that:
 
 For a maintained environment file, apply changes with
 `scripts/update_docker_instances.py`. A new environment file is not started
-without `--create-missing`. Use `scripts/rebuild_docker_instances.py` only
-when recovering a running legacy instance whose maintained environment file is
-unavailable.
+without `--create-missing`. `scripts/rebuild_docker_instances.py` is an alias
+for that same updater; managed envs take precedence and legacy live settings
+are retained only when no managed env is available.
+
+If an update reports missing `worker.env`, clients or a namespace, restore its
+original files/entry before retrying. Do not copy a sample over it, run `--init`,
+delete its volume or generate replacement tokens. The worker default path is
+`runtime/comparison-slave/worker.env`, not an env discovered from a container.
+Pass `--env-file` for a different existing worker file. A backend/project/port/
+mount mismatch requires reconciling the original deployment, not forcing an
+update. Static lifecycle rejection creates no env/auth, models or containers;
+accepted deployment attempts and subsequent failures are separately audited.
 
 If static or media files disappear with `SMS_DEBUG=0`, do not re-enable debug
 as a workaround. Verify the proxy's `sms_static` and read-only `sms_data`
@@ -927,6 +937,12 @@ or newer PDF upload cannot be retried as if it were the old version: open manual
 Compare PDF for the current files. Missing Original is reported, never replaced
 with a previous revision. Title guard previews/cancelled uploads do not trigger
 comparison, and source-only/status/notes changes create no new request.
+The identified out-of-filter status is shown only on a fresh upload's first
+return. After Review OK removes a paper from Needs attention, its comparison
+belongs under Review OK/Edited/All, not above an unrelated empty list. Reopening
+a card rechecks its receipt; a stale revision shows unavailable instead of an
+old completed action. Validation errors reopen the submitted card, but browser
+security requires selecting failed uploads again.
 
 Compare PDF uses saved files only; save an upload before comparing. Rebuild
 after two hours or when a PDF, baseline, active version, or publication scope

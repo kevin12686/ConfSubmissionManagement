@@ -216,18 +216,33 @@ uses authenticated health/contract checks, requiring a configured local fallback
 even when the preferred remote is available. It never submits papers or reads
 conference data. Optional GROBID/CrossCheck services are not startup prerequisites.
 
-`scripts/start_comparison_slave.py` owns independent worker build/preflight/start.
+`scripts/start_comparison_slave.py` owns the internal worker build/preflight/start
+engine; its historical CLI delegates to the unified worker workflow.
 `scripts/deploy.py` orchestrates first setup and updates around that interface
 and `docker_update_engine.py` (the extracted conference planning/cutover guard
-layer). `update_docker_instances.py` delegates to the same update workflow, not
-a second implementation. Its private per-project enrollment files,
+layer). Both `update_docker_instances.py` and the historical rebuild CLI delegate
+to the same update workflow, not second implementations. Worker commands default
+to update and require intact env identity and private authorization; only
+explicit `--init` can create them, optionally from a separate `--template`.
+The first conference create may initialize a genuinely new local worker;
+existing-conference updates may not. Read-only lifecycle planning precedes the
+operation lock/request audit; recheck env/auth snapshots before applying after
+provisioning. Include stopped containers, ownership, backend, ports, auth/data
+mounts, markers/enrollments and init-volume collisions in tests. Unknown/missing
+identity is an error, never a default name/token. A worker's missing namespace
+cannot be reconstructed from a live conference token; explicit new enrollment
+requires intact existing auth. Its private per-project enrollment files,
 worker-source fingerprint and deployment log are host state under `runtime/`,
 not conference models or System State contents. Preserve existing user values
 and token bytes; tests must reject conflicting enrollments and exercise
 failure restoration and busy-worker refusal. The idle check is not an atomic
 drain, so maintenance must exclude new comparison submissions.
 Worker disposable preflight must not change persistent identity, clients or
-jobs. Keep CPU/GPU selection explicit. Backup uses the image's
+jobs. Keep CPU/GPU selection explicit.
+`WorkerCutoverStartedError` from the worker engine retains staged env/auth after
+a replacement attempt; build/probe failures before cutover still restore them.
+Do not delete a failed first deployment's only credentials and then suggest init.
+Backup uses the image's
 `com.conferencefinalmanager.startup-preflight=1` capability label to check restart
 prerequisites before stopping a new-image web; legacy images retain their former
 backup behavior. These checks do not change publication rules.
@@ -894,6 +909,12 @@ Most regression coverage lives in `submissions/tests/test_acceptance.py`. Add sc
 - Multi-editor long-running Process PDFs/extraction races, including generated
   file output as well as database fields.
 - Worklist UI or local frontend assets. The publication byte-level regression must keep ZIP entry names, PDF/source SHA256 values, manifest rows, and readiness categories unchanged across UI-only requests.
+- Formatting comparison status lifecycle: Review OK leaving a filter must
+  remove its comparison from that list. Cover first-return-only upload receipts,
+  unrelated queries/pages, stale completed results after HTMX/history navigation,
+  in-flight deduplication, valid cache reuse without inference, and bound-card
+  restoration after validation and stale-save errors. Session receipts are
+  temporary display context, never publication state or computation consent.
 - Pagination performance coverage should assert expensive helper call counts,
   not wall-clock thresholds: normal pages must hydrate only the selected page,
   while `page_size=all` hydrates the complete filtered result.

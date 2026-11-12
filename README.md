@@ -50,6 +50,9 @@ one local application:
   Linked pages without a counterpart show an explicit empty state, not an unrelated PDF page.
   Headers/footers, formulas and image text remain in scope. A saved Formatting
   PDF upload automatically starts a separate Original comparison;
+- keeps automatic comparison status with its own paper card; an upload that
+  leaves the current filter has a one-return receipt, not a panel carried into
+  unrelated searches or tabs. Re-entered panels revalidate the saved revision;
 - processes PDFs and coordinates Paper ID, title/author, formatting,
   plagiarism, author-count, and exception reviews;
 - gives Dashboard, Organized List, Error Report, and final export one shared
@@ -170,7 +173,7 @@ Python 3.12 or newer is required. The first run needs internet access to install
 Python packages; normal local operation is offline afterward. PDF comparison
 also requires checksum-verified local OCR models before startup. The unified
 Docker deployer downloads missing pinned models automatically during setup;
-comparison requests and low-level/native launchers never download models.
+comparison requests and native launchers never download models.
 Startup fails before migrations if its
 comparison runtime is unavailable. See [PDF comparison setup](docs/developer_guide.md#pdf-comparison-runtime)
 and [Docker setup](docs/docker_guide.md#pdf-comparison-runtime).
@@ -215,6 +218,13 @@ Normal updates use `python3 scripts/update_docker_instances.py --dry-run`, then
 the same command without `--dry-run`; it prepares local compute prerequisites
 and updates the selected conferences. `deploy.py update` is an equivalent
 entry point, not a second deployment workflow.
+Standalone worker first setup requires `deploy.py worker --init` (optionally
+`--template <file>` for custom initial settings). Without `--init`, worker
+commands update only: the selected/default `runtime/comparison-slave/worker.env`
+and existing private clients must exist. Missing identity/authorization is a
+read-only error, not permission to invent names or tokens. First conference
+creation can prepare a genuinely new local CPU worker; an existing conference
+update cannot. Historical worker/rebuild CLI names use these same guards.
 Remote GPU setup and one-time private enrollment are covered in
 [Unified Deployment](docs/docker_guide.md#unified-deployment). Measured full-PDF
 GPU Docker timings and known network/CPU limits live in

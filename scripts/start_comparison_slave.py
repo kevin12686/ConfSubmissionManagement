@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build, preflight, then start/update only the standalone comparison worker."""
 
-import argparse
 import json
 import os
 from pathlib import Path
@@ -20,6 +19,10 @@ MAX_CONFIG_BYTES = 2 * 1024 * 1024
 
 class DeploymentError(RuntimeError):
     pass
+
+
+class WorkerCutoverStartedError(DeploymentError):
+    """A replacement was attempted; retain its credentials/config for recovery."""
 
 
 def compose_environment():
@@ -149,7 +152,10 @@ def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
         print("Worker preflight failed; the existing worker was not stopped or recreated.", file=sys.stderr)
         raise
     print("Preflight passed; starting worker and waiting for readiness...")
-    run(start, environment=environment, timeout=wait_seconds + 60)
+    try:
+        run(start, environment=environment, timeout=wait_seconds + 60)
+    except (DeploymentError, KeyboardInterrupt) as exc:
+        raise WorkerCutoverStartedError("Worker replacement was attempted but readiness failed. Keep its env/authorization and inspect the container before retrying update; do not initialize new credentials.") from exc
     print("Worker deployment is healthy.")
     try:
         details = run(base + ["exec", "-T", SERVICE, "python", "-m", "comparison_slave.entrypoint", "--status"],
@@ -161,20 +167,11 @@ def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", required=True, type=Path)
-    parser.add_argument("--gpu", action="store_true", help="Explicitly use the NVIDIA GPU Compose override.")
-    parser.add_argument("--dry-run", action="store_true", help="Validate and print the plan without building or starting anything.")
-    parser.add_argument("--wait-seconds", type=int, default=240)
-    args = parser.parse_args(argv)
-    if not 30 <= args.wait_seconds <= 600:
-        parser.error("--wait-seconds must be between 30 and 600")
-    try:
-        deploy(args.env_file, gpu=args.gpu, dry_run=args.dry_run, wait_seconds=args.wait_seconds)
-        return 0
-    except (DeploymentError, OSError, ValueError) as exc:
-        print(f"Worker deployment failed: {exc}", file=sys.stderr)
-        return 1
+    # Keep the historical CLI, not a second authorization/initialization path.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from scripts import deploy as orchestration
+    return orchestration.main(["worker", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":

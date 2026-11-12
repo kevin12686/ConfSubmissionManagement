@@ -11,7 +11,8 @@ from django.urls import reverse
 
 from submissions.models import FinalSubmission, FormattingRevision, InitialPaper
 from submissions.services.automatic_pdf_comparison import (
-    ComparisonInProgress, SESSION_KEY, _request_directory, _request_lock,
+    ComparisonInProgress, RETURN_RECEIPT_KEY, SESSION_KEY, _request_directory, _request_lock,
+    consume_upload_comparison_return,
     decode_upload_comparison, get_upload_comparison, remember_upload_comparison,
     upload_comparison_entries,
 )
@@ -407,6 +408,123 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
         self.assertFalse(page.context["rows"])
         self.assertContains(page, f"PDF comparison · P001 / Final {self.submission.final_submission_id}")
         self.assertContains(page, "data-upload-comparison")
+        self.assertNotIn(RETURN_RECEIPT_KEY, self.client.session)
+        refreshed = self.client.get(response.url)
+        self.assertFalse(refreshed.context["rows"])
+        self.assertNotContains(refreshed, "data-upload-comparison ")
+
+    def test_status_save_removes_the_paper_and_its_comparison_from_the_old_filter(self):
+        response = self.view_upload(status_filter="needs_attention")
+        page = self.client.get(response.url)
+        entry = self.client.session[SESSION_KEY][0]
+        self.build(entry)
+        self.submission.refresh_from_db()
+        file_state = {
+            field: getattr(self.submission, field)
+            for field in ("formatted_pdf_file", "formatted_source_file", "formatted_pdf_uploaded_at", "pdf_hash", "page_count")
+        }
+        saved = self.client.post(reverse("submissions:formatting"), self.formatting_post_data(
+            page, self.submission, format_status="review_ok",
+        ))
+        result = self.client.get(saved.url)
+        self.assertFalse(result.context["rows"])
+        self.assertIsNone(result.context["comparison_fallback"])
+        self.assertNotContains(result, "data-upload-comparison ")
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.format_status, "review_ok")
+        self.assertEqual(FormattingRevision.objects.count(), 1)
+        self.assertEqual(self.client.session[SESSION_KEY][0], entry)
+        self.assertEqual({field: getattr(self.submission, field) for field in file_state}, file_state)
+        self.assertEqual(Path(self.submission.formatted_pdf_file.path).read_bytes(), self.corrected)
+        reviewed = self.client.get(reverse("submissions:formatting"), {"filter": "review_ok"})
+        self.assertContains(reviewed, "data-upload-comparison ")
+        self.assertIsNone(reviewed.context["comparison_fallback"])
+
+    def test_comparison_does_not_leak_into_other_tabs_searches_pages_or_modes(self):
+        response = self.view_upload()
+        self.client.get(response.url)
+        self.make_master_paper(paper_id="P002")
+        other = self.make_final_submission(final_submission_id="200", paper_id_filled="P002", format_status="pending")
+        for params in (
+            {"filter": "needs_edit"}, {"filter": "pending", "q": "P002"},
+            {"filter": "pending", "q": "NO-SUCH-PAPER"},
+            {"filter": "pending", "page_size": "1", "page": "2"},
+            {"mode": "focus", "submission": other.pk},
+            {"mode": "single", "filter": "all", "current": other.pk},
+        ):
+            with self.subTest(params=params):
+                page = self.client.get(reverse("submissions:formatting"), params, follow=True)
+                self.assertIsNone(page.context["comparison_fallback"])
+                if all(row["submission"].pk != self.submission.pk for row in page.context["rows"]):
+                    self.assertNotContains(page, "data-upload-comparison ")
+
+    def test_unvisited_upload_return_is_not_deferred_to_an_unrelated_view(self):
+        self.submission.format_status = "review_ok"
+        self.submission.save()
+        response = self.view_upload(status_filter="review_ok")
+        self.assertIn(RETURN_RECEIPT_KEY, self.client.session)
+        unrelated = self.client.get(reverse("submissions:formatting"), {"filter": "needs_edit"})
+        self.assertIsNone(unrelated.context["comparison_fallback"])
+        self.assertNotIn(RETURN_RECEIPT_KEY, self.client.session)
+        self.assertIsNone(self.client.get(response.url).context["comparison_fallback"])
+
+    def test_return_receipt_accepts_the_redirect_fragment_but_not_another_view(self):
+        result = self.save(self.corrected)
+        url = reverse("submissions:formatting") + "?filter=review_ok&page=2"
+        entry = remember_upload_comparison(self.session, result, return_url=url + "#formatting-card")
+        self.assertEqual(consume_upload_comparison_return(self.session, url), entry["token"])
+        self.assertEqual(consume_upload_comparison_return(self.session, url), "")
+        remember_upload_comparison(self.session, result, return_url=url)
+        self.assertEqual(consume_upload_comparison_return(self.session, url + "&q=P002"), "")
+        self.assertNotIn(RETURN_RECEIPT_KEY, self.session)
+
+    def test_status_only_save_clears_an_unconsumed_return_without_losing_the_comparison(self):
+        result = self.save(self.corrected)
+        url = reverse("submissions:formatting") + "?filter=review_ok"
+        entry = remember_upload_comparison(self.session, result, return_url=url)
+        self.assertIn(RETURN_RECEIPT_KEY, self.session)
+        self.assertIsNone(remember_upload_comparison(self.session, self.save(), return_url=url))
+        self.assertNotIn(RETURN_RECEIPT_KEY, self.session)
+        self.assertEqual(upload_comparison_entries(self.session)[0]["token"], entry["token"])
+
+    def test_expired_return_receipt_does_not_render_a_comparison(self):
+        self.submission.format_status = "review_ok"
+        self.submission.save()
+        response = self.view_upload(status_filter="review_ok")
+        with patch("django.core.signing.time.time", return_value=time.time() + 10800):
+            page = self.client.get(response.url)
+        self.assertIsNone(page.context["comparison_fallback"])
+        self.assertNotContains(page, "data-upload-comparison ")
+
+    def test_invalid_form_identifies_the_card_without_saving_or_starting_comparison(self):
+        page = self.open_formatting_review(self.submission)
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        data = self.formatting_post_data(page, self.submission,
+            corrected_pdf=SimpleUploadedFile("one.pdf", self.corrected),
+            corrected_source=SimpleUploadedFile("two.pdf", self.corrected))
+        invalid = self.client.post(reverse("submissions:formatting"), data)
+        self.assertEqual(invalid.context["bound_submission_id"], self.submission.pk)
+        self.assertContains(invalid, f'data-cfm-worklist-active-card="{self.submission.pk}"')
+        self.assertContains(invalid, f'id="format-review-{self.submission.pk}" class="collapse show"')
+        self.assertTrue(invalid.context["rows"][0]["review_expanded"])
+        self.assertContains(invalid, f'src="{reverse("submissions:formatting_preview", args=[self.submission.pk])}"')
+        self.assertContains(invalid, "Both uploaded files are classified as PDF files")
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+        self.assertEqual(FormattingRevision.objects.count(), 0)
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+    def test_stale_save_identifies_the_card_and_does_not_hide_the_conflict(self):
+        page = self.open_formatting_review(self.submission)
+        data = self.formatting_post_data(page, self.submission, format_status="review_ok")
+        self.save(self.corrected)
+        state = FinalSubmission.objects.values().get(pk=self.submission.pk)
+        stale = self.client.post(reverse("submissions:formatting"), data)
+        self.assertEqual(stale.status_code, 200)
+        self.assertEqual(stale.context["bound_submission_id"], self.submission.pk)
+        self.assertTrue(stale.context["rows"][0]["review_expanded"])
+        self.assertContains(stale, "Formatting update failed")
+        self.assertEqual(FinalSubmission.objects.values().get(pk=self.submission.pk), state)
+        self.assertEqual(FormattingRevision.objects.count(), 1)
 
     def test_auto_comparison_does_not_change_publication_exports_or_readiness(self):
         from django.core.files.base import ContentFile
@@ -425,6 +543,11 @@ class AutomaticPDFComparisonTests(EditorialAcceptanceTestCase):
             with self.assertRaises(LocalComparisonConfirmationRequired) as blocked:
                 self.build(entry)
             self.build(entry, local_confirmation=blocked.exception.confirmation_token)
+        session = self.client.session
+        session[SESSION_KEY] = [entry]
+        session.save()
+        for params in ({"filter": "review_ok"}, {"filter": "pending"}, {"filter": "all", "q": "NOT-HERE"}):
+            self.client.get(reverse("submissions:formatting"), params, HTTP_HX_REQUEST="true")
         with zipfile.ZipFile(export_publication_package()) as archive:
             name = next(name for name in archive.namelist() if name.startswith("PDF/"))
             self.assertEqual(archive.read(name), after)

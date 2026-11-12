@@ -104,7 +104,7 @@ def file_changes(changes):
                 written.append(path)
         yield
     except BaseException as exc:
-        if isinstance(exc, docker.CutoverStartedError):
+        if isinstance(exc, (docker.CutoverStartedError, slave.WorkerCutoverStartedError)):
             print("Container cutover was attempted; retaining its configuration for recovery. Earlier completed updates are not rolled back.", file=sys.stderr)
             raise
         for path in reversed(written):
@@ -204,9 +204,13 @@ def json_object(data):
     return result
 
 
-def clients_file(path):
+def clients_file(path, *, required=False):
     data = read_file(path, private=True)
+    if required and data is None:
+        raise DeployError(f"Existing worker authorization is missing: {path}. Restore it; update never creates replacement tokens.")
     clients = json_object(data) if data is not None else {}
+    if required and not clients:
+        raise DeployError("Existing worker authorization is empty; restore its clients instead of initializing new credentials.")
     if len(clients) > 32:
         raise DeployError("Worker supports at most 32 namespaces.")
     for name, token in clients.items():
@@ -248,8 +252,28 @@ def enrollment(path, project, url=None):
     return value
 
 
-def worker_env(path=None, *, gpu=None, bind_host=None):
+def worker_env(path=None, *, gpu=None, bind_host=None, initialize=False, template=None):
     env = EnvFile(path or ROOT / "runtime/comparison-slave/worker.env")
+    if initialize:
+        if env.original is not None:
+            raise DeployError(f"Worker configuration already exists: {env.path}. Use update without --init; it was not overwritten.")
+        if template:
+            source = EnvFile(template)
+            if source.original is None:
+                raise DeployError("Worker initialization template does not exist.")
+            env.content, env.lines, env.values = list(source.content), dict(source.lines), dict(source.values)
+    else:
+        if template:
+            raise DeployError("--template is only allowed with --init, never for an update.")
+        if env.original is None:
+            raise DeployError(f"Existing worker configuration is missing: {env.path}. Restore it; use --init only for a genuinely new worker.")
+        identity = ("CFM_SLAVE_PROJECT_NAME", "CFM_COMPARISON_NETWORK", "CFM_SLAVE_BIND_HOST",
+                    "CFM_SLAVE_PORT", "CFM_SLAVE_MODEL_DIR", "CFM_SLAVE_CLIENTS_SOURCE")
+        missing = [key for key in identity if not env.get(key)]
+        if missing:
+            raise DeployError("Existing worker configuration lacks identity settings: " + ", ".join(missing) + ". Restore their original values; no defaults were applied.")
+        if not env.get("CFM_DEPLOY_WORKER_BACKEND") and gpu is None:
+            raise DeployError("Existing worker backend is missing. Restore CFM_DEPLOY_WORKER_BACKEND, or explicitly select --gpu for an existing CUDA worker.")
     defaults = {"CFM_SLAVE_PROJECT_NAME": "cfm-comparison-slave", "CFM_COMPARISON_NETWORK": "cfm-comparison",
                 "CFM_SLAVE_BIND_HOST": "127.0.0.1", "CFM_SLAVE_PORT": "8091", "CFM_SLAVE_MEMORY_LIMIT": "8g",
                 "CFM_SLAVE_MODEL_DIR": "./runtime/rapidocr-models",
@@ -274,6 +298,74 @@ def configured_path(env, key):
     if "$" in value:
         raise DeployError(f"{key} needs a literal path for safe automatic provisioning.")
     return checked_path(Path(value) if Path(value).is_absolute() else ROOT / value)
+
+
+def inspect_worker_containers(env):
+    """Include stopped workers and project collisions; observation only."""
+    ids = set()
+    for label in (f"com.docker.compose.project={env.get('CFM_SLAVE_PROJECT_NAME')}",
+                  "com.docker.compose.service=comparison-slave"):
+        result = docker.run(["docker", "ps", "-a", "--filter", "label=" + label,
+                             "--format", "{{.ID}}"], capture=True)
+        ids.update(result.stdout.split())
+    containers = json.loads(docker.run(["docker", "inspect", *sorted(ids)], capture=True).stdout) if ids else []
+    if not isinstance(containers, list) or any(not isinstance(c, dict) for c in containers):
+        raise DeployError("Docker returned invalid worker ownership information; no deployment was authorized.")
+    return containers
+
+
+def validate_worker_identity(env, *, initialize=False):
+    """No models, credentials, audit directories or containers are created here."""
+    path = configured_path(env, "CFM_SLAVE_CLIENTS_SOURCE")
+    marker_path = env.path.parent / "deployed.json"
+    marker_bytes = read_file(marker_path)
+    marker = json_object(marker_bytes) if marker_bytes is not None else None
+    if initialize:
+        if read_file(env.path) is not None or read_file(path, private=True) is not None or marker is not None:
+            raise DeployError("Worker initialization found existing configuration/authorization/deployment state; restore and update it instead.")
+        enrollment_dir = checked_path(env.path.parent / "enrollments")
+        if enrollment_dir.exists() and (not enrollment_dir.is_dir() or any(enrollment_dir.iterdir())):
+            raise DeployError("Worker initialization found existing enrollments; refusing to generate replacement credentials.")
+        volumes = docker.run(["docker", "volume", "ls", "-q", "--filter",
+                              f"label=com.docker.compose.project={env.get('CFM_SLAVE_PROJECT_NAME')}"], capture=True)
+        if volumes.stdout.strip():
+            raise DeployError("Worker initialization found project volumes; refusing to reuse previous worker data implicitly.")
+    else:
+        clients_file(path, required=True)
+        if marker and (marker.get("project") != env.get("CFM_SLAVE_PROJECT_NAME")
+                       or marker.get("backend") != env.get("CFM_DEPLOY_WORKER_BACKEND")):
+            raise DeployError("Worker project/backend differs from its saved deployment identity; update cannot rename or switch it.")
+    containers = inspect_worker_containers(env)
+    same_project = [c for c in containers if (c.get("Config", {}).get("Labels", {}) or {}).get("com.docker.compose.project") == env.get("CFM_SLAVE_PROJECT_NAME")]
+    if not initialize and len(same_project) > 1:
+        raise DeployError("Multiple containers use this worker project, including stopped containers; resolve ownership before update.")
+    for container in containers:
+        labels = container.get("Config", {}).get("Labels", {}) or {}
+        project = labels.get("com.docker.compose.project")
+        mounts = container.get("Mounts", [])
+        same_clients = any(m.get("Destination") == "/run/secrets/clients.json" and m.get("Source") == str(path) for m in mounts)
+        if project != env.get("CFM_SLAVE_PROJECT_NAME"):
+            if same_clients:
+                raise DeployError("Worker authorization is mounted by a different project; update cannot create a replacement identity.")
+            continue
+        if initialize:
+            raise DeployError("Worker initialization found an existing or stopped project container; use its existing configuration to update.")
+        owner = labels.get("com.docker.compose.project.working_dir")
+        if (labels.get("com.docker.compose.service") != "comparison-slave" or not owner
+                or Path(owner).resolve() != ROOT.resolve()):
+            raise DeployError("Worker project belongs to another checkout/service; refusing to replace it.")
+        live_env = dict(item.split("=", 1) for item in container.get("Config", {}).get("Env", []) if "=" in item)
+        if live_env.get("CFM_OCR_BACKEND") != env.get("CFM_DEPLOY_WORKER_BACKEND"):
+            raise DeployError("Worker backend differs from its existing container, including stopped containers; reconcile it before update.")
+        bindings = container.get("HostConfig", {}).get("PortBindings", {}).get("8091/tcp") or []
+        if len(bindings) != 1 or bindings[0].get("HostIp") != env.get("CFM_SLAVE_BIND_HOST") or bindings[0].get("HostPort") != env.get("CFM_SLAVE_PORT"):
+            raise DeployError("Worker bind address/port differs from its existing container; update cannot guess a different endpoint.")
+        client_mounts = [m for m in mounts if m.get("Destination") == "/run/secrets/clients.json"]
+        data_mounts = [m for m in mounts if m.get("Destination") == "/worker-data"]
+        if (len(client_mounts) != 1 or not same_clients or len(data_mounts) != 1
+                or data_mounts[0].get("Type") != "volume"
+                or data_mounts[0].get("Name") != project + "_worker_data"):
+            raise DeployError("Worker authorization/data mounts differ from its preserved configuration; reconcile the existing deployment first.")
 
 
 def worker_status(env, clients):
@@ -338,21 +430,39 @@ def worker_model_options(env):
     return slave.model_options(config)
 
 
-def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, exports=None):
-    path = configured_path(env, "CFM_SLAVE_CLIENTS_SOURCE")
-    clients = clients_file(path)
-    original_clients = dict(clients)
+def validate_worker_authorization(env, additions, *, initialize=False, new_clients=()):
+    clients = clients_file(configured_path(env, "CFM_SLAVE_CLIENTS_SOURCE"), required=not initialize)
+    if len(set(clients) | set(additions)) > 32:
+        raise DeployError("Adding clients would exceed the worker's 32-namespace limit.")
     for name, proposed in additions.items():
         namespace(name)
         if proposed:
             valid_token(proposed)
         if name in clients and proposed and clients[name] != proposed:
             raise DeployError("Conference and worker credentials disagree; existing tokens were not changed.")
+        if name not in clients and not initialize and name not in new_clients:
+            raise DeployError(f"Existing worker authorization has no entry for {name}. Restore it; update never reconstructs existing conference tokens.")
+        if name not in clients and (env.path.parent / "enrollments" / (name + ".json")).exists():
+            raise DeployError("An existing enrollment has lost its worker authorization; restore the original entry instead of generating a new token.")
+    return clients
+
+
+def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, exports=None,
+                  initialize=False, new_clients=(), wait_seconds=240):
+    validate_env_snapshot(env)
+    validate_worker_identity(env, initialize=initialize)
+    path = configured_path(env, "CFM_SLAVE_CLIENTS_SOURCE")
+    original_bytes = read_file(path, private=True)
+    clients = validate_worker_authorization(env, additions, initialize=initialize, new_clients=new_clients)
+    original_clients = dict(clients)
+    for name, proposed in additions.items():
         token = clients.get(name) or proposed or ("DRY_RUN_CREDENTIAL_NOT_WRITTEN_" + name if dry_run else secrets.token_urlsafe(32))
         if token in clients.values() and clients.get(name) != token:
             raise DeployError("A credential is already assigned to another worker namespace.")
         clients[name] = token
     if not clients:
+        if not initialize:
+            raise DeployError("Update requires existing worker authorization.")
         clients[BOOTSTRAP] = "DRY_RUN_BOOTSTRAP_NOT_WRITTEN_0000" if dry_run else secrets.token_urlsafe(32)
     if len(clients) > 32:
         raise DeployError("Adding clients would exceed the worker's 32-namespace limit.")
@@ -364,14 +474,17 @@ def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, 
     models = worker_model_options(env)
     if dry_run:
         deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=True, **models)
-        action = "create/update required" if changed or force else "reuse if healthy; apply checks live status"
-        print(f"Shared {env.get('CFM_DEPLOY_WORKER_BACKEND')} worker {env.get('CFM_SLAVE_PROJECT_NAME')}: {action}.")
+        action = "Initialize" if initialize else "Update"
+        print(f"{action} shared {env.get('CFM_DEPLOY_WORKER_BACKEND')} worker {env.get('CFM_SLAVE_PROJECT_NAME')}: {env.path}.")
         print(f"  {len(additions)} selected conference namespace(s); existing credentials retained. Any worker restart affects all clients on this shared worker.")
         return clients
-    state = worker_status(env, original_clients)
+    state = "absent" if initialize else worker_status(env, original_clients)
     if state == "busy" and (changed or force):
         raise DeployError("Worker is busy across its namespaces; retry during maintenance with no new uploads. No worker config was changed.")
     deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=False, **models)
+    validate_env_snapshot(env)
+    if read_file(path, private=True) != original_bytes:
+        raise DeployError("Worker authorization changed during planning/provisioning; no stale credentials were written.")
     changes = {env.path: env.bytes()}
     if clients != original_clients or read_file(path) is None:
         changes[path] = (json.dumps(clients, indent=2) + "\n").encode()
@@ -384,7 +497,8 @@ def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, 
             changes[export_path] = (json.dumps(value, indent=2) + "\n").encode()
     with file_changes(changes):
         if changed or force or state not in {"ready", "busy"}:
-            slave.deploy(env.path, gpu=env.get("CFM_DEPLOY_WORKER_BACKEND") == "cuda")
+            print(f"{'Initialize' if initialize else 'Update'} worker {env.get('CFM_SLAVE_PROJECT_NAME')}: {env.path}.")
+            slave.deploy(env.path, gpu=env.get("CFM_DEPLOY_WORKER_BACKEND") == "cuda", wait_seconds=wait_seconds)
             atomic_write(marker_path, (json.dumps(expected_marker, indent=2) + "\n").encode())
         else:
             print("Reusing the existing shared worker; no restart requested.")
@@ -468,7 +582,7 @@ def validate_env_snapshot(env):
         raise DeployError(f"{env.path.name} changed during deployment planning; no stale configuration was written. Preview again.")
 
 
-def prepare_conference(args, *, existing=None, effective_values=None):
+def prepare_conference(args, *, existing=None, effective_values=None, updating=False):
     """Prepare configuration in memory; never provision or mutate containers."""
     project = namespace(args.name)
     env = EnvFile(select_conference_env(project, args.env_file, dry_run=args.dry_run))
@@ -509,7 +623,8 @@ def prepare_conference(args, *, existing=None, effective_values=None):
                        "SMS_ALLOWED_HOSTS": "127.0.0.1,localhost,testserver", "SMS_DEBUG": "0",
                        "CFM_COMPARISON_TRANSPORT": "service"}.items():
         env.default(key, value)
-    env.default("SMS_SECRET_KEY", "DRY_RUN_SECRET_NOT_WRITTEN" if args.dry_run else secrets.token_urlsafe(48))
+    if updating and not env.get("SMS_SECRET_KEY"):
+        raise DeployError("Existing conference signing secret is missing from both configuration and live state; restore it instead of generating a new one.")
     if args.remote_enrollment:
         remote = enrollment(args.remote_enrollment, project, args.remote_url)
         env.require("CFM_COMPARISON_REMOTE_URL", remote["endpoint"])
@@ -531,28 +646,45 @@ def prepare_conference(args, *, existing=None, effective_values=None):
         if env.get("CFM_COMPARISON_LOCAL_URL") not in {"", local_url}:
             valid_token(env.get("CFM_COMPARISON_LOCAL_TOKEN"))
         else:
-            worker = worker_env()
+            worker_path = ROOT / "runtime/comparison-slave/worker.env"
+            initialize = not updating and not worker_path.exists()
+            if initialize and env.get("CFM_COMPARISON_LOCAL_TOKEN"):
+                raise DeployError("Conference already declares a local worker credential but worker.env is missing; restore that worker, do not initialize a replacement.")
+            if initialize:
+                instances = updater.matching_instances(updater.inspect_compose_containers(), ROOT, set())
+                if any(i.get("env", {}).get("CFM_COMPARISON_TRANSPORT", "service") == "service"
+                       and i.get("env", {}).get("CFM_COMPARISON_LOCAL_URL") == "http://comparison-slave:8091" for i in instances):
+                    raise DeployError("Existing conferences use this shared worker but worker.env is missing; restore it before creating another conference.")
+            worker = worker_env(initialize=initialize)
+            validate_worker_identity(worker, initialize=worker.original is None)
             env.require("CFM_COMPARISON_NETWORK", worker.get("CFM_COMPARISON_NETWORK"))
-            clients = clients_file(configured_path(worker, "CFM_SLAVE_CLIENTS_SOURCE"))
             proposed = env.get("CFM_COMPARISON_LOCAL_TOKEN")
-            if proposed and project in clients and proposed != clients[project]:
-                raise DeployError("Conference and worker credentials disagree; existing tokens were not changed.")
+            clients = validate_worker_authorization(worker, {project: proposed}, initialize=worker.original is None,
+                                                    new_clients=() if updating else (project,))
             token = proposed or clients.get(project) or ("DRY_RUN_CREDENTIAL_NOT_WRITTEN_" + project if args.dry_run else secrets.token_urlsafe(32))
             env.default("CFM_COMPARISON_LOCAL_URL", local_url)
             env.require("CFM_COMPARISON_LOCAL_TOKEN", valid_token(token))
+    if not env.get("SMS_SECRET_KEY"):
+        env.default("SMS_SECRET_KEY", "DRY_RUN_SECRET_NOT_WRITTEN" if args.dry_run else secrets.token_urlsafe(48))
     validate_compute_config(env.values)
     return env, worker
 
 
-def conference(args):
+def prepare_conference_deployment(args):
     instances = updater.matching_instances(updater.inspect_compose_containers(), ROOT, {args.name})
     existing = next((item for item in instances if item["project"] == args.name), None)
-    env, worker = prepare_conference(args, existing=existing)
+    env, worker = prepare_conference(args, existing=existing, updating=existing is not None)
+    return env, worker, existing
+
+
+def conference(args, prepared):
+    env, worker, existing = prepared
     project = env.get("COMPOSE_PROJECT_NAME")
     transport = env.get("CFM_COMPARISON_TRANSPORT")
     if args.dry_run:
         if worker:
-            ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline, dry_run=True)
+            ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline, dry_run=True,
+                          initialize=worker.original is None, new_clients=() if existing else (project,))
         elif transport == "embedded":
             deployment_provision.provision_models(ROOT / "runtime/rapidocr-models", offline=args.offline, dry_run=True)
         print(f"Would preserve/fill {env.path.name} and create/update conference {project}; no credentials printed or written.")
@@ -563,7 +695,8 @@ def conference(args):
     plan["env_path"] = env.path
     validate_env_snapshot(env)
     if worker:
-        ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline)
+        ensure_worker(worker, {project: env.get("CFM_COMPARISON_LOCAL_TOKEN")}, offline=args.offline,
+                      initialize=worker.original is None, new_clients=() if existing else (project,))
     else:
         if transport == "embedded":
             deployment_provision.provision_models(ROOT / "runtime/rapidocr-models", offline=args.offline)
@@ -574,9 +707,12 @@ def conference(args):
         updater.apply_update_plans([plan], ROOT, create_missing=True)
 
 
-def worker(args):
-    env = worker_env(args.env_file, gpu=True if args.gpu else None, bind_host=args.bind_host)
+def prepare_worker_deployment(args):
+    env = worker_env(args.env_file, gpu=True if args.gpu else None, bind_host=args.bind_host,
+                     initialize=args.init, template=args.template)
+    validate_worker_identity(env, initialize=args.init)
     names = list(dict.fromkeys(namespace(value) for value in args.client))
+    clients = validate_worker_authorization(env, dict.fromkeys(names, ""), initialize=args.init, new_clients=names)
     if args.enrollment_out and len(names) != 1:
         raise DeployError("--enrollment-out requires exactly one --client.")
     exports = {}
@@ -586,15 +722,26 @@ def worker(args):
         advertised = endpoint(args.endpoint or f"http://{host}:{env.get('CFM_SLAVE_PORT')}")
         for name in names:
             path = checked_path(args.enrollment_out or ROOT / f"runtime/comparison-slave/enrollments/{name}.json")
+            old = read_file(path, private=True)
+            if old is not None and (name not in clients or json_object(old) != {
+                    "version": 1, "namespace": name, "endpoint": advertised, "token": clients[name]}):
+                raise DeployError("Existing enrollment differs or has lost worker authorization; restore it before update. No token was generated.")
             exports[name] = (path, advertised)
-    ensure_worker(env, dict.fromkeys(names, ""), offline=args.offline, dry_run=args.dry_run, force=True, exports=exports)
+    return env, names, exports
+
+
+def worker(args, prepared):
+    env, names, exports = prepared
+    ensure_worker(env, dict.fromkeys(names, ""), offline=args.offline, dry_run=args.dry_run, force=True, exports=exports,
+                  initialize=args.init, new_clients=names, wait_seconds=args.wait_seconds)
     for path, _ in exports.values():
         print(f"{'Would export' if args.dry_run else 'Private enrollment'}: {path}")
 
 
-def update(args):
+def prepare_update_deployment(args):
     plans = updater.build_update_plans(ROOT, selected_projects=set(args.project))
     prepared, worker, additions = {}, None, {}
+    new_clients = set()
     active = []
     for plan in plans:
         if plan["action"] == "create" and not args.create_missing:
@@ -604,11 +751,14 @@ def update(args):
             env, local = prepare_conference(argparse.Namespace(
                 name=plan["project"], port=None, env_file=plan["env_path"],
                 remote_url=None, remote_enrollment=None, dry_run=args.dry_run,
-            ), existing=plan["existing"], effective_values=plan["desired"]["env_values"])
+            ), existing=plan["existing"], effective_values=plan["desired"]["env_values"],
+                updating=plan["action"] != "create")
             prepared[plan["project"]] = env
             if local:
                 worker = local
                 additions[plan["project"]] = env.get("CFM_COMPARISON_LOCAL_TOKEN")
+                if plan["action"] == "create":
+                    new_clients.add(plan["project"])
         else:
             values = plan["desired"]["env_values"]
             validate_compute_config(values)
@@ -619,12 +769,21 @@ def update(args):
                 token = values.get("CFM_COMPARISON_LOCAL_TOKEN", "")
                 if url == "http://comparison-slave:8091" and token:
                     worker = worker_env()
+                    validate_worker_identity(worker)
+                    clients = clients_file(configured_path(worker, "CFM_SLAVE_CLIENTS_SOURCE"), required=True)
+                    if clients.get(plan["project"]) != token:
+                        raise DeployError("Legacy conference authorization is missing or differs from its worker; restore it before update.")
                     if values.get("CFM_COMPARISON_NETWORK", "cfm-comparison") != worker.get("CFM_COMPARISON_NETWORK"):
                         raise DeployError("Running conference and shared worker network differ; reconcile the existing configuration first.")
                     additions[plan["project"]] = valid_token(token)
                 elif not url and not values.get("CFM_COMPARISON_REMOTE_URL"):
                     raise DeployError("A legacy instance without worker configuration needs its existing managed env file before upgrade; no identity was invented.")
 
+    return plans, prepared, worker, additions, active, new_clients
+
+
+def update(args, setup):
+    plans, prepared, worker, additions, active, new_clients = setup
     # Re-evaluate filled defaults through Compose, retaining every data/port
     # guard before any worker or conference configuration is committed.
     with ExitStack() as staging, updater.compose_file_precedence():
@@ -648,7 +807,8 @@ def update(args):
         for env in prepared.values():
             validate_env_snapshot(env)
         if worker:
-            ensure_worker(worker, additions, offline=args.offline, dry_run=args.dry_run)
+            ensure_worker(worker, additions, offline=args.offline, dry_run=args.dry_run,
+                          initialize=worker.original is None, new_clients=new_clients)
         embedded = any(p["desired"]["env_values"].get("CFM_COMPARISON_TRANSPORT", "service") == "embedded" for p in active)
         if embedded:
             deployment_provision.provision_models(ROOT / "runtime/rapidocr-models", offline=args.offline, dry_run=args.dry_run)
@@ -684,12 +844,15 @@ def main(argv=None):
     common.add_argument("--dry-run", action="store_true")
     common.add_argument("--offline", action="store_true")
     w = sub.add_parser("worker", parents=[common])
+    w.add_argument("--init", action="store_true", help="Initialize a genuinely new worker; never overwrite existing state.")
+    w.add_argument("--template", type=Path, help="Initial settings template, only with --init and an absent target env.")
     w.add_argument("--gpu", action="store_true")
     w.add_argument("--bind-host")
     w.add_argument("--env-file", type=Path)
     w.add_argument("--client", action="append", default=[])
     w.add_argument("--endpoint")
     w.add_argument("--enrollment-out", type=Path)
+    w.add_argument("--wait-seconds", type=int, default=240)
     c = sub.add_parser("conference", parents=[common])
     c.add_argument("--name", required=True)
     c.add_argument("--port", type=int)
@@ -701,11 +864,18 @@ def main(argv=None):
     u.add_argument("--create-missing", action="store_true", help="Also create new conferences declared by env files.")
     args = parser.parse_args(argv)
     try:
+        if args.command == "worker" and not 30 <= args.wait_seconds <= 600:
+            raise DeployError("--wait-seconds must be between 30 and 600.")
+        # Resolve lifecycle/configuration before even creating the operation lock
+        # or audit directory. Missing update identity must be a read-only failure.
+        prepare = {"worker": prepare_worker_deployment, "conference": prepare_conference_deployment,
+                   "update": prepare_update_deployment}[args.command]
+        prepared = prepare(args)
         lock = nullcontext() if args.dry_run else docker.exclusive_lock(ROOT / "runtime/.docker-data-operation.lock")
         with lock:
             action = {"worker": worker, "conference": conference, "update": update}[args.command]
             if args.dry_run:
-                action(args)
+                action(args, prepared)
                 return 0
             operation = secrets.token_hex(16)
             try:
@@ -713,7 +883,7 @@ def main(argv=None):
             except (OSError, ValueError, DeployError) as exc:
                 raise DeployError("Could not record deployment request; no deployment actions were started.") from exc
             try:
-                action(args)
+                action(args, prepared)
             except Exception as exc:
                 try:
                     audit(args.command, operation, "failed", error_type=type(exc).__name__)

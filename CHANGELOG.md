@@ -3,6 +3,34 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.3 - Unreleased
+
+- Keep automatic Formatting comparison status on its owning paper. Show an
+  out-of-filter upload receipt only on that save's first return, not on later
+  status saves, unrelated tabs/searches or pagination.
+- Revalidate comparison status when HTMX replaces a card or browser history
+  restores it; deduplicate in-flight requests without reusing stale completed
+  browser state. Valid signed server cache still avoids new computation.
+- Restore the submitted Formatting card on validation/stale-save errors so
+  detailed feedback and lazy previews remain accessible.
+- Preserve publication selection, upload/revision binding, OCR/comparison
+  policy, review reset rules and State archive v8.
+
+## 1.31.2 - Unreleased
+
+- Separate worker initialization (`--init`, optional initial `--template`) from
+  updates. Missing worker env, deployment identity or existing authorization
+  fails before credential generation, model provisioning or container changes.
+- Reject initialization over existing files, enrollments, project containers
+  or volumes. Check stopped-container ownership, backend, endpoint and data/auth
+  mounts; preserve existing names, tokens and explicit execution settings.
+- Make historical worker/rebuild CLIs delegate to the unified lifecycle. Existing
+  conference updates cannot reconstruct a missing shared worker; explicit new
+  conference/client enrollment still works with intact existing authorization.
+- Retain staged worker env/auth when container replacement was attempted but
+  readiness failed, so recovery retries update without losing/generating tokens.
+- Keep publication rules, comparison/cache contract and State archive v8 unchanged.
+
 ## 1.31.1 - Unreleased
 
 - Report the packaged worker release and validated effective OCR settings in

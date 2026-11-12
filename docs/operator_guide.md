@@ -14,6 +14,10 @@ Startup now validates the selected PDF-comparison runtime before migrations.
 On a new Docker computer, use the unified deployer to download pinned models,
 register private per-conference credentials and start the shared CPU worker.
 Native/manual startup still requires the approved models provisioned first.
+Worker-only first deployment requires `deploy.py worker --init`; updates omit
+`--init` and require the original worker.env and private authorization. Missing
+worker configuration must be restored, not regenerated from a sample or live
+conference token. Both historical deployment CLI names use these same guards.
 See the [Docker Guide](docker_guide.md) for the worker launcher and safe
 conference updater. Missing prerequisites stop startup with instructions,
 without deleting conference data. GROBID/CrossCheck remain optional services.
@@ -584,8 +588,10 @@ automatically compares that exact saved upload against its Original submission
 PDF. Title guard warnings must be confirmed first. The card shows progress,
 content-warning counts, **Open comparison**, and **Retry comparison** when needed;
 this status remains visible with Review paper collapsed. If the current list
-filter excludes the saved paper, an identified status row remains above the
-list. Save still stays at the current card/Single queue position, never opens a
+filter excludes the saved paper, an identified status row appears above the
+list only on that upload's first return. It does not follow later status saves,
+tab changes, searches or pagination. Return to the paper's card to see its
+comparison again. Save still stays at the current card/Single queue position, never opens a
 new tab automatically, and never advances to the next paper.
 
 Comparison is a separate browser-triggered request after save. A comparison
@@ -597,6 +603,12 @@ instead of starting another one. On refresh, a valid cached result is
 reused. Only the latest upload receipt auto-starts if still pending; older
 receipts can be explicitly retried. Source-only/status/notes changes create no
 new PDF-comparison request. Start2 imports and Editor Upload are not included.
+Re-entering a card through a filter change or browser history checks its
+comparison against the server again. A newer PDF revision hides the old Open
+comparison action and explains that the upload is no longer current; cached
+browser success is not evidence of currentness. This check does not run OCR for
+a valid complete cache result. Failed form validation reopens the submitted
+card so detailed errors remain visible; file inputs must be selected again.
 
 For manual comparison, choose **Compare PDF** beside the PDF links. It opens
 separately, leaving the current List/Single/Focus workspace and unsaved inputs

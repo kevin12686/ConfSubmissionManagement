@@ -1,6 +1,7 @@
 """Unified deployment tests use disposable files and mock every Docker/model operation."""
 
 import io
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,8 @@ class UnifiedDeploymentTests(unittest.TestCase):
             "version": 1, "project": env.get("CFM_SLAVE_PROJECT_NAME"),
             "backend": env.get("CFM_DEPLOY_WORKER_BACKEND"), "fingerprint": "a" * 64}))
         self.inspect = self.enterContext(patch.object(deploy.updater, "inspect_compose_containers", return_value=[]))
+        self.worker_inspect = self.enterContext(patch.object(deploy, "inspect_worker_containers", return_value=[]))
+        self.docker = self.enterContext(patch.object(deploy.docker, "run", return_value=subprocess.CompletedProcess([], 0, "")))
         self.enterContext(patch.object(deploy.updater, "planned_instance_from_env", side_effect=lambda root, path, project, **kwargs: {
             "env_values": deploy.EnvFile(Path(path).resolve()).values,
         }))
@@ -77,9 +80,19 @@ class UnifiedDeploymentTests(unittest.TestCase):
         return deploy.main(["conference", "--name", name, *args])
 
     def existing_plan(self, name="conf-a", port="9001"):
+        worker_path = self.root / "runtime/comparison-slave/worker.env"
+        if not worker_path.exists():
+            self.write(worker_path, "CFM_SLAVE_PROJECT_NAME=cfm-comparison-slave\nCFM_DEPLOY_WORKER_BACKEND=cpu\n"
+                "CFM_COMPARISON_NETWORK=cfm-comparison\nCFM_SLAVE_BIND_HOST=127.0.0.1\nCFM_SLAVE_PORT=8091\n"
+                "CFM_SLAVE_MODEL_DIR=./runtime/rapidocr-models\nCFM_SLAVE_CLIENTS_SOURCE=./runtime/comparison-slave/clients.json\n")
+        clients_path = worker_path.parent / "clients.json"
+        clients = json.loads(clients_path.read_text()) if clients_path.exists() else {}
+        if name not in clients:
+            clients[name] = hashlib.sha256(name.encode()).hexdigest()
+            self.write(clients_path, json.dumps(clients))
         path = self.root / (".env." + name)
         if not path.exists():
-            self.write(path, f"COMPOSE_PROJECT_NAME={name}\nSMS_PORT={port}\nSMS_DATA_DIR=./runtime/{name}\n")
+            self.write(path, f"COMPOSE_PROJECT_NAME={name}\nSMS_PORT={port}\nSMS_DATA_DIR=./runtime/{name}\nSMS_SECRET_KEY=existing-signing-key\n")
         existing = {"project": name, "mount_type": "volume", "sms_data_dir": str(self.root / "runtime" / name),
                     "sms_bind_host": "127.0.0.1", "sms_port": port, "env": {}}
         return {"action": "update", "project": name, "existing": existing, "env_path": path,
@@ -96,7 +109,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         return planner
 
     def test_dry_runs_write_nothing_and_never_contact_worker(self):
-        self.assertEqual(self.worker("--client", "conf-a", "--client", "conf-b", "--dry-run"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a", "--client", "conf-b", "--dry-run"), 0)
         self.assertEqual(self.conference("conf-c", "--dry-run"), 0)
         self.assertEqual(list(self.root.iterdir()), [])
         self.assertEqual(deploy.main(["update", "--dry-run"]), 0)
@@ -132,7 +145,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
 
     def test_worker_generates_distinct_private_enrollments_and_preserves_tokens(self):
         args = ("--gpu", "--bind-host", "192.0.2.10", "--client", "conf-a", "--client", "conf-b")
-        self.assertEqual(self.worker(*args), 0)
+        self.assertEqual(self.worker("--init", *args), 0)
         original = self.clients()
         self.assertNotEqual(original["conf-a"], original["conf-b"])
         for name in original:
@@ -146,13 +159,13 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertTrue(self.launch.call_args.kwargs["gpu"])
 
     def test_bootstrap_is_internal_and_not_exported_or_importable(self):
-        self.assertEqual(self.worker(), 0)
+        self.assertEqual(self.worker("--init"), 0)
         self.assertEqual(set(self.clients()), {deploy.BOOTSTRAP})
         self.assertFalse((self.root / "runtime/comparison-slave/enrollments").exists())
         self.assertEqual(self.conference(deploy.BOOTSTRAP), 1)
 
     def test_worker_update_preserves_explicit_ocr_settings_and_credentials(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         path = self.root / "runtime/comparison-slave/worker.env"
         values = {"CFM_RAPIDOCR_PAGES": "1", "CFM_RAPIDOCR_THREADS": "2"}
         env = deploy.EnvFile(path)
@@ -167,7 +180,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
             self.assertEqual(deploy.EnvFile(path).get(key), value)
 
     def test_gpu_update_retains_explicit_disabled_residency_and_credentials(self):
-        self.assertEqual(self.worker("--gpu", "--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--gpu", "--client", "conf-a"), 0)
         path = self.root / "runtime/comparison-slave/worker.env"
         path.write_bytes(path.read_bytes() + b"CFM_GPU_MODEL_IDLE_SECONDS=0\n")
         original, clients = path.read_bytes(), self.clients()
@@ -177,14 +190,14 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(self.clients(), clients)
 
     def test_wildcard_bind_requires_explicit_advertised_endpoint(self):
-        self.assertEqual(self.worker("--bind-host", "0.0.0.0", "--client", "conf-a"), 1)
+        self.assertEqual(self.worker("--init", "--bind-host", "0.0.0.0", "--client", "conf-a"), 1)
         self.assertFalse((self.root / "runtime/comparison-slave/worker.env").exists())
-        self.assertEqual(self.worker("--bind-host", "0.0.0.0", "--client", "conf-a", "--endpoint", "https://worker.example"), 0)
+        self.assertEqual(self.worker("--init", "--bind-host", "0.0.0.0", "--client", "conf-a", "--endpoint", "https://worker.example"), 0)
         exported = json.loads((self.root / "runtime/comparison-slave/enrollments/conf-a.json").read_text())
         self.assertEqual(exported["endpoint"], "https://worker.example")
 
     def test_registered_healthy_worker_is_reused_without_rewriting_clients(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         path = self.root / "runtime/comparison-slave/clients.json"
         self.write(path, json.dumps(self.clients(), separators=(",", ":")))
         before = path.read_bytes()
@@ -197,7 +210,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(env.get("CFM_COMPARISON_LOCAL_TOKEN"), self.clients()["conf-a"])
 
     def test_new_namespace_checks_global_busy_before_config_or_provision_changes(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         path = self.root / "runtime/comparison-slave/clients.json"
         before = path.read_bytes()
         self.status.return_value = "busy"
@@ -219,7 +232,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(self.launch.call_count, 2)
 
     def test_source_marker_change_requires_update_and_obeys_busy_guard(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         old = self.clients()
         self.fingerprint.side_effect = lambda env: {"version": 1, "project": env.get("CFM_SLAVE_PROJECT_NAME"),
                                                    "backend": "cpu", "fingerprint": "b" * 64}
@@ -232,7 +245,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(self.clients(), old)
 
     def test_failed_worker_deployment_restores_existing_client_and_env_bytes(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         paths = [self.root / "runtime/comparison-slave" / name for name in ("clients.json", "worker.env", "deployed.json")]
         before = [path.read_bytes() for path in paths]
         self.status.return_value = "ready"
@@ -269,7 +282,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.provision.assert_not_called()
 
     def test_existing_token_mismatch_is_not_rotated(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         old = self.clients()
         path = self.write(".env.conf-a", "COMPOSE_PROJECT_NAME=conf-a\nCFM_COMPARISON_LOCAL_TOKEN=" + "z" * 40 + "\n")
         before = path.read_bytes()
@@ -342,9 +355,13 @@ class UnifiedDeploymentTests(unittest.TestCase):
 
     def test_both_update_entrypoints_share_the_same_dispatch(self):
         from scripts import update_docker_instances as cli
+        from scripts import rebuild_docker_instances as legacy
         with patch.object(cli.deploy, "main", return_value=0) as main:
             self.assertEqual(cli.main(["--project", "conf-a", "--dry-run", "--offline"]), 0)
         main.assert_called_once_with(["update", "--project", "conf-a", "--dry-run", "--offline"])
+        with patch.object(deploy, "main", return_value=0) as main:
+            self.assertEqual(legacy.main(["--project", "conf-a", "--dry-run"]), 0)
+        main.assert_called_once_with(["update", "--project", "conf-a", "--dry-run"])
 
     def test_bulk_update_prepares_one_worker_with_distinct_client_tokens(self):
         plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b", "conf-c"))]
@@ -368,10 +385,10 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertEqual(deploy.main(["update", "--dry-run"]), 0)
         for path, content in original.items():
             self.assertEqual(path.read_bytes(), content)
-        self.assertEqual(set(self.root.iterdir()), set(original))
+        self.assertEqual(set(self.root.iterdir()), {*original, self.root / "runtime"})
         self.assertIn("Project: conf-a", self.output.getvalue())
         self.assertIn("Project: conf-b", self.output.getvalue())
-        self.assertIn("create/update required", self.output.getvalue())
+        self.assertIn("Update shared cpu worker", self.output.getvalue())
         self.assertIn("Live HTTP/runtime checks", self.output.getvalue())
         self.assertNotIn("DRY_RUN_CREDENTIAL_NOT_WRITTEN", self.output.getvalue())
         self.launch.assert_not_called()
@@ -428,6 +445,8 @@ class UnifiedDeploymentTests(unittest.TestCase):
 
     def test_missing_signing_secret_and_worker_settings_are_retained_from_live_instance(self):
         plan = self.existing_plan()
+        plan["env_path"].write_text("".join(line for line in plan["env_path"].read_text().splitlines(keepends=True)
+                                                if not line.startswith("SMS_SECRET_KEY=")))
         plan["existing"]["env"] = {
             "SMS_SECRET_KEY": "existing-signing-secret$${LITERAL} # ' quote\" slash\\",
             "CFM_COMPARISON_TRANSPORT": "service",
@@ -461,12 +480,13 @@ class UnifiedDeploymentTests(unittest.TestCase):
         plan["env_path"].unlink()
         plan["env_path"] = None
         plan["action"] = "update_live"
+        token = self.clients()["conf-a"]
         plan["desired"]["env_values"] = {"CFM_COMPARISON_TRANSPORT": "service",
-            "CFM_COMPARISON_LOCAL_URL": "http://comparison-slave:8091", "CFM_COMPARISON_LOCAL_TOKEN": "l" * 40}
+            "CFM_COMPARISON_LOCAL_URL": "http://comparison-slave:8091", "CFM_COMPARISON_LOCAL_TOKEN": token}
         self.prepare_update_mocks([plan])
         self.assertEqual(deploy.main(["update"]), 0)
         self.assertFalse(list(self.root.glob(".env*")))
-        self.assertEqual(self.clients(), {"conf-a": "l" * 40})
+        self.assertEqual(self.clients(), {"conf-a": token})
 
     def test_later_preflight_failure_does_not_restore_an_already_updated_env(self):
         plans = [self.existing_plan(name, str(9001 + i)) for i, name in enumerate(("conf-a", "conf-b"))]
@@ -510,7 +530,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.launch.assert_not_called()
 
     def test_audit_records_fixed_fields_without_tokens_or_arguments(self):
-        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
         path = self.root / "runtime/deployment.log"
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         self.assertEqual([row["state"] for row in rows], ["requested", "success"])
@@ -522,7 +542,7 @@ class UnifiedDeploymentTests(unittest.TestCase):
 
     def test_failed_request_audit_aborts_before_deployment_actions(self):
         with patch.object(deploy, "audit", side_effect=OSError("audit unavailable")):
-            self.assertEqual(self.worker("--client", "conf-a"), 1)
+            self.assertEqual(self.worker("--init", "--client", "conf-a"), 1)
         self.provision.assert_not_called()
         self.status.assert_not_called()
         self.launch.assert_not_called()
@@ -530,19 +550,203 @@ class UnifiedDeploymentTests(unittest.TestCase):
 
     def test_success_audit_failure_is_explicit_and_does_not_claim_rollback(self):
         with patch.object(deploy, "audit", side_effect=[None, OSError("audit unavailable")]):
-            self.assertEqual(self.worker("--client", "conf-a"), 1)
+            self.assertEqual(self.worker("--init", "--client", "conf-a"), 1)
         self.assertIn("conf-a", self.clients())
         self.launch.assert_called_once()
         self.assertIn("side effects were not rolled back", self.errors.getvalue())
 
     def test_failure_audit_omits_exception_message(self):
         self.launch.side_effect = RuntimeError("secret-error-detail")
-        self.assertEqual(self.worker("--client", "conf-a"), 1)
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 1)
         path = self.root / "runtime/deployment.log"
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         self.assertEqual([row["state"] for row in rows], ["requested", "failed"])
         self.assertEqual(rows[-1]["error_type"], "RuntimeError")
         self.assertNotIn("secret-error-detail", path.read_text())
+
+    def snapshot(self):
+        return {str(path.relative_to(self.root)): (path.read_bytes(), path.stat().st_mode & 0o777)
+                for path in self.root.rglob("*") if path.is_file()}
+
+    def assert_worker_rejected_without_changes(self, *args):
+        before = self.snapshot()
+        for mock in (self.provision, self.launch, self.status, self.model_options):
+            mock.reset_mock()
+        with patch.object(deploy.secrets, "token_urlsafe") as generate:
+            self.assertEqual(self.worker(*args), 1)
+        generate.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        for mock in (self.provision, self.launch, self.status, self.model_options):
+            mock.assert_not_called()
+
+    def test_missing_worker_env_is_read_only_error_for_update_and_preview(self):
+        for args in ((), ("--gpu",), ("--dry-run",), ("--env-file", str(self.root / "missing.env"))):
+            with self.subTest(args=args):
+                self.assert_worker_rejected_without_changes(*args)
+        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertIn("worker.env", self.errors.getvalue())
+
+    def test_update_never_recovers_missing_empty_corrupt_or_public_authorization(self):
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
+        path = self.root / "runtime/comparison-slave/clients.json"
+        for content, mode in ((None, 0o600), ("{}", 0o600), ("not-json", 0o600),
+                              ('{"conf-a":"short"}', 0o600), (json.dumps({"conf-a": "x" * 40}), 0o644)):
+            with self.subTest(content=content, mode=mode):
+                path.unlink(missing_ok=True)
+                if content is not None:
+                    self.write(path, content, mode)
+                self.assert_worker_rejected_without_changes()
+                self.assert_worker_rejected_without_changes("--dry-run")
+
+    def test_missing_identity_fields_are_not_defaulted_on_update(self):
+        self.assertEqual(self.worker("--init"), 0)
+        path = self.root / "runtime/comparison-slave/worker.env"
+        original = path.read_text()
+        for key in ("CFM_SLAVE_PROJECT_NAME", "CFM_COMPARISON_NETWORK", "CFM_SLAVE_BIND_HOST",
+                    "CFM_SLAVE_PORT", "CFM_SLAVE_MODEL_DIR", "CFM_SLAVE_CLIENTS_SOURCE", "CFM_DEPLOY_WORKER_BACKEND"):
+            with self.subTest(key=key):
+                path.write_text("".join(line for line in original.splitlines(keepends=True) if not line.startswith(key + "=")))
+                self.assert_worker_rejected_without_changes()
+        path.write_text(original)
+
+    def test_init_refuses_existing_env_even_empty_and_existing_authorization(self):
+        path = self.write("runtime/comparison-slave/worker.env", "")
+        self.assert_worker_rejected_without_changes("--init")
+        path.unlink()
+        self.write("runtime/comparison-slave/clients.json", json.dumps({"conf-a": "x" * 40}))
+        self.assert_worker_rejected_without_changes("--init")
+
+    def test_init_refuses_residual_markers_enrollments_containers_and_volumes(self):
+        marker = self.write("runtime/comparison-slave/deployed.json", '{"project":"old-worker"}')
+        self.assert_worker_rejected_without_changes("--init")
+        marker.unlink()
+        enrollment = self.write("runtime/comparison-slave/enrollments/conf-a.json", "{}")
+        self.assert_worker_rejected_without_changes("--init")
+        enrollment.unlink()
+        self.worker_inspect.return_value = [{"Config": {"Labels": {"com.docker.compose.project": "cfm-comparison-slave"}}}]
+        self.assert_worker_rejected_without_changes("--init")
+        self.worker_inspect.return_value = []
+        self.docker.return_value = subprocess.CompletedProcess([], 0, "cfm-comparison-slave_worker_data\n")
+        self.assert_worker_rejected_without_changes("--init")
+
+    def test_init_template_preserves_custom_identity_and_update_needs_no_init(self):
+        template = self.write("input/worker.template", "# custom host\nCFM_SLAVE_PROJECT_NAME=custom-gpu\n"
+            "CFM_SLAVE_BIND_HOST=192.0.2.10\nCFM_SLAVE_PORT=8098\nCFM_COMPARISON_NETWORK=private-net\n"
+            "CFM_SLAVE_CLIENTS_SOURCE=./private/auth.json\nCFM_SLAVE_MODEL_DIR=./private/models\n"
+            "CFM_SLAVE_MEMORY_LIMIT=6g\nCFM_RAPIDOCR_THREADS=2\nCFM_RAPIDOCR_PAGES=1\nCFM_GPU_MODEL_IDLE_SECONDS=0\n")
+        original = template.read_bytes()
+        path = self.root / "private/worker.env"
+        args = ("--gpu", "--env-file", str(path), "--client", "conf-a")
+        self.assertEqual(self.worker("--init", "--template", str(template), *args), 0)
+        before = path.read_bytes(), (self.root / "private/auth.json").read_bytes()
+        self.status.return_value = "ready"
+        self.assertEqual(self.worker(*args), 0)
+        self.assertEqual((path.read_bytes(), (self.root / "private/auth.json").read_bytes()), before)
+        self.assertEqual(template.read_bytes(), original)
+        self.assertTrue(path.read_text().startswith("# custom host\nCFM_SLAVE_PROJECT_NAME=custom-gpu\n"))
+        self.assertIn("CFM_DEPLOY_WORKER_BACKEND=cuda", path.read_text())
+        self.assert_worker_rejected_without_changes("--init", *args)
+        self.assert_worker_rejected_without_changes("--template", str(template), *args)
+
+    def test_lost_enrolled_namespace_cannot_be_regenerated_via_client_option(self):
+        self.assertEqual(self.worker("--init", "--client", "conf-a", "--client", "conf-b"), 0)
+        clients = self.clients()
+        del clients["conf-b"]
+        self.write("runtime/comparison-slave/clients.json", json.dumps(clients))
+        self.assert_worker_rejected_without_changes("--client", "conf-b")
+
+    def test_custom_worker_env_and_export_path_also_protect_lost_authorization(self):
+        env = self.root / "private/worker.env"
+        self.assertEqual(self.worker("--init", "--env-file", str(env)), 0)
+        export = self.root / "private-export.json"
+        args = ("--env-file", str(env), "--client", "conf-a", "--enrollment-out", str(export))
+        self.assertEqual(self.worker(*args), 0)
+        clients = self.clients(); del clients["conf-a"]
+        self.write("runtime/comparison-slave/clients.json", json.dumps(clients))
+        self.assert_worker_rejected_without_changes(*args)
+
+    def test_saved_worker_identity_prevents_accidental_rename_or_backend_switch(self):
+        self.assertEqual(self.worker("--init"), 0)
+        path = self.root / "runtime/comparison-slave/worker.env"
+        original = path.read_text()
+        for old, new in (("cfm-comparison-slave", "wrong-name"), ("CFM_DEPLOY_WORKER_BACKEND=cpu", "CFM_DEPLOY_WORKER_BACKEND=cuda")):
+            path.write_text(original.replace(old, new))
+            self.assert_worker_rejected_without_changes()
+        path.write_text(original)
+
+    def test_stopped_or_absent_container_recreation_keeps_worker_identity_and_auth(self):
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
+        paths = [self.root / "runtime/comparison-slave" / name for name in ("worker.env", "clients.json")]
+        before = [path.read_bytes() for path in paths]
+        self.status.return_value = "absent"
+        self.assertEqual(self.worker(), 0)
+        self.assertEqual([path.read_bytes() for path in paths], before)
+
+    def test_stopped_container_owner_backend_ports_and_mounts_are_checked_before_update(self):
+        import copy
+        self.assertEqual(self.worker("--init"), 0)
+        project = "cfm-comparison-slave"
+        good = {"Config": {"Env": ["CFM_OCR_BACKEND=cpu"], "Labels": {
+            "com.docker.compose.project": project, "com.docker.compose.service": "comparison-slave",
+            "com.docker.compose.project.working_dir": str(self.root)}},
+            "State": {"Running": False},
+            "HostConfig": {"PortBindings": {"8091/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8091"}]}},
+            "Mounts": [{"Destination": "/run/secrets/clients.json", "Source": str(self.root / "runtime/comparison-slave/clients.json")},
+                       {"Destination": "/worker-data", "Type": "volume", "Name": project + "_worker_data"}]}
+        self.worker_inspect.return_value = [good]
+        self.assertEqual(self.worker(), 0)
+        self.worker_inspect.return_value = [good, copy.deepcopy(good)]
+        self.assert_worker_rejected_without_changes()
+        for field in ("owner", "backend", "port", "authorization", "volume", "project"):
+            broken = copy.deepcopy(good)
+            if field == "owner": broken["Config"]["Labels"]["com.docker.compose.project.working_dir"] = "/foreign/checkout"
+            if field == "backend": broken["Config"]["Env"] = ["CFM_OCR_BACKEND=cuda"]
+            if field == "port": broken["HostConfig"]["PortBindings"]["8091/tcp"][0]["HostPort"] = "9999"
+            if field == "authorization": broken["Mounts"][0]["Source"] = "/foreign/clients.json"
+            if field == "volume": broken["Mounts"][1]["Name"] = "other-conference_sms_data"
+            if field == "project": broken["Config"]["Labels"]["com.docker.compose.project"] = "different-worker"
+            with self.subTest(field=field):
+                self.worker_inspect.return_value = [broken]
+                self.assert_worker_rejected_without_changes()
+
+    def test_bulk_update_missing_worker_config_or_namespace_stops_all_changes(self):
+        plans = [self.existing_plan("conf-a"), self.existing_plan("conf-b", "9002")]
+        self.prepare_update_mocks(plans)
+        worker_path = self.root / "runtime/comparison-slave/worker.env"
+        original = worker_path.read_bytes()
+        worker_path.unlink()
+        for preview in ([], ["--dry-run"]):
+            before = self.snapshot()
+            self.assertEqual(deploy.main(["update", *preview]), 1)
+            self.assertEqual(self.snapshot(), before)
+        self.write(worker_path, original.decode())
+        clients = self.clients(); del clients["conf-b"]
+        self.write("runtime/comparison-slave/clients.json", json.dumps(clients))
+        before = self.snapshot()
+        self.assertEqual(deploy.main(["update"]), 1)
+        self.assertEqual(self.snapshot(), before)
+        self.apply.assert_not_called(); self.launch.assert_not_called(); self.provision.assert_not_called()
+
+    def test_clients_concurrently_edited_during_provision_are_not_overwritten(self):
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 0)
+        path = self.root / "runtime/comparison-slave/clients.json"
+        changed = json.dumps({"conf-a": "changed-by-operator-" + "x" * 32}).encode()
+        self.provision.side_effect = lambda *args, **kwargs: path.write_bytes(changed)
+        self.launch.reset_mock()
+        self.assertEqual(self.worker(), 1)
+        self.assertEqual(path.read_bytes(), changed)
+        self.launch.assert_not_called()
+
+    def test_initial_cutover_failure_retains_recoverable_env_auth_for_update_retry(self):
+        self.launch.side_effect = deploy.slave.WorkerCutoverStartedError("replacement attempted")
+        self.assertEqual(self.worker("--init", "--client", "conf-a"), 1)
+        paths = [self.root / "runtime/comparison-slave" / name for name in ("worker.env", "clients.json")]
+        before = [path.read_bytes() for path in paths]
+        self.assertTrue(all(before))
+        self.assert_worker_rejected_without_changes("--init")
+        self.launch.side_effect = None
+        self.assertEqual(self.worker(), 0)
+        self.assertEqual([path.read_bytes() for path in paths], before)
 
 
 class HostBoundaryTests(unittest.TestCase):

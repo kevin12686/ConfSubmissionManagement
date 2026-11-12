@@ -18,19 +18,22 @@ validation, settings can be unavailable; old workers may omit metadata entirely.
 
 The normal operator entry point is now `scripts/deploy.py`; see the Docker Guide
 for automatic model provisioning, private client enrollment and conference setup.
-The commands below remain the lower-level worker lifecycle interface: they
-require already provisioned files and deliberately do not download models or
-generate credentials themselves.
+First setup requires `worker --init`; ordinary `worker` requires existing env
+and authorization and cannot reconstruct missing names/tokens. An optional
+`--template` supplies custom initial settings only while the target is absent.
+Existing files, enrollments, project containers/volumes and mount/identity
+conflicts fail closed. The historical `start_comparison_slave.py` CLI delegates
+to the same lifecycle, not a second initialization path.
 
-For Docker deployment or update, provision the clients file and approved models
-first, then use the standalone wrapper from the checkout:
+For an existing Docker worker, use the compatible wrapper from its checkout;
+it requires the preserved env and clients, and provisions missing pinned models:
 
 ```sh
 python scripts/start_comparison_slave.py --env-file runtime/comparison-slave/worker.env --dry-run
 python scripts/start_comparison_slave.py --env-file runtime/comparison-slave/worker.env
 ```
 
-CPU is the default; add `--gpu` explicitly for the NVIDIA override. The wrapper
+CPU is the initialization default; updates retain the recorded backend. The wrapper
 validates rendered Compose configuration, rejects project names already owning
 non-worker containers, builds the candidate image, and runs an isolated runtime
 preflight before `up --force-recreate --wait`. Every successful deployment

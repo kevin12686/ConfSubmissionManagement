@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import http.cookiejar
 import shlex
 import sys
@@ -26,7 +25,6 @@ from docker_instance_tools import (  # noqa: E402
     GatewayOperationStatus,
     compose_command,
     compose_env,
-    exclusive_lock,
     inspect_compose_containers,
     matching_instances,
     require_comparison_network,
@@ -53,54 +51,13 @@ class CsrfTokenParser(HTMLParser):
             self.token = values.get("value") or ""
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Rebuild Docker Compose projects that already have an application "
-            "container created from this repository checkout."
-        )
-    )
-    parser.add_argument(
-        "--project",
-        action="append",
-        default=[],
-        help="Only rebuild the named Compose project. Can be used more than once.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the inferred settings and commands without running them.",
-    )
-    args = parser.parse_args()
-
+def main(argv=None) -> int:
+    # Retain the historical command name, not a worker-lifecycle bypass.
     root = SCRIPT_DIR.parent
-    lock_path = root / "runtime" / ".docker-data-operation.lock"
-    try:
-        with exclusive_lock(lock_path):
-            instances = matching_instances(
-                inspect_compose_containers(),
-                root,
-                set(args.project),
-            )
-            if not instances:
-                print(
-                    "No matching Docker Compose application instances were found "
-                    "for this checkout.",
-                    file=sys.stderr,
-                )
-                print(
-                    "Start an instance first, for example: "
-                    "python3 scripts/update_docker_instances.py --create-missing",
-                    file=sys.stderr,
-                )
-                return 1
-
-            for instance in instances:
-                rebuild_instance(instance, root, dry_run=args.dry_run)
-    except (DockerCommandError, RuntimeError, ValueError) as exc:
-        print(f"Rebuild failed: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts import deploy
+    return deploy.main(["update", *(sys.argv[1:] if argv is None else argv)])
 
 
 def rebuild_instance(

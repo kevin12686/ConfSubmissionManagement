@@ -25,6 +25,15 @@ file identity and SHA256. Missing files never authorize a fallback. The build
 is audited, but findings cannot approve/reset reviews, waive exceptions, change
 publication selection, or feed readiness. Automatic post-upload requests remain
 bound to the exact saved revision and run separately from the save transaction.
+Their status lives on the owning card. A one-use, return-URL-scoped receipt
+keeps a freshly uploaded comparison visible if that save leaves the list
+filter; it is consumed on the first Formatting GET and never carried into
+unrelated views. Source/status/notes-only saves clear an unvisited return
+receipt without deleting the existing per-card comparison. New HTMX panels and
+browser-history returns revalidate through the existing read-only endpoint;
+only in-flight calls are deduplicated in memory. Complete signed server caches
+remain reusable without worker health probes or fresh OCR. All existing scope,
+hash and upload-revision checks remain authoritative.
 Temporary comparison artifacts expire after two hours and are excluded from
 System State. **State archive v8 is unchanged.**
 
