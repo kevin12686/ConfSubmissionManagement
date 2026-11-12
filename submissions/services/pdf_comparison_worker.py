@@ -36,7 +36,8 @@ def resource_limits():
     # Windows relies on the parent wall-clock timeout and bounded inputs.
     # Linux also bounds native allocations; macOS reserves large virtual ranges
     # for its runtime, so an address-space limit there would reject valid files.
-    from submissions.services.rapidocr_comparison.runtime import MAX_THREADS, WALL_SECONDS, ocr_backend
+    from submissions.services.rapidocr_comparison.runtime import MAX_THREADS, ocr_backend
+    from submissions.services.rapidocr_comparison.config import parallel_pages, timeout_seconds
     backend = ocr_backend()
     if backend == "cuda" and not sys.platform.startswith("linux"):
         raise ValueError("CUDA comparison requires Linux with a finite cgroup container memory limit.")
@@ -46,7 +47,7 @@ def resource_limits():
         return
     # CPU time accumulates across threads; it must not cut short the wall budget
     # when a deployment explicitly enables more ONNX threads.
-    cpu_budget = MAX_THREADS * WALL_SECONDS
+    cpu_budget = MAX_THREADS * parallel_pages() * timeout_seconds()
     resource.setrlimit(resource.RLIMIT_CPU, (cpu_budget, cpu_budget + 20))
     if sys.platform.startswith("linux"):
         if backend == "cuda":

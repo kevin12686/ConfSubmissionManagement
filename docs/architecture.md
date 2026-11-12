@@ -124,13 +124,23 @@ allowlisted provider codes and bounded Ray IDs, not arbitrary response prose,
 cookies, redirect URLs or credentials. These headers/diagnostics are not part
 of the inference contract or signed route identity. Accepted-job pinning remains
 unchanged; local selection after remote unavailability now requires consent.
-RapidOCR 3.10.0 uses PP-OCRv6 small detection/recognition models with ONNX Runtime
+RapidOCR 3.10.0 uses independently selected, pinned PP-OCRv6 Small/Medium
+detection/recognition models with ONNX Runtime
 1.31.1. Models are explicitly provisioned before use, not downloaded by a
 comparison request. The unified deployment provisioner can download missing
 models from fixed HTTPS URLs and verifies the canonical pinned SHA256 policy
 before installing them. Existing invalid models are preserved and rejected,
 not silently replaced. Offline and dry-run never download. This is host
 deployment state, not a publication or extraction workflow.
+Execution policy is centralized in `rapidocr_comparison/config.py`. CPU defaults
+to one sequential page; CUDA defaults to four independent OCR lanes, dynamically
+dispatched with bounded in-flight images and deterministic page-order assembly.
+CUDA recognition's weight-free shared reduction graph transfers indices/maxima
+to the unchanged CTC decoder, retaining original NumPy handling for exceptional
+values. Both default to a 300-second OCR budget with supervisor budget +30.
+Selected models/concurrency are runtime/cache identity, not publication authority.
+Workers and conferences must share the updated compute contract. No schema or
+State archive version changes are needed for these deployment settings.
 The default lookup is `BASE_DIR/runtime/rapidocr-models`,
 already exposed in Docker by the existing `.:/app` mount. An optional absolute
 `CFM_RAPIDOCR_MODEL_DIR` overrides it; external Docker directories need an explicit

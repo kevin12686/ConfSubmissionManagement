@@ -29,7 +29,8 @@ macOS operators usually run `start.command` or `./scripts/start_local.sh`. Windo
 ## PDF Comparison Runtime
 
 Method 8 requires `rapidocr==3.10.0` and `onnxruntime==1.31.1` from
-`requirements.txt`, with the approved PP-OCRv6 small detection/recognition models.
+`requirements.txt`, with checksum-pinned PP-OCRv6 Small (default) or Medium
+detection/recognition models selected independently in the worker environment.
 Use the application's Python environment on macOS/Linux/Windows; a successful
 installation on one host does not establish Linux/container compatibility.
 Do not use a temporary research environment or silently substitute other models.
@@ -108,7 +109,19 @@ Changes require cold, warm-pair and original-only reuse acceptance against froze
 pre-change results, including OCR scores/coordinates, plus corrupt/expired cache,
 concurrency, failure and publication ZIP/CrossCheck byte-integrity tests. Record
 actual timing separately from semantic accuracy; a faster retry does not prove
-that a first-time CPU comparison will finish within 240 seconds.
+that a first-time CPU comparison will finish within its configured OCR budget
+(300 seconds by default).
+
+Execution settings are centralized in `rapidocr_comparison/config.py`; see
+[Worker OCR Settings](docker_guide.md#worker-ocr-settings). The CUDA reduction
+graph is embedded, hash-checked, weight-free ONNX IR8/opset18; its outputs feed
+the original CTC decoder. Do not rewrite model weights or relax exceptional
+NaN/Inf/signed-zero behavior to pass parity tests. Validate unrounded FP32 maxima,
+indices, decoded words and boxes on the actual GPU. `scheduling.py` owns bounded
+dynamic dispatch; PyMuPDF must never run on OCR threads. Test out-of-order
+completion, render/page failure, work bounds and executor cleanup. CPU's default
+single-page path must never install the CUDA adapter. Model/concurrency changes
+invalidate runtime-bound caches, not publication files or review state.
 
 ## Shared Compute Development
 

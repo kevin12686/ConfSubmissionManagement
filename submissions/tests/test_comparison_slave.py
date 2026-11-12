@@ -49,6 +49,57 @@ class QuietHandler(WSGIRequestHandler):
 
 
 class ComparisonSlaveTests(unittest.TestCase):
+    def test_verified_runtime_change_invalidates_only_obsolete_completed_cache(self):
+        self.service.ledger.submit("conference-a", self.key, self.contract, self.hashes, b"request")
+        row = self.service.ledger.claim()
+        old = {**self.evidence, "runtime": self.service.runtime}
+        self.service.ledger.finish(row, output=json.dumps(old).encode())
+        self.service.ledger.invalidate_runtime(self.contract, self.service.runtime)
+        self.assertEqual(self.service.ledger.get("conference-a", self.key)["state"], "completed")
+        self.service.ledger.invalidate_runtime(self.contract, "d" * 64)
+        record = self.service.ledger.get("conference-a", self.key)
+        self.assertEqual((record["state"], record["error"], record["output"]), ("failed", "configuration_changed", None))
+        self.assertFalse(self.service.ledger.submit("conference-a", self.key, self.contract, self.hashes, b"request"))
+        self.assertTrue(self.service.ledger.submit("conference-a", self.key, self.contract, self.hashes, b"request", retry_failed=True))
+
+    def test_failed_runtime_invalidation_is_retried_before_serving_completed_cache(self):
+        self.complete()
+        previous = self.service.ledger.get("conference-a", self.key)
+        self.service.preflight_at = 0
+        self.service.probe_requested.set()
+        self.compute.reset_mock()
+        self.compute.side_effect = lambda *args: {
+            "contract": self.contract, "backend": "cpu", "runtime": "d" * 64,
+        }
+        invalidate = self.service.ledger.invalidate_runtime
+        attempts = []
+
+        def fail_once(contract, runtime):
+            attempts.append(runtime)
+            if len(attempts) == 1:
+                raise OSError("temporary ledger failure")
+            return invalidate(contract, runtime)
+
+        with patch.object(self.service.ledger, "invalidate_runtime", side_effect=fail_once):
+            with self.assertLogs("comparison_slave.runner", level="WARNING"):
+                self.service.tick()
+            self.assertFalse(self.service.ready)
+            self.assertEqual(self.request()[0], 503)
+            self.assertEqual(self.service.ledger.get("conference-a", self.key), previous)
+            self.service.preflight_at = 0
+            self.service.probe_requested.set()
+            self.service.tick()
+
+        self.assertEqual(attempts, ["d" * 64, "d" * 64])
+        self.assertTrue(self.service.ready)
+        record = self.service.ledger.get("conference-a", self.key)
+        self.assertEqual((record["state"], record["error"], record["output"]),
+                         ("failed", "configuration_changed", None))
+        self.assertEqual(record["created"], previous["created"])
+        self.assertTrue(all(call.args[0] == "preflight" for call in self.compute.call_args_list))
+        self.assertEqual(self.request("POST")[1]["state"], "failed")
+        self.assertEqual(self.request("POST", headers={"HTTP_X_CFM_RETRY_FAILED": "1"})[0], 202)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -510,7 +561,7 @@ print(settings.SECRET_KEY)
                 patch("comparison_slave.runner.os.killpg") as kill:
             with self.assertRaises(subprocess.TimeoutExpired):
                 self.service.run_process("job", "conference-a", self.body())
-        self.assertEqual(child.wait.call_args_list[0].kwargs["timeout"], 270)
+        self.assertEqual(child.wait.call_args_list[0].kwargs["timeout"], 330)
         self.assertEqual(child.wait.call_args_list[1].kwargs["timeout"], 5)
         kill.assert_called_once_with(child.pid, signal.SIGKILL)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])

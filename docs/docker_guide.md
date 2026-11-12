@@ -336,7 +336,8 @@ projects. `CFM_SLAVE_PROJECT_NAME` controls that project; keep the identity stab
 and do not set a conference's `COMPOSE_PROJECT_NAME` in the worker environment.
 The command is `gunicorn --workers 1 --threads 4 --bind 0.0.0.0:8091
 --timeout 30 comparison_slave.server:application`. The HTTP timeout is not the
-OCR job budget; inference remains isolated and bounded at 240 seconds.
+OCR job budget; inference remains isolated and bounded by `CFM_RAPIDOCR_TIMEOUT`
+(300 seconds by default), with an outer watchdog 30 seconds longer.
 Compose's 30-second health check authenticates to loopback `/v1/health` using
 the effective private config, primes lazy service startup, and accepts only
 ready/busy states. Its command arguments and output never contain the token.
@@ -450,8 +451,8 @@ These measurements do not guarantee every future PDF meets its deadline.
 
 ### Embedded CPU Setup
 
-For explicit `CFM_COMPARISON_TRANSPORT=embedded`, Method-7 uses CPU inference with `rapidocr==3.10.0`,
-`onnxruntime==1.31.1` and the approved PP-OCRv6 small detection/recognition model
+For explicit `CFM_COMPARISON_TRANSPORT=embedded`, method 8 uses CPU inference with `rapidocr==3.10.0`,
+`onnxruntime==1.31.1` and the selected, approved PP-OCRv6 Small/Medium detection/recognition model
 pair. Rebuild the Linux image with the pinned requirements and verify that both
 packages import in the container; a host virtual environment is not used by
 Docker and does not prove container compatibility.
@@ -533,8 +534,67 @@ scores, locations and authored edit controls as well as timing. Logical threads
 are not physical cores, and ARM64 Docker Desktop timing is not a performance
 guarantee for native Intel/AMD Linux. Do not assume maximum threads is fastest.
 RAM increases do not fix a CPU-bound workload when there is already sufficient
-memory. Models, 300 DPI and the 240-second wall limit remain unchanged; Linux
-CPU-time accounting permits all eight supported threads within that wall budget.
+memory. Thread tuning does not change models or 300 DPI. Linux CPU-time accounting
+allows the configured page concurrency and supported threads within the chosen
+wall budget; defaults use 300 seconds.
+
+### Worker OCR Settings
+
+Set these on the **shared worker**, not each conference, in
+`compose.comparison-slave.yml` / `compose.comparison-slave.gpu.yml`, or through the
+worker's private environment file. Compose resolves the values; the unified
+deployer uses that same resolved model selection when provisioning.
+
+| Worker setting | CPU default | GPU default | Allowed |
+| --- | --- | --- | --- |
+| `CFM_RAPIDOCR_PAGES` | 1 | 4 | 1-8 concurrent pages |
+| `CFM_RAPIDOCR_DET_MODEL` | small | small | small / medium |
+| `CFM_RAPIDOCR_REC_MODEL` | small | small | small / medium |
+| `CFM_RAPIDOCR_TIMEOUT` | 300 | 300 | 30-3600 seconds per pair |
+
+300 DPI, detection limit 2560, recognition batch 6 and comparison rules stay fixed.
+For example, in the GPU Compose service's `environment`:
+
+```yaml
+CFM_RAPIDOCR_PAGES: ${CFM_RAPIDOCR_PAGES:-4}
+CFM_RAPIDOCR_DET_MODEL: ${CFM_RAPIDOCR_DET_MODEL:-small}
+CFM_RAPIDOCR_REC_MODEL: ${CFM_RAPIDOCR_REC_MODEL:-medium}
+CFM_RAPIDOCR_TIMEOUT: ${CFM_RAPIDOCR_TIMEOUT:-300}
+```
+
+Existing values in the selected worker environment file override these defaults.
+Do not set `PAGES=1` in a shared example when you intend GPU's default four.
+Then preview/apply using the same worker project, client registration and
+deployment command previously used (`deploy.py worker`, with `--gpu` for CUDA).
+The unified deployer downloads only missing selected pinned models, rejects
+corrupt existing files, and detects Compose edits as worker changes. Offline
+requires the selected files already present. Lower-level startup never downloads;
+it validates the selected runtime before replacing the worker. Allow jobs to finish
+before recreation. Conference publication files, DBs and review flags are untouched.
+
+GPU combines dynamic page dispatch with on-device CTC reduction. CPU at default
+one page retains sequential inference; explicit CPU concurrency is possible but
+must be tested against available RAM and `PAGES * THREADS` oversubscription.
+Medium models/concurrent pages can need much more RAM/VRAM. Four Small/Small pages
+used about 11.8 GiB VRAM on the tested 16-GiB card; this is not a universal memory
+guarantee. Do not assume four Medium pages fit. OOM/timeout means unavailable,
+never partial success or silent model/backend/quality downgrade.
+
+Changing models/concurrency invalidates runtime-bound cache. Obsolete completed
+worker jobs require explicit Retry; no old evidence is served as the new model's
+result. This invalidation is worker-local: the existing complete-cache discovery
+policy may still reuse valid evidence from another unchanged worker, recording
+that worker rather than claiming it ran the newly configured model. Model
+selection configures a worker's new inference, not a per-request force-recompute
+or accuracy requirement. Timeout-only changes can reuse complete validated evidence. CFM still
+waits at most 240 seconds per service request before returning the same job's
+Retry flow; that is separate from the worker's configurable execution deadline.
+For embedded execution, also keep `SMS_WEB_TIMEOUT` and proxy timeouts longer
+than the chosen OCR budget; these are independent deployment limits. Their
+defaults are 360 seconds to leave margin over the default 300-second OCR work.
+Preserved explicit web values are not overwritten; adjust them deliberately if
+you previously set a shorter limit. Service mode's 240-second polling window
+continues to return Retry while the same worker job finishes independently.
 
 The image build excludes `data/`, `runtime/`, `output/` and `.playwright-cli/`.
 Research PDFs, screenshots and local models must not be baked into the image.

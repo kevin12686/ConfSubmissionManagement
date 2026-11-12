@@ -12,9 +12,15 @@ from pathlib import Path
 
 import fitz
 
+from .config import DEFAULT_TIMEOUT, execution_identity, model_size, parallel_pages, timeout_seconds
+
 MODEL_HASHES = {
     "PP-OCRv6_det_small.onnx": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
     "PP-OCRv6_rec_small.onnx": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+}
+MEDIUM_MODEL_HASHES = {
+    "PP-OCRv6_det_medium.onnx": "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2",
+    "PP-OCRv6_rec_medium.onnx": "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
 }
 MODEL_ENV = "CFM_RAPIDOCR_MODEL_DIR"
 MAX_PAGES = 40
@@ -23,7 +29,7 @@ MAX_SIDE = 4000
 MAX_NATIVE_WORDS = 60_000
 MAX_LINES = 2000
 MAX_CHARACTERS = 300_000
-WALL_SECONDS = 240
+WALL_SECONDS = DEFAULT_TIMEOUT
 MAX_THREADS = 8
 THREAD_ENV = "CFM_RAPIDOCR_THREADS"
 BACKEND_ENV = "CFM_OCR_BACKEND"
@@ -85,7 +91,7 @@ def validate_models(directory=None):
     if not value or not Path(value).is_absolute():
         raise ValueError(f"Set {MODEL_ENV} to an absolute directory prepared with prepare_rapidocr_models.")
     root = Path(value)
-    for name, expected in MODEL_HASHES.items():
+    for name, expected in selected_model_hashes().items():
         path = root / name
         if not path.is_file() or path.is_symlink() or path.stat().st_size > 100 * 1024 * 1024:
             raise ValueError(f"Required local OCR model is missing or invalid: {name}.")
@@ -96,7 +102,35 @@ def validate_models(directory=None):
     return root
 
 
+def selected_model_hashes():
+    sizes = {kind: model_size(kind) for kind in ("det", "rec")}
+    if all(size == "small" for size in sizes.values()):
+        return dict(MODEL_HASHES)
+    catalog = {**MODEL_HASHES, **MEDIUM_MODEL_HASHES}
+    return {f"PP-OCRv6_{kind}_{size}.onnx": catalog[f"PP-OCRv6_{kind}_{size}.onnx"]
+            for kind, size in sizes.items()}
+
+
 def build_recognizer():
+    # Keep the CPU single-page execution path unchanged; parallel execution is
+    # opt-in on CPU, and the CUDA default owns four independent model sessions.
+    execution_identity()
+    timeout_seconds()
+    first = _build_recognizer()
+    count = parallel_pages()
+    if ocr_backend() == "cpu" and count == 1:
+        return first
+    from .scheduling import RecognizerPool
+    engines = [first] + [_build_recognizer() for _ in range(count - 1)]
+    if ocr_backend() == "cuda":
+        from .gpu_reduction import ReductionPool, attach
+        reduction = ReductionPool()
+        for engine in engines:
+            attach(engine, reduction)
+    return RecognizerPool(engines)
+
+
+def _build_recognizer():
     global _validated_cuda_identity
     _validated_cuda_identity = None
     root = validate_models()
@@ -125,8 +159,8 @@ def build_recognizer():
     params = {
         "Global.model_root_dir": str(root), "Global.text_score": 0.0,
         "Global.max_side_len": MAX_SIDE, "Global.use_cls": False,
-        "Det.model_path": str(root / "PP-OCRv6_det_small.onnx"),
-        "Rec.model_path": str(root / "PP-OCRv6_rec_small.onnx"),
+        "Det.model_path": str(root / f"PP-OCRv6_det_{model_size('det')}.onnx"),
+        "Rec.model_path": str(root / f"PP-OCRv6_rec_{model_size('rec')}.onnx"),
         "Det.limit_side_len": 2560, "Det.limit_type": "max",
         "EngineConfig.onnxruntime.intra_op_num_threads": ocr_thread_count(),
         "EngineConfig.onnxruntime.inter_op_num_threads": 1,
@@ -195,8 +229,15 @@ def recognize_page(recognizer, image, width, height):
 
 
 def extract_document(data, recognizer):
-    pages, native = [], []
-    characters = native_count = 0
+    from .scheduling import RecognizerPool
+    if isinstance(recognizer, RecognizerPool):
+        return recognizer.extract(data)
+    return _extract_sequential(data, recognizer)
+
+
+def rendered_pages(data):
+    """Render/native geometry only on the caller thread, never OCR threads."""
+    native_count = 0
     with fitz.open(stream=data, filetype="pdf") as document:
         if document.needs_pass:
             raise ValueError("Password-protected PDFs cannot be compared.")
@@ -207,27 +248,33 @@ def extract_document(data, recognizer):
             if min(width, height) <= 0 or max(width, height) > MAX_SIDE or width * height > MAX_PIXELS:
                 raise ValueError("PDF page exceeds the full-resolution OCR raster limit.")
             pix = page.get_pixmap(dpi=300, alpha=False, colorspace=fitz.csRGB)
-            # RapidOCR treats ndarray inputs as BGR; its PNG path converts RGB
-            # to exactly this array. Avoid lossless encoding and decoding.
             import cv2
             import numpy as np
             rgb = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
             image = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            ocr = recognize_page(recognizer, image, pix.width, pix.height)
-            characters += sum(len(line["text"]) for line in ocr["lines"])
-            if characters > MAX_CHARACTERS:
-                raise ValueError("OCR character work limit exceeded.")
-            pages.append({"page": number, "width": pix.width, "height": pix.height,
-                          "pdf_width": page.rect.width, "pdf_height": page.rect.height, "ocr": ocr})
             sx, sy = pix.width / page.rect.width, pix.height / page.rect.height
             words = []
-            for w in page.get_text("words", sort=False):
+            for word in page.get_text("words", sort=False):
                 native_count += 1
                 if native_count > MAX_NATIVE_WORDS:
                     raise ValueError("Native location work limit exceeded.")
-                rect = fitz.Rect(w[:4]) * page.rotation_matrix
-                box = rectangle([rect.x0 * sx, rect.y0 * sy, rect.x1 * sx, rect.y1 * sy], pix.width, pix.height)
+                rect = fitz.Rect(word[:4]) * page.rotation_matrix
+                box = rectangle([rect.x0*sx, rect.y0*sy, rect.x1*sx, rect.y1*sy], pix.width, pix.height)
                 if box[0] < box[2] and box[1] < box[3]:
-                    words.append({"box": box, "block": w[5], "line": w[6], "word": w[7]})
-            native.append({"page": number, "words": words})
+                    words.append({"box": box, "block": word[5], "line": word[6], "word": word[7]})
+            yield ({"page": number, "width": pix.width, "height": pix.height,
+                    "pdf_width": page.rect.width, "pdf_height": page.rect.height},
+                   {"page": number, "words": words}, image)
+
+
+def _extract_sequential(data, recognizer):
+    pages, native = [], []
+    characters = 0
+    for metadata, geometry, image in rendered_pages(data):
+        ocr = recognize_page(recognizer, image, metadata["width"], metadata["height"])
+        characters += sum(len(line["text"]) for line in ocr["lines"])
+        if characters > MAX_CHARACTERS:
+            raise ValueError("OCR character work limit exceeded.")
+        pages.append({**metadata, "ocr": ocr})
+        native.append(geometry)
     return pages, native

@@ -7,7 +7,7 @@ import tempfile
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
 
-from submissions.services.rapidocr_comparison.runtime import MODEL_ENV, MODEL_HASHES, validate_models
+from submissions.services.rapidocr_comparison.runtime import MODEL_ENV, selected_model_hashes, validate_models
 
 
 class Command(BaseCommand):
@@ -28,10 +28,10 @@ class Command(BaseCommand):
             if source.resolve() != destination.resolve():
                 with tempfile.TemporaryDirectory(prefix=".ocr-import-", dir=destination) as temporary:
                     staging = Path(temporary)
-                    for name in MODEL_HASHES:
+                    for name in selected_model_hashes():
                         shutil.copyfile(source / name, staging / name)
                     validate_models(staging)
-                    for name in MODEL_HASHES:
+                    for name in selected_model_hashes():
                         if (destination / name).is_symlink():
                             raise ValueError("Destination model must not be a symbolic link.")
                         os.replace(staging / name, destination / name)

@@ -512,6 +512,17 @@ results before release; no fixture set provides a universal catch-all.
 
 ### Stage 8: Docker Proxy And Recovery
 
+For execution changes, verify CPU defaults 1/Small/Small/300 and CUDA defaults
+4/Small/Small/300 in resolved Compose, plus explicit page/model/timeout overrides.
+Use isolated workers/data: compare fresh Small-model CPU sequential and CUDA
+parallel outputs against frozen same-backend pre-change text, exact scores,
+segmentation and boxes. Check dynamic out-of-order completion and failure cleanup,
+GPU reduction ties/nonfinite/signed-zero boundaries, selected Medium models on
+both providers, cache invalidation after model/concurrency changes, and watchdog
+budgets derived from the configured OCR limit. No partial/corrupt document may
+become complete evidence. Publication ZIP/CrossCheck bytes and signed revision
+binding must remain unchanged; never run acceptance against conference records.
+
 25. In a disposable Compose project with `SMS_DEBUG=0`, confirm Dashboard CSS,
     local icons, one title/author verification image, one PDF thumbnail, one
     formatting preview, and one publication PDF all load through the published

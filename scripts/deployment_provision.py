@@ -16,9 +16,9 @@ import urllib.request
 
 RUNTIME_SOURCE = Path(__file__).resolve().parents[1] / "submissions/services/rapidocr_comparison/runtime.py"
 MODEL_URLS = {
-    f"PP-OCRv6_{kind}_small.onnx":
-    f"https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/{kind}/PP-OCRv6_{kind}_small.onnx"
-    for kind in ("det", "rec")
+    f"PP-OCRv6_{kind}_{size}.onnx":
+    f"https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/{kind}/PP-OCRv6_{kind}_{size}.onnx"
+    for kind in ("det", "rec") for size in ("small", "medium")
 }
 MAX_BYTES = 100 * 1024 * 1024
 CHUNK_BYTES = 1024 * 1024
@@ -31,20 +31,24 @@ class ProvisionError(RuntimeError):
     """Provisioning failed without authorizing application startup."""
 
 
-def _model_hashes():
+def _model_hashes(det_model="small", rec_model="small"):
     # Read policy without importing runtime's native dependencies (including fitz).
     try:
         tree = ast.parse(RUNTIME_SOURCE.read_text(encoding="utf-8"))
-        assignments = [node.value for node in tree.body if isinstance(node, ast.Assign)
-                       and any(isinstance(t, ast.Name) and t.id == "MODEL_HASHES" for t in node.targets)]
-        if len(assignments) != 1:
-            raise ValueError("expected one MODEL_HASHES literal")
-        hashes = ast.literal_eval(assignments[0])
+        hashes = {}
+        for name in ("MODEL_HASHES", "MEDIUM_MODEL_HASHES"):
+            assignments = [node.value for node in tree.body if isinstance(node, ast.Assign)
+                           and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)]
+            if len(assignments) != 1:
+                raise ValueError("expected one MODEL_HASHES literal per model size")
+            hashes.update(ast.literal_eval(assignments[0]))
         if (not isinstance(hashes, dict) or hashes.keys() != MODEL_URLS.keys()
                 or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
                        for value in hashes.values())):
             raise ValueError("unexpected model policy")
-        return hashes
+        if any(size not in {"small", "medium"} for size in (det_model, rec_model)):
+            raise ValueError("model sizes must be small or medium")
+        return {name: hashes[name] for name in (f"PP-OCRv6_det_{det_model}.onnx", f"PP-OCRv6_rec_{rec_model}.onnx")}
     except (OSError, SyntaxError, ValueError, TypeError) as exc:
         raise ProvisionError("Cannot read pinned MODEL_HASHES. Restore the complete matching checkout; do not substitute models.") from exc
 
@@ -155,14 +159,14 @@ def _download(name, expected, destination):
         raise ProvisionError(f"Cannot provision {name}: {exc}. Retry online or transfer the exact checksum-verified file from {MODEL_URLS[name]} into the selected directory, then retry offline.") from exc
 
 
-def provision_models(directory, *, offline=False, dry_run=False):
+def provision_models(directory, *, offline=False, dry_run=False, det_model="small", rec_model="small"):
     """Return filename -> absolute Path; dry-run paths may not exist yet.
 
     Existing files are always validated and never replaced. Offline requires all
     models; dry-run only reports missing downloads, without network or writes.
     Concurrent provisioners fail immediately rather than wait or steal a lock.
     """
-    hashes = _model_hashes()
+    hashes = _model_hashes(det_model, rec_model)
     path = Path(directory).expanduser()
     if ".." in path.parts:
         raise ProvisionError("Model directory must not contain '..'; supply a direct absolute directory path.")

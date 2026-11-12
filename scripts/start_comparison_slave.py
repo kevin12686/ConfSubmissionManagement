@@ -26,7 +26,8 @@ def compose_environment():
     # The explicitly selected worker env file, not a conference shell, owns settings.
     return {key: value for key, value in os.environ.items()
             if not key.startswith(("COMPOSE_", "CFM_SLAVE_"))
-            and key not in {"CFM_COMPARISON_NETWORK", "CFM_RAPIDOCR_THREADS"}}
+            and not key.startswith("CFM_RAPIDOCR_")
+            and key != "CFM_COMPARISON_NETWORK"}
 
 
 def run(command, *, environment, timeout, capture=False):
@@ -76,7 +77,7 @@ def validate_config(config, *, gpu):
     return project
 
 
-def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
+def configuration(env_file, *, gpu=False):
     env_file = Path(env_file).expanduser().resolve(strict=True)
     if not env_file.is_file():
         raise DeploymentError("--env-file must name a worker environment file.")
@@ -89,6 +90,29 @@ def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
         config = json.loads(run(base + ["config", "--format", "json"], environment=environment, timeout=30, capture=True))
     except (ValueError, TypeError) as exc:
         raise DeploymentError("Compose returned invalid worker configuration.") from exc
+    return config, base, environment
+
+
+def model_options(config):
+    env = config.get("services", {}).get(SERVICE, {}).get("environment", {})
+    options = {"det_model": env.get("CFM_RAPIDOCR_DET_MODEL", "small"),
+               "rec_model": env.get("CFM_RAPIDOCR_REC_MODEL", "small")}
+    if any(value not in {"small", "medium"} for value in options.values()):
+        raise DeploymentError("Worker detection/recognition models must be small or medium.")
+    for name, default, low, high in (("CFM_RAPIDOCR_PAGES", 4 if env.get("CFM_OCR_BACKEND") == "cuda" else 1, 1, 8),
+                                     ("CFM_RAPIDOCR_TIMEOUT", 300, 30, 3600)):
+        try:
+            value = int(env.get(name, default))
+        except (TypeError, ValueError) as exc:
+            raise DeploymentError(f"{name} must be an integer from {low} to {high}.") from exc
+        if not low <= value <= high:
+            raise DeploymentError(f"{name} must be between {low} and {high}.")
+    return options
+
+
+def deploy(env_file, *, gpu=False, dry_run=False, wait_seconds=240):
+    config, base, environment = configuration(env_file, gpu=gpu)
+    model_options(config)
     project = validate_config(config, gpu=gpu)
     base += ["--project-name", project]
     existing = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={project}",

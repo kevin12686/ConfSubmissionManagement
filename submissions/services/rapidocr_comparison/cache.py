@@ -62,7 +62,8 @@ def runtime_fingerprint():
             ("model name", "flags", "Features", "CPU implementer", "CPU part")
         )})
     identity = {
-        "format": FORMAT, "backend": runtime.backend_identity(), "models": runtime.MODEL_HASHES,
+        "format": FORMAT, "backend": runtime.backend_identity(), "models": runtime.selected_model_hashes(),
+        "execution": runtime.execution_identity(),
         "threads": runtime.ocr_thread_count(), "python": sys.version,
         "platform": platform.platform(), "machine": platform.machine(),
         "host": None if worker else platform.node(), "node": node, "worker": worker, "cpu": features,

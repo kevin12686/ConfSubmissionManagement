@@ -67,9 +67,10 @@ def preflight():
 
 
 def main():
+    from submissions.services.rapidocr_comparison.config import supervisor_seconds
     # The watchdog survives a web-process death and kills nested OCR children too.
     signal.signal(signal.SIGALRM, lambda *_: os.killpg(os.getpgrp(), signal.SIGKILL))
-    signal.alarm(270)
+    signal.alarm(supervisor_seconds())
     import resource
     resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
     from submissions.services.pdf_comparison_worker import resource_limits

@@ -6,7 +6,58 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
-## Latest Regression Scope (1.29.0 / Method 8)
+## Execution Configuration Acceptance (1.30.0 / Method 8)
+
+- macOS: 1,010 Django tests passed. Standalone discovery: 108 tests passed with
+  two opt-in skips; both opt-ins were also executed separately and passed.
+  JavaScript: 123 tests passed. Django check, migration drift, documentation,
+  compilation and whitespace gates passed. No schema migration is needed.
+- Isolated ARM64 Linux app Docker: 1,010 Django tests passed with seven platform
+  skips. Source was read-only, with disposable database/media and `/app/data`;
+  startup fixtures required an executable `/tmp` tmpfs. No conference
+  containers or volumes were used for this regression.
+- Real updater acceptance used two disposable conferences and a shared CPU
+  worker, exercised both entrypoints, and preserved DB/review state, tokens and
+  Original/Corrected bytes. Actual Compose/container custom-header round-trip
+  passed. Selected models are provisioned from resolved worker Compose, not
+  inferred from a conference's environment.
+- Two supplied 12-page PDFs (24 pages total) were recognized with the fixed
+  Small models at 300 DPI/batch 6 on the Quadro RTX 5000 16-GiB host, inside a
+  separately built GPU Docker image. CUDA page counts 1/3/4/5 all matched the
+  pre-change sequential runtime's complete OCR/native geometry exactly: strings,
+  exact serialized scores, word segmentation and coordinates. All three
+  Medium-containing detector/recognizer combinations at one page also matched
+  their same-model non-reduced sequential reference over all 24 pages; this is
+  execution parity, not evidence that Medium always recognizes better.
+- GPU correctness-only instrumentation checked all 525 actual recognition
+  batches against NumPy indices and unrounded FP32 maxima, bit for bit. Another
+  480 concurrent numeric cases passed; profiling assigned all reduction graph
+  operators to CUDA. Exceptional values retain original NumPy handling.
+- Generated boundary PDFs covered empty pages, 90-degree rotation, two columns,
+  additions/removals/changed text and unequal document page counts. All nine
+  pages matched legacy output exactly on CUDA four-page and CPU two-page
+  dispatch. CPU's default sequential output also matched both real PDFs exactly.
+  CPU Medium/Medium loaded and recognized a synthetic one-page PDF successfully.
+- Actual CPU and GPU worker preflight, subprocess execution and complete warm
+  pair-cache reuse passed on isolated boundary PDFs. An intentionally stalled
+  CPU executable under `CFM_RAPIDOCR_TIMEOUT=30` failed explicitly at about
+  30.6 seconds, without complete/partial success. Unit coverage includes bad
+  settings/models, cache runtime invalidation, out-of-order completion, work
+  bounds, injected failures and independent engine ownership.
+- Pre-commit review additionally reproduced a transient runtime-cache
+  invalidation failure and verified recovery: readiness stays unavailable,
+  old completed evidence cannot be served, and a later preflight retries the
+  invalidation before exposing an explicit Retry. No automatic recomputation
+  or conference workflow mutation is introduced.
+
+No OCR accuracy guarantee follows from parity. Medium/four-page or unusually
+large pages can exceed RAM/VRAM; failures remain explicit, with no silent
+downsampling, model substitution or partial results. Existing production workers
+were not restarted. Temporary PDFs/models/results and disposable images are
+removed after acceptance. Current defaults are 300 seconds; historical 240-second
+measurements below describe the earlier execution policy, not today's limit.
+
+## Earlier Regression Scope (1.29.0 / Method 8)
 
 - Native: 992 Django tests, 105 JavaScript tests and standalone discovery
   (107 tests, two opt-in skips) passed. Django checks, migration drift,

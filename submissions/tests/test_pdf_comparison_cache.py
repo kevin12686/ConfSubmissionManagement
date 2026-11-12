@@ -58,7 +58,7 @@ class PDFComparisonCacheTests(SimpleTestCase):
         self.assertTrue(warm["pair_hit"])
         self.assertEqual(self.extract.call_count, 2)
         self.assertEqual(self.engine.call_count, 2)
-        self.assertEqual(self.process.call_args.kwargs["timeout"], 240)
+        self.assertEqual(self.process.call_args.kwargs["timeout"], 300)
 
     def test_full_cache_precedes_local_confirmation_but_miss_partial_and_runtime_change_never_compute(self):
         from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired

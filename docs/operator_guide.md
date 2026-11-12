@@ -733,6 +733,14 @@ file, not in conference settings or backups. Shared-worker storage is independen
 Clear Database clears this CFM's receipts/cache, not the shared service's other
 clients. See [service contract](pdf_comparison.md#shared-comparison-service).
 
+Comparison worker tuning belongs to deployment, not the paper's Formatting
+Review. Defaults are GPU four concurrent pages, CPU one, Small detector/recognizer
+and 300-second OCR work. Small/Medium models can be selected independently in
+worker Compose/env; see [Worker OCR Settings](docker_guide.md#worker-ocr-settings).
+CPU's default remains sequential. Model/concurrency changes invalidate the old
+worker runtime cache and require Retry, not reuse as the new model. No setting
+changes publication files, version selection, Title/Author extraction or Review OK.
+
 Formatting's small Comparison services strip shows Remote/Local availability and
 reported GPU/CPU, with Details for safe connection errors. It refreshes every ten
 seconds between requests while the tab is visible; hidden tabs pause. This never

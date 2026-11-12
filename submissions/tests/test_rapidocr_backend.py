@@ -145,7 +145,7 @@ class OCRWorkerRuntimeTests(SimpleTestCase):
         with tempfile.TemporaryDirectory() as temporary, override_settings(BASE_DIR=temporary), patch.dict(os.environ, {}, clear=True):
             with patch("submissions.services.pdf_comparison_execution.subprocess.run", return_value=response) as run:
                 pdf_comparison.compare_pdf_bytes(b"same", b"same")
-            self.assertEqual(run.call_args.kwargs["timeout"], 240)
+            self.assertEqual(run.call_args.kwargs["timeout"], 300)
             self.assertEqual(run.call_args.kwargs["env"][runtime.MODEL_ENV], str(Path(temporary) / "runtime/rapidocr-models"))
 
     def test_runtime_override_must_be_absolute(self):

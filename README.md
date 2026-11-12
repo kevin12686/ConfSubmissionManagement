@@ -85,6 +85,15 @@ These headers supplement the worker token and never go to the local CPU worker.
 Worker requests identify CFM with a shared application User-Agent; gateway
 errors retain safe HTTP/Cloudflare codes instead of suggesting every rejection
 is a bad token.
+Worker Compose settings support independent Small/Medium detection and
+recognition models, bounded concurrent pages and a configurable OCR timeout.
+Defaults are CPU one page and GPU four pages, both Small/Small and 300 seconds.
+GPU uses exact CTC reduction and dynamic page dispatch; CPU keeps sequential
+inference by default. Both retain 300 DPI and batch 6. See
+[Worker OCR Settings](docs/docker_guide.md#worker-ocr-settings) before tuning memory
+or switching models. A worker invalidates completed cache from its previous
+model/runtime; existing cross-worker cache discovery may still reuse valid
+evidence from another unchanged worker, with its actual worker attribution.
 Method 8's broad visual policy can deliberately tolerate real similar-character
 edits such as O/0, f/t, rn/m and same-letter diacritics (e/é/è); whitespace-only changes can also be missed.
 Engine completion or zero findings is not publication approval. Figures, image

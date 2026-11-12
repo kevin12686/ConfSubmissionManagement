@@ -6,7 +6,7 @@ from pathlib import Path
 import fitz
 
 from .rapidocr_comparison.result import VERSION
-from .rapidocr_comparison.runtime import MODEL_HASHES
+from .rapidocr_comparison.runtime import MODEL_HASHES, MEDIUM_MODEL_HASHES
 
 PROTOCOL = 1
 MAX_PDF_BYTES = 64 * 1024 * 1024
@@ -18,7 +18,7 @@ def contract_id():
     paths = sorted((root / "rapidocr_comparison").glob("*.py"))
     paths += [root / "pdf_comparison_worker.py", Path(__file__)]
     contract = {
-        "protocol": PROTOCOL, "method": VERSION, "models": MODEL_HASHES,
+        "protocol": PROTOCOL, "method": VERSION, "models": {**MODEL_HASHES, **MEDIUM_MODEL_HASHES},
         "code": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
     }
     return hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()

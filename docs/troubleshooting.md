@@ -73,7 +73,8 @@ opening its browser page. Do not remove `data/` or bypass the checker.
 
 Successful preflight verifies configuration, dependencies/model sessions and
 authenticated service readiness at that time. It cannot promise uninterrupted
-network availability or that every long OCR job finishes within 240 seconds.
+network availability or that every long OCR job finishes within its configured
+OCR budget (300 seconds by default).
 Optional GROBID and CrossCheck remain optional; this check does not log in to them.
 
 ### Python was not found
@@ -858,13 +859,22 @@ Paper ID alone. A model/runtime/thread change or corrupt/expired cache triggers
 fresh OCR. A busy identical pair must finish or fail before retry. Cache storage
 errors do not invalidate saved files; computation proceeds fresh where possible.
 Completed Original extraction can survive a later corrected-side timeout, so a
-retry may be faster, but first-time work can still time out at 240 seconds. Never
+retry may be faster, but first-time work can still exceed the configured budget. Never
 increase confidence merely because a cache hit is fast. The seven-day, 512-MiB
 embedded cache is excluded from backups and emptied by Clear Database. Ordinary
 cleanup preserves it, independently of review images and revisions. Shared-worker
 cache/job storage is separate: Clear Database does not delete worker namespaces.
 Worker TTL and quotas bound retention; remove service storage only through a
 deliberate maintenance operation, never conference cleanup.
+
+For worker tuning see [Worker OCR Settings](docker_guide.md#worker-ocr-settings).
+Change the worker's environment/Compose, not a conference's inference settings in
+service mode. If Medium cannot load, provision the exact selected pinned pair;
+never rename a Small model to satisfy a Medium filename. Recreate only during
+maintenance. A model/concurrency runtime change makes old completed worker jobs
+require explicit retry. A 240-second CFM request returning Retry is not the same
+as the worker's default 300-second OCR timeout. GPU OOM is an explicit failure;
+reduce configured concurrency deliberately, not image resolution or model checks.
 
 Rebuild method-7 and older cached results for method 8. If unexpected differences
 remain, retain input hashes, runtime/model versions, raw OCR, actual locations

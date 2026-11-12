@@ -5,6 +5,7 @@ services:
     image: cfm-comparison-slave:gpu
     environment:
       CFM_OCR_BACKEND: cuda
+      CFM_RAPIDOCR_PAGES: ${CFM_RAPIDOCR_PAGES:-4}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     deploy:
       resources:

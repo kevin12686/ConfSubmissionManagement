@@ -52,6 +52,14 @@ model/provider validation is never bypassed and models are never downloaded.
 
 Required environment:
 
+OCR execution defaults: CPU one concurrent page, CUDA four, Small detector and
+Small recognizer, 300-second per-pair timeout. `CFM_RAPIDOCR_PAGES` (1-8),
+`CFM_RAPIDOCR_DET_MODEL` / `CFM_RAPIDOCR_REC_MODEL` (small/medium), and
+`CFM_RAPIDOCR_TIMEOUT` (30-3600) are passed by worker Compose. Configure them in
+the worker env/Compose, not per-conference service clients. See
+[Worker OCR Settings](../docs/docker_guide.md#worker-ocr-settings). GPU reduction
+and dynamic dispatch do not change OCR precision, batch 6, 300 DPI or file binding.
+
 - `CFM_SLAVE_ROOT`: absolute, worker-owned directory with mode 0700, separate
   from every conference's storage. Do not mount existing conference data.
 - `CFM_SLAVE_CLIENTS_FILE`: absolute worker-owned JSON file, mode 0600, containing
@@ -156,7 +164,7 @@ checks on lookup. Expired queued jobs cannot start. An already running job
 remains visible to GET and idempotent POST until its bounded process terminates,
 even past TTL. Terminal jobs then follow the original expiry; running work and
 failed-job retries never renew creation time. Clients must retain their
-same-worker routing lease beyond the job TTL plus the 270-second execution
+same-worker routing lease beyond the job TTL plus the bounded execution
 bound and network margin. Shared signed caches retain the existing seven-day, 512-entry,
 512-MiB per-namespace bounds. Dormant caches receive bounded TTL cleanup too.
 At most 32 namespace directories may exist over a root's lifetime (at most
@@ -168,8 +176,9 @@ Cleanup never follows symlinks or recursively scans arbitrary storage trees.
 The child configures only minimal Django settings: namespace `BASE_DIR`, derived
 `SECRET_KEY`, empty apps and databases. It invokes
 `pdf_comparison_execution.local_pdf_evidence`, retaining the shared signed cache
-and shared error semantics. The common OCR wall limit remains 240 seconds;
-the wrapper has a finite 270-second total deadline and kills the process group,
+and shared error semantics. The OCR wall limit defaults to 300 seconds, configured
+with `CFM_RAPIDOCR_TIMEOUT` (30-3600); the wrapper deadline is that budget plus
+30 seconds and kills the process group,
 including descendants. CPU/address-space limits reuse the common worker and
 file output is also bounded. A watchdog survives a web-process crash. An
 inherited exclusive root lock prevents another process from dispatching while

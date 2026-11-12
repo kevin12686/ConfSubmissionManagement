@@ -114,8 +114,9 @@ class BackendTests(SimpleTestCase):
     def test_cuda_configuration_and_real_identity_are_retained(self):
         self.cuda()
         device = {"uuid": "device-a", "name": "test device", "driver": 13000}
+        # Test individual CUDA session validation separately from pool assembly.
         with patch.object(runtime, "cuda_device_identity", return_value=device):
-            runtime.build_recognizer()
+            runtime._build_recognizer()
         params = self.factory.call_args.kwargs["params"]
         self.assertIs(params["EngineConfig.onnxruntime.use_cuda"], True)
         self.assertEqual(params["EngineConfig.onnxruntime.cuda_ep_cfg.device_id"], 0)
@@ -146,7 +147,7 @@ class ResourceLimitTests(SimpleTestCase):
 
     def test_cpu_bounds_unchanged(self):
         worker.resource_limits()
-        self.resource.setrlimit.assert_any_call(0, (1920, 1940))
+        self.resource.setrlimit.assert_any_call(0, (2400, 2420))
         self.resource.setrlimit.assert_any_call(9, (6 * 1024 ** 3, 6 * 1024 ** 3))
 
     def test_gpu_requires_finite_v1_or_v2_cgroup_not_address_space(self):
@@ -155,7 +156,7 @@ class ResourceLimitTests(SimpleTestCase):
             with self.subTest(values=values), patch.object(Path, "read_text", side_effect=values):
                 self.resource.reset_mock()
                 worker.resource_limits()
-                self.resource.setrlimit.assert_called_once_with(0, (1920, 1940))
+                self.resource.setrlimit.assert_called_once_with(0, (9600, 9620))
 
     def test_gpu_unbounded_unreadable_or_invalid_memory_fails(self):
         os.environ["CFM_OCR_BACKEND"] = "cuda"
@@ -338,6 +339,19 @@ class DeploymentUpdaterTests(SimpleTestCase):
 
 @skipUnless(shutil.which("docker"), "Docker CLI required for read-only Compose config validation")
 class DeploymentConfigTests(SimpleTestCase):
+    def test_worker_compose_accepts_independent_ocr_overrides_on_both_backends(self):
+        from scripts import docker_instance_tools as helpers
+        from scripts.start_comparison_slave import model_options
+        values = {"CFM_RAPIDOCR_PAGES": "2", "CFM_RAPIDOCR_DET_MODEL": "medium",
+                  "CFM_RAPIDOCR_REC_MODEL": "small", "CFM_RAPIDOCR_TIMEOUT": "600"}
+        with helpers.temporary_env_file(values) as path:
+            for files in (("compose.comparison-slave.yml",), ("compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml")):
+                config = self.config(*files, env_file=str(path))
+                env = config["services"]["comparison-slave"]["environment"]
+                for name, value in values.items():
+                    self.assertEqual(env[name], value)
+                self.assertEqual(model_options(config), {"det_model": "medium", "rec_model": "small"})
+
     def config(self, *files, env_file=".env.slave.example"):
         command = ["docker", "compose", "--env-file", env_file, "-p", "comparison-config-test"]
         for file in files:
@@ -352,6 +366,10 @@ class DeploymentConfigTests(SimpleTestCase):
         service = config["services"]["comparison-slave"]
         self.assertEqual(service["build"]["target"], "cpu")
         self.assertEqual(service["environment"]["CFM_OCR_BACKEND"], "cpu")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_PAGES"], "1")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_DET_MODEL"], "small")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_REC_MODEL"], "small")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_TIMEOUT"], "300")
         self.assertEqual(service["environment"]["CFM_SLAVE_CLIENTS_FILE"], "/run/secrets/clients.json")
         self.assertGreater(int(service["mem_limit"]), 0)
         self.assertEqual(service["mem_limit"], service["memswap_limit"])
@@ -365,6 +383,8 @@ class DeploymentConfigTests(SimpleTestCase):
         gpu = self.config("compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml")["services"]["comparison-slave"]
         self.assertEqual(gpu["build"]["target"], "gpu")
         self.assertEqual(gpu["environment"]["CFM_OCR_BACKEND"], "cuda")
+        self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_PAGES"], "4")
+        self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_TIMEOUT"], "300")
         self.assertEqual(gpu["volumes"], base["volumes"])
         self.assertEqual(gpu["mem_limit"], base["mem_limit"])
         self.assertEqual(gpu["deploy"]["resources"]["reservations"]["devices"][0]["driver"], "nvidia")

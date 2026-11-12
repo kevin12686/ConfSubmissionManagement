@@ -315,7 +315,8 @@ def worker_status(env, clients):
 
 
 def worker_fingerprint(env):
-    files = [ROOT / "Dockerfile.comparison-slave", ROOT / "requirements-slave-gpu.txt"]
+    files = [ROOT / name for name in ("Dockerfile.comparison-slave", "requirements-slave-gpu.txt",
+                                     "compose.comparison-slave.yml", "compose.comparison-slave.gpu.yml")]
     files += sorted((ROOT / "comparison_slave").glob("*.py"))
     services = ROOT / "submissions/services"
     files += [services / name for name in ("comparison_protocol.py", "pdf_comparison_worker.py",
@@ -327,6 +328,14 @@ def worker_fingerprint(env):
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return {"version": 1, "project": env.get("CFM_SLAVE_PROJECT_NAME"),
             "backend": env.get("CFM_DEPLOY_WORKER_BACKEND"), "fingerprint": digest.hexdigest()}
+
+
+def worker_model_options(env):
+    # Resolve the actual Compose values, including defaults edited in Compose.
+    # Do not save new credentials/configuration before provisioning succeeds.
+    with docker.temporary_env_file(env.values) as path:
+        config, _, _ = slave.configuration(path, gpu=env.get("CFM_DEPLOY_WORKER_BACKEND") == "cuda")
+    return slave.model_options(config)
 
 
 def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, exports=None):
@@ -352,8 +361,9 @@ def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, 
     marker = read_file(marker_path)
     needs_update = marker is None or json_object(marker) != expected_marker
     changed = clients != original_clients or env.original is None or needs_update
+    models = worker_model_options(env)
     if dry_run:
-        deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=True)
+        deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=True, **models)
         action = "create/update required" if changed or force else "reuse if healthy; apply checks live status"
         print(f"Shared {env.get('CFM_DEPLOY_WORKER_BACKEND')} worker {env.get('CFM_SLAVE_PROJECT_NAME')}: {action}.")
         print(f"  {len(additions)} selected conference namespace(s); existing credentials retained. Any worker restart affects all clients on this shared worker.")
@@ -361,7 +371,7 @@ def ensure_worker(env, additions, *, offline=False, dry_run=False, force=False, 
     state = worker_status(env, original_clients)
     if state == "busy" and (changed or force):
         raise DeployError("Worker is busy across its namespaces; retry during maintenance with no new uploads. No worker config was changed.")
-    deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=False)
+    deployment_provision.provision_models(configured_path(env, "CFM_SLAVE_MODEL_DIR"), offline=offline, dry_run=False, **models)
     changes = {env.path: env.bytes()}
     if clients != original_clients or read_file(path) is None:
         changes[path] = (json.dumps(clients, indent=2) + "\n").encode()

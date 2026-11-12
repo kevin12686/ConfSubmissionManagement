@@ -147,6 +147,23 @@ class Ledger:
             db.execute("UPDATE jobs SET state='failed', error='interrupted', input=NULL, output=NULL, "
                        "reserved=0, updated=? WHERE state='running'", (time.time(),))
 
+    def invalidate_runtime(self, contract, runtime):
+        """Completed caches from another verified runtime are explicit retries."""
+        with self.transaction() as db:
+            rows = db.execute("SELECT namespace,key,output FROM jobs WHERE state='completed' AND contract=?",
+                              (contract,)).fetchall()
+            for row in rows:
+                try:
+                    previous = json.loads(row["output"])["runtime"]
+                except (ValueError, TypeError, KeyError):
+                    previous = None
+                if previous == runtime:
+                    continue
+                db.execute("UPDATE jobs SET state='failed',error='configuration_changed',output=NULL,reserved=0,"
+                           "attempts=0,updated=? WHERE namespace=? AND key=? AND state='completed'",
+                           (time.time(), row["namespace"], row["key"]))
+                self._event(db, row["namespace"], row["key"], "runtime_changed")
+
     def prune(self):
         with self.transaction() as db:
             db.execute("DELETE FROM jobs WHERE state != 'running' AND created < ?", (time.time() - self.ttl,))

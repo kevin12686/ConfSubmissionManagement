@@ -96,8 +96,8 @@ server {
         # This directive accepts k/m size suffixes, not g.
         proxy_max_temp_file_size 10240m;
         proxy_intercept_errors on;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        proxy_read_timeout 360s;
+        proxy_send_timeout 360s;
 
         # Preserve the browser-visible port so Django's same-origin CSRF check
         # compares against the actual public endpoint (for example :9000).

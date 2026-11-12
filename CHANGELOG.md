@@ -3,6 +3,25 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.30.0 - Unreleased
+
+- Run CUDA recognition argmax/max on the GPU with one bounded shared reduction
+  session, retaining the original CTC decoder and exceptional NumPy behavior.
+  Dynamically dispatch pages to independent engines and restore original page
+  order; any page failure rejects the whole document.
+- Configure OCR page concurrency, independent Small/Medium detector/recognizer
+  selection and timeout through worker Compose/environment. Defaults are GPU
+  4/Small/Small and CPU 1/Small/Small, both 300 seconds at unchanged 300 DPI and
+  batch 6. CPU's default sequential inference remains unchanged.
+- Provision only selected checksum-pinned models during unified deployment;
+  include Compose changes in deployment detection and execution settings in
+  cache identity. Runtime changes require explicit retry of obsolete worker
+  results, not reuse under a different model. Watchdogs follow the OCR budget.
+- Retry runtime-cache invalidation after a transient ledger failure; readiness
+  stays unavailable until the invalidation succeeds.
+- No publication selection, revision/snapshot binding, comparison rules, review
+  reset or readiness changes. No database migration; State archive remains v8.
+
 ## 1.29.4 - Unreleased
 
 - Share one current region connection between the comparison line, focus controls

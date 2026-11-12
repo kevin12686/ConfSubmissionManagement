@@ -6,6 +6,9 @@ The production integration uses temporary comparison method **8**, introduced in
 app **1.29.0** with inspectable same-letter diacritic tolerance. Apps **1.29.1**
 through **1.29.4** improve inspection layout and display-only detail rendering without
 changing that method or signed snapshots.
+App **1.30.0** adds configurable execution and CUDA optimizations, not a new
+comparison method. The compute contract changes with the implementation;
+update workers and CFM together. State archive v8 is unchanged.
 This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
 they must not be relabeled or reused as method-8 results. Historical method
@@ -58,7 +61,8 @@ bounds must be enforced and validated at the parent boundary. A usable bounded
 result with unresolved ranges instead reports its limitations.
 
 Local inference requires RapidOCR 3.10.0, ONNX Runtime 1.31.1 and the approved
-PP-OCRv6 small detection/recognition models. Provision with
+PP-OCRv6 Small (default) or independently selected Medium detection/recognition
+models, each checksum-pinned. Provision the selected pair with
 `prepare_rapidocr_models --source ... --destination ...` into the default
 `BASE_DIR/runtime/rapidocr-models` directory. Existing Compose's `.:/app` mount
 exposes this default in Docker without another mount or environment setting.
@@ -200,7 +204,9 @@ schema change is needed for this orchestration/presentation metadata.
 The API uses short job/status requests. The existing CFM build request polls
 for at most 240 seconds; a still-running/queued job returns the existing Retry
 workflow. Retrying retrieves that job, not another upload. The per-job OCR
-wall budget remains 240 seconds, separately from waiting in the queue. This
+wall budget defaults to 300 seconds, configurable with `CFM_RAPIDOCR_TIMEOUT`
+(30-3600), separately from waiting in the queue. The supervisor/watchdog use
+that budget plus 30 seconds, not an independent hard-coded deadline. This
 does not promise every cold PDF pair will finish. No new browser background
 timer or conference workflow writes are introduced.
 
@@ -215,7 +221,12 @@ fresh execution still validate installed models and runtime. Previously
 completed jobs are immutable bounded-lived evidence, like completed CFM
 inspection snapshots, not a new OCR run. Retrieval still requires a ready,
 compatible worker runtime; changed or unavailable models/providers do not
-silently serve previously computed evidence.
+silently serve previously computed evidence. After successful preflight, completed
+worker cache records from a different runtime become explicit failed/retry records.
+They are never relabeled with the new runtime or recomputed without a retry.
+If invalidation fails, readiness and the uncommitted runtime identity are cleared;
+the next successful preflight must retry invalidation before serving evidence.
+Existing signed inspection snapshots retain their original file/result binding.
 
 Bearer tokens require a trusted isolated LAN or TLS; the worker is not a
 hardened public internet service. A protected HTTPS gateway can front its private
@@ -248,9 +259,37 @@ processing bound, not the saved page-image resolution.
 quality. The default is four (or fewer when fewer CPUs are visible); an explicit
 value must be an integer from 1 through 8 and cannot exceed the runtime-visible
 CPU count. Invalid settings fail rather than silently selecting another mode.
-Inter-operation parallelism remains one. The parent wall limit is still 240
-seconds. CPU time accumulates across threads, so its separate finite allowance
-is 8 * 240 = 1920 CPU seconds, with a 20-second hard-limit margin. Linux retains
+
+`CFM_RAPIDOCR_PAGES` permits 1-8 concurrent pages (CPU default 1, CUDA default 4).
+One independent OCR engine owns each lane; a completed lane takes the next page.
+Rendering/native geometry stay on the caller thread, with at most the configured
+number of pages in flight. Results are restored to document-local page order;
+no failed/missing page can become a partial successful document. CPU at one page
+keeps its original sequential recognition/NumPy decoder. Explicit CPU concurrency
+is supported but can oversubscribe CPU threads or exceed the existing RAM bound.
+
+CUDA binds recognition logits on-device and transfers only argmax indices and
+maxima to the unchanged RapidOCR CTC decoder. A separate weight-free graph,
+first-index tie semantics and TF32 disabled preserve normal FP32 behavior.
+NaN/Inf inputs and zero/subnormal maxima use the original full-tensor NumPy
+path to preserve exceptional semantics. One shared 1.5-GiB-bounded reduction
+arena avoids allocating that pool per page; detector/recognizer allocations are
+additional. Default synchronous Run completion is retained. There is no FP16,
+quantization, OCR fallback, native-text correction or altered comparison policy.
+
+`CFM_RAPIDOCR_DET_MODEL` and `CFM_RAPIDOCR_REC_MODEL` each accept `small` or
+`medium`. Selected hashes and page concurrency join the runtime fingerprint;
+timeout is an execution budget and does not invalidate already complete evidence.
+The transport contract describes the full supported model catalog so a CPU Small
+worker and GPU Medium worker can serve the same CFM checkout without pretending
+their OCR/cache identities are interchangeable. Config/model errors fail closed.
+Inter-operation parallelism remains one. The OCR parent wall limit follows
+`CFM_RAPIDOCR_TIMEOUT` (300 seconds by default). CPU time accumulates across
+threads and lanes, so its separate finite allowance is
+`8 * CFM_RAPIDOCR_PAGES * CFM_RAPIDOCR_TIMEOUT` CPU seconds, with a 20-second
+hard-limit margin. The service supervisor allows another 30 wall-clock seconds
+for its isolated subprocess; the CFM service polling window remains separate.
+Linux retains
 the 6 GiB address-space bound for CPU execution. CUDA requires a finite container
 memory limit instead because CUDA reserves large virtual address ranges; the
 worker validates that prerequisite. More threads do not guarantee faster completion;

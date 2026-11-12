@@ -21,7 +21,7 @@ from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
 
 def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False):
     from .rapidocr_comparison.result import VERSION, validate_result
-    from .rapidocr_comparison.runtime import WALL_SECONDS
+    from .rapidocr_comparison.config import timeout_seconds
 
     if diagnostics is not None:
         diagnostics.update({"transport": "embedded", "backend": os.environ.get("CFM_OCR_BACKEND", "cpu")})
@@ -34,6 +34,7 @@ def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False):
     if not Path(executable).is_absolute():
         raise PDFComparisonError("Comparison unavailable: CFM_RAPIDOCR_PYTHON must be an absolute executable path.")
     try:
+        wall_seconds = timeout_seconds()
         with comparison_cache_job(before, after) as job:
             result = None
             try:
@@ -45,7 +46,7 @@ def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False):
                 with tempfile.TemporaryFile() as stderr:
                     response = subprocess.run(
                         command, input=struct.pack(">QQ", len(before), len(after)) + before + after,
-                        stdout=subprocess.PIPE, stderr=stderr, timeout=WALL_SECONDS, check=True,
+                        stdout=subprocess.PIPE, stderr=stderr, timeout=wall_seconds, check=True,
                         env=environment,
                     )
                 if len(response.stdout) > 8 * 1024 * 1024:
@@ -80,6 +81,6 @@ def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False):
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError) as exc:
         raise PDFComparisonError(
-            "Comparison unavailable: OCR failed, exceeded its 240-second runtime or input limits, "
+            "Comparison unavailable: OCR failed, exceeded its configured runtime or input limits, "
             "or returned invalid evidence. No complete comparison is available; review both PDFs manually."
         ) from exc

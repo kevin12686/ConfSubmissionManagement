@@ -71,10 +71,11 @@ class Service:
             raise
 
     def close(self):
+        from submissions.services.rapidocr_comparison.config import supervisor_seconds
         self.stop.set()
         self.wake.set()
         if self.thread:
-            self.thread.join(timeout=280)
+            self.thread.join(timeout=supervisor_seconds() + 10)
             if self.thread.is_alive():
                 raise RuntimeError("Comparison scheduler did not stop")
         if self.guard:
@@ -82,6 +83,7 @@ class Service:
             self.guard = None
 
     def run_process(self, mode, namespace, body=None):
+        from submissions.services.rapidocr_comparison.config import supervisor_seconds
         directory = namespace_path(self.root, namespace)
         environment = os.environ.copy()
         environment.pop("DJANGO_SETTINGS_MODULE", None)
@@ -99,7 +101,7 @@ class Service:
                                      start_new_session=True, pass_fds=(self.guard.fileno(),))
             try:
                 try:
-                    child.wait(timeout=60 if mode == "preflight" else 270)
+                    child.wait(timeout=60 if mode == "preflight" else supervisor_seconds())
                 except subprocess.TimeoutExpired:
                     logger.warning("comparison_slave subprocess_timeout mode=%s namespace=%s", mode, namespace)
                     raise
@@ -193,14 +195,18 @@ class Service:
             self.probe_requested.clear()
             self.ready = False
             try:
+                previous_runtime = self.runtime
                 payload = self.process("preflight", next(iter(self.clients)))
                 self.ready = (payload.get("contract") == comparison_protocol.contract_id()
                               and payload.get("backend") == self.backend
                               and isinstance(payload.get("runtime"), str)
                               and bool(HEX.fullmatch(payload["runtime"])))
                 self.runtime = payload.get("runtime") if self.ready else None
+                if self.ready and self.runtime != previous_runtime:
+                    self.ledger.invalidate_runtime(comparison_protocol.contract_id(), self.runtime)
             except Exception as exc:
                 self.ready = False
+                self.runtime = None
                 logger.warning("comparison_slave preflight_exception type=%s", type(exc).__name__)
             self.health_error = "" if self.ready else "configuration_unavailable"
             if not self.ready:

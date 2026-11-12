@@ -9,6 +9,11 @@ and rechecks current scope, file hashes and upload revision before retaining a
 comparison. Cache hits, completed jobs, failover or GPU execution never bypass
 these rules. Missing selected Corrected files still block rather than falling
 back. Worker failure is not proof of unchanged content or publication approval.
+Configurable OCR concurrency, Small/Medium model selection and execution timeout
+remain inside this advisory boundary. CUDA reduction/dynamic dispatch cannot
+change snapshot selection, revision binding, comparison tolerances or readiness.
+Model/runtime changes invalidate compute cache, never modify publication files
+or reset/approve editorial reviews. State archive remains v8.
 
 This document is the canonical description of publication-facing behavior.
 Operator and developer documentation may summarize these rules, but changes to

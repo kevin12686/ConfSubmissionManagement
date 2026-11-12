@@ -39,6 +39,8 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.enterContext(patch.object(deploy, "ROOT", self.root))
         self.provision = self.enterContext(patch.object(deploy.deployment_provision, "provision_models"))
+        self.model_options = self.enterContext(patch.object(deploy, "worker_model_options", return_value={
+            "det_model": "small", "rec_model": "small"}))
         self.status = self.enterContext(patch.object(deploy, "worker_status", return_value="absent"))
         self.launch = self.enterContext(patch.object(deploy.slave, "deploy"))
         self.fingerprint = self.enterContext(patch.object(deploy, "worker_fingerprint", side_effect=lambda env: {

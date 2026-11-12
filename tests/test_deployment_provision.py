@@ -37,7 +37,7 @@ class ModelProvisionTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.directory = self.root / "models"
-        self.payloads = {name: ("test model " + name).encode() for name in provision.MODEL_URLS}
+        self.payloads = {name: ("test model " + name).encode() for name in provision.MODEL_URLS if "_small." in name}
         self.hashes = {name: hashlib.sha256(body).hexdigest() for name, body in self.payloads.items()}
         self.names = list(self.payloads)
         self.enterContext(patch.object(provision, "_model_hashes", return_value=self.hashes))
@@ -321,6 +321,15 @@ class ModelProvisionTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_every_small_medium_combination_is_pinned_and_independent(self):
+        for det in ("small", "medium"):
+            for rec in ("small", "medium"):
+                hashes = provision._model_hashes(det, rec)
+                self.assertEqual(set(hashes), {f"PP-OCRv6_det_{det}.onnx", f"PP-OCRv6_rec_{rec}.onnx"})
+                self.assertTrue(all(len(value) == 64 for value in hashes.values()))
+        with self.assertRaises(provision.ProvisionError):
+            provision._model_hashes("tiny", "small")
+
     def test_real_policy_read_without_native_imports(self):
         result = subprocess.run([sys.executable, "-S", "-c",
             "from scripts.deployment_provision import _model_hashes; import sys; "
