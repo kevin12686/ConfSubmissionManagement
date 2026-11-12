@@ -21,8 +21,11 @@ def integer_setting(name, default, minimum, maximum):
 
 
 def parallel_pages():
-    return integer_setting(PAGE_ENV, 4 if os.environ.get("CFM_OCR_BACKEND", "cpu") == "cuda" else 1,
-                           1, MAX_PARALLEL_PAGES)
+    # CFM_SLAVE_ROOT also identifies standalone workers in the cache runtime.
+    # Embedded/native execution retains its single-page default.
+    default = 4 if os.environ.get("CFM_OCR_BACKEND", "cpu") == "cuda" else (
+        2 if os.environ.get("CFM_SLAVE_ROOT") else 1)
+    return integer_setting(PAGE_ENV, default, 1, MAX_PARALLEL_PAGES)
 
 
 def model_size(kind):

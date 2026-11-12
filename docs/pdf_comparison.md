@@ -7,7 +7,9 @@ app **1.29.0** with inspectable same-letter diacritic tolerance. Apps **1.29.1**
 through **1.29.4** improve inspection layout and display-only detail rendering without
 changing that method or signed snapshots.
 App **1.30.0** adds configurable execution and CUDA optimizations, not a new
-comparison method. The compute contract changes with the implementation;
+comparison method. App **1.30.1** changes only standalone CPU's omitted page
+setting to two; explicit settings, native/embedded CPU and CUDA defaults stay
+unchanged. The compute contract changes with the implementation;
 update workers and CFM together. State archive v8 is unchanged.
 This is the canonical engine/UI contract, not a test report or
 release acceptance record. Method-7 and older signed results must be rebuilt;
@@ -260,13 +262,16 @@ quality. The default is four (or fewer when fewer CPUs are visible); an explicit
 value must be an integer from 1 through 8 and cannot exceed the runtime-visible
 CPU count. Invalid settings fail rather than silently selecting another mode.
 
-`CFM_RAPIDOCR_PAGES` permits 1-8 concurrent pages (CPU default 1, CUDA default 4).
+`CFM_RAPIDOCR_PAGES` permits 1-8 concurrent pages (standalone CPU default 2,
+native/embedded CPU default 1, CUDA default 4). Existing explicit values are
+preserved; ONNX defaults to four threads per engine within visible CPU capacity.
 One independent OCR engine owns each lane; a completed lane takes the next page.
 Rendering/native geometry stay on the caller thread, with at most the configured
 number of pages in flight. Results are restored to document-local page order;
 no failed/missing page can become a partial successful document. CPU at one page
-keeps its original sequential recognition/NumPy decoder. Explicit CPU concurrency
-is supported but can oversubscribe CPU threads or exceed the existing RAM bound.
+keeps its original sequential recognition/NumPy decoder. CPU concurrency can
+oversubscribe CPU threads or exceed the existing RAM bound; it does not enable
+the CUDA reduction adapter.
 
 CUDA binds recognition logits on-device and transfers only argmax indices and
 maxima to the unchanged RapidOCR CTC decoder. A separate weight-free graph,

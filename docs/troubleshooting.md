@@ -32,6 +32,14 @@ its old address and the deployer will not guess a new health-check target.
 Launchers now reject missing prerequisites before migrating the conference or
 opening its browser page. Do not remove `data/` or bypass the checker.
 
+Standalone CPU workers default to two concurrent pages/four threads each. An
+existing explicit `CFM_RAPIDOCR_PAGES=1` or thread value is retained, not silently
+retuned. Native/embedded CPU still defaults to one page; CUDA stays at four.
+Two CPU engines need more RAM; higher page counts may fail the unchanged memory
+bound. Reduce concurrency deliberately if necessary, not DPI/model quality, and
+never accept partial evidence as success. Update CFM and workers from the same
+checkout so their compute contracts agree.
+
 - Native: use Python 3.12+, repair only a broken `.venv`, install requirements,
   and provision the two pinned OCR models using the Developer Guide. Run
   `.venv/bin/python scripts/check_comparison_runtime.py` to check independently.

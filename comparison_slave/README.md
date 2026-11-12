@@ -52,8 +52,12 @@ model/provider validation is never bypassed and models are never downloaded.
 
 Required environment:
 
-OCR execution defaults: CPU one concurrent page, CUDA four, Small detector and
-Small recognizer, 300-second per-pair timeout. `CFM_RAPIDOCR_PAGES` (1-8),
+OCR execution defaults: CPU two concurrent pages, CUDA four, four threads per
+page, Small detector and Small recognizer, 300-second per-pair timeout.
+Existing explicit page/thread
+settings are retained; native/embedded CPU still defaults to one page.
+Update CFM and workers together to retain compute-contract compatibility.
+`CFM_RAPIDOCR_PAGES` (1-8),
 `CFM_RAPIDOCR_DET_MODEL` / `CFM_RAPIDOCR_REC_MODEL` (small/medium), and
 `CFM_RAPIDOCR_TIMEOUT` (30-3600) are passed by worker Compose. Configure them in
 the worker env/Compose, not per-conference service clients. See

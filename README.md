@@ -87,9 +87,11 @@ errors retain safe HTTP/Cloudflare codes instead of suggesting every rejection
 is a bad token.
 Worker Compose settings support independent Small/Medium detection and
 recognition models, bounded concurrent pages and a configurable OCR timeout.
-Defaults are CPU one page and GPU four pages, both Small/Small and 300 seconds.
-GPU uses exact CTC reduction and dynamic page dispatch; CPU keeps sequential
-inference by default. Both retain 300 DPI and batch 6. See
+Standalone workers default to CPU two pages and GPU four pages, with four
+threads per page, Small/Small and 300 seconds. Native/embedded CPU stays at one
+page. Explicit existing page/thread settings are preserved. GPU uses exact CTC
+reduction; both workers use bounded dynamic dispatch at unchanged 300 DPI and
+batch 6. Update CFM and workers together for the shared compute contract. See
 [Worker OCR Settings](docs/docker_guide.md#worker-ocr-settings) before tuning memory
 or switching models. A worker invalidates completed cache from its previous
 model/runtime; existing cross-worker cache discovery may still reuse valid

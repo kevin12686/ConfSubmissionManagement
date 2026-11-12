@@ -734,10 +734,13 @@ Clear Database clears this CFM's receipts/cache, not the shared service's other
 clients. See [service contract](pdf_comparison.md#shared-comparison-service).
 
 Comparison worker tuning belongs to deployment, not the paper's Formatting
-Review. Defaults are GPU four concurrent pages, CPU one, Small detector/recognizer
+Review. Standalone defaults are GPU four concurrent pages, CPU two, four threads
+per page, Small detector/recognizer
 and 300-second OCR work. Small/Medium models can be selected independently in
 worker Compose/env; see [Worker OCR Settings](docker_guide.md#worker-ocr-settings).
-CPU's default remains sequential. Model/concurrency changes invalidate the old
+Native/embedded CPU remains single-page. Existing explicit page/thread settings
+are retained, including one-page workers. Update CFM and workers together for
+compute-contract compatibility. Model/concurrency changes invalidate the old
 worker runtime cache and require Retry, not reuse as the new model. No setting
 changes publication files, version selection, Title/Author extraction or Review OK.
 

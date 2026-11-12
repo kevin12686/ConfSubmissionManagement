@@ -334,6 +334,10 @@ Reuse requires exact PDF hashes and the validated engine/model/runtime; cached
 results still pass all live file, scope and upload-revision checks. Cache failure
 can require fresh OCR or leave comparison unavailable, not approve publication.
 No source, review, exception or readiness rule changes through reuse.
+Standalone CPU workers default to two concurrent pages/four threads per page;
+GPU remains four pages and native/embedded CPU one. These deployment defaults
+change scheduling only, not publication selection or OCR comparison tolerances.
+Existing explicit settings remain authoritative.
 
 The approved broad policy tolerates complete local differences covered by 38
 direct visual groups, same-base/same-case letter diacritics and existing whitespace rules. Raw OCR, locations, rule

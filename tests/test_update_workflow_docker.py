@@ -45,7 +45,8 @@ class UpdateDockerAcceptance(unittest.TestCase):
             worker_env.parent.mkdir(parents=True, mode=0o700)
             worker_values = {"CFM_SLAVE_PROJECT_NAME": worker_project, "CFM_COMPARISON_NETWORK": network,
                 "CFM_SLAVE_BIND_HOST": "127.0.0.1", "CFM_SLAVE_PORT": str(ports[0]),
-                "CFM_SLAVE_MODEL_DIR": str(models), "CFM_SLAVE_MEMORY_LIMIT": "8g", "CFM_RAPIDOCR_THREADS": "2"}
+                "CFM_SLAVE_MODEL_DIR": str(models), "CFM_SLAVE_MEMORY_LIMIT": "8g",
+                "CFM_RAPIDOCR_THREADS": "2", "CFM_RAPIDOCR_PAGES": "1"}
             worker_env.write_text("".join(tools.format_env_line(k, v) for k, v in worker_values.items()))
             worker_env.chmod(0o600)
             envs = []
@@ -96,6 +97,7 @@ class UpdateDockerAcceptance(unittest.TestCase):
                 before = [snapshot(i) for i in range(2)]
                 env_before = [p.read_bytes() for p in envs]
                 worker_before = (worker_env.parent / "clients.json").read_bytes()
+                worker_env_before = worker_env.read_bytes()
                 for entry in (["scripts/update_docker_instances.py"], ["scripts/deploy.py", "update"]):
                     preview = run([sys.executable, *entry, "--dry-run"])
                     for project in projects:
@@ -113,6 +115,7 @@ class UpdateDockerAcceptance(unittest.TestCase):
                 self.assertEqual([snapshot(i) for i in range(2)], before)
                 self.assertEqual([p.read_bytes() for p in envs], env_before)
                 self.assertEqual((worker_env.parent / "clients.json").read_bytes(), worker_before)
+                self.assertEqual(worker_env.read_bytes(), worker_env_before)
                 # A minimal legacy env must not rotate the live signing key or
                 # discard the worker token when the updater fills prerequisites.
                 retained = deploy.EnvFile(envs[0]).values
@@ -125,6 +128,11 @@ class UpdateDockerAcceptance(unittest.TestCase):
                     self.assertEqual(restored[key], retained[key])
                 self.assertEqual([snapshot(i) for i in range(2)], before)
                 self.assertEqual((worker_env.parent / "clients.json").read_bytes(), worker_before)
+                self.assertEqual(worker_env.read_bytes(), worker_env_before)
+                worker_settings = run(["docker", "compose", "--env-file", str(worker_env),
+                    "-f", "compose.comparison-slave.yml", "-p", worker_project, "exec", "-T",
+                    "comparison-slave", "python", "-c", "import os; print(os.environ['CFM_RAPIDOCR_PAGES'], os.environ['CFM_RAPIDOCR_THREADS'])"])
+                self.assertEqual(worker_settings.strip(), "1 2")
                 print("Isolated updater acceptance: 2 conferences, shared CPU worker, both entrypoints, selected scope, env/token, database/review state and Original/Corrected bytes preserved.")
             finally:
                 for index in range(2):

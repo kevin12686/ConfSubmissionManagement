@@ -3,6 +3,16 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.30.1 - Unreleased
+
+- Default standalone CPU comparison workers to two concurrent pages with four
+  threads per engine. Preserve explicit existing settings, embedded CPU's
+  one-page default and CUDA's four-page default. Models, DPI, batch, timeouts,
+  comparison rules and publication/version binding remain unchanged.
+- Verify deployment/updater preservation of one-page/two-thread workers. CFM
+  and workers must be updated together for the shared compute contract.
+- Keep State archive version 8: no schema or archive format changes.
+
 ## 1.30.0 - Unreleased
 
 - Run CUDA recognition argmax/max on the GPU with one bounded shared reduction

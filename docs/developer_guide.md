@@ -119,8 +119,10 @@ the original CTC decoder. Do not rewrite model weights or relax exceptional
 NaN/Inf/signed-zero behavior to pass parity tests. Validate unrounded FP32 maxima,
 indices, decoded words and boxes on the actual GPU. `scheduling.py` owns bounded
 dynamic dispatch; PyMuPDF must never run on OCR threads. Test out-of-order
-completion, render/page failure, work bounds and executor cleanup. CPU's default
-single-page path must never install the CUDA adapter. Model/concurrency changes
+completion, render/page failure, work bounds and executor cleanup. Standalone
+CPU defaults to two pages/four threads per page; native/embedded CPU defaults to
+one page. All CPU paths must avoid the CUDA adapter. Preserve explicit existing
+page/thread settings through both updater entrypoints. Model/concurrency changes
 invalidate runtime-bound caches, not publication files or review state.
 
 ## Shared Compute Development

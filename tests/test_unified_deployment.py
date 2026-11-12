@@ -151,6 +151,21 @@ class UnifiedDeploymentTests(unittest.TestCase):
         self.assertFalse((self.root / "runtime/comparison-slave/enrollments").exists())
         self.assertEqual(self.conference(deploy.BOOTSTRAP), 1)
 
+    def test_worker_update_preserves_explicit_ocr_settings_and_credentials(self):
+        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        path = self.root / "runtime/comparison-slave/worker.env"
+        values = {"CFM_RAPIDOCR_PAGES": "1", "CFM_RAPIDOCR_THREADS": "2"}
+        env = deploy.EnvFile(path)
+        path.write_text("".join(deploy.docker.format_env_line(key, value)
+            for key, value in {**env.values, **values}.items()))
+        original, clients = path.read_bytes(), self.clients()
+        self.status.return_value = "ready"
+        self.assertEqual(self.worker("--client", "conf-a"), 0)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(self.clients(), clients)
+        for key, value in values.items():
+            self.assertEqual(deploy.EnvFile(path).get(key), value)
+
     def test_wildcard_bind_requires_explicit_advertised_endpoint(self):
         self.assertEqual(self.worker("--bind-host", "0.0.0.0", "--client", "conf-a"), 1)
         self.assertFalse((self.root / "runtime/comparison-slave/worker.env").exists())

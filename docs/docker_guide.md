@@ -547,7 +547,8 @@ deployer uses that same resolved model selection when provisioning.
 
 | Worker setting | CPU default | GPU default | Allowed |
 | --- | --- | --- | --- |
-| `CFM_RAPIDOCR_PAGES` | 1 | 4 | 1-8 concurrent pages |
+| `CFM_RAPIDOCR_PAGES` | 2 | 4 | 1-8 concurrent pages |
+| `CFM_RAPIDOCR_THREADS` | 4 | 4 | 1-8 per engine, within visible CPUs |
 | `CFM_RAPIDOCR_DET_MODEL` | small | small | small / medium |
 | `CFM_RAPIDOCR_REC_MODEL` | small | small | small / medium |
 | `CFM_RAPIDOCR_TIMEOUT` | 300 | 300 | 30-3600 seconds per pair |
@@ -563,6 +564,11 @@ CFM_RAPIDOCR_TIMEOUT: ${CFM_RAPIDOCR_TIMEOUT:-300}
 ```
 
 Existing values in the selected worker environment file override these defaults.
+An explicit `PAGES=1` or `THREADS=2` is not rewritten by deployment/update.
+Only omitted page settings use the new CPU default; no automatic retuning occurs.
+Native/embedded CPU retains its one-page default. Update CFM and all workers
+together because execution-code changes update the shared compute contract,
+even when the GPU's default settings stay unchanged.
 Do not set `PAGES=1` in a shared example when you intend GPU's default four.
 Then preview/apply using the same worker project, client registration and
 deployment command previously used (`deploy.py worker`, with `--gpu` for CUDA).
@@ -572,9 +578,12 @@ requires the selected files already present. Lower-level startup never downloads
 it validates the selected runtime before replacing the worker. Allow jobs to finish
 before recreation. Conference publication files, DBs and review flags are untouched.
 
-GPU combines dynamic page dispatch with on-device CTC reduction. CPU at default
-one page retains sequential inference; explicit CPU concurrency is possible but
-must be tested against available RAM and `PAGES * THREADS` oversubscription.
+GPU combines dynamic page dispatch with on-device CTC reduction. CPU defaults to
+two independent engines/four threads each; an explicit one-page setting retains
+sequential inference. Check available RAM and `PAGES * THREADS` oversubscription.
+Two pages use more RAM than one. Four concurrent CPU pages failed under the
+unchanged 6-GiB address-space bound in measured acceptance; do not assume more
+pages will be faster or fit. No automatic memory-limit increase is introduced.
 Medium models/concurrent pages can need much more RAM/VRAM. Four Small/Small pages
 used about 11.8 GiB VRAM on the tested 16-GiB card; this is not a universal memory
 guarantee. Do not assume four Medium pages fit. OOM/timeout means unavailable,

@@ -339,6 +339,20 @@ class DeploymentUpdaterTests(SimpleTestCase):
 
 @skipUnless(shutil.which("docker"), "Docker CLI required for read-only Compose config validation")
 class DeploymentConfigTests(SimpleTestCase):
+    def test_explicit_legacy_worker_pages_and_threads_override_new_defaults(self):
+        from scripts import docker_instance_tools as helpers
+        from scripts.start_comparison_slave import configuration
+        values = {"CFM_RAPIDOCR_PAGES": "1", "CFM_RAPIDOCR_THREADS": "2"}
+        with helpers.temporary_env_file(values) as path:
+            original = path.read_bytes()
+            for gpu in (False, True):
+                with patch.dict(os.environ, {"CFM_RAPIDOCR_PAGES": "8", "CFM_RAPIDOCR_THREADS": "8"}):
+                    config, _, _ = configuration(path, gpu=gpu)
+                env = config["services"]["comparison-slave"]["environment"]
+                for name, value in values.items():
+                    self.assertEqual(env[name], value)
+            self.assertEqual(path.read_bytes(), original)
+
     def test_worker_compose_accepts_independent_ocr_overrides_on_both_backends(self):
         from scripts import docker_instance_tools as helpers
         from scripts.start_comparison_slave import model_options
@@ -366,7 +380,8 @@ class DeploymentConfigTests(SimpleTestCase):
         service = config["services"]["comparison-slave"]
         self.assertEqual(service["build"]["target"], "cpu")
         self.assertEqual(service["environment"]["CFM_OCR_BACKEND"], "cpu")
-        self.assertEqual(service["environment"]["CFM_RAPIDOCR_PAGES"], "1")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_PAGES"], "2")
+        self.assertEqual(service["environment"]["CFM_RAPIDOCR_THREADS"], "4")
         self.assertEqual(service["environment"]["CFM_RAPIDOCR_DET_MODEL"], "small")
         self.assertEqual(service["environment"]["CFM_RAPIDOCR_REC_MODEL"], "small")
         self.assertEqual(service["environment"]["CFM_RAPIDOCR_TIMEOUT"], "300")
@@ -384,6 +399,7 @@ class DeploymentConfigTests(SimpleTestCase):
         self.assertEqual(gpu["build"]["target"], "gpu")
         self.assertEqual(gpu["environment"]["CFM_OCR_BACKEND"], "cuda")
         self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_PAGES"], "4")
+        self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_THREADS"], "4")
         self.assertEqual(gpu["environment"]["CFM_RAPIDOCR_TIMEOUT"], "300")
         self.assertEqual(gpu["volumes"], base["volumes"])
         self.assertEqual(gpu["mem_limit"], base["mem_limit"])

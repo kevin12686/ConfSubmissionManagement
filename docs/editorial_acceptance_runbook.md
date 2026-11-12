@@ -512,9 +512,12 @@ results before release; no fixture set provides a universal catch-all.
 
 ### Stage 8: Docker Proxy And Recovery
 
-For execution changes, verify CPU defaults 1/Small/Small/300 and CUDA defaults
+For execution changes, verify standalone CPU defaults 2/Small/Small/300 with
+four threads per page, native/embedded CPU default one page, and CUDA defaults
 4/Small/Small/300 in resolved Compose, plus explicit page/model/timeout overrides.
-Use isolated workers/data: compare fresh Small-model CPU sequential and CUDA
+Confirm both updater entrypoints preserve an explicit one-page/two-thread
+worker configuration and private credentials. Use isolated workers/data:
+compare fresh Small-model CPU default two-page output with CPU sequential and CUDA
 parallel outputs against frozen same-backend pre-change text, exact scores,
 segmentation and boxes. Check dynamic out-of-order completion and failure cleanup,
 GPU reduction ties/nonfinite/signed-zero boundaries, selected Medium models on

@@ -6,6 +6,58 @@ Use the [Docker Guide](docker_guide.md) for current commands, the
 checks, and [PDF Comparison](pdf_comparison.md) for the comparison contract.
 Historical counts and results below apply only to their labelled test round.
 
+## CPU Worker Defaults Acceptance (1.30.1 / Method 8)
+
+Standalone CPU defaults are now two pages/four threads per engine. Explicit
+settings are retained, native/embedded CPU remains single-page, and CUDA remains
+four pages. Models, 300 DPI, batch 6, comparison tolerances, execution deadlines,
+publication selection and review dependencies are unchanged. State archive v8
+is unchanged; deploy the same compute contract to CFM and workers together.
+
+- Native macOS: 1,013 Django tests passed. Standalone discovery ran 109 tests
+  with two opt-in skips; both opt-ins passed separately. All 123 JavaScript
+  tests and check/migration-drift/docs/compile/whitespace gates passed.
+- Isolated ARM64 Linux app Docker: 1,013 tests ran with eight platform skips
+  (read-only Compose checks run on the host). The real two-conference updater
+  exercised both entrypoints and preserved explicit one-page/two-thread worker
+  env bytes and the running container values, tokens, DB/review state and
+  Original/Corrected PDF bytes. The custom-header round-trip passed separately.
+- Native actual OCR: both supplied 12-page PDFs plus nine generated boundary
+  pages matched explicit sequential execution byte for byte, including raw
+  strings, exact scores, word boxes, native geometry and final comparisons.
+  Boundary pages include blank, rotated, two-column, added/deleted/modified
+  text and unequal document lengths. Linux Docker's same nine-page boundary
+  output also matched its own sequential baseline exactly. Neither comparison
+  used a result-cache hit; cross-platform floats are not presumed identical.
+- Linux ARM64's full-real-PDF sequential reference exceeded 300 seconds before
+  finishing the pair (the first 12-page document took about 312 seconds). It
+  was stopped and is **not** a passing full-pair parity or timeout result.
+  Native full-pair parity and Linux boundary parity must not be presented as
+  proof that every cold ARM64 comparison finishes inside the worker budget.
+- The actual default CPU service path passed preflight at two pages/four
+  threads, then returned explicit `comparison_failed` after 300.16 seconds for
+  that same real pair, with no result/partial success. This verifies the
+  unchanged parent timeout and failure boundary, **not** a successful full-pair
+  Docker comparison. No warm result-cache test is claimed for the failed pair.
+  The default does not guarantee every cold ARM64 document fits 300 seconds;
+  neither timeout nor recognition quality was changed to hide this limitation.
+
+The preceding isolated CPU study on 1.30.0 compared explicit one/two-page
+execution with the same fixed Small models, four threads and no cache hits.
+On Linux x86_64/i7-8700K limited to four physical cores/eight hardware threads,
+the 24-page pair took 129.67/128.43 seconds sequentially versus 106.55/105.78
+seconds with two pages (about 17.7% less elapsed time). Peak RSS rose from
+1.31 to 2.47 GiB under the unchanged 6-GiB address-space/memory limits. The
+M1 Pro study measured about 44.4% less elapsed time and RSS 2.44 to 4.14 GiB.
+All full outputs were identical to their same-platform baseline. These are
+throughput/identity measurements, not OCR accuracy or i7-4790 guarantees.
+Four concurrent CPU pages failed the unchanged memory bound; the default is
+not four and failures must never become partial success or a quality downgrade.
+
+Tests use disposable source/data/images only. Production conferences and GPU
+services are not restarted. GPU model residency/idle unloading is not implemented
+in this release; model processes still exit with each job.
+
 ## Execution Configuration Acceptance (1.30.0 / Method 8)
 
 - macOS: 1,010 Django tests passed. Standalone discovery: 108 tests passed with

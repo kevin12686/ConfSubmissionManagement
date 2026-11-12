@@ -47,6 +47,33 @@ class ExecutionConfigTests(SimpleTestCase):
                 with patch.dict(os.environ, {name: value}), self.assertRaises(ValueError):
                     config.model_size(kind)
 
+    def test_worker_defaults_and_explicit_page_thread_settings_are_preserved(self):
+        with patch.dict(os.environ, {"CFM_SLAVE_ROOT": "/worker-data"}):
+            self.assertEqual(config.parallel_pages(), 2)
+            with patch.object(os, "cpu_count", return_value=8):
+                self.assertEqual(runtime.ocr_thread_count(), 4)
+                with patch.dict(os.environ, {config.PAGE_ENV: "1", runtime.THREAD_ENV: "2"}):
+                    self.assertEqual(config.parallel_pages(), 1)
+                    self.assertEqual(runtime.ocr_thread_count(), 2)
+            with patch.dict(os.environ, {"CFM_OCR_BACKEND": "cuda"}):
+                self.assertEqual(config.parallel_pages(), 4)
+                with patch.dict(os.environ, {config.PAGE_ENV: "3"}):
+                    self.assertEqual(config.parallel_pages(), 3)
+            for invalid in ("", "0", "9", "1.5"):
+                with self.subTest(invalid=invalid), patch.dict(os.environ, {config.PAGE_ENV: invalid}), self.assertRaises(ValueError):
+                    config.parallel_pages()
+        self.assertEqual(config.parallel_pages(), 1)
+
+    def test_cpu_worker_defaults_to_two_independent_engines_without_cuda_adapter(self):
+        engines = [object(), object()]
+        with patch.dict(os.environ, {"CFM_SLAVE_ROOT": "/worker-data"}), patch.object(runtime, "_build_recognizer", side_effect=engines), patch.object(gpu, "ReductionPool") as reduction:
+            pool = runtime.build_recognizer()
+        self.assertEqual(pool.engines, engines)
+        reduction.assert_not_called()
+        with patch.dict(os.environ, {"CFM_SLAVE_ROOT": "/worker-data", config.PAGE_ENV: "1"}), patch.object(runtime, "_build_recognizer", return_value=engines[0]) as build:
+            self.assertIs(runtime.build_recognizer(), engines[0])
+        build.assert_called_once_with()
+
     def test_cpu_single_page_never_installs_gpu_adapter_or_pool(self):
         engine = object()
         with patch.object(runtime, "_build_recognizer", return_value=engine) as build, patch.object(gpu, "ReductionPool") as reduction:
@@ -93,7 +120,7 @@ class DynamicDispatchTests(SimpleTestCase):
                 RecognizerPool(engines)
 
     def test_out_of_order_completion_preserves_identity_and_one_call_per_engine(self):
-        for count in (1, 3, 4, 5, 8):
+        for count in (1, 2, 3, 4, 5, 8):
             finished, active = [], set()
             lock = threading.Lock()
             owner = threading.get_ident()

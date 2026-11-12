@@ -132,8 +132,9 @@ models from fixed HTTPS URLs and verifies the canonical pinned SHA256 policy
 before installing them. Existing invalid models are preserved and rejected,
 not silently replaced. Offline and dry-run never download. This is host
 deployment state, not a publication or extraction workflow.
-Execution policy is centralized in `rapidocr_comparison/config.py`. CPU defaults
-to one sequential page; CUDA defaults to four independent OCR lanes, dynamically
+Execution policy is centralized in `rapidocr_comparison/config.py`. Standalone
+CPU workers default to two independent OCR lanes, native/embedded CPU to one
+sequential page, and CUDA to four independent lanes, dynamically
 dispatched with bounded in-flight images and deterministic page-order assembly.
 CUDA recognition's weight-free shared reduction graph transfers indices/maxima
 to the unchanged CTC decoder, retaining original NumPy handling for exceptional
