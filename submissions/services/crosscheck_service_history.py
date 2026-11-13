@@ -16,6 +16,7 @@ from submissions.models import CrossCheckServiceAttempt, CrossCheckServiceJob, C
 from submissions.services.audit import audit_success
 from submissions.services.crosscheck import _crosscheck_batch_submission, _parse_percent, _sha256_path
 from submissions.services.crosscheck_client import read_service_secrets
+from submissions.services.crosscheck_presentation import batch_counts, batch_summary, item_category
 from submissions.services.workflow_evidence import final_submission_state_evidence, make_evidence_token
 
 ACTIVE_ATTEMPT_STATES = ("submitting", "uncertain", "running", "pending_download")
@@ -258,7 +259,6 @@ def batch_context(job):
     runs = list(job.attempts.prefetch_related("results__item"))
     items = list(job.items.prefetch_related("results__attempt"))
     active = next((run for run in runs if run.status in ACTIVE_ATTEMPT_STATES), None)
-    counts = {"total": len(items), "applied": 0, "ready": 0, "waiting": 0, "attention": 0}
     labels = {"prepared": "Awaiting upload" if job.status == "preview" else "Awaiting results",
               "downloaded": "Ready to apply", "applied": "Applied",
               "wait_timeout": "Awaiting report", "download_failed": "Download failed",
@@ -267,16 +267,11 @@ def batch_context(job):
     for item in items:
         item.report_result = next((result for result in item.results.all()
                                    if result.report_sha256 and result.report_sha256 == item.report_sha256), None)
-        if item.status == "applied":
-            category = "applied"
-        elif item.status == "downloaded" and item.report_result:
-            category = "ready"
-        elif item.status in {"prepared", "wait_timeout", "waiting", "unavailable", "download_failed"}:
-            category = "waiting"
-        else:
-            category = "attention"
-        counts[category] += 1
-        item.status_label = labels.get(item.status, item.status.replace("_", " ").capitalize())
+        category = item_category(item, bool(item.report_result))
+        item.status_label = (
+            "Result evidence missing" if item.status == "downloaded" and not item.report_result
+            else labels.get(item.status, item.status.replace("_", " ").capitalize())
+        )
         item.status_level = {"applied": "success", "ready": "primary", "waiting": "secondary", "attention": "warning"}[category]
     for run in runs:
         run.label = "Original upload" if run.number == 1 else f"Retry {run.number - 1}"
@@ -285,33 +280,17 @@ def batch_context(job):
             result.status_label = labels.get(result.status, result.status.replace("_", " ").capitalize())
     latest = next((run for run in reversed(runs) if run.remote_id), None)
     availability = latest.availability if latest else {}
-    display_status = batch_status_label(job, counts, active)
+    counts = batch_counts(items, lambda item: bool(item.report_result))
+    summary = batch_summary(job, counts, retained=sum(bool(item.report_result) for item in items),
+                            active=active, latest=runs[-1] if runs else None)
     return {"job": job, "items": items, "attempts": runs, "active_attempt": active,
-            "counts": counts, "display_status": display_status, "availability": availability,
+            "counts": counts, "batch_summary": summary, "display_status": summary["label"], "availability": availability,
             "is_running": bool(active), "poll_enabled": bool(active and active.status in {"running", "pending_download"}),
             "can_check": bool(active or latest), "can_apply": bool(counts["ready"]),
             "can_repreview": any(item.status in {"downloaded", "stale"} for item in items),
             "can_retry": bool(not active and availability.get("can_retry") and availability.get("remaining")),
             "retry_wait_minutes": latest.wait_minutes if latest else job.wait_minutes,
             "job_evidence_token": job_evidence_token(job)}
-
-
-def batch_status_label(job, counts, active):
-    if active:
-        display_status = "In progress" if active.status in {"running", "pending_download"} else "Connection needs confirmation"
-    elif job.status == "preview":
-        display_status = "Upload preview"
-    elif job.status == "cancelled":
-        display_status = "Cancelled"
-    elif counts["total"] and counts["applied"] == counts["total"]:
-        display_status = "Completed"
-    elif counts["ready"]:
-        display_status = "Results ready to review"
-    elif counts["attention"]:
-        display_status = "Needs attention"
-    else:
-        display_status = "Reports still missing"
-    return display_status
 
 
 def record_attempt_results(job, attempt, staged, rows):

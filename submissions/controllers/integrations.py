@@ -123,25 +123,22 @@ DEFAULT_FOLDER_SETTINGS = {
 }
 TEMP_PATH_PREFIXES = ("/var/", "/private/var/", "/tmp/", "/private/tmp/")
 def integration(request):
-    from submissions.models import CrossCheckServiceJob
     from submissions.application.pagination import paginate_worklist
-    from django.db.models import Count
-    from submissions.services.crosscheck_service_history import ACTIVE_ATTEMPT_STATES, batch_status_label
+    from submissions.application.selectors import crosscheck_batch_history
+    from submissions.services.crosscheck_service_history import ACTIVE_ATTEMPT_STATES
+    from submissions.services.crosscheck_presentation import batch_counts, batch_summary
     config = AppSetting.read()
     job_page = paginate_worklist(
-        request, CrossCheckServiceJob.objects.annotate(
-            item_count=Count("items"), applied_count=Count("items", filter=Q(items__status="applied")),
-            ready_count=Count("items", filter=Q(items__status="downloaded")),
-            waiting_count=Count("items", filter=Q(items__status__in=["prepared", "wait_timeout", "waiting", "unavailable", "download_failed"])),
-        ).prefetch_related("attempts").order_by("-created_at", "pk"),
+        request, crosscheck_batch_history(),
         scroll_anchor="crosscheck-batches",
     )
     for batch in job_page.items:
-        counts = {"total": batch.item_count, "applied": batch.applied_count, "ready": batch.ready_count,
-                  "waiting": batch.waiting_count,
-                  "attention": batch.item_count - batch.applied_count - batch.ready_count - batch.waiting_count}
-        active = next((run for run in batch.attempts.all() if run.status in ACTIVE_ATTEMPT_STATES), None)
-        batch.display_status = batch_status_label(batch, counts, active)
+        counts = batch_counts(batch.summary_items, lambda item: item.has_report_result)
+        runs = list(batch.attempts.all())
+        active = next((run for run in runs if run.status in ACTIVE_ATTEMPT_STATES), None)
+        batch.summary = batch_summary(batch, counts,
+            retained=sum(item.has_report_result for item in batch.summary_items),
+            active=active, latest=runs[-1] if runs else None)
     crosscheck_export_result = None
     crosscheck_result = None
     report_upload_result = None

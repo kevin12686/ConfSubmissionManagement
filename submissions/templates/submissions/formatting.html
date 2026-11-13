@@ -295,7 +295,7 @@
                     {% endif %}
                 </div>
                 <div class="col-xl-5">
-                    <form method="post" enctype="multipart/form-data" class="row g-2" {% if mode != "list" %}data-formatting-single-form="true"{% endif %}>
+                    <form method="post" enctype="multipart/form-data" class="row g-2" {% if mode != "list" %}data-formatting-single-form="true" data-cfm-unsaved-guard="You have unsaved formatting changes. Leave without saving?"{% endif %}>
                         {% csrf_token %}
                         <input type="hidden" name="submission_id" value="{{ item.pk }}">
                         <input type="hidden" name="mode" value="{{ mode }}">
@@ -371,70 +371,6 @@
 {% if mode == "list" %}{% include "submissions/partials/worklist_pagination.html" with pagination_position="bottom" %}{% endif %}
 </div>
 </div>
-{% if mode != "list" %}
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    const form = document.querySelector("[data-formatting-single-form='true']");
-    if (!form) {
-        return;
-    }
-
-    let hasUnsavedChanges = false;
-    let isSubmitting = false;
-    const warningMessage = "You have unsaved formatting changes. Leave without saving?";
-
-    const markDirty = function (event) {
-        const target = event.target;
-        if (!target.matches("input, select, textarea")) {
-            return;
-        }
-        if (["hidden", "submit", "button"].includes(target.type)) {
-            return;
-        }
-        hasUnsavedChanges = true;
-    };
-
-    form.addEventListener("input", markDirty);
-    form.addEventListener("change", markDirty);
-    form.addEventListener("submit", function () {
-        isSubmitting = true;
-        hasUnsavedChanges = false;
-    });
-    document.querySelectorAll("form:not([data-formatting-single-form='true'])").forEach(function (pageForm) {
-        pageForm.addEventListener("submit", function (event) {
-            if (!hasUnsavedChanges) {
-                isSubmitting = true;
-                return;
-            }
-            if (window.confirm(warningMessage)) {
-                isSubmitting = true;
-                return;
-            }
-            event.preventDefault();
-        });
-    });
-
-    document.querySelectorAll("[data-unsaved-check='true']").forEach(function (link) {
-        link.addEventListener("click", function (event) {
-            if (!hasUnsavedChanges) {
-                return;
-            }
-            if (!window.confirm(warningMessage)) {
-                event.preventDefault();
-            }
-        });
-    });
-
-    window.addEventListener("beforeunload", function (event) {
-        if (!hasUnsavedChanges || isSubmitting) {
-            return;
-        }
-        event.preventDefault();
-        event.returnValue = "";
-    });
-});
-</script>
-{% endif %}
 <script src="{% static 'submissions/formatting_comparison_status.js' %}?v={{ app_version }}" defer></script>
 <script src="{% static 'submissions/comparison_services.js' %}?v={{ app_version }}" defer></script>
 {% endblock %}

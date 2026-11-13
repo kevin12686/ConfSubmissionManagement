@@ -13,6 +13,41 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.7 - Unreleased
+
+- Unify CrossCheck batch history and detail status/count presentation. Distinguish
+  running, partially complete, awaiting application and all results applied;
+  keep missing reports and result issues visible alongside available results.
+- Share read-only count classification, including matching retained result
+  records, without changing submit/download/retry/apply or version/evidence rules.
+- Use existing status colors and compact shared components; no schema change.
+  State archive v8 and comparison method 9 remain unchanged.
+
+## 1.31.6 - Unreleased
+
+- Protect the latest Paper ID choice from delayed/failed initialization and
+  obsolete search callbacks; cancel pending work when the shared picker is removed.
+- Share effective-value snapshots between record edits and Formatting Single/
+  Focus. Restored values are clean, cancelled navigation stays protected, and
+  accepted navigation asks once rather than twice.
+- Unify full-page and partial-save Toasts, including Paper/Final identity, while
+  retaining inline validation. Reserve Organized List action-column space and
+  remove the empty navigation strip when the Navbar is collapsed.
+- Publication selection, version binding, readiness, signed evidence and reset
+  rules are unchanged. Comparison method 9 and State archive v8 remain unchanged.
+
+## 1.31.5 - Unreleased
+
+- Refresh shared workflow warnings without the five-second count cache, after
+  operations, tab/history return and visible-only polling. Notify same-origin
+  tabs, discard obsolete reads and label unavailable/last-known status explicitly.
+- Keep Version conflict guidance in its filtered worklist; remove it when no
+  matching conflicts remain. Refresh Organized List exception summaries,
+  membership and pagination together while retaining unrelated drafts/position.
+- Correct uncertain network-error wording and the Audit Log browser title.
+  Publication selection, version binding, readiness and reset rules are unchanged;
+  comparison method 9 and State archive v8 are unchanged.
+
 ## 1.31.4 - Unreleased
 
 - Classify hyphen-only Latin word differences as inspectable Info. Preserve

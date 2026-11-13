@@ -1634,6 +1634,9 @@
             margin-left: auto;
         }
         @media (max-width: 1199.98px) {
+            .cfm-primary-nav {
+                min-height: 0;
+            }
             .cfm-primary-nav .navbar-collapse {
                 padding: 0.5rem 0 0.65rem;
             }
@@ -1842,46 +1845,23 @@
 
 <main class="{% block main_class %}container-fluid py-4{% endblock %}">
     <div id="htmx-request-error" class="alert alert-danger border cfm-attention d-none" role="alert">
-        The partial page update failed. No workflow state was changed. Retry the action or refresh the page.
+        The page update could not be confirmed. Check the current record before retrying a state-changing action.
     </div>
-    {% block workflow_alerts %}<div id="global-workflow-alerts"
-         hx-get="{% url 'submissions:workflow_alerts' %}"
-         hx-trigger="load"
-         hx-swap="outerHTML"></div>{% endblock %}
-    {% if messages %}
-        <div class="toast-container position-fixed cfm-toast-container" aria-live="polite" aria-atomic="true">
+    {% block workflow_alerts %}<section id="global-workflow-alerts"
+         data-cfm-workflow-alerts="{% url 'submissions:workflow_alerts' %}"
+         aria-label="Workflow attention">
+        <div data-workflow-alert-content><div class="small text-muted" role="status">Checking workflow status...</div></div>
+        <div class="alert alert-warning d-none" data-workflow-alert-error role="status">
+            <span data-workflow-alert-error-message></span>
+            <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-workflow-alert-retry>Retry</button>
+        </div>
+    </section>{% endblock %}
+        <div class="toast-container position-fixed cfm-toast-container" data-cfm-toast-container aria-live="polite" aria-atomic="true">
             {% for message in messages %}
-                <div
-                    class="toast show cfm-toast cfm-toast-{{ message.level_tag|default:'info' }}"
-                    role="{% if message.level_tag == 'error' or message.level_tag == 'warning' %}alert{% else %}status{% endif %}"
-                    aria-live="{% if message.level_tag == 'error' or message.level_tag == 'warning' %}assertive{% else %}polite{% endif %}"
-                    aria-atomic="true"
-                    data-cfm-toast
-                    data-bs-autohide="{% if message.level_tag == 'success' or message.level_tag == 'info' %}true{% else %}false{% endif %}"
-                    data-bs-delay="{% if message.level_tag == 'success' %}5000{% else %}7000{% endif %}"
-                >
-                    <div class="toast-header">
-                        <span class="cfm-toast-status-dot" aria-hidden="true"></span>
-                        <strong class="me-auto">
-                            {% if message.level_tag == "success" %}
-                                Updated
-                            {% elif message.level_tag == "warning" %}
-                                Attention
-                            {% elif message.level_tag == "error" %}
-                                Action failed
-                            {% else %}
-                                Information
-                            {% endif %}
-                        </strong>
-                        <button type="button" class="cfm-toast-close" data-cfm-toast-close aria-label="Close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                    <div class="toast-body">{{ message }}</div>
-                </div>
+                {% include "submissions/partials/toast.html" with level=message.level_tag|default:'info' message=message %}
             {% endfor %}
         </div>
-    {% endif %}
+        <template id="cfm-toast-template">{% include "submissions/partials/toast.html" with level='info' message='' %}</template>
     {% block content %}{% endblock %}
 </main>
 
@@ -1899,9 +1879,14 @@
 <script src="{% static 'submissions/image_loader.js' %}?v={{ app_version }}"></script>
 <script src="{% static 'submissions/image_magnifier.js' %}"></script>
 <script src="{% static 'submissions/worklist_navigation.js' %}?v={{ app_version }}"></script>
+<script src="{% static 'submissions/workflow_alerts.js' %}?v={{ app_version }}"></script>
+<script src="{% static 'submissions/worklist_state.js' %}?v={{ app_version }}"></script>
 <script src="{% static 'submissions/formatting_history.js' %}?v={{ app_version }}"></script>
 <script src="{% static 'submissions/context_expansion.js' %}?v={{ app_version }}"></script>
+<script src="{% static 'submissions/form_state.js' %}?v={{ app_version }}"></script>
+<script src="{% static 'submissions/form_guard.js' %}?v={{ app_version }}"></script>
 <script src="{% static 'submissions/record_edit.js' %}?v={{ app_version }}"></script>
+<script src="{% static 'submissions/toasts.js' %}?v={{ app_version }}"></script>
 <script>
 let cfmFullPageNavigationPending = false;
 
@@ -1915,44 +1900,6 @@ document.body.addEventListener("htmx:beforeRequest", function () {
 });
 document.body.addEventListener("htmx:responseError", cfmShowHtmxRequestError);
 document.body.addEventListener("htmx:sendError", cfmShowHtmxRequestError);
-function cfmDismissToast(element) {
-    element.classList.remove("show");
-    window.setTimeout(function () {
-        element.remove();
-    }, 150);
-}
-
-const cfmToastContainers = document.querySelectorAll(".cfm-toast-container");
-if (cfmToastContainers.length) {
-    let cfmToastPositionFrame = null;
-    const updateToastPosition = function () {
-        cfmToastPositionFrame = null;
-        const headerBottom =
-            document.querySelector(".cfm-app-header")?.getBoundingClientRect().bottom || 0;
-        const top = Math.max(12, headerBottom + 12);
-        cfmToastContainers.forEach(function (container) {
-            container.style.top = `${top}px`;
-        });
-    };
-    const scheduleToastPosition = function () {
-        if (cfmToastPositionFrame !== null) return;
-        cfmToastPositionFrame = window.requestAnimationFrame(updateToastPosition);
-    };
-    updateToastPosition();
-    window.addEventListener("scroll", scheduleToastPosition, { passive: true });
-    window.addEventListener("resize", scheduleToastPosition);
-}
-
-document.querySelectorAll("[data-cfm-toast]").forEach(function (element) {
-    element.querySelector("[data-cfm-toast-close]")?.addEventListener("click", function () {
-        cfmDismissToast(element);
-    });
-    if (element.dataset.bsAutohide === "true") {
-        window.setTimeout(function () {
-            cfmDismissToast(element);
-        }, Number(element.dataset.bsDelay || 5000));
-    }
-});
 window.addEventListener("pagehide", function () {
     cfmFullPageNavigationPending = true;
 });

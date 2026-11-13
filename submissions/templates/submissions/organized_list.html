@@ -20,7 +20,11 @@
 {% include "submissions/includes/note_summary.html" %}
 {% include "submissions/partials/focused_worklist.html" %}
 
-<div id="organized-worklist" class="cfm-worklist-anchor">
+<div id="organized-worklist" class="cfm-worklist-anchor" data-cfm-preserve-worklist
+     hx-sync="#organized-worklist:drop" hx-disabled-elt="#organized-worklist button">
+{% if worklist_feedback.message %}
+<div class="alert alert-{{ worklist_feedback.level }} py-2" role="status" data-cfm-feedback data-cfm-feedback-level="{{ worklist_feedback.level }}" data-cfm-feedback-record="{{ worklist_feedback.record }}">{{ worklist_feedback.message }}</div>
+{% endif %}
 {% if view_mode == "checklist" %}
 {% if not focused_context %}
 {% if summary.needs_process_pdfs %}
@@ -103,7 +107,7 @@
 <div class="table-responsive">
     <table class="table table-hover align-middle table-sm cfm-table cfm-table-sticky cfm-organized-table">
         <colgroup>
-            <col class="cfm-col-paper-id"><col class="cfm-col-title"><col class="cfm-col-authors"><col class="cfm-col-pages"><col class="cfm-col-file"><col class="cfm-col-file"><col class="cfm-col-review"><col class="cfm-col-plagiarism"><col class="cfm-col-format"><col class="cfm-col-actions">
+            <col class="cfm-col-paper-id"><col class="cfm-col-title"><col class="cfm-col-authors"><col class="cfm-col-pages"><col class="cfm-col-file cfm-col-pdf"><col class="cfm-col-file"><col class="cfm-col-review"><col class="cfm-col-plagiarism"><col class="cfm-col-format"><col class="cfm-col-actions">
         </colgroup>
         <thead>
             <tr>
@@ -341,7 +345,7 @@
                     <td colspan="10">
                         <div class="cfm-exception-panel">
                             {% if row.exception_feedback.message %}
-                                <div class="alert alert-{{ row.exception_feedback.level }} py-2 mb-3" role="status">
+                                <div class="alert alert-{{ row.exception_feedback.level }} py-2 mb-3" role="status" data-cfm-feedback data-cfm-feedback-level="{{ row.exception_feedback.level }}" data-cfm-feedback-record="{{ row.exception_feedback.record }}">
                                     {{ row.exception_feedback.message }}
                                 </div>
                             {% endif %}
@@ -352,7 +356,6 @@
                                         {% if paper %}{{ paper.paper_id }}{% else %}{{ submission.paper_id_filled|default:"No Paper ID" }}{% endif %}
                                         {% if submission %}/ Final {{ submission.final_submission_id }}{% endif %}
                                     </div>
-                                    <div class="small text-muted">Each action refreshes this paper from the system while preserving other unsaved reason drafts.</div>
                                 </div>
                                 <div class="d-flex flex-wrap gap-2">
                                     {% if row.publication_pdf.exists %}
@@ -412,11 +415,10 @@
                                                         <form method="post"
                                                               class="d-flex justify-content-end"
                                                               hx-post="{{ request.get_full_path }}"
-                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
-                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-target="#organized-worklist"
+                                                              hx-select="#organized-worklist"
                                                               hx-swap="outerHTML"
-                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
-                                                              hx-disabled-elt="button">
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
@@ -427,11 +429,10 @@
                                                         <form method="post"
                                                               class="row g-2 align-items-end"
                                                               hx-post="{{ request.get_full_path }}"
-                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
-                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-target="#organized-worklist"
+                                                              hx-select="#organized-worklist"
                                                               hx-swap="outerHTML"
-                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
-                                                              hx-disabled-elt="button">
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="exception_key" value="{{ section.exception.key }}">
@@ -471,11 +472,10 @@
                                                         <form method="post"
                                                               class="row g-2 align-items-end"
                                                               hx-post="{{ request.get_full_path }}"
-                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
-                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-target="#organized-worklist"
+                                                              hx-select="#organized-worklist"
                                                               hx-swap="outerHTML"
-                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
-                                                              hx-disabled-elt="button">
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
@@ -494,11 +494,10 @@
                                                         <form method="post"
                                                               class="d-flex justify-content-end"
                                                               hx-post="{{ request.get_full_path }}"
-                                                              hx-target="#organized-row-submission-{{ submission.pk }}"
-                                                              hx-select="#organized-row-submission-{{ submission.pk }}"
+                                                              hx-target="#organized-worklist"
+                                                              hx-select="#organized-worklist"
                                                               hx-swap="outerHTML"
-                                                              hx-include="#exceptions-{{ submission.pk }} textarea"
-                                                              hx-disabled-elt="button">
+                                                              hx-include="#exceptions-{{ submission.pk }} textarea">
                                                             {% csrf_token %}
                                                             <input type="hidden" name="submission_id" value="{{ submission.pk }}">
                                                             <input type="hidden" name="evidence_token" value="{{ row.duplicate_author_evidence_token }}">
@@ -739,19 +738,24 @@
 <style>
     .cfm-organized-table {
         min-width: 1180px;
+        table-layout: fixed;
+        width: 100%;
     }
     .cfm-compact-candidates-table {
         min-width: 1050px;
     }
-    .cfm-organized-table .cfm-col-paper-id { width: 9%; }
-    .cfm-organized-table .cfm-col-title { width: 32%; }
-    .cfm-organized-table .cfm-col-authors { width: 9%; }
-    .cfm-organized-table .cfm-col-pages { width: 7%; }
-    .cfm-organized-table .cfm-col-file { width: 7%; }
-    .cfm-organized-table .cfm-col-review { width: 8%; }
-    .cfm-organized-table .cfm-col-plagiarism { width: 8%; }
-    .cfm-organized-table .cfm-col-format { width: 6%; }
-    .cfm-organized-table .cfm-col-actions { width: 7%; }
+    .cfm-organized-table .cfm-col-paper-id { width: 7.5rem; }
+    .cfm-organized-table .cfm-col-authors,
+    .cfm-organized-table .cfm-col-pages,
+    .cfm-organized-table .cfm-col-file,
+    .cfm-organized-table .cfm-col-plagiarism { width: 6.5rem; }
+    .cfm-organized-table .cfm-col-pdf { width: 8rem; }
+    .cfm-organized-table .cfm-col-format { width: 7.5rem; }
+    .cfm-organized-table .cfm-col-review { width: 7rem; }
+    .cfm-organized-table .cfm-col-actions { width: 10rem; }
+    .cfm-organized-table td { overflow-wrap: anywhere; }
+    .cfm-organized-table .badge,
+    .cfm-organized-table .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
     .cfm-organized-table tbody > tr.cfm-row-blocker > td:first-child {
         box-shadow: inset 4px 0 0 var(--cfm-danger-border);
     }

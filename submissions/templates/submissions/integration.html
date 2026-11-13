@@ -1,5 +1,7 @@
 {% extends "submissions/base.html" %}
+{% load static %}
 {% block title %}Plagiarism / CrossCheck{% endblock %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'submissions/crosscheck_batch.css' %}?v={{ app_version }}">{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div>
@@ -38,12 +40,14 @@
 <h2 class="h4">Batch history</h2>
 {% include "submissions/partials/worklist_pagination.html" with pagination=job_page pagination_label="batches" %}
 <div class="table-responsive">
-    <table class="table cfm-table align-middle">
-        <thead><tr><th>Batch</th><th>Created</th><th>Status</th><th>Papers</th></tr></thead>
+    <table class="table table-hover cfm-table align-middle cfm-crosscheck-history">
+        <colgroup><col class="cfm-crosscheck-col-batch"><col class="cfm-crosscheck-col-status"><col></colgroup>
+        <thead><tr><th>Batch</th><th>Status</th><th>Reports / application</th></tr></thead>
         <tbody>{% for job in service_jobs %}<tr>
-            <td class="text-break"><a href="{% url 'submissions:crosscheck_service_job' job.pk %}">{{ job.token }}</a></td>
-            <td>{{ job.created_at|date:"Y-m-d H:i" }}</td><td>{{ job.display_status }}</td><td>{{ job.item_count }}<div class="small text-muted">{{ job.applied_count }} applied · {{ job.ready_count }} ready</div></td>
-        </tr>{% empty %}<tr><td colspan="4">No automatic batches yet.</td></tr>{% endfor %}</tbody>
+            <td><a href="{% url 'submissions:crosscheck_service_job' job.pk %}">{{ job.token }}</a><div class="small mt-1">Created {{ job.created_at|date:"Y-m-d H:i" }}</div><div class="small">Updated {{ job.updated_at|date:"Y-m-d H:i" }}</div></td>
+            <td>{% include "submissions/partials/crosscheck_batch_status.html" with summary=job.summary only %}</td>
+            <td>{% include "submissions/partials/crosscheck_batch_counts.html" with summary=job.summary only %}</td>
+        </tr>{% empty %}<tr><td colspan="3">No automatic batches yet.</td></tr>{% endfor %}</tbody>
     </table>
 </div>
 {% include "submissions/partials/worklist_pagination.html" with pagination=job_page pagination_label="batches" pagination_position="bottom" %}

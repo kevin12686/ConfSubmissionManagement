@@ -14,6 +14,25 @@ Dashboard answers "what still blocks publication?" Organized List is the
 per-paper workspace. Next actions are unresolved work; Tracked information
 includes reviewed differences and permitted exceptions, not more required work.
 
+### Workflow Warnings And Saved Results
+
+The shared warning area shows current publication PDFs needing processing and
+unresolved Start2/Editor conflicts. It refreshes after operations and when you
+return to the tab; visible pages check other sessions every 15 seconds. Search
+does not narrow these conference-wide warnings. A status-read failure is shown
+as unavailable/out of date, with Retry, not as all checks complete.
+
+Organized List exception saves update the summary and current filtered list
+together. A resolved paper may leave that filter; other open panels/reason
+drafts remain intact. The same Toast style as other saves identifies the Paper/
+Final, including when the paper disappears from the view. Validation errors stay
+beside the form. Final export performs its independent strict checks.
+
+Formatting Single/Focus warns only while values differ from their loaded values.
+Returning them to the original values removes the warning; confirming a departure
+asks only once. Paper ID lookup updates cannot overwrite a selection you made
+while the previous metadata was loading.
+
 ## Page Map
 
 | Page | URL | Use |
@@ -209,6 +228,23 @@ visually. [PDF Comparison](pdf_comparison.md) lists accepted blind spots.
 5. For confirmed uploads still lacking reports, use Retry remaining downloads.
    It starts another download execution, not another PDF upload.
 6. Use Execution history for immutable ZIPs and report evidence.
+
+Batch history and the detail page use the same saved status and counts:
+
+| Status | Meaning |
+| --- | --- |
+| In progress (blue, spinner) | An upload/download execution is running; earlier applied results remain visible |
+| Partially complete (amber) | Some reports/results exist, but papers still need reports or attention |
+| Awaiting application (blue) | All reports are retrieved and remaining results await explicit confirmation |
+| All results applied (green) | Every paper in this batch has applied results; not a publication-readiness approval |
+| Connection needs confirmation / Needs attention (amber) | Uncertain acceptance or result issues require review |
+| Execution failed (red) | Execution failed/rejected without retained partial results |
+
+Reports retrieved and Results applied each show `count / batch total`. Ready to
+apply, missing reports and issues remain visible together. These are saved report
+records, not a new service or archive-integrity check; stale reports can be
+retrieved without being applicable. The list shows its last saved update time;
+open the batch to check progress. Preview, cancelled and empty batches are neutral.
 
 Job completion does not imply every report exists. Retry results need the same
 preview/apply confirmation. Already applied papers cannot be replayed or

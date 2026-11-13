@@ -1,0 +1,11 @@
+<div data-batch-counts>
+    <dl class="cfm-crosscheck-totals mb-2">
+        <div><dt>Reports retrieved</dt><dd>{{ summary.retained }} / {{ summary.total }}</dd></div>
+        <div><dt>Results applied</dt><dd>{{ summary.applied }} / {{ summary.total }}</dd></div>
+    </dl>
+    <div class="cfm-crosscheck-count-notes small">
+        {% if summary.ready %}<span class="cfm-crosscheck-info">{{ summary.ready }} ready to apply</span>{% endif %}
+        {% if summary.missing %}<span class="{% if summary.key != 'preview' and summary.key != 'cancelled' %}cfm-crosscheck-warning{% endif %}">{{ summary.missing }} {% if summary.key == 'preview' %}awaiting upload{% else %}reports missing{% endif %}</span>{% endif %}
+        {% if summary.attention %}<span class="cfm-crosscheck-warning">{{ summary.attention }} need attention</span>{% endif %}
+    </div>
+</div>

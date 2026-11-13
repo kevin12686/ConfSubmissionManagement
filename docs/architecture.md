@@ -38,6 +38,16 @@ The UI uses local Tabler/Bootstrap-compatible markup and HTMX. Normal URLs/forms
 remain usable without partial navigation. There is no separate React service or
 frontend build. See [UI Conventions](ui_conventions.md).
 
+`workflow_alerts.py` reads advisory counts without cross-request caching.
+`workflow_alerts.js` owns bounded, visible-only refresh, cross-tab invalidation
+and last-known/error presentation. It does not write workflow state or feed
+readiness. `worklist_state.js` preserves presentation state across opted-in
+worklist POST replacements; the server still owns filtering and exception rules.
+Shared `form_state.js` snapshots supply record-edit markers and the opt-in
+Formatting `form_guard.js`; neither changes server validation. `toasts.js` and
+one Django partial render full-page/HTMX feedback. `paper_picker.js` owns request
+generation and teardown so asynchronous metadata cannot replace user intent.
+
 ## State Ownership
 
 | State | Owner |
@@ -134,6 +144,13 @@ limits, cache validation and inspection behavior.
 
 GROBID uses header TEI without external consolidation. Failure preserves prior
 extraction rather than replacing it with empty metadata.
+CrossCheck list/detail presentation shares a read-only item classifier and batch
+summary. The list prefetches bounded page items with an existence check for the
+matching retained result; it does not contact the service or open archives.
+Retrieval/application counts are historical evidence, not current publication
+permission. Action flags, signed evidence and archive/hash/version validation
+remain in the original workflow services.
+
 CrossCheck optional login/IEEE overrides are machine-local secrets. They are
 separate from workflow records and excluded from System State.
 PDF.js disables scripting/editing/XFA and never writes back a manuscript.

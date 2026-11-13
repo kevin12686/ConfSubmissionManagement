@@ -37,6 +37,21 @@ from submissions.services.version_history import (
 )
 
 
+def crosscheck_batch_history():
+    from django.db.models import Exists, OuterRef, Prefetch
+    from submissions.models import CrossCheckServiceJob, CrossCheckServiceJobItem, CrossCheckServiceResult
+
+    report = CrossCheckServiceResult.objects.filter(
+        item_id=OuterRef("pk"), report_sha256=OuterRef("report_sha256"),
+    ).exclude(report_sha256="")
+    items = CrossCheckServiceJobItem.objects.only("job_id", "status", "report_sha256").annotate(
+        has_report_result=Exists(report),
+    )
+    return CrossCheckServiceJob.objects.prefetch_related(
+        Prefetch("items", queryset=items, to_attr="summary_items"), "attempts",
+    ).order_by("-created_at", "pk")
+
+
 def verification_badge(submission, master_paper=None):
     if paper_is_not_publishing(master_paper) or (
         master_paper is None and submission.excluded_from_publication
@@ -440,6 +455,7 @@ def final_submission_list_context(
         "current_sort": current_sort,
         "sort_options": FINAL_SUBMISSION_SORT_OPTIONS,
         "filter_options": filter_tabs,
+        "matching_conflict_count": tab_counts["version_conflicts"],
         "import_form": FinalSubmissionImportForm(),
         "pagination": page,
     }

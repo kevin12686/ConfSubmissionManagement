@@ -1,24 +1,6 @@
 (function () {
     "use strict";
 
-    function controlValue(control) {
-        if (control.type === "checkbox" || control.type === "radio") {
-            return control.checked ? "checked" : "unchecked";
-        }
-        if (control.type === "file") {
-            return Array.from(control.files || []).map(function (file) {
-                return [file.name, file.size, file.lastModified].join(":");
-            }).join("|");
-        }
-        return control.value;
-    }
-
-    function eligibleControls(form) {
-        return Array.from(form.querySelectorAll("input, select, textarea")).filter(function (control) {
-            return !["hidden", "submit", "button"].includes(control.type) && !control.disabled;
-        });
-    }
-
     function fieldShell(control) {
         return control.closest("[data-cfm-field-shell]") || control.closest(".mb-3, .form-check");
     }
@@ -41,22 +23,17 @@
     }
 
     function initialize(form) {
-        const controls = eligibleControls(form);
-        const initial = new Map(controls.map(function (control) {
-            return [control, controlValue(control)];
-        }));
+        const state = window.CFMFormState.capture(form);
         const summary = form.querySelector("[data-cfm-change-summary]");
         let submitting = false;
 
         function refresh() {
-            let changedCount = 0;
-            controls.forEach(function (control) {
-                const changed = controlValue(control) !== initial.get(control);
+            const changedControls = new Set(state.changed());
+            state.controls.forEach(function (control) {
+                const changed = changedControls.has(control);
                 setFieldState(control, changed);
-                if (changed) {
-                    changedCount += 1;
-                }
             });
+            const changedCount = changedControls.size;
             form.dataset.cfmHasUnsavedChanges = changedCount ? "true" : "false";
             if (summary) {
                 summary.textContent = changedCount
@@ -75,8 +52,12 @@
         form.addEventListener("submit", function () {
             submitting = true;
         });
+        window.addEventListener("pageshow", function () {
+            submitting = false;
+            refresh();
+        });
         window.addEventListener("beforeunload", function (event) {
-            if (submitting || form.dataset.cfmHasUnsavedChanges !== "true") {
+            if (submitting || state.changed().length === 0) {
                 return;
             }
             event.preventDefault();

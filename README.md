@@ -81,6 +81,14 @@ Final Submissions are scoped to that row; Organized List opens current
 publication files. [Publication Rules](docs/publication_rules.md) defines the
 exact scope, selection and review dependencies.
 
+Shared workflow warnings refresh after operations and while the page is visible;
+failed reads are explicitly labelled, never treated as completed checks.
+Organized List exception saves keep the summary and filtered results in sync.
+Record edits preview effective changes before confirmation. Review navigation
+warns about unsaved values, not fields you have already restored to their original values.
+CrossCheck batches distinguish reports retrieved from results applied; partial
+results never hide missing papers, and downloaded reports still require confirmation.
+
 PDF comparison is an optional OCR-based review aid, **not publication approval**.
 It tolerates some similar characters, whitespace and word hyphens; inspect
 unlocated ranges, figures, tables, formulas and layout manually.

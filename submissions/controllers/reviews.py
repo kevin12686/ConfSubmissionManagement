@@ -294,7 +294,7 @@ def _load_submission_groups_for_targets(targets):
 def _organized_list_context(
     request,
     *,
-    exact_submission_id=None,
+    feedback_submission_id=None,
     exception_drafts=None,
     cleared_exception_types=None,
     exception_error_type="",
@@ -308,16 +308,6 @@ def _organized_list_context(
         view_mode = "checklist"
     current_filter = request.GET.get("filter", "all") if view_mode == "checklist" else "all"
     current_sort = request.GET.get("sort", "needs_attention") if view_mode == "checklist" else "paper_id_asc"
-    if exact_submission_id is not None:
-        focused_submission = get_object_or_404(
-            FinalSubmission,
-            pk=exact_submission_id,
-        )
-        exact_paper_id = (focused_submission.paper_id_filled or "").strip()
-        q = ""
-        view_mode = "checklist"
-        current_filter = "all"
-        current_sort = "paper_id_asc"
     publication_context = PublicationReadContext.load()
     rows, summary, settings_obj, current_filter, current_sort = organized_list_rows(
         q,
@@ -327,12 +317,6 @@ def _organized_list_context(
         context=publication_context,
         hydrate=False,
     )
-    if exact_submission_id is not None:
-        rows = [
-            row
-            for row in rows
-            if row.get("submission") and row["submission"].pk == exact_submission_id
-        ]
     if view_mode == "compact":
         rows = [
             row
@@ -358,7 +342,7 @@ def _organized_list_context(
                 "duplicate-author-review",
                 duplicate_author_review_evidence(submission),
             )
-        if exact_submission_id is not None and submission and submission.pk == exact_submission_id:
+        if submission and submission.pk == feedback_submission_id:
             _apply_organized_exception_drafts(
                 row,
                 drafts=exception_drafts,
@@ -424,6 +408,10 @@ def _organized_list_context(
         "focused_context": focused_context,
         "exact_paper_id": exact_paper_id,
         "pagination": page,
+        "worklist_feedback": exception_feedback if not any(
+            row.get("submission") and row["submission"].pk == feedback_submission_id
+            for row in rows
+        ) else None,
     }
 
 
@@ -530,13 +518,14 @@ def organized_list(request):
             feedback = {
                 "level": "danger" if error_message else feedback_level,
                 "message": error_message or feedback_message,
+                "record": f"Paper {submission.paper_id_filled or '--'} / Final {submission.final_submission_id}",
             }
             return render(
                 request,
                 "submissions/organized_list.html",
                 _organized_list_context(
                     request,
-                    exact_submission_id=submission.pk,
+                    feedback_submission_id=submission.pk,
                     exception_drafts=drafts,
                     cleared_exception_types=cleared_types,
                     exception_error_type=target_type if error_message else "",

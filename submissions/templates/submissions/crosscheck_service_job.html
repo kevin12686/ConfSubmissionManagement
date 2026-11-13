@@ -1,6 +1,7 @@
 {% extends "submissions/base.html" %}
 {% load static %}
 {% block title %}CrossCheck Batch{% endblock %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'submissions/crosscheck_batch.css' %}?v={{ app_version }}">{% endblock %}
 {% block content %}
 <div class="cfm-page-header">
     <div><h1 class="h3 cfm-page-title">CrossCheck batch</h1><div class="cfm-page-subtitle text-break">{{ job.token }}</div></div>

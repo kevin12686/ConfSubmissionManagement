@@ -3466,7 +3466,7 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             {row["category"] for row in publication_readiness_rows()},
         )
 
-    def test_cached_workflow_alerts_never_feed_publication_readiness_or_export(self):
+    def test_fresh_workflow_alerts_never_feed_publication_readiness_or_export(self):
         paper = self.make_master_paper("P001", "Cached Alert Isolation", "Ada")
         self.make_final_submission(
             final_submission_id="10",
@@ -3485,8 +3485,8 @@ class PublicationReadinessTests(EditorialAcceptanceTestCase):
             notes="Cache isolation test.",
         )
 
-        cached = self.client.get(reverse("submissions:workflow_alerts"))
-        self.assertNotContains(cached, "Start2/Editor version decision needed")
+        refreshed = self.client.get(reverse("submissions:workflow_alerts"))
+        self.assertContains(refreshed, "Start2/Editor version decision needed")
         self.assertIn(
             "Start2/Editor Version Conflict",
             {row["category"] for row in publication_readiness_rows()},
@@ -11384,7 +11384,7 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         )
         self.assertContains(
             response,
-            f'hx-target="#organized-row-submission-{page_issue.pk}"',
+            'hx-target="#organized-worklist"',
         )
         self.assertContains(
             response,

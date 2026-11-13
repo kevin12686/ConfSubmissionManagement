@@ -13,12 +13,6 @@
         <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#import-reupload-panel" aria-expanded="false" aria-controls="import-reupload-panel">Import / Re-upload</button>
     </div>
 </div>
-{% if current_filter == "version_conflicts" %}
-<div class="alert alert-warning">
-    <strong>Version decision required.</strong>
-    These papers have both Start2 and Editor-uploaded versions. Editor upload is currently prioritized, but final export stays blocked until you discard either the Start2 version or the editor upload with a note.
-</div>
-{% endif %}
 <div class="collapse mb-3" id="import-reupload-panel">
         <form method="post" enctype="multipart/form-data" action="{% url 'submissions:import_final_submissions' %}" class="card border-primary">
             {% csrf_token %}
@@ -55,6 +49,12 @@
 	        </form>
 </div>
 <div id="final-submission-worklist" class="cfm-worklist-anchor">
+{% if current_filter == "version_conflicts" and matching_conflict_count %}
+<div class="alert alert-warning">
+    <strong>Version decision required for the matching records.</strong>
+    These papers have both Start2 and Editor-uploaded versions. Editor upload is currently prioritized, but final export stays blocked until you discard either the Start2 version or the editor upload with a note. The global warning covers all publication papers, regardless of this search.
+</div>
+{% endif %}
 	<ul class="nav nav-tabs cfm-tabs">
 	    {% for option in filter_options %}
 	        <li class="nav-item">

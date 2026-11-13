@@ -165,6 +165,20 @@ Corrected files, ambiguous scope and rollback on file/DB/audit failure.
 
 For UI changes, test normal and HTMX navigation, lazy fragments, pagination,
 keyboard/touch, narrow/short viewports and loading failures.
+For workflow warnings, test rapid zero/nonzero transitions without clearing
+cache, restored history, cross-tab updates, hidden-tab pause, failed/obsolete
+reads and recovery. POST worklist replacement must keep summaries/filter/page
+membership consistent and preserve unrelated unsaved drafts without restoring
+stale evidence. Advisory refresh must not change publication or review state.
+Exercise delayed picker initialization/search, failure and teardown with a newer
+user choice. Test restored values, cancelled/accepted navigation, a single leave
+confirmation and Back/Forward protection. Check HTMX Toasts at the actual scroll
+position, literal text/record identity, persistent inline errors, and laptop
+action-column visibility with long content.
+CrossCheck summaries must agree between history and detail for mixed results,
+retry plus applied papers, missing/stale evidence, empty/cancelled batches and
+unknown statuses. Keep application flags/evidence unchanged; test no network or
+DB/file mutation on summary GETs and bounded queries without per-item lookups.
 For comparison, add actual PDF/OCR edge fixtures plus frozen-engine tests.
 Do not fit rules to one submitted paper or claim zero findings proves integrity.
 

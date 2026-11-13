@@ -3,6 +3,30 @@
 Find the symptom, inspect its exact Paper/Final ID, then use the normal workflow.
 Do not repair publication state by editing SQLite or swapping files in `data/`.
 
+## Workflow Warning Looks Stale
+
+After an operation, the shared warning area rereads current counts without a
+five-second cache. Returning to a tab or browser history also refreshes it;
+another browser/session is detected within the visible-page 15-second interval.
+An out-of-date notice means the last read failed: use Retry and check server/
+database availability. Existing warnings remain last-known information, not a
+current approval. A network error after Save is uncertain: inspect the record
+before retrying; do not assume nothing was written.
+
+Only global warnings refresh in the background. Local worklists update on their
+own operations/navigation, not from background replacement of unsaved forms.
+
+## Paper Selection Or Departure Prompt Looks Wrong
+
+The searchable Master picker keeps your latest choice even if earlier metadata
+arrives late. A failed lookup displays a retry/search notice; it must not silently
+choose or clear another ID. Confirm the selected Paper ID/title before Verify.
+
+Formatting Single/Focus compares current values to the loaded form. Restoring
+them clears its unsaved warning; an accepted departure asks only once. If old
+behavior persists after updating, refresh the page to load the release-versioned
+shared scripts. No browser warning or Toast changes server review/readiness rules.
+
 ## Startup And Deployment
 
 | Symptom | Check / safe next step |
@@ -108,6 +132,14 @@ Health, job completion and zero findings do not approve publication.
 See [comparison limits](pdf_comparison.md#accepted-blind-spots).
 
 ## CrossCheck
+
+| Batch display | Meaning / next step |
+| --- | --- |
+| Partially complete with ready results | Available results can be reviewed; missing reports/issues are still unresolved |
+| Awaiting application | Retrieved reports have not all been explicitly applied; downloading is not approval |
+| All results applied | Completion for this historical batch, not publication readiness or validity for a newer Final |
+| Result evidence missing | A downloaded item has no matching retained report record; it is not counted as ready. Inspect history/backup evidence, do not manually force Applied |
+
 
 | Symptom | Action |
 | --- | --- |

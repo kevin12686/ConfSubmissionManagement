@@ -1,0 +1,43 @@
+.cfm-crosscheck-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.cfm-crosscheck-status strong { color: inherit; }
+.cfm-crosscheck-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 1.25rem;
+    height: 1.25rem;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-weight: 700;
+    line-height: 1;
+}
+.cfm-crosscheck-status-success { color: var(--cfm-success-text); }
+.cfm-crosscheck-status-info,
+.cfm-crosscheck-info { color: var(--cfm-info-text); }
+.cfm-crosscheck-status-warning,
+.cfm-crosscheck-warning { color: var(--cfm-warning-dark); }
+.cfm-crosscheck-status-danger { color: var(--cfm-danger-text); }
+.cfm-crosscheck-totals {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1.5rem;
+    max-width: 34rem;
+}
+.cfm-crosscheck-totals dt { font-size: 0.875rem; font-weight: 400; }
+.cfm-crosscheck-totals dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cfm-crosscheck-count-notes { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.cfm-crosscheck-history { table-layout: fixed; width: 100%; min-width: 740px; }
+.cfm-crosscheck-history .cfm-crosscheck-col-batch { width: 30%; }
+.cfm-crosscheck-history .cfm-crosscheck-col-status { width: 32%; }
+.cfm-crosscheck-history td { overflow-wrap: anywhere; }
+.cfm-crosscheck-history td,
+.cfm-crosscheck-history th { padding: 0.875rem; }
+.cfm-crosscheck-overview { border-bottom: 1px solid var(--cfm-border); padding-bottom: 1rem; margin-bottom: 1rem; }
+.cfm-crosscheck-overview .cfm-crosscheck-status { font-size: 1.125rem; }
+@media (prefers-reduced-motion: reduce) {
+    .cfm-crosscheck-status .spinner-border { animation: none; }
+}

@@ -48,6 +48,8 @@
         if (!targetId) return;
         const target = document.getElementById(targetId);
         if (!target) return;
+        target.classList.remove("text-danger");
+        target.removeAttribute("role");
         if (!option || !option.paper_id) {
             target.hidden = true;
             target.replaceChildren();
@@ -65,6 +67,15 @@
             document.createTextNode(option.authors || "No Master Authors")
         );
         target.replaceChildren(paperId, title, authors);
+        target.hidden = false;
+    }
+
+    function showLookupError(element, message) {
+        const target = document.getElementById(element.dataset.pickerSummaryTarget);
+        if (!target) return;
+        target.textContent = message;
+        target.classList.add("text-danger");
+        target.setAttribute("role", "status");
         target.hidden = false;
     }
 
@@ -99,7 +110,18 @@
         const valueField = element.dataset.pickerValueField || "paper_id";
         const summaryTarget = element.dataset.pickerSummaryTarget;
         let requestController = null;
+        const initialController = new AbortController();
+        let initialUntouched = true;
+        let requestGeneration = 0;
+        let disposed = false;
         element.value = "";
+
+        function userIntent() {
+            initialUntouched = false;
+            initialController.abort();
+            requestGeneration += 1;
+            requestController?.abort();
+        }
 
         const picker = new window.TomSelect(element, {
             valueField: valueField,
@@ -121,8 +143,9 @@
                 return true;
             },
             load: function (query, callback) {
+                userIntent();
                 removeUnselectedOptions(this);
-                if (requestController) requestController.abort();
+                const generation = ++requestGeneration;
                 requestController = new AbortController();
                 fetch(buildUrl(element, query), {
                     headers: {"Accept": "application/json"},
@@ -133,14 +156,22 @@
                         return response.json();
                     })
                     .then(function (payload) {
-                        callback(payload.results || []);
+                        if (disposed) return;
+                        callback(generation === requestGeneration ? payload.results || [] : undefined);
                     })
                     .catch(function (error) {
-                        if (error.name !== "AbortError") callback();
+                        if (disposed) return;
+                        if (generation === requestGeneration && error.name !== "AbortError") {
+                            showLookupError(element, "Paper search is unavailable. Type again to retry.");
+                        }
+                        // TomSelect must balance its loading counter, including cancellation.
+                        callback();
                     });
             },
             onType: function () {
+                userIntent();
                 removeUnselectedOptions(this);
+                updateSummary(element, this.options[this.getValue()]);
             },
             render: {
                 option: masterOption,
@@ -155,29 +186,41 @@
                 },
             },
             onChange: function (value) {
+                userIntent();
                 const option = value ? this.options[value] : null;
                 if (summaryTarget) updateSummary(element, option);
             },
         });
 
+        picker.on("destroy", function () {
+            disposed = true;
+            userIntent();
+        });
         picker.wrapper.classList.add("cfm-paper-picker");
         if (initialValue) {
             fetch(buildUrl(element, "", initialValue), {
                 headers: {"Accept": "application/json"},
+                signal: initialController.signal,
             })
                 .then(function (response) {
                     if (!response.ok) throw new Error("Selected paper could not be loaded.");
                     return response.json();
                 })
                 .then(function (payload) {
+                    if (disposed || !initialUntouched) return;
                     const option = (payload.results || [])[0];
-                    if (!option) return;
+                    if (!option) {
+                        showLookupError(element, "The previous Paper ID is not available. Select a Paper Master record.");
+                        return;
+                    }
                     picker.addOption(option);
                     picker.setValue(String(option[valueField]), true);
                     if (summaryTarget) updateSummary(element, option);
                 })
-                .catch(function () {
-                    picker.clear(true);
+                .catch(function (error) {
+                    if (!disposed && initialUntouched && error.name !== "AbortError") {
+                        showLookupError(element, "The previous Paper ID could not be loaded. Search to select a record.");
+                    }
                 });
         }
     }

@@ -46,6 +46,28 @@ Toast stack sits below a visible navbar, otherwise near the viewport's upper
 right. Text/close icons must remain readable. Never put a publication blocker
 only in a disappearing Toast.
 
+Full-page Django messages and HTMX operation feedback use one Toast template
+and lifecycle (`toasts.js`). Include Paper/Final identity in row-action feedback;
+the result must stay visible even when its row leaves a filter. Successful inline
+fallback is hidden only after its Toast is presented. Validation/error evidence
+stays inline and error/warning Toasts require dismissal. History restoration must
+not replay an old success notification.
+
+### Workflow Attention
+
+The shared warning area reads current processing/version-conflict counts on
+page load, after a POST completes, and when returning to a tab or restored
+history entry. Same-origin tabs notify each other; visible pages also check
+every 15 seconds for changes made elsewhere. Hidden pages pause reads.
+Only this advisory area refreshes automatically, not forms or entire worklists.
+
+Counts have no cross-request or browser cache. A failed check retains the last
+display with an explicit out-of-date notice and Retry; an initial failure says
+unavailable, never zero. Old/cancelled responses cannot replace newer results.
+These banners are navigation aids, not publication permission. Version-conflict
+list guidance lives inside its worklist and appears only for matching conflicts;
+the global banner remains conference-wide, independent of search.
+
 ## Navigation And Worklists
 
 - User search is fuzzy; workflow links use exact record targeting.
@@ -62,9 +84,21 @@ only in a disappearing Toast.
 - HTMX and full navigation must preserve equivalent URL/filter behavior.
   Card saves restore the owning card; do not leave another paper's async result
   attached after filtering/reordering.
+- Organized List exception/review saves refresh the whole worklist from one new
+  server context: summary, filter membership, order and clamped pagination.
+  A resolved row can leave the view. Preserve expanded panels, position and
+  other rows' unsaved reason drafts; never replace fresh evidence or persisted
+  reasons with browser drafts. Feedback remains visible even if the row leaves.
+  Drafts retained across HTMX page changes stay in browser memory only; a save
+  response preserves the cursor in an unrelated textarea being edited. Only one
+  worklist request runs at a time, so overlapping responses cannot reorder it.
 - Use the shared panel reveal positioning for table details and card reviews:
   if the row/card plus panel fits but is clipped, center it; otherwise align its
   owner at the viewport start. Expansion must not widen a table.
+- Organized List uses a bounded fixed-layout table: space is reserved for row
+  actions and labels wrap rather than widening the table. Ordinary laptop widths
+  must expose the action column without horizontal scrolling; narrow screens
+  retain contained table scrolling. A collapsed Navbar reserves no empty row.
 - Header actions operate on the current page or dataset. General navigation
   belongs in Navbar; condition-specific workflow links belong beside evidence.
 
@@ -73,10 +107,20 @@ only in a disappearing Toast.
 Titles and authors use wrapping textareas. Notes preserve useful paragraphs.
 Changed markers compare against loaded values and clear when restored.
 Server preview, not browser dirty state, decides effective changes and resets.
+`form_state.js` owns control-value snapshots for record edits and Formatting
+Single/Focus. Restoring text, status, checkbox or file selection to its loaded
+value removes the dirty condition. `form_guard.js` owns Formatting departure:
+cancel preserves protection, accepted navigation asks once, and browser-history
+return restores protection. It never submits or approves a record itself.
 
 Paper pickers share the searchable lookup/selection component and server
 validation. Selection must remain distinguishable from free text. Scope-changing
 actions require explicit confirmation; no implicit publication decisions.
+Initial metadata and search results are cancellable and generation-checked.
+After typing, clearing or selecting, a delayed initial lookup may not replace or
+clear the editor's choice. Destroying a picker invalidates pending callbacks.
+Lookup failure is explicit, not a guessed selection; server ID/evidence checks
+remain mandatory.
 
 Lazy panels use shared loading, success and error states. Initialize images,
 magnifiers and forms after HTMX replacements as well as full loads. Position
@@ -86,6 +130,8 @@ rather than stale pixels.
 
 Keep event listeners scoped/delegated and clean up timers/observers on removal.
 Do not duplicate a page-specific fix in every template.
+An uncertain network response does not prove a write rolled back. Ask the editor
+to check the current record before retrying a state-changing action.
 
 ## Formatting Workspace
 
@@ -103,6 +149,21 @@ Comparison services is Formatting-only: compact remote/local release,
 backend/status with detailed settings and last-seen labelling. Poll every ten
 seconds only while visible, no overlapping requests. Polling must not start
 work or silently grant CPU consent.
+
+## CrossCheck Workspace
+
+Batch history and detail share status/count partials and the read-only
+`crosscheck_presentation.py` classifier. Keep execution, retained report records
+and applied results distinct. Running uses blue/spinner; incomplete uses amber;
+all retrieved but not applied uses blue without a spinner. Green is reserved for
+all results applied, never merely a successful download. Empty, preview and
+cancelled batches remain neutral; failed execution without partial results is red.
+
+Show retrieved/applied fractions and simultaneous ready/missing/attention counts.
+A retained stale report is not a ready result. List summaries use batched DB
+reads, not per-paper network/hash checks; detailed service progress retains its
+existing visible-only polling. Summary labels/counts never authorize an action.
+Execution history describes individual attempts, not overall batch completion.
 
 ## Images And PDFs
 

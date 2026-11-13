@@ -24,6 +24,29 @@ settings, input hashes, commands, test counts/skips and unresolved limitations.
 Keep pre/post DB/review/readiness snapshots and exact publication file hashes.
 Use actual rendered PDF/OCR evidence when claiming recognition behavior.
 
+## Warning And Worklist Freshness
+
+With disposable data, process a pending PDF and discard/undo one side of a
+Start2/Editor conflict in under five seconds. Confirm banners disappear/reappear
+without repeated reloads. Repeat across two tabs, Back/Forward and hidden/visible
+transitions. Fail a status request: last-known warnings must be labelled stale;
+Retry must recover, and delayed old responses must not overwrite current data.
+
+In Organized List, approve/remove an exception with a filter and pagination
+active. Check summary, membership, ordering and page refill/clamping together.
+Keep another panel open with an unsaved reason and confirm it survives the
+replacement. Exercise stale signed evidence and validation errors. Compare
+publication identities, selected bytes and review/reset state before/after
+advisory reads; run the full developer gate.
+
+Delay a picker's initial lookup, select a different Master, then release or fail
+the original response: the new selection must remain. Repeat after HTMX removal.
+In Single/Focus, restoring Notes/status must remove the dirty warning; cancelling
+departure retains protection and accepting it asks only once, including history
+return. Resolve an exception at the bottom of a filter and verify a visible,
+Paper/Final-labelled Toast without losing other drafts. At 1366px, action buttons
+must fit the Organized List; at 390px the collapsed Navbar has no empty strip.
+
 ## Editorial Workflow
 
 | Test | Required outcome |
@@ -108,6 +131,11 @@ results and explicit Apply. Retry-download must not upload again, overwrite an
 execution ZIP or replay an applied result. Change active Final/PDF/manual scores
 between preview/apply and verify rejection. Same-byte new Final is still a new
 identity. Check restore preserves history/timestamps and applied-result locks.
+Compare batch history/detail for running, partial, all-retrieved awaiting Apply,
+and all-applied states. Missing reports/attention remain visible when some results
+are ready. Retry must keep earlier applied counts. Preview/cancelled/empty must
+not appear successful. Missing matching report history cannot count as ready.
+Summary GETs must not contact the service, write DB/files or change signed evidence.
 
 ## Exports And State
 

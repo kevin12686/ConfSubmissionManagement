@@ -9,6 +9,63 @@ have been removed. Older records remain in Git history; release changes remain
 in [Changelog](../CHANGELOG.md). The following preserves the relevant baseline
 and known limits without presenting old runtimes as the current configuration.
 
+## Latest UI Acceptance: 1.31.7
+
+| Scope | Recorded outcome |
+| --- | --- |
+| Native Django | 1093 passed, including shared CrossCheck summaries and publication/version/evidence regressions |
+| JavaScript | 158 passed |
+| Standalone discovery | 127 run, 2 Docker deployment opt-ins skipped; deployment/worker behavior unchanged |
+| CrossCheck boundaries | Running, retry with applied papers, partial, awaiting application, complete, failed/rejected, unconfirmed, stale, missing evidence, unknown, empty, preview and cancelled states |
+| List/detail parity | Same saved counts and labels; duplicate report history counted once, mismatching digest not counted as ready; reads leave evidence/DB/files unchanged and make no service request |
+| Browser page sweep | 27 major pages at 1440/1366/1024/390px, 108 visits, all 200; no page errors, visible broken images or document overflow |
+| Browser batches | 11 representative states agreed across list/detail; real 15-second browser polling with a mocked service changed running to awaiting application, not completion; 320px/reduced-motion checks passed |
+| Other interactions | Organized Details/filter removal/Toast/drafts, Formatting lazy preview/history, Single restored-value navigation, manual-override lazy form, picker, Medium issue filter, JSON contrast, PDF navigation, repeated workbook download, blocked final ZIP and phone navigation passed |
+| Integrity | All 1909 existing production DB/data file hashes unchanged; no added or removed files |
+
+System/migration/docs/compile/whitespace gates passed. These are UI/read-only
+summary changes, not changes to CrossCheck submission/download/retry/application,
+publication selection, version binding or review reset rules. State archive stays
+8 and comparison method stays 9. No real IEEE upload, Docker deployment, OCR or
+CUDA inference was run in this UI round; all writes used disposable generated data.
+
+## Previous UI Acceptance: 1.31.6
+
+| Scope | Recorded outcome |
+| --- | --- |
+| Native Django | 1083 passed, including unchanged publication state and exact Corrected PDF/source and CrossCheck ZIP bytes |
+| JavaScript | 158 passed, including picker races, actual-value form guards and detached-target HTMX feedback |
+| Standalone discovery | 127 run, 2 Docker deployment opt-ins skipped; deployment/worker behavior unchanged |
+| Browser | 23 major pages at 1366/1024/390px, 69 visits; all returned 200, no page errors, visible broken images or document overflow |
+| Picker | Delayed initial lookup cannot replace the explicitly selected Paper ID; cancellation, failure/retry and teardown covered |
+| Forms | Single/Focus restored notes, status and cleared file selections navigate without false warnings; cancelled departure retains drafts and accepted departure does not prompt twice |
+| Feedback | Filtered exception removal shows identified Toast in viewport; sibling drafts survive, validation stays inline and close remains visible |
+| Layout | Laptop action column and expanded Details stay within the table; collapsed phone navigation no longer reserves an empty row |
+| Other interactions | Lazy first-page preview/history, current publication PDF navigation, repeated workbook downloads, Title/Author save/cursor and blocked final export passed |
+| Integrity | All 1909 existing production DB/data file hashes unchanged; no added or removed files |
+
+System/migration/docs/compile/whitespace gates passed. App version changes only;
+State archive remains 8 and comparison method remains 9. Browser writes used
+generated disposable records, never current conference records. Real Docker,
+OCR and CUDA inference were not rerun for these shared UI changes.
+
+## Previous UI Baseline: 1.31.5
+
+| Scope | Recorded outcome |
+| --- | --- |
+| Native Django | 1082 tests passed, including fresh counts and exact selected Corrected PDF/source and CrossCheck ZIP bytes |
+| JavaScript | 142 passed, including stale response rejection, hidden-tab pause, failure recovery and worklist drafts/cursor |
+| Standalone discovery | 127 run, 2 Docker deployment opt-ins skipped; deployment/worker behavior unchanged |
+| Browser | 23 major pages at 1440/390px, 46 visits; no page errors, visible broken images or document overflow |
+| Interaction | Fast Process/discard/undo, cross-tab/history, HTMX conflict tabs, exception summaries/filter removal/page clamp, opening transitions, cross-page drafts and concurrent-save guard passed |
+| Failure handling | Initial and last-known status failures/retry, obsolete reads and uncertain write-response wording checked |
+| Integrity | All 1909 existing production DB/data files unchanged; testing used disposable generated records |
+
+System/migration/docs/compile/whitespace gates passed. App version changes only;
+State archive remains 8 and comparison method remains 9. This UI round did not
+rerun real Docker deployments, OCR or CUDA inference; their relevant baseline is
+recorded below, not claimed as a new run.
+
 ## Latest Engine Acceptance: 1.31.4 / Method 9
 
 | Scope | Recorded outcome |

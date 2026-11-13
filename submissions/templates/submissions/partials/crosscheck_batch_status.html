@@ -1,0 +1,6 @@
+<div class="cfm-crosscheck-status cfm-crosscheck-status-{{ summary.level }}" data-batch-state="{{ summary.key }}">
+    {% if summary.icon == 'spinner' %}<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+    {% else %}<span class="cfm-crosscheck-status-icon" aria-hidden="true">{% if summary.icon == 'check' %}&#10003;{% elif summary.icon == 'attention' %}!{% elif summary.icon == 'review' %}&#8230;{% else %}&#8212;{% endif %}</span>{% endif %}
+    <strong>{{ summary.label }}</strong>
+</div>
+<div class="small mt-1 cfm-wrap-anywhere">{{ summary.description }}</div>

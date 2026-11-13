@@ -1,0 +1,16 @@
+<div class="toast show cfm-toast cfm-toast-{{ level }}"
+     role="{% if level == 'error' or level == 'warning' %}alert{% else %}status{% endif %}"
+     aria-live="{% if level == 'error' or level == 'warning' %}assertive{% else %}polite{% endif %}"
+     aria-atomic="true" data-cfm-toast data-cfm-toast-level="{{ level }}"
+     data-bs-autohide="{% if level == 'success' or level == 'info' %}true{% else %}false{% endif %}"
+     data-bs-delay="{% if level == 'success' %}5000{% else %}7000{% endif %}">
+    <div class="toast-header">
+        <span class="cfm-toast-status-dot" aria-hidden="true"></span>
+        <strong class="me-auto" data-cfm-toast-title>{% if level == 'success' %}Updated{% elif level == 'warning' %}Attention{% elif level == 'error' %}Action failed{% else %}Information{% endif %}</strong>
+        <button type="button" class="cfm-toast-close" data-cfm-toast-close aria-label="Close"><span aria-hidden="true">&times;</span></button>
+    </div>
+    <div class="toast-body">
+        <div data-cfm-toast-message>{{ message }}</div>
+        <div class="small mt-1" data-cfm-toast-record hidden></div>
+    </div>
+</div>
