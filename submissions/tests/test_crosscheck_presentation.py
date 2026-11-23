@@ -10,6 +10,7 @@ from submissions.models import CrossCheckServiceAttempt, CrossCheckServiceJob, C
 from submissions.services.crosscheck_presentation import batch_counts, batch_summary
 from submissions.services.crosscheck_service_history import batch_context, job_evidence, job_evidence_token
 from submissions.services.publication_read import publication_database_signature
+from submissions.services.workflow_evidence import require_evidence_token
 from submissions.tests import test_crosscheck_service as fixtures
 
 
@@ -170,6 +171,6 @@ class CrossCheckBatchPresentationTests(TestCase):
             network.assert_not_called()
         self.assertEqual(publication_database_signature(), signature)
         self.assertEqual(job_evidence(job), evidence)
-        self.assertEqual(job_evidence_token(job), token)
+        require_evidence_token(token, "crosscheck-service-job", job_evidence(job))
         self.assertEqual([list(model.objects.order_by("pk").values()) for model in tables], before)
         self.assertEqual({str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in self.root.rglob("*") if path.is_file()}, files)
