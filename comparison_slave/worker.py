@@ -38,13 +38,20 @@ def read_pair(stream):
     return pair
 
 
-def execute(before, after):
+def execute(before, after, *, ephemeral=False):
     from submissions.services.comparison_protocol import page_render_hashes
     from submissions.services.pdf_comparison_execution import local_pdf_evidence
     from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
     diagnostics = {}
     try:
-        result = local_pdf_evidence(before, after, diagnostics=diagnostics)
+        if ephemeral:
+            from submissions.services.rapidocr_comparison.runtime import ocr_backend
+            runtime = os.environ.get("CFM_ONE_TIME_RUNTIME")
+            if ocr_backend() != "cuda" or not runtime:
+                raise PDFComparisonError("One-time GPU comparison requires CUDA.")
+            diagnostics["runtime"] = os.environ.get("CFM_GPU_RESIDENT_RUNTIME") or runtime
+        kwargs = {"ephemeral": True} if ephemeral else {}
+        result = local_pdf_evidence(before, after, diagnostics=diagnostics, **kwargs)
         return {"result": result, "diagnostics": diagnostics,
                 "render_hashes": {"before": page_render_hashes(before), "after": page_render_hashes(after)}}
     except ComparisonInProgress:
@@ -73,16 +80,20 @@ def main():
     signal.signal(signal.SIGALRM, lambda *_: os.killpg(os.getpgrp(), signal.SIGKILL))
     signal.alarm(supervisor_seconds())
     import resource
-    resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
+    mode = sys.argv[1]
+    output_file_limit = 0 if mode == "once" else 16 * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_FSIZE, (output_file_limit, output_file_limit))
     from submissions.services.pdf_comparison_worker import resource_limits
     resource_limits()
     try:
         with redirect_stdout(sys.stderr):
             configure(Path(sys.argv[2]), Path(sys.argv[3]))
-            if sys.argv[1] == "preflight":
+            if mode == "preflight":
                 payload = preflight()
-            elif sys.argv[1] == "job":
+            elif mode == "job":
                 payload = execute(*read_pair(sys.stdin.buffer))
+            elif mode == "once":
+                payload = execute(*read_pair(sys.stdin.buffer), ephemeral=True)
             else:
                 raise ValueError("Invalid runner mode")
             encoded = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()

@@ -15,6 +15,7 @@ from submissions.models import FinalSubmission, FormattingRevision
 from submissions.services.checks import publication_readiness_rows
 from submissions.services.crosscheck import prepare_crosscheck_upload
 from submissions.services.pdf_comparison import MAX_BYTES, create_pdf_comparison
+from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired, PDFComparisonError
 from submissions.services.publication_read import publication_database_signature
 from submissions.services.reports import export_publication_package
 from submissions.tests.ocr_fixtures import synthetic_ocr_worker
@@ -56,17 +57,17 @@ class PDFComparisonOnceTests(EditorialAcceptanceTestCase):
         return {str(path.relative_to(self.root)): hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in self.root.rglob("*") if path.is_file()}
 
-    def test_same_engine_result_and_no_persisted_changes_even_with_remote_configured(self):
+    def test_cpu_only_install_keeps_same_engine_result_without_persistence(self):
         reference = create_pdf_comparison(self.submission.pk)["result"]
         baseline = self.baseline()
         self.assertEqual(baseline.content, self.before)
         self.assertContains(self.client.get(self.page_url), "Compare without saving")
+        self.assertNotContains(self.client.get(self.page_url), "once-backend")
         listing = self.client.get(reverse("submissions:formatting"), {"mode": "focus", "submission": self.submission.pk})
         self.assertContains(listing, "Compare without saving")
         rows = list(FinalSubmission.objects.values()), list(FormattingRevision.objects.values())
         signature, readiness, files = publication_database_signature(), publication_readiness_rows(strict_hash=True), self.files()
-        with override_settings(CFM_COMPARISON_TRANSPORT="service", CFM_COMPARISON_REMOTE_URL="http://example.invalid"), \
-                patch("submissions.services.comparison_client.service_pdf_evidence") as remote, \
+        with patch("submissions.services.comparison_client.one_time_gpu_evidence") as remote, \
                 patch("submissions.services.pdf_comparison_execution.comparison_cache_job") as cache, \
                 patch("submissions.services.pdf_comparison_execution.tempfile.TemporaryFile") as temporary:
             response = self.compare(baseline["X-CFM-Baseline"], HTTP_X_CFM_DRAFT_NAME="%3Cimg%20src%3Dx%3E.pdf")
@@ -108,8 +109,26 @@ class PDFComparisonOnceTests(EditorialAcceptanceTestCase):
         draft = make_pdf(["This transient draft must never appear in an export."])
         source_bytes = Path(self.submission.source_file.path).read_bytes()
         before = publication_database_signature()
-        response = self.compare(self.baseline("current")["X-CFM-Baseline"], draft)
+        baseline = self.baseline("current")["X-CFM-Baseline"]
+        files = self.files()
+        cpu = self.compare(baseline, draft)
+        self.assertEqual(cpu.status_code, 200, cpu.content[:400])
+        result = {key: value for key, value in cpu.json()["data"].items() if key not in {"before", "after", "execution"}}
+        self.worker.reset_mock()
+        with override_settings(CFM_COMPARISON_REMOTE_URL="http://example.invalid"), \
+                patch("submissions.services.comparison_client.one_time_gpu_evidence", return_value=result) as gpu:
+            response = self.compare(baseline, draft)
+            gpu.assert_called_once_with(self.after, draft)
+            self.worker.assert_not_called()
+            gpu.side_effect = LocalComparisonConfirmationRequired("Remote GPU is busy.")
+            consent = self.compare(baseline, draft).json()["local_confirmation"]
+            self.worker.assert_not_called()
+            fallback = self.compare(baseline, draft, HTTP_X_CFM_LOCAL_CONFIRMATION=consent)
+            self.assertEqual(fallback.json(), cpu.json())
+            self.assertEqual(gpu.call_count, 2)
         self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertEqual(response.json()["data"], {**cpu.json()["data"], "execution": {"label": "GPU"}})
+        self.assertEqual(self.files(), files)
         self.assertEqual(publication_database_signature(), before)
         with zipfile.ZipFile(export_publication_package()) as package:
             [paper] = [name for name in package.namelist() if name.startswith("PDF/") and name.endswith(".pdf")]
@@ -118,6 +137,42 @@ class PDFComparisonOnceTests(EditorialAcceptanceTestCase):
             self.assertEqual(package.read(source), source_bytes)
         with zipfile.ZipFile(prepare_crosscheck_upload("ONCE")["zip_path"]) as package:
             self.assertEqual(package.read("P001_ONCE.pdf"), self.after)
+
+    @override_settings(CFM_COMPARISON_REMOTE_URL="http://example.invalid")
+    def test_gpu_needs_explicit_cpu_confirmation_bound_to_exact_input_and_config(self):
+        baseline = self.baseline()["X-CFM-Baseline"]
+        files, signature = self.files(), publication_database_signature()
+        with patch("submissions.services.comparison_client.one_time_gpu_evidence") as gpu:
+            gpu.side_effect = LocalComparisonConfirmationRequired("Remote GPU is busy.")
+            response = self.compare(baseline, HTTP_X_CFM_COMPARE_BACKEND="cpu")
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response["Cache-Control"], "no-store")
+            self.assertEqual(set(response.json()), {"error", "local_confirmation"})
+            consent = response.json()["local_confirmation"]
+            gpu.assert_called_once_with(self.before, self.after)
+
+            for selected, draft, confirmation in (
+                (baseline, self.after, consent + "tampered"),
+                (baseline, self.before, consent),
+                (self.baseline("current")["X-CFM-Baseline"], self.after, consent),
+            ):
+                rejected = self.compare(selected, draft, HTTP_X_CFM_LOCAL_CONFIRMATION=confirmation)
+                self.assertEqual(rejected.status_code, 409)
+                self.assertEqual(set(rejected.json()), {"error"})
+            with override_settings(CFM_COMPARISON_REMOTE_TOKEN="rotated"):
+                self.assertEqual(self.compare(baseline, HTTP_X_CFM_LOCAL_CONFIRMATION=consent).status_code, 409)
+            with patch("django.core.signing.time.time", return_value=time.time() + 301):
+                self.assertEqual(self.compare(baseline, HTTP_X_CFM_LOCAL_CONFIRMATION=consent).status_code, 409)
+            self.assertEqual(gpu.call_count, 1)
+            self.worker.assert_not_called()
+
+            gpu.side_effect = PDFComparisonError("The GPU may still be working.")
+            lost_reply = self.compare(baseline)
+            self.assertEqual(lost_reply.status_code, 409)
+            self.assertEqual(lost_reply.json(), {"error": "The GPU may still be working."})
+        self.worker.assert_not_called()
+        self.assertEqual(self.files(), files)
+        self.assertEqual(publication_database_signature(), signature)
 
     def test_draft_errors_do_not_open_disk_upload_handlers_or_run_ocr(self):
         token = self.baseline()["X-CFM-Baseline"]

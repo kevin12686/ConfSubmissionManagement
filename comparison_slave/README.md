@@ -69,6 +69,22 @@ are returned. Failed jobs remain terminal until an explicit user retry, not an
 automatic polling loop. An uncertain POST must be reconciled on the same worker,
 not duplicated locally/remotely.
 
+## One-Time GPU API
+
+Authenticated `GET /v1/compare-once` advertises `ephemeral: 1`, the existing
+protocol/contract, backend and readiness. `checking` means preflight is being
+refreshed and no PDF should be sent yet. `POST` uses the same binary framing
+and hash/contract headers as a job, plus `X-CFM-Request` (32 lowercase hex digits).
+Only a ready CUDA worker can accept it. It takes the same single compute slot
+as the scheduler; contention returns 429, with no queue entry. CUDA or runtime
+failure returns 503. The completed response echoes the request nonce and
+includes the usual pair identity and evidence. There is no result lookup.
+
+The child communicates through bounded pipes. No PDF/result goes into the
+ledger, signed OCR cache or document spool. Resident models are shared as usual;
+the draft and extracted document data remain request-scoped. Proxies must not
+spool, log or cache payloads and need sufficient request duration.
+
 ## Queue, Retention And Recovery
 
 | Bound | Limit |

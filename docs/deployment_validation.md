@@ -9,6 +9,19 @@ have been removed. Older records remain in Git history; release changes remain
 in [Changelog](../CHANGELOG.md). The following preserves the relevant baseline
 and known limits without presenting old runtimes as the current configuration.
 
+## One-Time GPU Comparison: 1.31.9
+
+| Scope | Recorded outcome |
+| --- | --- |
+| Native gate | 1106 Django and 163 JavaScript tests passed; standalone discovery ran 127 tests with 2 deployment opt-ins skipped |
+| Real CUDA in Docker | Quadro RTX 5000, pinned Small models, with and without model residency: saved and one-time requests for the same generated three-page pair matched complete OCR evidence and per-page render hashes, including crop/rotation |
+| Isolation and failure | Concurrent GPU request returned 429; repeat through the CFM client matched evidence and left worker files, ledger and caches unchanged; mismatched/stale inputs, transport failures and no fallback covered |
+| Browser | One Compare action used real CUDA without prompting. Disconnecting the worker showed the shared confirmation without resetting the draft. CPU only started after confirmation; changed baseline, reload disposal and 390px layout passed |
+| Publication | The different draft never replaced the saved PDF or source in Publication ZIP or CrossCheck export; DB signatures and managed file bytes were unchanged |
+
+Tests used generated PDFs and disposable data. No live conference or gateway
+was changed. The comparison method and State archive version are unchanged.
+
 ## One-Time Comparison Acceptance: 1.31.8
 
 | Scope | Recorded outcome |

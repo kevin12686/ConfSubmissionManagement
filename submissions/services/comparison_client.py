@@ -278,6 +278,70 @@ def _validate_identity(payload, key, hashes, contract):
         raise PDFComparisonError("The worker result does not match this PDF pair and comparison method. No result was accepted.")
 
 
+def _one_time_gpu_endpoint(path, contract):
+    endpoint = next((item for item in _endpoints() if item.name == "remote"), None)
+    if endpoint is None:
+        raise PDFComparisonError("No remote GPU worker is configured.")
+    status, capability = endpoint.call(path)
+    deadline = time.monotonic() + 8
+    while True:
+        if (status != 200 or capability.get("protocol") != PROTOCOL or capability.get("ephemeral") != 1
+                or capability.get("contract") != contract or capability.get("backend") != "cuda"):
+            raise PDFComparisonError("Remote GPU does not support one-time comparison. Check its backend and update the worker and CFM.")
+        state = capability.get("state")
+        if state == "ready":
+            return endpoint
+        if state == "busy":
+            raise PDFComparisonError("Remote GPU is busy.")
+        remaining = deadline - time.monotonic()
+        if state != "checking" or remaining <= 0.25:
+            raise PDFComparisonError("Remote GPU is not ready.")
+        # A stale runtime check only retries GET, never sends the PDF pair.
+        time.sleep(0.25)
+        status, capability = endpoint.call(path, timeout=min(5, remaining - 0.25))
+
+
+def one_time_gpu_evidence(before, after):
+    """Send exactly one request to a validated CUDA worker; never use the job ledger."""
+    from .rapidocr_comparison.config import supervisor_seconds
+
+    if not all(0 < len(data) <= MAX_PDF_BYTES for data in (before, after)):
+        raise PDFComparisonError("Comparison requires two non-empty PDFs of at most 64 MiB each.")
+    contract = contract_id()
+    path = "/v1/compare-once"
+    try:
+        endpoint = _one_time_gpu_endpoint(path, contract)
+    except (TransportUnavailable, PDFComparisonError) as exc:
+        raise LocalComparisonConfirmationRequired(f"{exc} Local CPU has not been started.") from exc
+
+    hashes = [hashlib.sha256(data).hexdigest() for data in (before, after)]
+    nonce = uuid.uuid4().hex
+    try:
+        status, payload = endpoint.call(path, timeout=supervisor_seconds() + 5,
+            body=b"".join((struct.pack(">QQ", len(before), len(after)), before, after)),
+            headers={"X-CFM-Contract": contract, "X-CFM-Before-SHA256": hashes[0], "X-CFM-After-SHA256": hashes[1],
+                     "X-CFM-Request": nonce})
+    except (TransportUnavailable, PDFComparisonError) as exc:
+        raise PDFComparisonError(f"No verified reply after sending the GPU comparison. {exc} "
+                                 "The GPU may still be working. Local CPU has not been started.") from exc
+
+    try:
+        if status == 429 and payload.get("protocol") == PROTOCOL and payload.get("error") in ("compute_busy", "upload_busy"):
+            raise LocalComparisonConfirmationRequired("Remote GPU is busy. Local CPU has not been started.")
+        if status == 503 and payload.get("protocol") == PROTOCOL and payload.get("error") in ("not_ready", "gpu_required"):
+            raise LocalComparisonConfirmationRequired("Remote GPU is not ready. Local CPU has not been started.")
+        if status != 200:
+            raise PDFComparisonError("One-time GPU comparison could not complete. Check worker readiness and review both PDFs; no CPU comparison was started.")
+        if (payload.get("request") != nonce or payload.get("ephemeral") != 1 or payload.get("backend") != "cuda"
+                or not isinstance(payload.get("diagnostics"), dict) or payload["diagnostics"].get("backend") != "cuda"):
+            raise PDFComparisonError("The worker reply does not match this one-time GPU request. No result was accepted.")
+        return _completed_result(payload, job_key(hashes, contract), hashes, contract, before, after)
+    except PDFComparisonError:
+        raise
+    except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+        raise PDFComparisonError("One-time GPU comparison returned invalid evidence. No result was accepted.") from exc
+
+
 def service_pdf_evidence(before, after, *, diagnostics=None, retry_failed=False, allow_local=False):
     if not all(0 < len(data) <= MAX_PDF_BYTES for data in (before, after)):
         raise PDFComparisonError("Comparison requires two non-empty PDFs of at most 64 MiB each.")

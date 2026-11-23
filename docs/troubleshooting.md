@@ -58,6 +58,8 @@ Use [Deployment](deployment.md) for commands and
 | Not ready / preflight pending | Wait/check the reported runtime category; do not treat as auth success plus usable compute |
 | GPU models unloaded, service Ready | Expected idle state; a new inference reloads weights |
 | Local fallback confirmation | Remote is configured but new work would use local CPU; you can repair remote instead |
+| One-time GPU busy/unavailable before acceptance | No work was queued. Recheck the remote worker or confirm Local CPU without reselecting the draft. |
+| One-time GPU reply lost after upload | GPU may still be running within its worker time limit. Check the connection and gateway duration; there is no saved result or automatic CPU retry. |
 
 CFM uses the shared application User-Agent. Optional custom headers must be
 valid one-line JSON in each conference env. They supplement, not replace,

@@ -1,0 +1,7 @@
+<div class="cfm-comparison-execution-choice" role="status" data-comparison-execution-choice{% if not execution_choice %} hidden{% endif %}>
+    <strong>{% if execution_choice.existing_local %}Local comparison requires confirmation{% else %}Comparison not started{% endif %}</strong>
+    <div data-comparison-execution-message>{{ execution_choice.message }}</div>
+    {% if ephemeral or execution_choice.token %}
+    <button class="btn btn-sm btn-outline-secondary" type="submit" name="local_confirmation" value="{{ execution_choice.token|default:'' }}"{% if not execution_choice.token %} hidden{% endif %}>Use local CPU for this comparison · may take longer</button>
+    {% endif %}
+</div>

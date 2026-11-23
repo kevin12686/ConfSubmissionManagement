@@ -1,14 +1,5 @@
 # Deployment
 
-**One-time draft comparison:** runs on the CFM web host's local CPU, even when
-normal comparisons use a remote worker. The web host needs access to the configured
-OCR models (default `runtime/rapidocr-models/`) and the same Python OCR dependencies.
-The supported web stack is WSGI. The bundled Nginx streams request bodies and
-honors `X-Accel-Buffering: no` for the one-time baseline/result responses. If you
-add another proxy, do not spool request/response bodies, cache the route or log
-payloads, and allow the configured OCR timeout. Other stacks may buffer bodies
-before CFM receives them. No existing worker deployment or protocol update is required.
-
 Run from the repo root. Change the example values, preview, then apply.
 For backup/recovery and tuning see [Operations](operations.md).
 For non-Docker startup see [Native setup](developer_guide.md#native-setup).
@@ -137,6 +128,22 @@ Direct env configuration is also supported: remote URL is the reachable origin;
 remote token is that conference enrollment's `token`.
 Keep envs mode 0600. Never publish secrets or override `Authorization`/`Host`.
 After env changes, update that conference; restart alone does not reload Compose env.
+
+### One-Time Draft Comparison
+
+A configured remote GPU is tried first, using the same worker URL, token and
+custom headers. Update CFM and the GPU worker together; no new env settings are
+needed. With no configured remote, or after explicit confirmation when GPU
+cannot start, Local CPU uses the CFM host's approved models and OCR dependencies.
+
+The bundled WSGI/Nginx stack streams the one-time request and honors
+`X-Accel-Buffering: no` on its response. On any additional gateway, allow
+`GET` and `POST /v1/compare-once` on the worker and stream without disk spooling,
+body logging or caching. The worker POST limit must allow two 64 MiB PDFs plus
+16 bytes of framing. Both HTTP hops must allow the OCR runtime; a gateway with a
+shorter timeout can end the request before the comparison completes. There is
+no result to recover after disconnect. CFM never automatically resends PDFs or
+switches to Local CPU.
 
 ## 3. Update
 

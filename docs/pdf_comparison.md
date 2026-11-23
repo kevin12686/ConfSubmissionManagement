@@ -39,9 +39,18 @@ baseline selection binds the exact edition and bytes delivered to the viewer;
 the server rechecks the selection before and after OCR. Missing or stale inputs
 fail without selecting an alternate.
 
-The bounded subprocess uses the same OCR and result validation but does not
-use the worker API, ledger, snapshot directory or either OCR cache. The browser
-holds both PDFs and the evidence in page memory and renders with PDF.js, using
+**Compare PDFs** sends the validated pair to the configured CUDA worker first.
+That uses the existing authenticated transport, OCR runtime and compute slot,
+but not the saved-job API. When GPU is busy or unavailable before accepting the
+pair, the existing confirmation pattern offers a remote recheck or Local CPU
+without picking the draft again. CPU consent is signed for the selected baseline,
+draft and configuration. If a reply is lost after upload, CFM cannot tell whether
+GPU is still running and does not issue CPU consent for that attempt. With no
+configured remote worker, Local CPU runs directly.
+
+Both paths bypass snapshots, saved-job and routing records, temporary document
+files and OCR caches. The browser holds both PDFs and evidence in page memory
+and renders with PDF.js, using
 the existing workspace, marks and magnifier. Changing inputs, navigating away
 or reloading discards the result; there is no URL to reopen it. The regular
 Formatting save, automatic comparisons and server-rendered snapshots are unchanged.

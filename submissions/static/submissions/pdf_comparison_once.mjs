@@ -81,6 +81,9 @@ function initialize(form) {
     const button = form.querySelector("button[type=submit]");
     const status = form.querySelector("[data-comparison-once-status]");
     const error = form.querySelector("[data-comparison-once-error]");
+    const choice = form.querySelector("[data-comparison-execution-choice]");
+    const choiceMessage = choice.querySelector("[data-comparison-execution-message]");
+    const local = form.elements.local_confirmation;
     const endpoint = new URL(form.dataset.inputUrl, location.href);
     const runtime = new URL(form.dataset.pdfRuntime, location.href);
     let pending, renderer, unmount;
@@ -93,8 +96,11 @@ function initialize(form) {
         renderer?.dispose();
         renderer = null;
         workspace.replaceChildren();
-        status.hidden = error.hidden = true;
+        status.hidden = error.hidden = choice.hidden = local.hidden = true;
         error.textContent = "";
+        choiceMessage.textContent = "";
+        local.value = "";
+        button.textContent = "Compare PDFs";
         button.disabled = !input.files.length;
     }
 
@@ -109,6 +115,7 @@ function initialize(form) {
     form.addEventListener("submit", async event => {
         event.preventDefault();
         if (pending) return;
+        const localConfirmation = event.submitter === local ? local.value : "";
         clear();
         const file = input.files[0];
         if (!file) return;
@@ -134,13 +141,24 @@ function initialize(form) {
             const before = await base.arrayBuffer();
             const after = await file.arrayBuffer();
             request.signal.throwIfAborted();
-            status.textContent = "Comparing PDFs on local CPU...";
-            const response = await checked(await fetch(endpoint, {...options, method: "POST", body: after, headers: {
+            status.textContent = localConfirmation ? "Comparing PDFs on local CPU..." : "Comparing PDFs...";
+            const response = await fetch(endpoint, {...options, method: "POST", body: after, headers: {
                 "Content-Type": "application/pdf", "X-CSRFToken": form.elements.csrfmiddlewaretoken.value,
                 "X-CFM-Baseline": token, "X-CFM-Draft-Name": encodeURIComponent(file.name),
-            }}));
-            const {data, workspace: markup} = await response.json();
+                ...(localConfirmation ? {"X-CFM-Local-Confirmation": localConfirmation} : {}),
+            }});
+            const payload = await response.json().catch(() => ({}));
             request.signal.throwIfAborted();
+            if (response.status === 409 && payload.local_confirmation) {
+                status.hidden = true;
+                choiceMessage.textContent = payload.error;
+                local.value = payload.local_confirmation;
+                choice.hidden = local.hidden = false;
+                button.textContent = "Recheck remote and start";
+                return;
+            }
+            if (!response.ok) throw new Error(payload.error || `Comparison unavailable (HTTP ${response.status}). No files were changed.`);
+            const {data, workspace: markup} = payload;
             renderer = openRenderer(pdfjs, runtime, {before, after}, data);
             await renderer.ready;
             request.signal.throwIfAborted();

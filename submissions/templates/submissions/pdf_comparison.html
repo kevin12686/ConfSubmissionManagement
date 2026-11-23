@@ -23,9 +23,10 @@
         {% csrf_token %}
         <div><label class="form-label" for="once-baseline">Before</label><select class="form-select" id="once-baseline" name="baseline"><option value="original">Original submission</option><option value="current">Current saved PDF</option></select></div>
         <div><label class="form-label" for="once-draft">After · Unsaved draft</label><input class="form-control" id="once-draft" type="file" accept=".pdf,application/pdf" required></div>
-        <button class="btn btn-primary" type="submit" disabled>Compare on local CPU</button>
+        <button class="btn btn-primary" type="submit" disabled>Compare PDFs</button>
         <p class="small text-muted mb-0">The draft and results are not saved. Closing or reloading this page discards the comparison.</p>
         <div class="small mt-2" data-comparison-once-status role="status" hidden></div>
+        {% include "submissions/partials/pdf_comparison_execution_choice.html" %}
         <div class="alert alert-warning cfm-alert-stack mb-0" data-comparison-once-error role="alert" hidden></div>
     </form>
     <noscript>One-time comparison requires JavaScript.</noscript>
@@ -41,11 +42,7 @@
             <div><div class="form-label">After · Selected publication PDF</div><div class="cfm-comparison-current-file"><span class="badge text-bg-secondary">{{ current_pdf.label }}</span><span class="text-break">{{ current_pdf.filename|default:"No PDF" }}</span></div></div>
             <button class="btn btn-primary" type="submit">{% if execution_choice %}{% if execution_choice.existing_local %}Check existing comparison{% else %}Recheck remote and start{% endif %}{% elif comparison_data %}Rebuild comparison{% else %}Build comparison{% endif %}</button>
             {% if execution_choice %}
-            <div class="cfm-comparison-execution-choice" role="status">
-                <strong>{% if execution_choice.existing_local %}Local comparison requires confirmation{% else %}Comparison not started{% endif %}</strong>
-                <div>{{ execution_choice.message }}</div>
-                {% if execution_choice.token %}<button class="btn btn-sm btn-outline-secondary" type="submit" name="local_confirmation" value="{{ execution_choice.token }}">Use local CPU for this comparison · may take longer</button>{% endif %}
-            </div>
+            {% include "submissions/partials/pdf_comparison_execution_choice.html" %}
             {% endif %}
         </form>
     </details>

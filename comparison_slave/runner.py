@@ -1,6 +1,7 @@
 """Single-flight background scheduling and bounded subprocess supervision."""
 
 import fcntl
+from contextlib import contextmanager, nullcontext
 from itertools import islice
 import json
 import logging
@@ -36,6 +37,7 @@ class Service:
         self.probe_requested = threading.Event()
         self.probe_requested.set()
         self.thread = None
+        self.compute_lock = threading.Lock()
         self.ready = False
         self.health_error = "configuration_unavailable"
         self.runtime = None
@@ -126,10 +128,18 @@ class Service:
         environment["TMPDIR"] = str(directory / "tmp")
         environment.setdefault("CFM_RAPIDOCR_MODEL_DIR", str(Path(__file__).resolve().parents[1] / "runtime" / "rapidocr-models"))
         environment.update(extra_environment or {})
+        if mode == "once":
+            # Reuse verified preflight metadata without initializing any disk cache.
+            environment["CFM_ONE_TIME_RUNTIME"] = self.runtime
         command = [sys.executable, "-B", "-m", "comparison_slave.worker", mode, str(directory), str(self.secret_file)]
-        # Files bound stdout independently of the child's behavior; no pipe buffers grow.
-        with tempfile.TemporaryFile(dir=directory / "tmp") as source, tempfile.TemporaryFile(dir=directory / "tmp") as output:
-            if body is not None:
+        ephemeral = mode == "once"
+
+        def channel():
+            return nullcontext(subprocess.PIPE) if ephemeral else tempfile.TemporaryFile(dir=directory / "tmp")
+
+        # The memory-only runner checks the same output cap before writing to its pipe.
+        with channel() as source, channel() as output:
+            if body is not None and not ephemeral:
                 source.write(body)
                 source.seek(0)
             child = subprocess.Popen(command, stdin=source, stdout=output, stderr=subprocess.DEVNULL,
@@ -137,12 +147,17 @@ class Service:
                                      start_new_session=True, pass_fds=(self.guard.fileno(),))
             try:
                 try:
-                    child.wait(timeout=60 if mode == "preflight" else supervisor_seconds())
+                    if ephemeral:
+                        encoded, _ = child.communicate(body, timeout=supervisor_seconds())
+                    else:
+                        child.wait(timeout=60 if mode == "preflight" else supervisor_seconds())
                 except subprocess.TimeoutExpired:
-                    logger.warning("comparison_slave subprocess_timeout mode=%s namespace=%s", mode, namespace)
+                    if not ephemeral:
+                        logger.warning("comparison_slave subprocess_timeout mode=%s namespace=%s", mode, namespace)
                     raise
                 if child.returncode:
-                    logger.warning("comparison_slave subprocess_exit mode=%s namespace=%s code=%s", mode, namespace, child.returncode)
+                    if not ephemeral:
+                        logger.warning("comparison_slave subprocess_exit mode=%s namespace=%s code=%s", mode, namespace, child.returncode)
                     raise ValueError("Runner failed")
             finally:
                 try:
@@ -150,8 +165,9 @@ class Service:
                 except ProcessLookupError:
                     pass
                 child.wait(timeout=5)
-            output.seek(0)
-            encoded = output.read(MAX_RESULT + 1)
+            if not ephemeral:
+                output.seek(0)
+                encoded = output.read(MAX_RESULT + 1)
             if len(encoded) > MAX_RESULT:
                 raise ValueError("Runner output exceeds limit")
             payload = json.loads(encoded)
@@ -219,7 +235,39 @@ class Service:
                     path.unlink()
                 job.rmdir()
 
+    @contextmanager
+    def reserve_once(self):
+        acquired = self.compute_lock.acquire(blocking=False)
+        if not acquired:
+            yield "busy"
+            return
+        try:
+            if not self.runtime_ready() or self.stop.is_set():
+                self.request_preflight()
+                yield "not_ready"
+            else:
+                self.active = True
+                try:
+                    yield "ready"
+                finally:
+                    self.active = False
+        finally:
+            self.compute_lock.release()
+            self.wake.set()
+
+    def request_preflight(self):
+        self.probe_requested.set()
+        self.wake.set()
+
     def tick(self):
+        if not self.compute_lock.acquire(blocking=False):
+            return
+        try:
+            self._tick()
+        finally:
+            self.compute_lock.release()
+
+    def _tick(self):
         from submissions.services import comparison_protocol
         if self.resident and self.resident.failed and self.ready:
             self.ready = False

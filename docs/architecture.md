@@ -132,11 +132,16 @@ The [PDF Comparison contract](pdf_comparison.md) owns OCR ordering, tolerances,
 limits, cache validation and inspection behavior.
 
 One-time draft comparison uses a separate read-only entry point. The WSGI view
-reads a bounded raw PDF body and binds the existing Original/Current selection;
-the local CPU subprocess receives the same byte framing without cache artifacts.
-The response contains evidence only, not a persistent inspection token. The same
-workspace reads browser-memory PDF.js renders instead of saved snapshot URLs.
-This path has no publication/formatting command, worker transport or job ledger.
+reads a bounded raw PDF body and binds the existing Original/Current selection.
+The configured GPU is preferred. If it cannot accept the request, the existing
+signed Local CPU confirmation binds the exact pair and deployment configuration
+without persisting consent. Local CPU uses the embedded subprocess; GPU uses the
+shared worker client and a synchronous, memory-only endpoint. The worker reserves the same
+compute slot used by saved jobs, but does not submit, record, or look up a job.
+Only the verified response for that request and PDF pair is accepted. Both paths
+skip OCR caches. The response has no persistent inspection token; the workspace
+renders the browser-memory bytes with PDF.js. Neither path invokes a
+publication/formatting write command.
 
 ## Optional Integrations
 

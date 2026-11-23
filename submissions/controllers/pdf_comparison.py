@@ -82,7 +82,7 @@ def _compare_once_post(request, pk):
     if not 0 < length <= MAX_PDF_BYTES:
         return _comparison_error("Choose a non-empty PDF of at most 64 MiB.", 413)
     if not _one_shot_slot.acquire(blocking=False):
-        return _comparison_error("A local one-time comparison is already running. Try again when it finishes.", 429)
+        return _comparison_error("Another one-time comparison is already running. Try again when it finishes.", 429)
     try:
         draft = request.read(length)
         if len(draft) != length:
@@ -90,11 +90,18 @@ def _compare_once_post(request, pk):
         name = unquote(request.headers.get("X-CFM-Draft-Name", "")[:4096]).replace("\\", "/").rsplit("/", 1)[-1]
         filename = "".join(c for c in name if c.isprintable())[:255] or "Draft PDF"
         token = request.headers.get("X-CFM-Baseline", "")
-        data = compare_once(pk, token, draft, filename)
+        data = compare_once(pk, token, draft, filename,
+                            local_confirmation=request.headers.get("X-CFM-Local-Confirmation", ""))
         html = render_to_string("submissions/partials/pdf_comparison_workspace.html", {
             "comparison_data": data, "ephemeral": True,
         })
         return _memory_response(JsonResponse({"data": data, "workspace": html}))
+    except LocalComparisonConfirmationRequired as exc:
+        return _memory_response(JsonResponse({
+            "error": str(exc), "local_confirmation": exc.confirmation_token,
+        }, status=409))
+    except ComparisonInProgress as exc:
+        return _comparison_error(str(exc), 429)
     except PDFComparisonError as exc:
         return _comparison_error(str(exc))
     except OSError:

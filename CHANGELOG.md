@@ -13,6 +13,13 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.9 - Unreleased
+
+- Use the configured GPU first for **Compare without saving**, with the same
+  explicit Local CPU confirmation as saved comparison when GPU cannot start. One-time
+  comparisons create no stored jobs, OCR caches, PDFs or results. The saved
+  comparison API, method 9 and State archive v8 are unchanged.
+
 ## 1.31.8 - Unreleased
 
 - Add **Compare without saving** in Formatting Review. Compare a local draft

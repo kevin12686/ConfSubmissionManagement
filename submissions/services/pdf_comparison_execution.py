@@ -20,18 +20,18 @@ from .pdf_comparison_cache import ComparisonCacheBusy, comparison_cache_job
 from .pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
 
 
-def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False, ephemeral=False):
+def local_pdf_evidence(before, after, *, diagnostics=None, cache_only=False, ephemeral=False, force_cpu=False):
     from .rapidocr_comparison.result import VERSION, validate_result
     from .rapidocr_comparison.config import timeout_seconds
 
     if not all(0 < len(data) <= MAX_PDF_BYTES for data in (before, after)):
         raise PDFComparisonError("Comparison requires two non-empty PDFs of at most 64 MiB each.")
     environment = os.environ.copy()
-    if ephemeral:
+    if force_cpu:
         from .rapidocr_comparison.resident_protocol import ENV_KEYS
         for key in (*ENV_KEYS, "CFM_SLAVE_ROOT"):
             environment.pop(key, None)
-        environment.update(CFM_OCR_BACKEND="cpu", PYTHONDONTWRITEBYTECODE="1")
+        environment["CFM_OCR_BACKEND"] = "cpu"
     if diagnostics is not None:
         diagnostics.update({"transport": "embedded", "backend": environment.get("CFM_OCR_BACKEND", "cpu")})
     environment.setdefault("CFM_RAPIDOCR_MODEL_DIR", str(Path(settings.BASE_DIR) / "runtime" / "rapidocr-models"))

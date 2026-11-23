@@ -25,7 +25,8 @@ from comparison_slave.server import Application
 from comparison_slave.storage import MAX_PDF, MAX_RESPONSE, clients_from_file, namespace_path, private_directory
 from comparison_slave import worker
 from submissions.services import comparison_protocol as protocol
-from submissions.services.pdf_comparison_errors import ComparisonInProgress, PDFComparisonError
+from submissions.services.comparison_client import TransportUnavailable, one_time_gpu_evidence
+from submissions.services.pdf_comparison_errors import ComparisonInProgress, LocalComparisonConfirmationRequired, PDFComparisonError
 from submissions.services.rapidocr_comparison.result import build_result
 from submissions.tests.ocr_fixtures import ocr_pages
 
@@ -152,6 +153,143 @@ class ComparisonSlaveTests(unittest.TestCase):
         self.assertEqual(self.request("POST")[0], 202)
         self.service.tick()
         return self.request()
+
+    def test_cuda_once_recomputes_without_accessing_ledger_or_namespace_cache(self):
+        self.complete()
+        self.service.backend = "cuda"
+        self.evidence["diagnostics"]["backend"] = "cuda"
+        self.compute.reset_mock()
+        path = "/v1/compare-once"
+
+        def files():
+            return {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in self.root.rglob("*") if p.is_file()}
+
+        before = files()
+        with patch.object(self.service, "ledger", None):
+            code, health = self.request(path=path)
+            self.assertEqual((code, health["ephemeral"], health["backend"], health["state"]), (200, 1, "cuda", "ready"))
+            for nonce in ("a" * 32, "b" * 32):
+                code, reply = self.request("POST", path, headers={"HTTP_X_CFM_REQUEST": nonce})
+                self.assertEqual((code, reply.get("request"), reply.get("hashes")), (200, nonce, self.hashes))
+                self.assertEqual(reply["result"], self.evidence["result"])
+                self.assertEqual(reply["render_hashes"], self.evidence["render_hashes"])
+        self.assertEqual([call.args[0] for call in self.compute.call_args_list], ["once", "once"])
+        self.assertEqual(files(), before)
+
+    def test_once_rejects_cpu_unauthorized_busy_and_invalid_inputs_without_compute(self):
+        path = "/v1/compare-once"
+        headers = {"HTTP_X_CFM_REQUEST": "a" * 32}
+        self.compute.reset_mock()
+        self.assertEqual(self.request("POST", path, headers=headers), (503, {"protocol": 1, "error": "gpu_required"}))
+        self.service.backend = "cuda"
+        self.assertEqual(self.request(path=path, token="wrong")[0], 401)
+        self.assertEqual(self.request("PUT", path)[0], 405)
+        self.assertEqual(self.request("POST", path)[0], 400)
+        self.assertEqual(self.request("POST", path, body=self.body()[:-1], headers=headers)[0], 400)
+        self.assertEqual(self.request("POST", path, headers={**headers, "HTTP_X_CFM_AFTER_SHA256": "a"*64})[0], 400)
+        with self.service.compute_lock:
+            self.service.active = True
+            self.assertEqual(self.request(path=path)[1]["state"], "busy")
+            self.assertEqual(self.request("POST", path, headers=headers), (429, {"protocol": 1, "error": "compute_busy"}))
+            self.service.tick()
+            self.service.active = False
+        self.service.ready = False
+        self.assertEqual(self.request("POST", path, headers=headers), (503, {"protocol": 1, "error": "not_ready"}))
+        self.service.preflight_at = 0
+        self.assertEqual(self.request(path=path)[1]["state"], "checking")
+        self.assertTrue(self.service.probe_requested.is_set())
+        self.compute.assert_not_called()
+
+    def test_once_releases_compute_gate_after_unverified_evidence(self):
+        self.service.backend = "cuda"
+        path = "/v1/compare-once"
+        headers = {"HTTP_X_CFM_REQUEST": "a" * 32}
+        self.evidence["diagnostics"].update(backend="cuda", runtime="f" * 64)
+        self.assertEqual(self.request("POST", path, headers=headers), (503, {"protocol": 1, "error": "invalid_evidence"}))
+        self.assertEqual(self.request(path=path)[1]["state"], "ready")
+        self.evidence["diagnostics"]["runtime"] = self.service.runtime
+        self.assertEqual(self.request("POST", path, headers=headers)[0], 200)
+
+    def test_once_uses_pipes_not_worker_temp_files(self):
+        child = Mock(returncode=0, pid=98765)
+        child.communicate.return_value = (b'{"error":"comparison_failed"}', None)
+        with patch("comparison_slave.runner.subprocess.Popen", return_value=child) as popen, \
+                patch("comparison_slave.runner.os.killpg"), \
+                patch("comparison_slave.runner.tempfile.TemporaryFile") as temporary:
+            result = self.service._run_isolated("once", "conference-a", self.body())
+        self.assertEqual(result, {"error": "comparison_failed"})
+        self.assertEqual((popen.call_args.kwargs["stdin"], popen.call_args.kwargs["stdout"]),
+                         (subprocess.PIPE, subprocess.PIPE))
+        self.assertEqual(child.communicate.call_args.args, (self.body(),))
+        temporary.assert_not_called()
+
+    def test_gpu_client_validates_nonce_and_renders_without_routing_or_retry(self):
+        path = "/v1/compare-once"
+        meta = {"protocol": 1, "contract": self.contract, "backend": "cuda", "ephemeral": 1}
+        endpoint = Mock()
+        endpoint.name = "remote"
+
+        def call(request_path, *, body=None, headers=None, timeout=None):
+            self.assertEqual(request_path, path)
+            if body is None:
+                return 200, {**meta, "state": "ready"}
+            self.assertGreater(timeout, 30)
+            self.assertEqual(body, self.body())
+            self.assertEqual([headers[f"X-CFM-{side}-SHA256"] for side in ("Before", "After")], self.hashes)
+            return 200, {**meta, **copy.deepcopy(self.evidence), "request": headers["X-CFM-Request"],
+                         "key": self.key, "hashes": self.hashes, "state": "completed"}
+
+        self.evidence["diagnostics"]["backend"] = "cuda"
+        with patch("submissions.services.comparison_client._endpoints", return_value=[endpoint]), \
+                patch("submissions.services.comparison_client._route") as route:
+            endpoint.call.side_effect = call
+            self.assertEqual(one_time_gpu_evidence(self.before, self.after), self.evidence["result"])
+            self.assertEqual(endpoint.call.call_count, 2)
+            for key, value, message in (("request", "bad", "does not match"),
+                                        ("render_hashes", {}, "render these PDFs differently"),
+                                        ("hashes", self.hashes[::-1], "does not match")):
+                def replaced(*args, **kwargs):
+                    code, reply = call(*args, **kwargs)
+                    return code, {**reply, key: value} if kwargs.get("body") else reply
+
+                endpoint.call.side_effect = replaced
+                with self.subTest(field=key), self.assertRaisesRegex(PDFComparisonError, message):
+                    one_time_gpu_evidence(self.before, self.after)
+
+            health = (200, {**meta, "state": "ready"})
+            endpoint.call.reset_mock()
+            def rechecking(*args, **kwargs):
+                if endpoint.call.call_count == 1:
+                    return 200, {**meta, "state": "checking"}
+                return call(*args, **kwargs)
+
+            endpoint.call.side_effect = rechecking
+            with patch("submissions.services.comparison_client.time.sleep"):
+                self.assertEqual(one_time_gpu_evidence(self.before, self.after), self.evidence["result"])
+            self.assertEqual([call.kwargs.get("body") is not None for call in endpoint.call.call_args_list],
+                             [False, False, True])
+            for failure in (
+                (200, {**meta, "state": "busy"}), (200, {**meta, "state": "not_ready"}),
+                (404, {}), (200, {**meta, "backend": "cpu"}), TransportUnavailable("Network unavailable."),
+            ):
+                endpoint.call.reset_mock()
+                endpoint.call.side_effect = [failure]
+                with self.assertRaises(LocalComparisonConfirmationRequired):
+                    one_time_gpu_evidence(self.before, self.after)
+                endpoint.call.assert_called_once_with(path)
+            for failure, error, message in (
+                ((429, {"protocol": 1, "error": "compute_busy"}), LocalComparisonConfirmationRequired, "GPU is busy"),
+                ((503, {"protocol": 1, "error": "not_ready"}), LocalComparisonConfirmationRequired, "GPU is not ready"),
+                (TransportUnavailable("Network unavailable."), PDFComparisonError, "GPU may still be working"),
+                (PDFComparisonError("Incomplete worker response."), PDFComparisonError, "GPU may still be working"),
+            ):
+                endpoint.call.reset_mock()
+                endpoint.call.side_effect = [health, failure]
+                with self.assertRaisesRegex(error, message) as failure_info:
+                    one_time_gpu_evidence(self.before, self.after)
+                self.assertIs(type(failure_info.exception), error)
+                self.assertEqual(endpoint.call.call_count, 2)
+            route.assert_not_called()
 
     def test_authentication_and_namespace_isolation(self):
         for token in ("", "wrong", "x" * 1000):

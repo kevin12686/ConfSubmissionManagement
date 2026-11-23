@@ -10,9 +10,10 @@ import re
 import struct
 import threading
 import time
+from contextlib import contextmanager
 from http import HTTPStatus
 
-from .runner import Service
+from .runner import Service, validate_output
 from .storage import HEX, MAX_PDF, MAX_RESPONSE, QueueFull, RetryLimit
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,8 @@ class Application:
         from submissions.services import comparison_protocol
         contract = comparison_protocol.contract_id()
         path, method = environ.get("PATH_INFO", ""), environ.get("REQUEST_METHOD", "")
+        if path == "/v1/compare-once":
+            return self.compare_once(environ, namespace, contract, method)
         if path == "/v1/health":
             if method != "GET":
                 raise HTTPError(405, "method_not_allowed")
@@ -112,6 +115,21 @@ class Application:
             raise HTTPError(400, "invalid_hashes")
         if comparison_protocol.job_key(hashes, contract) != key:
             raise HTTPError(400, "invalid_key")
+        with self.upload_pair(environ, hashes) as body:
+            existing = self.service.ledger.get(namespace, key)
+            if existing and not self.service.ledger.expired(existing) and not (retry and existing["state"] == "failed"):
+                reply = self.job_reply(existing, contract)
+                return (202 if reply["state"] in {"queued", "running"} else 200), reply
+            if not self.service.runtime_ready():
+                self.service.request_preflight()
+                raise HTTPError(503, "not_ready")
+            self.service.ledger.prune()
+            self.service.ledger.submit(namespace, key, contract, hashes, body, retry_failed=bool(retry))
+            self.service.wake.set()
+            return 202, self.job_reply(self.service.ledger.get(namespace, key), contract)
+
+    @contextmanager
+    def upload_pair(self, environ, hashes):
         if environ.get("HTTP_TRANSFER_ENCODING"):
             raise HTTPError(400, "invalid_framing")
         raw_length = environ.get("CONTENT_LENGTH", "")
@@ -135,23 +153,58 @@ class Application:
             documents = [read_exact(stream, n) for n in lengths]
             if [hashlib.sha256(data).hexdigest() for data in documents] != hashes:
                 raise HTTPError(400, "hash_mismatch")
-            existing = self.service.ledger.get(namespace, key)
-            if existing and not self.service.ledger.expired(existing) and not (retry and existing["state"] == "failed"):
-                reply = self.job_reply(existing, contract)
-                return (202 if reply["state"] in {"queued", "running"} else 200), reply
-            if not self.service.runtime_ready():
-                self.service.probe_requested.set()
-                self.service.wake.set()
-                raise HTTPError(503, "not_ready")
-            self.service.ledger.prune()
-            self.service.ledger.submit(namespace, key, contract, hashes, header + b"".join(documents), retry_failed=bool(retry))
-            self.service.wake.set()
-            return 202, self.job_reply(self.service.ledger.get(namespace, key), contract)
+            body = b"".join((header, *documents))
+            del documents
+            yield body
         finally:
             self.upload_lock.release()
 
+    def compare_once(self, environ, namespace, contract, method):
+        from submissions.services.comparison_protocol import job_key
+        meta = {"protocol": 1, "contract": contract, "backend": self.service.backend, "ephemeral": 1}
+        if method == "GET":
+            state = "not_ready"
+            if self.service.backend == "cuda":
+                if self.service.active:
+                    state = "busy"
+                elif self.service.runtime_ready():
+                    state = "ready"
+                elif time.monotonic() >= self.service.preflight_at:
+                    self.service.request_preflight()
+                    state = "checking"
+            return 200, {**meta, "state": state}
+        if method != "POST":
+            raise HTTPError(405, "method_not_allowed")
+        if self.service.backend != "cuda":
+            raise HTTPError(503, "gpu_required")
+        if environ.get("HTTP_X_CFM_CONTRACT") != contract:
+            raise HTTPError(409, "incompatible_contract")
+        nonce = environ.get("HTTP_X_CFM_REQUEST", "")
+        hashes = [environ.get(f"HTTP_X_CFM_{side}_SHA256", "") for side in ("BEFORE", "AFTER")]
+        if not re.fullmatch(r"[a-f0-9]{32}", nonce) or any(not HEX.fullmatch(h) for h in hashes):
+            raise HTTPError(400, "invalid_identity")
+        with self.service.reserve_once() as state:
+            if state == "busy":
+                raise HTTPError(429, "compute_busy")
+            if state != "ready":
+                raise HTTPError(503, "not_ready")
+            with self.upload_pair(environ, hashes) as body:
+                pass
+            evidence = self.service.process("once", namespace, body)
+            if "error" in evidence:
+                raise HTTPError(503, "comparison_failed")
+            validate_output(evidence)
+            diagnostics = evidence["diagnostics"]
+            if (diagnostics.get("backend") != "cuda" or diagnostics.get("runtime") != self.service.runtime
+                    or evidence["result"]["identical_bytes"] != (hashes[0] == hashes[1])):
+                raise HTTPError(503, "invalid_evidence")
+            return 200, {**meta, **evidence, "key": job_key(hashes, contract),
+                         "hashes": hashes, "request": nonce, "state": "completed"}
+
     def __call__(self, environ, start_response):
         headers = [("Content-Type", "application/json"), ("Cache-Control", "no-store")]
+        if environ.get("PATH_INFO") == "/v1/compare-once":
+            headers.append(("X-Accel-Buffering", "no"))
         try:
             status, payload = self.dispatch(environ)
             body = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()

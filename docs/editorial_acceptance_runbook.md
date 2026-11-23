@@ -125,6 +125,11 @@ At desktop, short window and 390 px:
   replacement and reload/Back. No result URL or saved data; compare DB, exact
   Publication ZIP/CrossCheck inputs and file hashes before/after. Verify the
   deployment streams one-time requests/responses without spool or OCR cache.
+  On real CUDA, repeat the same pair through saved and one-time GPU routes and
+  compare engine results and render hashes. Confirm the single action uses GPU
+  without a prompt when ready. Check busy/offline confirmation, remote recheck,
+  retained draft, changed/expired consent and lost replies after upload. Verify
+  that repeated pairs create no jobs and configured GPU never silently starts CPU.
 
 ## CrossCheck
 

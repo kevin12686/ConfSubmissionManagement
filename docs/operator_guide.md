@@ -193,7 +193,11 @@ exact saved revision. Failure does not undo or replace saved files.
 Before saving a revision, use **Compare without saving** from the paper's
 Formatting Review. Keep **Original submission**, or choose **Current saved PDF**
 to check against the current publication file. Select the draft and click
-**Compare on local CPU**. The same viewer labels the After side **Unsaved draft**.
+**Compare PDFs**. CFM tries the configured GPU first; with no remote worker
+configured it uses Local CPU. If GPU cannot accept the PDFs, use **Recheck remote
+and start** or **Use local CPU for this comparison** without selecting the draft
+again. CFM never switches automatically. The viewer labels the After side
+**Unsaved draft** and shows the processor that ran it.
 Closing/reloading the page discards it; there is no saved revision or reopen link.
 To save an approved draft later, upload it through the usual Formatting workflow.
 

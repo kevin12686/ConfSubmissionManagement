@@ -181,9 +181,11 @@ No PDF scripting, editing or serialized output enters editorial data.
 
 ## Comparison Inspection
 
-One-time comparisons use the same workspace. Clearly label **Unsaved draft**
-and the local CPU action. No save, review, download or result-reopen action belongs
-in that workspace. Browser-owned rendering must clear stale loads on selection,
+One-time comparisons use one Compare action with the same GPU-first and CPU
+confirmation pattern as saved comparison. Clearly label **Unsaved draft** and
+show which processor ran it. Keep the selected draft during recovery and clear
+CPU consent when either input changes. No save, review, download or result-reopen
+action belongs in that workspace. Browser-owned rendering must clear stale loads on selection,
 replacement and page exit; reject geometry mismatches rather than moving marks.
 
 The documents are primary, findings secondary. Text changes use red outlines
