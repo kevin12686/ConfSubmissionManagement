@@ -1,5 +1,14 @@
 # Deployment
 
+**One-time draft comparison:** runs on the CFM web host's local CPU, even when
+normal comparisons use a remote worker. The web host needs access to the configured
+OCR models (default `runtime/rapidocr-models/`) and the same Python OCR dependencies.
+The supported web stack is WSGI. The bundled Nginx streams request bodies and
+honors `X-Accel-Buffering: no` for the one-time baseline/result responses. If you
+add another proxy, do not spool request/response bodies, cache the route or log
+payloads, and allow the configured OCR timeout. Other stacks may buffer bodies
+before CFM receives them. No existing worker deployment or protocol update is required.
+
 Run from the repo root. Change the example values, preview, then apply.
 For backup/recovery and tuning see [Operations](operations.md).
 For non-Docker startup see [Native setup](developer_guide.md#native-setup).

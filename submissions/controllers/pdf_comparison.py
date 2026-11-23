@@ -1,11 +1,15 @@
 from io import BytesIO
 import logging
-from urllib.parse import urlencode
+from threading import BoundedSemaphore
+from urllib.parse import unquote, urlencode
 
+from django.core import signing
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_GET, require_http_methods
 
 from submissions.models import FinalSubmission
@@ -18,6 +22,85 @@ from submissions.services.file_manager import publication_pdf_info
 from submissions.services.automatic_pdf_comparison import ComparisonInProgress, get_upload_comparison
 from submissions.services.pdf_comparison_errors import LocalComparisonConfirmationRequired
 from submissions.services.comparison_execution_choice import execution_display
+from submissions.services.comparison_protocol import MAX_PDF_BYTES
+from submissions.services.ephemeral_pdf_comparison import BASELINE_SALT, compare_once, read_baseline
+
+
+_one_shot_slot = BoundedSemaphore(1)
+
+
+def _memory_response(response):
+    response["Cache-Control"] = "no-store"
+    response["X-Accel-Buffering"] = "no"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _comparison_error(message, status=409):
+    return _memory_response(JsonResponse({"error": message}, status=status))
+
+
+@require_GET
+def formatting_compare_once(request, pk):
+    try:
+        submission = comparison_submission(pk)
+    except PDFComparisonError as exc:
+        return _memory_response(render(request, "submissions/pdf_comparison.html", {
+            "ephemeral": True, "comparison_error": str(exc), "back_url": _return_url(request, pk),
+        }, status=409))
+    return _memory_response(render(request, "submissions/pdf_comparison.html", {
+        "ephemeral": True, "submission": submission, "back_url": _return_url(request, pk),
+        "max_pdf_bytes": MAX_PDF_BYTES,
+    }))
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def formatting_compare_once_input(request, pk):
+    if request.method == "GET":
+        try:
+            data, binding = read_baseline(pk, request.GET.get("baseline", "original"))
+        except (PDFComparisonError, OSError):
+            return _comparison_error("The selected baseline is missing, changed, or not available for this submission. No other PDF was selected.")
+        response = HttpResponse(data, content_type="application/octet-stream")
+        response["X-CFM-Baseline"] = signing.dumps(binding, salt=BASELINE_SALT, compress=True)
+        return _memory_response(response)
+
+    # Reject multipart before CSRF can trigger Django's disk upload handler.
+    # The only route into computation enforces normal CSRF on the raw PDF POST.
+    if request.content_type != "application/pdf":
+        return _comparison_error("Send one PDF as the request body, not a form upload.", 415)
+    return _compare_once_post(request, pk)
+
+
+@csrf_protect
+def _compare_once_post(request, pk):
+    length = request.META.get("CONTENT_LENGTH", "")
+    if not length.isascii() or not length.isdecimal() or len(length) > 10:
+        return _comparison_error("A PDF upload length is required.", 411)
+    length = int(length)
+    if not 0 < length <= MAX_PDF_BYTES:
+        return _comparison_error("Choose a non-empty PDF of at most 64 MiB.", 413)
+    if not _one_shot_slot.acquire(blocking=False):
+        return _comparison_error("A local one-time comparison is already running. Try again when it finishes.", 429)
+    try:
+        draft = request.read(length)
+        if len(draft) != length:
+            return _comparison_error("The PDF upload was incomplete. Select the draft again.", 400)
+        name = unquote(request.headers.get("X-CFM-Draft-Name", "")[:4096]).replace("\\", "/").rsplit("/", 1)[-1]
+        filename = "".join(c for c in name if c.isprintable())[:255] or "Draft PDF"
+        token = request.headers.get("X-CFM-Baseline", "")
+        data = compare_once(pk, token, draft, filename)
+        html = render_to_string("submissions/partials/pdf_comparison_workspace.html", {
+            "comparison_data": data, "ephemeral": True,
+        })
+        return _memory_response(JsonResponse({"data": data, "workspace": html}))
+    except PDFComparisonError as exc:
+        return _comparison_error(str(exc))
+    except OSError:
+        return _comparison_error("A comparison input could not be read. No files were changed.")
+    finally:
+        _one_shot_slot.release()
 
 
 def _return_url(request, pk):

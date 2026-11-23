@@ -6,6 +6,7 @@
 .cfm-comparison-source-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 1rem; align-items: end; border-block: 1px solid var(--cfm-border); padding: 1rem 0; margin-block: .5rem; }
 .cfm-comparison-current-file { display: flex; gap: .5rem; align-items: start; min-height: 2.4rem; }
 .cfm-comparison-current-file > span:last-child { min-width: 0; }
+[data-comparison-once] > p, [data-comparison-once-status], [data-comparison-once-error] { grid-column: 1 / -1; }
 .cfm-comparison-execution-choice { grid-column: 1 / -1; display: grid; gap: .5rem; border-left: 3px solid var(--cfm-warning-border); padding-left: .75rem; overflow-wrap: anywhere; }
 .cfm-comparison-execution-choice .btn { justify-self: start; white-space: normal; }
 [data-pdf-comparison] { position: relative; min-width: 0; }

@@ -13,6 +13,14 @@
 This file records user-visible releases. Detailed implementation history remains
 available in Git.
 
+## 1.31.8 - Unreleased
+
+- Add **Compare without saving** in Formatting Review. Compare a local draft
+  against Original or Current saved PDF with the existing OCR method and viewer.
+  Uses request-scoped local CPU with no snapshot, worker ledger or OCR cache;
+  closing or reloading removes the browser-only result. No publication, revision
+  or review writes. Existing worker protocol, method 9 and State archive v8 are unchanged.
+
 ## 1.31.7 - Unreleased
 
 - Unify CrossCheck batch history and detail status/count presentation. Distinguish

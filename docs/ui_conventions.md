@@ -181,6 +181,11 @@ No PDF scripting, editing or serialized output enters editorial data.
 
 ## Comparison Inspection
 
+One-time comparisons use the same workspace. Clearly label **Unsaved draft**
+and the local CPU action. No save, review, download or result-reopen action belongs
+in that workspace. Browser-owned rendering must clear stale loads on selection,
+replacement and page exit; reject geometry mismatches rather than moving marks.
+
 The documents are primary, findings secondary. Text changes use red outlines
 and arrows; unlocated ranges use amber emphasis; information uses quiet neutral
 marks. Word/wrap hyphens share one Hyphens group.

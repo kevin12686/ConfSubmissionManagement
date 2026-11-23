@@ -126,6 +126,7 @@ Do not "fix" this by changing file selection, disabling CSRF or enabling PDF scr
 | Blank opposite side | Valid when the linked page has no counterpart; manual page navigation is available |
 | Auto match seems relative | Inspect selected finding/pair; no valid pair means relative position |
 | Current Corrected missing | Restore/replace current file; history/cache is not fallback |
+| One-time comparison unavailable | Check the web host's local OCR runtime and models. It never uses the saved-comparison worker or cache. If you closed or reloaded it, select the draft and compare again. |
 
 New-compute confirmation is unnecessary only for complete validated cache.
 Health, job completion and zero findings do not approve publication.

@@ -76,6 +76,7 @@
             return;
         }
         const nextSource = source || container.dataset.cfmImageSrc || state.source;
+        cancelSource(state);
         state.source = nextSource;
         if (!nextSource) {
             setState(container, "error");
@@ -83,7 +84,28 @@
         }
 
         setState(container, "loading");
-        state.image.src = nextSource;
+        if (typeof nextSource !== "function") {
+            state.image.src = nextSource;
+            return;
+        }
+        state.image.removeAttribute("src");
+        const controller = new AbortController();
+        state.controller = controller;
+        nextSource(controller.signal).then(blob => {
+            if (controller.signal.aborted) return;
+            state.objectUrl = URL.createObjectURL(blob);
+            state.image.src = state.objectUrl;
+        }).catch(() => {
+            if (controller.signal.aborted) return;
+            state.image.dispatchEvent(new Event("error"));
+        });
+    }
+
+    function cancelSource(state) {
+        state.controller?.abort();
+        state.controller = null;
+        if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+        state.objectUrl = null;
     }
 
     function reset(container) {
@@ -91,6 +113,9 @@
         if (!state) {
             return;
         }
+        cancelSource(state);
+        state.source = "";
+        state.image.removeAttribute("src");
         setState(container, "idle");
     }
 

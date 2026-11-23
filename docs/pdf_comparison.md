@@ -30,6 +30,23 @@ Method/result/inspection compatibility must move together. Method-8 results
 cannot be relabelled as method 9; rebuild them. Compute-code changes require
 synchronized CFM/worker updates, independent of the app's display release number.
 
+### One-Time Draft Comparison
+
+**Compare without saving** reads the same submission's Original or current
+saved publication PDF through the existing selectors. It accepts the After side
+as a raw, CSRF-protected PDF (maximum 64 MiB per side). An expiring signed
+baseline selection binds the exact edition and bytes delivered to the viewer;
+the server rechecks the selection before and after OCR. Missing or stale inputs
+fail without selecting an alternate.
+
+The bounded subprocess uses the same OCR and result validation but does not
+use the worker API, ledger, snapshot directory or either OCR cache. The browser
+holds both PDFs and the evidence in page memory and renders with PDF.js, using
+the existing workspace, marks and magnifier. Changing inputs, navigating away
+or reloading discards the result; there is no URL to reopen it. The regular
+Formatting save, automatic comparisons and server-rendered snapshots are unchanged.
+Runtime details and infrastructure limits are in [Deployment](deployment.md).
+
 ## Recognition And Alignment
 
 1. Render each saved PDF at 300 DPI; RapidOCR recognizes visible content using

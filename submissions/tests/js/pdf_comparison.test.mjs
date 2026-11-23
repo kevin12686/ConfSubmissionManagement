@@ -5,7 +5,7 @@ import {runInNewContext} from "node:vm";
 
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const script = read("../../static/submissions/pdf_comparison.js");
-const template = read("../../templates/submissions/pdf_comparison.html");
+const template = read("../../templates/submissions/partials/pdf_comparison_workspace.html");
 const partial = read("../../templates/submissions/partials/pdf_comparison_document.html");
 
 // Behavioral DOM double. Control structure comes from the production templates, not a second UI.
@@ -110,7 +110,7 @@ function setup(overrides = {}, windowOptions = {}) {
     runInNewContext(script, {document: {readyState: "complete", querySelector: selector => doc.querySelector(selector),
         addEventListener: (type, handler) => doc.addEventListener(type, handler),
         getElementById: () => ({textContent: JSON.stringify(data)}), createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag)},
-        window: win, setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id),
+        window: win, AbortController, setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id),
         requestAnimationFrame: fn => { frames.set(++timerId, fn); return timerId; }, cancelAnimationFrame: id => frames.delete(id)});
     const api = {root, doc, q, data, loads, reveals, win,
         side: name => q(`[data-comparison-side="${name}"]`),

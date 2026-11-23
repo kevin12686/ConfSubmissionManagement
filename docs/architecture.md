@@ -131,6 +131,13 @@ not readiness, route authorization, model-cache identity or evidence approval.
 The [PDF Comparison contract](pdf_comparison.md) owns OCR ordering, tolerances,
 limits, cache validation and inspection behavior.
 
+One-time draft comparison uses a separate read-only entry point. The WSGI view
+reads a bounded raw PDF body and binds the existing Original/Current selection;
+the local CPU subprocess receives the same byte framing without cache artifacts.
+The response contains evidence only, not a persistent inspection token. The same
+workspace reads browser-memory PDF.js renders instead of saved snapshot URLs.
+This path has no publication/formatting command, worker transport or job ledger.
+
 ## Optional Integrations
 
 | Integration | Boundary |

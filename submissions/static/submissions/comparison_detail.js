@@ -14,8 +14,8 @@
             }
             return {
                 clear,
-                request(side, url, ready, failed) {
-                    if (!window.fetch || !window.createImageBitmap || !window.AbortController) return;
+                request(side, url, ready, failed, render) {
+                    if (!window.fetch || (!render && !window.createImageBitmap) || !window.AbortController) return;
                     const previous = slots.get(side);
                     if (previous?.url === url) {
                         previous.ready = ready; previous.failed = failed;
@@ -30,10 +30,15 @@
                         slot.controller = new window.AbortController();
                         const timeout = setTimeout(() => slot.controller.abort(), 10000);
                         try {
-                            const response = await window.fetch(url, {signal: slot.controller.signal, credentials: "same-origin", cache: "no-store", redirect: "error"});
-                            if (!response.ok) throw new Error(response.status === 409 ? "invalid_snapshot" : "unavailable");
-                            if (!(response.headers.get("Content-Type") || "").startsWith("image/png")) throw new Error("unavailable");
-                            const bitmap = await window.createImageBitmap(await response.blob());
+                            let bitmap;
+                            if (render) {
+                                bitmap = await render(slot.controller.signal);
+                            } else {
+                                const response = await window.fetch(url, {signal: slot.controller.signal, credentials: "same-origin", cache: "no-store", redirect: "error"});
+                                if (!response.ok) throw new Error(response.status === 409 ? "invalid_snapshot" : "unavailable");
+                                if (!(response.headers.get("Content-Type") || "").startsWith("image/png")) throw new Error("unavailable");
+                                bitmap = await window.createImageBitmap(await response.blob());
+                            }
                             if (slots.get(side) !== slot) { bitmap.close(); return; }
                             slot.bitmap = bitmap;
                             slot.ready(bitmap);

@@ -9,7 +9,22 @@ have been removed. Older records remain in Git history; release changes remain
 in [Changelog](../CHANGELOG.md). The following preserves the relevant baseline
 and known limits without presenting old runtimes as the current configuration.
 
-## Latest UI Acceptance: 1.31.7
+## One-Time Comparison Acceptance: 1.31.8
+
+| Scope | Recorded outcome |
+| --- | --- |
+| Native Django / JavaScript | 1100 and 163 passed; system, migration, docs, compile and whitespace checks passed |
+| Standalone discovery | 127 run, 2 Docker deployment opt-ins skipped |
+| Actual OCR parity | Same three-page PDF pair, including cropped/rotated pages, returned identical complete engine payloads in saved and one-time CPU modes |
+| Browser | Both pages and high-detail crops rendered from memory; Original/Current switch, identical PDFs, Back/reload disposal, 390px layout and unchanged saved snapshot viewer |
+| Bundled Docker proxy | Generated 7.56 MB raw draft compared successfully through Nginx with request/response spool directories blocked; no deployment to live conferences |
+| Publication isolation | Match exact saved Corrected PDF/source and CrossCheck ZIP bytes after comparing a different draft; no writes to submission/revision/review rows or comparison/cache files |
+
+No GPU or standalone worker protocol changes or new GPU run. The Docker proxy
+check used an isolated native WSGI/CPU backend; it was not a full deployment test.
+State archive remains 8 and comparison method remains 9.
+
+## UI Acceptance: 1.31.7
 
 | Scope | Recorded outcome |
 | --- | --- |

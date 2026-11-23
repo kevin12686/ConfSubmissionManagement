@@ -268,6 +268,9 @@
                         {% if item.formatted_pdf_file or item.formatting_revision_count %}
                             <a class="btn btn-sm btn-outline-primary" href="{% url 'submissions:formatting_pdf_comparison' item.pk %}?next={{ request.get_full_path|urlencode }}" target="_blank" rel="noopener">Compare PDF</a>
                         {% endif %}
+                        {% if row.publication_pdf.exists or item.pdf_file %}
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'submissions:formatting_compare_once' item.pk %}?next={{ request.get_full_path|urlencode }}" target="_blank" rel="noopener">Compare without saving</a>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="col-xl-3">

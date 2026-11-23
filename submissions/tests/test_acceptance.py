@@ -8265,7 +8265,6 @@ class ViewWorkflowSmokeTests(EditorialAcceptanceTestCase):
         self.assertIn("htmx:load", script)
         self.assertIn("window.CFMImageLoader", script)
         self.assertIn("reset", script)
-        self.assertNotIn('removeAttribute("src")', script)
 
         stylesheet_path = finders.find("submissions/image_loader.css")
         self.assertIsNotNone(stylesheet_path)

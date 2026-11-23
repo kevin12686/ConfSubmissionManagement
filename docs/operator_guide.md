@@ -190,6 +190,13 @@ for inactive/discarded records.
 A saved PDF upload starts a separate comparison with Original, bound to that
 exact saved revision. Failure does not undo or replace saved files.
 
+Before saving a revision, use **Compare without saving** from the paper's
+Formatting Review. Keep **Original submission**, or choose **Current saved PDF**
+to check against the current publication file. Select the draft and click
+**Compare on local CPU**. The same viewer labels the After side **Unsaved draft**.
+Closing/reloading the page discards it; there is no saved revision or reopen link.
+To save an approved draft later, upload it through the usual Formatting workflow.
+
 | Result | How to review |
 | --- | --- |
 | Red text difference with arrow | Inspect added/removed/changed OCR text |
@@ -210,6 +217,7 @@ Status refreshes every ten seconds while visible. A configured unavailable
 remote pauses new work; confirm local CPU only if willing to wait.
 Complete verified cache results display without new-compute confirmation.
 A result's execution label records who actually computed it, not current health.
+One-time comparisons intentionally do not use the remote worker or its cache.
 
 Comparison cannot certify figures, tables, layout or formulas. Review those
 visually. [PDF Comparison](pdf_comparison.md) lists accepted blind spots.

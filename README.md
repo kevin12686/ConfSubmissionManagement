@@ -90,6 +90,8 @@ CrossCheck batches distinguish reports retrieved from results applied; partial
 results never hide missing papers, and downloaded reports still require confirmation.
 
 PDF comparison is an optional OCR-based review aid, **not publication approval**.
+Use **Compare without saving** in Formatting Review to check a draft before
+uploading it as a revision. One-time comparisons use local CPU and leave no saved result.
 It tolerates some similar characters, whitespace and word hyphens; inspect
 unlocated ranges, figures, tables, formulas and layout manually.
 See [PDF Comparison](docs/pdf_comparison.md).

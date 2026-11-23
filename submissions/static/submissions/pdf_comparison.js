@@ -9,7 +9,10 @@
         const root = document.querySelector("[data-pdf-comparison]");
         const script = document.getElementById("pdf-comparison-data");
         if (!root || !script) return;
-        const data = JSON.parse(script.textContent);
+        mount(root, JSON.parse(script.textContent));
+    }
+    function mount(root, data, renderer) {
+        const lifetime = new AbortController();
         const query = (selector) => root.querySelector(selector);
         const state = {selected: null, connection: null, category: "all", mode: "pages", before: 1, after: 1, linked: true, scale: "page", groups: new Set(["attention", "uncertain", "tolerated", "ignored_spacing", "hyphens"])};
         const inspection = {finding: null, mode: null, side: null, location: null, point: null, timer: null, frame: null, blocked: false, candidate: null};
@@ -50,7 +53,7 @@
             sides[name].page.querySelector(":scope > img").addEventListener("load", () => {
                 const side = sides[name];
                 const image = side.page.querySelector(":scope > img");
-                side.ready = image.getAttribute("src") === side.source && image.complete && image.naturalWidth > 0;
+                side.ready = (renderer ? !!side.source : image.getAttribute("src") === side.source) && image.complete && image.naturalWidth > 0;
                 side.failed = !side.ready;
                 renderMarks(name); updateFocus(name); renderInspection(); drawConnection();
                 query("[data-comparison-image-error]").hidden = !Object.values(sides).some(item => item.failed);
@@ -188,6 +191,10 @@
                 side.input.value = state[name] || "";
                 side.panel.querySelector("[data-comparison-page-empty]").hidden = state[name] !== null;
                 if (state[name] === null) {
+                    if (renderer && side.source) {
+                        window.CFMImageLoader.reset(side.page);
+                        delete side.page.dataset.comparisonLoadedUrl;
+                    }
                     side.ready = false; side.source = ""; side.page.hidden = true; side.text.hidden = true;
                     side.layer.replaceChildren(); side.focus.disabled = true;
                     side.panel.querySelector(".cfm-comparison-passage").hidden = true;
@@ -235,14 +242,15 @@
                     side.text.append(label, passage);
                 }
                 if (state.mode === "pages") {
-                    const url = data.page_urls[name].replace("/0.png", `/${state[name]}.png`);
+                    const number = state[name];
+                    const url = renderer ? `${name}/${number}` : data.page_urls[name].replace("/0.png", `/${number}.png`);
                     if (side.page.dataset.comparisonLoadedUrl !== url) {
                         side.page.dataset.comparisonLoadedUrl = url;
                         side.source = url;
                         side.ready = false;
                         side.failed = false;
                         side.layer.replaceChildren();
-                        window.CFMImageLoader.load(side.page, url);
+                        window.CFMImageLoader.load(side.page, renderer ? signal => renderer.page(name, page, signal) : url);
                     }
                 }
                 renderMarks(name);
@@ -506,7 +514,7 @@
                     detail?.clear(name);
                     canvas.hidden = true; status.textContent = "No corresponding page. No unrelated page is substituted."; continue;
                 }
-                if (!side.ready || !image.complete || !image.naturalWidth || !image.naturalHeight || image.getAttribute("src") !== side.source) {
+                if (!side.ready || !image.complete || !image.naturalWidth || !image.naturalHeight || (!renderer && image.getAttribute("src") !== side.source)) {
                     detail?.clear(name);
                     canvas.hidden = true;
                     status.textContent = "Page image unavailable or loading. No other page is substituted.";
@@ -566,9 +574,11 @@
                 canvas.dataset.state = "ready";
                 canvas.dataset.source = side.source;
                 const base = data.detail_urls?.[name];
-                if (detail && base && inspectionPanel.dataset.view !== "evidence") {
+                if (detail && (base || renderer) && inspectionPanel.dataset.view !== "evidence") {
                     const box = [sx / width, sy / height, Math.min(1, (sx + cw) / width), Math.min(1, (sy + ch) / height)];
-                    const url = base.replace("/0.png", `/${state[name]}.png`) + `?box=${box.join(",")}&width=${Math.max(1, Math.floor(cw * scale))}&height=${Math.max(1, Math.floor(ch * scale))}`;
+                    const page = data[`${name}_pages`][state[name] - 1];
+                    const w = Math.max(1, Math.floor(cw * scale)), h = Math.max(1, Math.floor(ch * scale));
+                    const url = (renderer ? side.source : base.replace("/0.png", `/${state[name]}.png`)) + `?box=${box.join(",")}&width=${w}&height=${h}`;
                     canvas.dataset.detailKey = url;
                     const current = () => !inspectionPanel.hidden && inspectionPanel.dataset.view !== "evidence"
                         && inspection.finding === finding && canvas.width === pixelWidth && canvas.height === pixelHeight
@@ -584,7 +594,7 @@
                             canvas.hidden = true;
                             status.textContent = "Comparison changed or expired. Rebuild comparison.";
                         } else status.textContent = "Preview only; high detail unavailable.";
-                    });
+                    }, renderer ? signal => renderer.crop(name, page, box, w, h, signal) : undefined);
                 }
             }
         }
@@ -678,15 +688,15 @@
         document.addEventListener("keydown", event => {
             if (inspectionPanel.hidden) return;
             if (event.key === "Escape" || event.key === "Control") dismissInspection();
-        });
+        }, {signal: lifetime.signal});
         root.addEventListener("focusout", event => {
             if (inspection.mode === "keyboard" && !inspectionPanel.contains(event.relatedTarget) && !event.relatedTarget?.closest(".cfm-comparison-mark")) closeInspection();
         });
-        window.addEventListener("resize", resizePages);
-        window.addEventListener("pagehide", () => detail?.dispose());
+        window.addEventListener("resize", resizePages, {signal: lifetime.signal});
+        if (!renderer) window.addEventListener("pagehide", () => detail?.dispose());
         // Layout changes only resize the document viewport; pointer motion never does.
-        if (window.ResizeObserver) {
-            const layoutObserver = new window.ResizeObserver(resizePages);
+        const layoutObserver = window.ResizeObserver ? new window.ResizeObserver(resizePages) : null;
+        if (layoutObserver) {
             layoutObserver.observe(inspectionPanel);
             layoutObserver.observe(query(".cfm-comparison-selection"));
         }
@@ -739,7 +749,16 @@
         resizePages();
         query("[data-comparison-inspector-toggle]").setAttribute("aria-expanded", "true");
         updatePosition();
+        return () => {
+            lifetime.abort();
+            layoutObserver?.disconnect();
+            clearTimeout(inspection.timer);
+            cancelAnimationFrame(inspection.frame);
+            detail?.dispose();
+            if (renderer) Object.values(sides).forEach(side => window.CFMImageLoader.reset(side.page));
+        };
     }
+    window.CFMComparison = {mount};
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, {once: true});
     else initialize();
 })();

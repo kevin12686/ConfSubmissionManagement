@@ -119,6 +119,12 @@ At desktop, short window and 390 px:
 - Retina DPR 1/2/3, min crop scale, cap/rotation/aspect, high-detail debounce/failure.
 - Exact-snapshot detail pixels and PDF links; no result/hash/state modification.
 - Automatic comparison stays on its owning card through saves, filters and HTMX.
+- One-time comparison: same pair and runtime produce the same evidence as saved
+  comparison. Check original/current selection, changed/missing baselines, CSRF,
+  invalid/oversize/encrypted PDFs, rotated/cropped pages, narrow/Retina view, input
+  replacement and reload/Back. No result URL or saved data; compare DB, exact
+  Publication ZIP/CrossCheck inputs and file hashes before/after. Verify the
+  deployment streams one-time requests/responses without spool or OCR cache.
 
 ## CrossCheck
 

@@ -1,0 +1,87 @@
+<div data-pdf-comparison>
+    <div class="small text-muted mb-2">Compared by {{ comparison_data.execution.label }}</div>
+    <div class="cfm-comparison-toolbar">
+        <div class="btn-group" role="group" aria-label="Comparison view"><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-mode="pages" aria-pressed="true">Documents</button><button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-mode="text" aria-pressed="false">Recognized text</button></div>
+        <label><input type="checkbox" data-comparison-highlights checked> Marks</label>
+        <label><input type="checkbox" data-comparison-connections checked> Selected connection</label>
+        <label><input type="checkbox" data-comparison-link checked> Link pages</label>
+        <label>Zoom <select class="form-select form-select-sm" data-comparison-scale aria-label="Document zoom"><option value="page">Fit page</option><option value="1">Fit width</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-inspector-toggle aria-expanded="true">Inspection</button>
+    </div>
+    <div class="cfm-comparison-mark-filters" aria-label="Visible finding groups">
+        <label><input type="checkbox" data-comparison-group-filter="attention" checked><i class="cfm-comparison-mark-key" aria-hidden="true"></i> OCR text changes <strong>{{ comparison_data.content_count }}</strong></label>
+        <label><input type="checkbox" data-comparison-group-filter="uncertain" checked><i class="cfm-comparison-mark-key cfm-comparison-mark-key-review" aria-hidden="true"></i> Unlocated ranges <strong>{{ comparison_data.uncertain_count }}</strong></label>
+        <label><input type="checkbox" data-comparison-group-filter="tolerated" checked><i class="cfm-comparison-mark-key cfm-comparison-mark-key-info" aria-hidden="true"></i> Visual exceptions <strong>{{ comparison_data.tolerated_count|default:0 }}</strong></label>
+        <label><input type="checkbox" data-comparison-group-filter="ignored_spacing" checked> Spacing <strong>{{ comparison_data.info_kind_counts.ignored_spacing|default:0 }}</strong></label>
+        {% with wrapped=comparison_data.info_kind_counts.wrap_hyphen|default:0 words=comparison_data.info_kind_counts.word_hyphen|default:0 %}
+        <label><input type="checkbox" data-comparison-group-filter="hyphens" checked> Hyphens <strong>{{ wrapped|add:words }}</strong></label>
+        {% endwith %}
+        <span class="small text-muted">{{ comparison_data.info_count }} formatting information</span>
+    </div>
+    <div class="cfm-comparison-layout">
+        <section class="cfm-comparison-workspace" aria-label="Compared PDF pages">
+            <div class="cfm-comparison-selection">
+                <div><h2 class="h6 mb-0" data-comparison-heading>Document comparison</h2><span class="small text-muted" data-comparison-location></span></div>
+                <div class="cfm-comparison-stepper">
+                    <label class="visually-hidden" for="comparison-category">Finding type</label>
+                    <select class="form-select form-select-sm" id="comparison-category" data-comparison-category><option value="all">All findings</option><option value="added">Added text</option><option value="changed">Changed text</option><option value="removed">Removed text</option><option value="reference">Possible reference errors</option><option value="uncertain">Unlocated ranges</option><option value="tolerated">Visual exceptions</option><option value="ignored_spacing">Spacing joins / splits</option><option value="hyphens">Hyphen information</option></select>
+                    <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-step="-1" aria-label="Previous difference" title="Previous difference"><span class="cfm-comparison-icon-previous" aria-hidden="true"></span></button>
+                    <span class="small text-muted" data-comparison-position></span>
+                    <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-step="1" aria-label="Next difference" title="Next difference"><span class="cfm-comparison-icon-next" aria-hidden="true"></span></button>
+                </div>
+            </div>
+            <div class="cfm-comparison-documents">
+                {% include "submissions/partials/pdf_comparison_document.html" with side="before" side_label="Before" file=comparison_data.before pages=comparison_data.before_pages pdf_url=comparison_data.pdf_urls.before ephemeral=ephemeral %}
+                {% include "submissions/partials/pdf_comparison_document.html" with side="after" side_label="After" file=comparison_data.after pages=comparison_data.after_pages pdf_url=comparison_data.pdf_urls.after ephemeral=ephemeral %}
+                <svg class="cfm-comparison-connections" data-comparison-connection-layer aria-hidden="true"></svg>
+            </div>
+            <div class="small text-muted mt-2" data-comparison-map-status></div>
+        </section>
+        <details class="cfm-comparison-findings">
+            <summary>All findings · {{ comparison_data.shown_findings }} displayed / {{ comparison_data.total_findings }} total</summary>
+            <div data-comparison-findings>
+                <section class="cfm-comparison-finding-group" data-comparison-level="warning"><h3 class="h6 cfm-comparison-group-heading">OCR text changes <span data-finding-group-count="attention"></span></h3><div data-finding-group="attention"></div></section>
+                <section class="cfm-comparison-finding-group" data-comparison-level="warning"><h3 class="h6 cfm-comparison-group-heading">Unlocated ranges <span data-finding-group-count="uncertain"></span></h3><div data-finding-group="uncertain"></div></section>
+                <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Tolerated visual differences <span data-finding-group-count="tolerated"></span></h3><div data-finding-group="tolerated"></div></section>
+                <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Spacing joins / splits <span data-finding-group-count="ignored_spacing"></span></h3><div data-finding-group="ignored_spacing"></div></section>
+                <section class="cfm-comparison-finding-group" data-comparison-level="info"><h3 class="h6 cfm-comparison-group-heading">Hyphen information <span data-finding-group-count="hyphens"></span></h3><div data-finding-group="hyphens"></div></section>
+            </div>
+            <div class="small text-muted" data-comparison-empty hidden>No findings in this view.</div>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-comparison-manual>Browse all pages</button>
+        </details>
+    </div>
+    <div class="cfm-comparison-notices">
+        <div class="alert alert-warning cfm-alert-stack" data-comparison-coverage>
+            <strong data-comparison-coverage-heading>Engine coverage not reported</strong>
+            <div data-comparison-coverage-description>No engine coverage status is available. Review both PDFs manually.</div>
+            <details class="cfm-comparison-evidence" data-comparison-coverage-details hidden><summary>Coverage details</summary><ul data-comparison-coverage-reasons hidden></ul></details>
+            {% if comparison_data.identical_bytes %}<div>The compared PDFs are byte-identical.</div>{% endif %}
+            {% if comparison_data.truncated %}<div>Showing {{ comparison_data.shown_findings }} of {{ comparison_data.total_findings }} findings.</div>{% endif %}
+            <div class="small">Not publication approval. Figures, image preservation, mathematical meaning and layout require manual review.</div>
+        </div>
+        <details class="cfm-comparison-evidence small mt-2" data-comparison-technical><summary>Technical details</summary>
+        <details class="cfm-comparison-evidence" data-comparison-evidence-summary hidden><summary>Engine evidence counts</summary><dl class="cfm-comparison-evidence-counts" data-comparison-evidence-counts></dl></details>
+        <details class="cfm-comparison-evidence" data-comparison-rules hidden><summary>Visual exception policy</summary><pre data-comparison-rules-content></pre></details>
+        <details class="small mt-2"><summary>Compared file identities</summary><div class="text-break">{% if not ephemeral %}Created: {{ comparison_data.created_at }}<br>{% endif %}Before SHA256: {{ comparison_data.before.sha256 }}<br>After SHA256: {{ comparison_data.after.sha256 }}<br>{% if ephemeral %}One-time comparison: only available on this page.{% else %}Temporary comparison expires after two hours.{% endif %} Publication files and review state are unchanged.</div></details>
+        </details>
+    </div>
+    <div class="alert alert-warning cfm-alert-stack" role="alert" data-comparison-image-error hidden>A compared page could not be loaded. Retry the preview or rebuild this comparison; no other file will be substituted.</div>
+    <section class="cfm-comparison-inspection" data-comparison-inspection data-view="magnify" aria-label="Page magnification and finding details">
+        <div class="cfm-comparison-toolbar">
+            <div class="btn-group" role="group" aria-label="Inspection view"><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="magnify" aria-pressed="true">Magnification</button><button type="button" class="btn btn-sm btn-outline-secondary" data-inspection-view="evidence" aria-pressed="false">Evidence</button></div>
+            <label>Position <select class="form-select form-select-sm" data-inspection-position aria-label="Magnification positioning"><option value="auto">Auto match</option><option value="relative">Relative position</option></select></label>
+            <span class="small text-muted" data-comparison-pair-status></span>
+            <button class="btn btn-sm btn-outline-secondary cfm-comparison-icon" type="button" data-comparison-close aria-label="Close inspection" title="Close inspection"><span class="cfm-comparison-icon-close" aria-hidden="true"></span></button>
+        </div>
+        <div class="cfm-comparison-inspection-body">
+        <div class="cfm-comparison-inspection-heading"><strong data-comparison-inspection-title></strong></div>
+        <label class="small" data-comparison-overlap-label hidden>Overlapping findings <select class="form-select form-select-sm" data-comparison-overlap aria-label="Overlapping findings"></select></label>
+        <p class="small" data-comparison-description></p>
+        <div class="cfm-comparison-crops">
+            <section><strong class="small">Before <span data-comparison-crop-page="before"></span></strong><canvas data-comparison-crop="before" width="800" height="300" aria-label="Before page relative-position magnification" hidden></canvas><p class="small" data-comparison-crop-status="before" role="status"></p></section>
+            <section><strong class="small">After <span data-comparison-crop-page="after"></span></strong><canvas data-comparison-crop="after" width="800" height="300" aria-label="After page relative-position magnification" hidden></canvas><p class="small" data-comparison-crop-status="after" role="status"></p></section>
+        </div>
+        <details class="cfm-comparison-evidence" data-comparison-evidence hidden><summary>Finding evidence / OCR details</summary><ul class="small" data-comparison-evidence-reason></ul><div class="cfm-comparison-evidence-text"><div><strong>Before · raw OCR text</strong><pre data-comparison-raw-before></pre></div><div><strong>After · raw OCR text</strong><pre data-comparison-raw-after></pre></div></div></details>
+        </div>
+    </section>
+</div>
